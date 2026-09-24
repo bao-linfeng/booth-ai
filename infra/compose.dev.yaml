@@ -1,0 +1,154 @@
+name: booth-ai
+
+x-server: &server
+  build:
+    context: ../apps/server
+    target: dev
+  init: true
+  working_dir: /app
+  environment: &server-env
+    NODE_ENV: development
+    HOST: 0.0.0.0
+    PORT: 3000
+    LOG_LEVEL: info
+    DATABASE_URL: postgres://booth:${POSTGRES_PASSWORD:?Run scripts/setup.ps1 first}@postgres:5432/booth
+    REDIS_URL: redis://:${REDIS_PASSWORD:?Run scripts/setup.ps1 first}@redis:6379
+    S3_ENDPOINT: http://silo:9000
+    S3_PUBLIC_ENDPOINT: http://localhost:19000
+    S3_REGION: us-east-1
+    S3_BUCKET: booth-assets
+    S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Run scripts/setup.ps1 first}
+    S3_SECRET_KEY: ${S3_SECRET_KEY:?Run scripts/setup.ps1 first}
+    CORS_ORIGINS: http://localhost:5173,http://localhost:5174
+  volumes:
+    - ../apps/server/src:/app/src:ro
+    - ../apps/server/migrations:/app/migrations:ro
+    - ../apps/server/tests:/app/tests:ro
+  stop_grace_period: 30s
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: booth
+      POSTGRES_DB: booth
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup.ps1 first}
+    ports:
+      - 127.0.0.1:55432:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U booth -d booth]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-bookworm
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run scripts/setup.ps1 first}
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server --appendonly yes --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD"
+    ports:
+      - 127.0.0.1:56379:6379
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  silo:
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    command: [server, /data, --console-address, ':9001']
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?Run scripts/setup.ps1 first}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?Run scripts/setup.ps1 first}
+    ports:
+      - 127.0.0.1:19000:9000
+      - 127.0.0.1:19001:9001
+    volumes:
+      - silo-data:/data
+    restart: unless-stopped
+
+  migrate:
+    <<: *server
+    command: [npm, run, migrate]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  storage-init:
+    <<: *server
+    command: [npm, run, 'storage:init']
+    depends_on:
+      silo:
+        condition: service_started
+    restart: 'no'
+
+  api:
+    <<: *server
+    command: [npm, run, 'dev:api']
+    ports:
+      - 127.0.0.1:3000:3000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      storage-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
+  worker:
+    <<: *server
+    command: [npm, run, 'dev:worker']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      storage-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "process.exit(Date.now()-require('node:fs').statSync('/tmp/worker-ready').mtimeMs<30000?0:1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
+  check:
+    <<: *server
+    profiles: [tools]
+    command: [/bin/sh, -ec, 'npm run check && npm run test && npm run build']
+
+  smoke:
+    <<: *server
+    profiles: [tools]
+    environment:
+      <<: *server-env
+      API_BASE_URL: http://api:3000
+    command: [npm, run, smoke]
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
+  silo-data:

@@ -1,0 +1,9 @@
+{
+  "blocks": {
+    "build_your_next_landing_page_with_shadcn_vue": {
+      "id": "build_your_next_landing_page_with_shadcn_vue",
+      "title": "Build your next Landing Page with Shadcn Vue",
+      "content": "<section class=\"relative overflow-hidden text-center w-full min-h-[calc(100vh-64px)] flex flex-col\"><div class=\"relative overflow-hidden text-center flex min-h-[inherit] items-center justify-center w-full flex-1\"><div class=\"flex flex-col text-foreground items-center text-center gap-4 sm:gap-6 p-6 sm:p-8 lg:p-12 container mx-auto\"><h1 class=\"font-bold tracking-tight text-foreground text-3xl sm:text-4xl md:text-7xl\"> Build your next <br><span class=\"text-primary\">Landing Page</span><br> with Shadcn Vue </h1><p class=\"text-lg text-muted-foreground dark:text-muted-foreground/90 sm:text-xl max-w-[42rem]\"> Beautiful and accessible components that you can copy and paste into your apps. </p><div class=\"flex flex-wrap items-center justify-center gap-4\"><a href=\"#\"><button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 bg-primary shadow hover:bg-primary/90 h-10 rounded-md px-8 text-white\">Get Started</button></a><a href=\"#\"><button class=\"inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-10 rounded-md px-8\">Get UI Blocks</button></a></div></div></div></section>"
+    }
+  }
+}

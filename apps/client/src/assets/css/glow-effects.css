@@ -1,0 +1,98 @@
+@property --border-angle {
+  syntax: "<angle>";
+  initial-value: 0turn;
+  inherits: false;
+}
+
+@layer components {
+  .border-glow {
+    @apply relative rounded-2xl bg-transparent;
+  }
+
+  .border-glow::before {
+    content: '';
+    @apply absolute inset-0 rounded-2xl;
+    padding: 1px;
+    background: linear-gradient(to right,
+      hsl(var(--primary) / 0.2),
+      hsl(var(--primary) / 0.6),
+      hsl(var(--primary) / 0.2)
+    );
+    -webkit-mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: 
+      linear-gradient(#fff 0 0) content-box, 
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    z-index: -1;
+    @apply transition-colors duration-300;
+  }
+
+  .dark .border-glow::before {
+    background: linear-gradient(to right,
+      hsl(var(--primary) / 0.1),
+      hsl(var(--primary) / 0.4),
+      hsl(var(--primary) / 0.1)
+    );
+  }
+
+  .border-glow-animated {
+    @apply relative rounded-xl;
+    border: 2px solid hsl(var(--primary) / 0.1);
+    background: transparent;
+  }
+
+  .border-glow-animated::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    padding: 2px;
+    background: conic-gradient(
+      from var(--border-angle),
+      hsl(var(--primary) / 0.2) 80%,
+      hsl(var(--primary) / 0.6) 86%,
+      hsl(var(--primary) / 0.8) 90%,
+      hsl(var(--primary) / 0.6) 94%,
+      hsl(var(--primary) / 0.2)
+    );
+    mask: 
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    -webkit-mask: 
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    animation: border-rotate 5s linear infinite;
+    z-index: -1;
+  }
+
+  .dark .border-glow-animated::before {
+    background: conic-gradient(
+      from var(--border-angle),
+      hsl(var(--primary) / 0.15) 80%,
+      hsl(var(--primary) / 0.5) 86%,
+      hsl(var(--primary) / 0.7) 90%,
+      hsl(var(--primary) / 0.5) 94%,
+      hsl(var(--primary) / 0.15)
+    );
+  }
+}
+
+@keyframes border-rotate {
+  from {
+    --border-angle: 0turn;
+  }
+  to {
+    --border-angle: 1turn;
+  }
+}
+
+
+
+
+
+
