@@ -4,6 +4,8 @@ import { Navbar, NavbarBrand, NavbarLayer } from '@/components/sections/navbar'
 import { DarkMode } from '@/components/darkMode'
 import { ThemingSettings } from '@/components/theming'
 import { Home, ChevronsRight, AlignRight, Combine } from 'lucide-vue-next'
+import LanguageToggle from '@/components/LanguageToggle.vue'
+import UserAvatar from './UserAvatar.vue'
 import {
   NavigationMenu,
   NavigationMenuList,
@@ -152,8 +154,10 @@ const menuDescription = 'Main navigation menu with all available sections and pa
             <span class="font-base">BuildY</span>
           </Button>
           
+          <LanguageToggle />
           <DarkMode data-dark-mode />
           <ThemingSettings />
+          <UserAvatar />
 
         <!-- Мобильное меню -->
         <Sheet>

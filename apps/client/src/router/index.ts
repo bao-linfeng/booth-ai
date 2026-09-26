@@ -122,6 +122,12 @@ export const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/auth/sign-in',
+    name: 'SignIn',
+    component: () => import('@/pages/auth/SignIn.vue'),
+    meta: { title: '登录' }
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/pages/Layout.vue'),

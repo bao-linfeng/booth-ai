@@ -1,0 +1,52 @@
+{
+  "nav": {
+    "home": "首页",
+    "solutions": "展台方案",
+    "about": "关于我们",
+    "contact": "联系我们",
+    "getStarted": "开始选型"
+  },
+  "hero": {
+    "title": "AI 驱动的展台方案平台",
+    "subtitle": "描述您的需求，AI 智能匹配最佳展台方案，快速获取品牌化物料清单与报价",
+    "cta": "开始选型",
+    "ctaSecondary": "了解更多"
+  },
+  "common": {
+    "language": "语言",
+    "switchLanguage": "切换语言",
+    "loading": "加载中...",
+    "confirm": "确认",
+    "cancel": "取消",
+    "submit": "提交",
+    "back": "返回",
+    "next": "下一步",
+    "previous": "上一步",
+    "close": "关闭",
+    "save": "保存",
+    "edit": "编辑",
+    "delete": "删除",
+    "search": "搜索",
+    "filter": "筛选",
+    "reset": "重置",
+    "viewAll": "查看全部",
+    "learnMore": "了解更多",
+    "getStarted": "立即开始"
+  },
+  "booth": {
+    "title": "展台方案",
+    "selectSolution": "选择方案",
+    "customBrand": "品牌定制",
+    "materials": "物料清单",
+    "inquiry": "询价",
+    "matchResult": "匹配结果",
+    "requirement": "展台需求",
+    "requirementPlaceholder": "请描述您的展台需求，例如：面积、风格、预算、行业等",
+    "aiMatching": "AI 智能匹配中...",
+    "noResult": "暂无匹配方案",
+    "budget": "预算",
+    "area": "面积",
+    "style": "风格",
+    "industry": "行业"
+  }
+}

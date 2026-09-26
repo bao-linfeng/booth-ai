@@ -1,0 +1,52 @@
+{
+  "nav": {
+    "home": "Home",
+    "solutions": "Solutions",
+    "about": "About",
+    "contact": "Contact",
+    "getStarted": "Get Started"
+  },
+  "hero": {
+    "title": "AI-Powered Booth Solution Platform",
+    "subtitle": "Describe your needs, AI matches the best booth solutions, and quickly get branded material lists and quotes",
+    "cta": "Get Started",
+    "ctaSecondary": "Learn More"
+  },
+  "common": {
+    "language": "Language",
+    "switchLanguage": "Switch Language",
+    "loading": "Loading...",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "submit": "Submit",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "close": "Close",
+    "save": "Save",
+    "edit": "Edit",
+    "delete": "Delete",
+    "search": "Search",
+    "filter": "Filter",
+    "reset": "Reset",
+    "viewAll": "View All",
+    "learnMore": "Learn More",
+    "getStarted": "Get Started"
+  },
+  "booth": {
+    "title": "Booth Solutions",
+    "selectSolution": "Select Solution",
+    "customBrand": "Brand Customization",
+    "materials": "Material List",
+    "inquiry": "Inquiry",
+    "matchResult": "Match Results",
+    "requirement": "Booth Requirements",
+    "requirementPlaceholder": "Describe your booth requirements, e.g. size, style, budget, industry...",
+    "aiMatching": "AI Matching...",
+    "noResult": "No matching solutions found",
+    "budget": "Budget",
+    "area": "Area",
+    "style": "Style",
+    "industry": "Industry"
+  }
+}

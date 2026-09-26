@@ -1,0 +1,62 @@
+import { ofetch } from 'ofetch'
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+const LINGTONG_API_URL = import.meta.env.VITE_LINGTONG_API_URL ?? 'https://api.lingtong.net.cn'
+const API_TIMEOUT = 10000
+
+async function handleUnauthorized() {
+  const [{ default: router }, { useAuthStore }, { default: pinia }] = await Promise.all([
+    import('@/router'),
+    import('@/stores/auth'),
+    import('@/plugins/pinia/setup'),
+  ])
+
+  const authStore = useAuthStore(pinia)
+  if (!authStore.token) return
+
+  authStore.clearAuth()
+  await router.push({ path: '/auth/sign-in' })
+}
+
+async function injectBearerToken(options: Parameters<typeof ofetch>[1]) {
+  const { useAuthStore } = await import('@/stores/auth')
+  const { default: pinia } = await import('@/plugins/pinia/setup')
+  const authStore = useAuthStore(pinia)
+  if (authStore.token) {
+    const headers = new Headers(options?.headers as HeadersInit | undefined)
+    headers.set('Authorization', `Bearer ${authStore.token}`)
+    if (options) options.headers = headers
+  }
+}
+
+/** 本地 Fastify API 客户端 */
+export const apiFetch = ofetch.create({
+  baseURL: API_BASE_URL,
+  timeout: API_TIMEOUT,
+
+  onRequest: async ({ options }) => {
+    await injectBearerToken(options)
+  },
+
+  onResponseError: async ({ response }) => {
+    if (response.status === 401) {
+      await handleUnauthorized()
+    }
+  },
+})
+
+/** 灵通外部 API 客户端（登录、用户详情等） */
+export const lingtongFetch = ofetch.create({
+  baseURL: LINGTONG_API_URL,
+  timeout: API_TIMEOUT,
+
+  onRequest: async ({ options }) => {
+    await injectBearerToken(options)
+  },
+
+  onResponseError: async ({ response }) => {
+    if (response.status === 401) {
+      await handleUnauthorized()
+    }
+  },
+})
