@@ -372,12 +372,15 @@ D 和 R 去重，先 D 后 R，总计最多 3 套；不从前置集合以外随�
 |---|---|
 | schemes | id UUID PK、code UNIQUE、name、parent_id FK、尺寸、开口、字典引用、标签数组、适用条件、publication_status、edit_revision、created/updated_at |
 | catalog_options | id、type、label、aliases、enabled、sort_order；type+label 唯一；数组引用在事务中校验 |
-| scheme_assets | id、scheme_id FK、kind、object_key、filename、checksum、dimensions、sort_order、related_asset_id、ready；同方案三个有效效果图顺序唯一 |
+| scheme_assets | id、scheme_id 非空 FK、type、名称、sort_order、related_asset_id、ready；每条资产归属一套方案，蒙版关联同方案效果图；同方案有效效果图顺序唯一 |
+| asset_versions | id、asset_id FK、object_key、原文件名、校验和、MIME、大小、像素尺寸/页数；文件替换保留 assetId 并新增不可变版本，项目固定版本引用 |
 | scheme_reviews | id、scheme_id、edit_revision、stage、decision、comment、admin_id FK、created_at；追加记录，不覆写结论 |
 | scheme_imports | id、owner_admin_id、file_checksum、normalized_rows、row_errors、expected_revisions、status、result、expires_at |
 | scheme_search_logs（规划暂缓） | id UUID PK、fingerprint（浏览器指纹）、user_id FK（可空，登录态关联）、raw_query、structured_params JSONB、result_count、matched_scheme_codes text[]、ip、user_agent、created_at |
 
 清单数据及实际核验复用清单模块；审计复用统一审计模块。现阶段不新增匹配任务表：解析和匹配是同步请求，不接入 BullMQ 图像任务队列。方案数量较小时读取有限已发布元数据进行规则排序即可；索引优先覆盖唯一编号、状态、体系和常用尺寸。
+
+方案与资产为一对多，手工创建或打标导入允许零资产草稿；资产通过四个独立管理路由后续上传并关联，文件名不自动创建文件记录或通过核验。整体审核通过及发布时检查六类齐全和分项核验，详见[方案资产管理详细设计](方案资产管理详细设计.md)。公共资产归 W15，方案基础资料和整体发布归 W03。
 
 审核、发布、导入提交及其审计在同一数据库事务中写入。模型调用和文件上传不持有数据库锁。发布内容更新与下架原子化；查询直接按数据库状态过滤，一期不缓存候选结果，避免下架后仍推荐。
 

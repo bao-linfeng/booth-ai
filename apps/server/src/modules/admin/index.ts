@@ -5,11 +5,17 @@ import type { Config } from '../../config.js';
 import { registerAdminAuthRoutes } from './auth/index.js';
 import { registerAdminMeRoutes } from './me/index.js';
 import { registerAdminUserRoutes } from './users.controller.js';
+import { registerAdminSchemesRoutes } from './schemes/index.js';
+import { registerAdminSchemeImportsRoutes } from './scheme-imports/index.js';
+import { registerAdminCatalogOptionsRoutes } from './catalog-options/index.js';
 
 export async function registerAdminModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
   await app.register(async admin => {
     await registerAdminAuthRoutes(admin, config, pool, redis);
     await registerAdminMeRoutes(admin, config, pool, redis);
     await registerAdminUserRoutes(admin, pool);
+    await registerAdminSchemesRoutes(admin, pool);
+    await registerAdminSchemeImportsRoutes(admin, pool);
+    await registerAdminCatalogOptionsRoutes(admin, pool);
   }, { prefix: '/api/v1/admin' });
 }

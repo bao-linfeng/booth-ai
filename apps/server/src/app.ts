@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import type { FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import type { Redis } from 'ioredis';
@@ -35,6 +36,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
   });
   await app.register(cors, { origin: config.corsOrigins, credentials: true });
   await app.register(helmet);
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   await app.register(swagger, {
     openapi: {
       info: { title: 'Booth AI API', version: '0.1.0', description: '服务端基础设施接口；业务与既有账户接口待后续接入。' },
