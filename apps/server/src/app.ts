@@ -9,6 +9,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { Config } from './config.js';
+import { createStorage } from './infra/storage.js';
 import { registerAdminModule } from './modules/admin/index.js';
 import { registerClientModule } from './modules/client/index.js';
 
@@ -21,6 +22,7 @@ export interface HealthDependencies {
 export interface AuthDependencies {
   pool: pg.Pool;
   redis: Redis;
+  storage: ReturnType<typeof createStorage>;
 }
 
 export async function buildApp(config: Config, dependencies: HealthDependencies, authDependencies?: AuthDependencies) {
@@ -77,7 +79,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
 
   if (authDependencies) {
     await registerClientModule(app, config, authDependencies.pool, authDependencies.redis);
-    await registerAdminModule(app, config, authDependencies.pool, authDependencies.redis);
+    await registerAdminModule(app, config, authDependencies.pool, authDependencies.redis, authDependencies.storage);
   }
 
   if (config.nodeEnv !== 'production') {

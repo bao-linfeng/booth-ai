@@ -35,7 +35,12 @@ export const createGridOptions = () => ({
     { field: 'mobile', title: '手机号', minWidth: 120 },
     { field: 'email', title: '邮箱', minWidth: 160 },
     { field: 'company', title: '公司', minWidth: 160 },
-    { field: 'enabled', title: '状态', width: 100, slots: { default: 'status' } },
+    {
+      field: 'enabled',
+      title: '状态',
+      width: 100,
+      slots: { default: 'status' },
+    },
     { field: 'createdAt', title: '创建时间', minWidth: 180 },
   ],
   pagerConfig: { total: 0, currentPage: 1, pageSize: 20, enabled: true },
@@ -50,7 +55,12 @@ export const createGridOptions = () => ({
     ajax: {
       query: async ({ page }: any, formValues: any = {}) => {
         const { mobile, ...rest } = formValues ?? {};
-        return getUserListApi({ page: page.currentPage, pageSize: page.pageSize, phone: mobile, ...rest });
+        return getUserListApi({
+          page: page.currentPage,
+          pageSize: page.pageSize,
+          phone: mobile,
+          ...rest,
+        });
       },
     },
   },

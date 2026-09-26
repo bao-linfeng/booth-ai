@@ -46,8 +46,8 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
   /**
    * 刷新token逻辑
    */
-  async function doRefreshToken() {
-    return Promise.reject(new Error('Refresh token not supported'));
+  async function doRefreshToken(): Promise<string> {
+    throw new Error('Refresh token not supported');
   }
 
   function formatToken(token: null | string) {
@@ -61,6 +61,12 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
       config.headers.Authorization = formatToken(accessStore.accessToken);
       config.headers['Accept-Language'] = preferences.app.locale;
+
+      // FormData 上传时让浏览器自动设置 multipart boundary，不能固定为 JSON
+      if (config.data instanceof FormData) {
+        delete config.headers['Content-Type'];
+      }
+
       return config;
     },
   });
@@ -91,7 +97,8 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       // 这里可以根据业务进行定制,你可以拿到 error 内的信息进行定制化处理，根据不同的 code 做不同的提示，而不是直接使用 message.error 提示 msg
       // 当前mock接口返回的错误字段是 error 或者 message
       const responseData = error?.response?.data ?? {};
-      const errorMessage = responseData?.error ?? responseData?.message ?? '';
+      const errorMessage =
+        responseData?.error?.message ?? responseData?.message ?? '';
       // 如果没有错误信息，则会根据状态码进行提示
       message.error(errorMessage || msg);
     }),

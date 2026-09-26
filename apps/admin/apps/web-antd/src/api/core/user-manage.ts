@@ -4,18 +4,18 @@ export interface UserRecord {
   id: string;
   externalUserId: string;
   username: string;
-  nickname: string | null;
-  email: string | null;
-  mobile: string | null;
-  avatarPath: string | null;
-  company: string | null;
-  country: string | null;
-  city: string | null;
-  languageCode: string | null;
+  nickname: null | string;
+  email: null | string;
+  mobile: null | string;
+  avatarPath: null | string;
+  company: null | string;
+  country: null | string;
+  city: null | string;
+  languageCode: null | string;
   enabled: boolean;
   roles: string[];
   permissions: string[];
-  lastLoginAt: string | null;
+  lastLoginAt: null | string;
   lastSyncedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -36,7 +36,9 @@ export interface UserListResult {
   pageSize: number;
 }
 
-export async function getUserListApi(params: UserListParams): Promise<UserListResult> {
+export async function getUserListApi(
+  params: UserListParams,
+): Promise<UserListResult> {
   return requestClient.get('/v1/admin/users', { params });
 }
 
@@ -44,7 +46,9 @@ export async function getUserDetailApi(id: string): Promise<UserRecord> {
   return requestClient.get(`/v1/admin/users/${id}`);
 }
 
-export async function getAdminListApi(params: Omit<UserListParams, 'phone'>): Promise<UserListResult> {
+export async function getAdminListApi(
+  params: Omit<UserListParams, 'phone'>,
+): Promise<UserListResult> {
   return requestClient.get('/v1/admin/admins', { params });
 }
 

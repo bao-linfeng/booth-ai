@@ -27,6 +27,9 @@ export function createStorage(config: Config) {
     async put(key: string, body: string, contentType = 'text/plain') {
       await client.send(new PutObjectCommand({ Bucket, Key: key, Body: body, ContentType: contentType }));
     },
+    async putBuffer(key: string, body: Buffer | Uint8Array, contentType: string) {
+      await client.send(new PutObjectCommand({ Bucket, Key: key, Body: body, ContentType: contentType }));
+    },
     async get(key: string) {
       const response = await client.send(new GetObjectCommand({ Bucket, Key: key }));
       return response.Body?.transformToString();
@@ -36,6 +39,12 @@ export function createStorage(config: Config) {
     async signDownload(key: string, expiresIn = 300) {
       if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > 900) throw new Error('Invalid signed URL lifetime');
       return getSignedUrl(publicClient, new GetObjectCommand({ Bucket, Key: key }), { expiresIn });
+    },
+    async signDownloadWithName(key: string, filename: string, expiresIn = 300) {
+      if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > 900) throw new Error('Invalid signed URL lifetime');
+      const encoded = encodeURIComponent(filename);
+      const disposition = `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`;
+      return getSignedUrl(publicClient, new GetObjectCommand({ Bucket, Key: key, ResponseContentDisposition: disposition }), { expiresIn });
     },
     close() { client.destroy(); publicClient.destroy(); },
   };

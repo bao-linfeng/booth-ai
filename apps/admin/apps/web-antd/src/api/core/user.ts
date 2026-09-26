@@ -1,7 +1,8 @@
 import type { UserInfo } from '@vben/types';
 
-import { requestClient } from '#/api/request';
 import type { AdminCurrentUser } from './auth';
+
+import { requestClient } from '#/api/request';
 
 function mapToUserInfo(user: AdminCurrentUser): UserInfo {
   return {

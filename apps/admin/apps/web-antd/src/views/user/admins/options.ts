@@ -27,13 +27,19 @@ export const createGridOptions = () => ({
     { field: 'username', title: '用户名', minWidth: 120 },
     { field: 'nickname', title: '昵称', minWidth: 120 },
     { field: 'email', title: '邮箱', minWidth: 160 },
-    { 
-      field: 'roles', 
-      title: '角色', 
+    {
+      field: 'roles',
+      title: '角色',
       minWidth: 160,
-      formatter: ({ cellValue }: any) => Array.isArray(cellValue) ? cellValue.join(', ') : ''
+      formatter: ({ cellValue }: any) =>
+        Array.isArray(cellValue) ? cellValue.join(', ') : '',
     },
-    { field: 'enabled', title: '状态', width: 100, slots: { default: 'status' } },
+    {
+      field: 'enabled',
+      title: '状态',
+      width: 100,
+      slots: { default: 'status' },
+    },
     { field: 'createdAt', title: '创建时间', minWidth: 180 },
   ],
   pagerConfig: { total: 0, currentPage: 1, pageSize: 20, enabled: true },
@@ -47,7 +53,11 @@ export const createGridOptions = () => ({
     },
     ajax: {
       query: async ({ page }: any, formValues: any = {}) => {
-        return getAdminListApi({ page: page.currentPage, pageSize: page.pageSize, ...formValues });
+        return getAdminListApi({
+          page: page.currentPage,
+          pageSize: page.pageSize,
+          ...formValues,
+        });
       },
     },
   },

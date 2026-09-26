@@ -78,6 +78,7 @@ apps/web-antd/src/
 ## 关键约定
 
 ### 工具类使用规范（优先使用 `@vben/utils`）
+
 - **优先原则**：管理后台业务开发中，所有通用工具函数**必须优先参考并使用 `@vben/utils`**，禁止重复手写同类工具或随意安装外部冗余依赖（如 lodash、dayjs 等，优先使用内置导出）。
 - **文档参考**：https://doc.vben.pro/guide/essentials/utils.html
 - **模块继承**：`@vben/utils` 在各 app 下已统一引入，重新导出了 `@vben-core/shared` 的 `cache`、`color`、`utils` 以及业务 helpers。
@@ -94,25 +95,30 @@ apps/web-antd/src/
   - **业务辅助**：`findMenuByPath`, `generateMenus`, `generateRoutesFrontend`, `generateRoutesBackend`
 
 ### 包引用别名
+
 - `#/*` → `./src/*`（仅在 web-antd 内有效，见 package.json `imports`）
 - `@vben/*` → workspace 包，不要直接改 `packages/` 里的核心代码，除非明确在修改框架层
 
 ### HTTP 请求
+
 - `requestClient`（`src/api/request.ts`）：自动注入 `Authorization: Bearer <token>` + 语言头；响应拦截期望 `{ code: 0, data: ... }` 格式
 - `baseRequestClient`：无拦截器的裸客户端，用于不需要鉴权的请求
 - **不支持 refresh token**（`doRefreshToken` 直接 reject），token 过期直接跳登录页
 
 ### 环境变量（web-antd）
+
 - `.env`：`VITE_APP_TITLE`、`VITE_APP_NAMESPACE`、`VITE_APP_STORE_SECURE_KEY`（**必须替换默认值**）
 - `.env.development`：`VITE_PORT=5666`、`VITE_GLOB_API_URL=/api`（代理到后端）
 - `.env.production`：`VITE_GLOB_API_URL` 改为真实 API 地址，`VITE_ROUTER_HISTORY=hash`
 - Nitro mock（`VITE_NITRO_MOCK=true`）：开发时启用 backend-mock 作为接口服务
 
 ### 权限系统
+
 - 菜单/按钮权限由 `@vben/access` 包管理，access codes 从 `getAccessCodesApi()` 获取
 - 路由 meta 中的 `authority` 字段控制角色访问
 
 ### 提交规范
+
 - pre-commit hooks（lefthook）顺序执行：oxlint → oxfmt → eslint → stylelint → check:type（**串行，低配机会慢**）
 - commit message 必须符合 conventional commits，由 commitlint 校验
 
@@ -120,15 +126,15 @@ apps/web-antd/src/
 
 ## 工具链
 
-| 工具 | 用途 |
-|------|------|
-| Turbo | 任务并行编排，缓存 `dist/`、`.turbo/` |
-| oxfmt | 快速格式化（替代 Prettier） |
-| oxlint | 快速 lint（+ type-aware，4 线程） |
-| eslint | 补充规则，staged 时修复 |
-| stylelint | CSS/SCSS/Vue style 检查 |
-| vue-tsc | TypeScript 类型检查（`typecheck` 任务） |
-| vitest | 单元测试（happy-dom，e2e 目录排除） |
+| 工具      | 用途                                    |
+| --------- | --------------------------------------- |
+| Turbo     | 任务并行编排，缓存 `dist/`、`.turbo/`   |
+| oxfmt     | 快速格式化（替代 Prettier）             |
+| oxlint    | 快速 lint（+ type-aware，4 线程）       |
+| eslint    | 补充规则，staged 时修复                 |
+| stylelint | CSS/SCSS/Vue style 检查                 |
+| vue-tsc   | TypeScript 类型检查（`typecheck` 任务） |
+| vitest    | 单元测试（happy-dom，e2e 目录排除）     |
 
 ---
 

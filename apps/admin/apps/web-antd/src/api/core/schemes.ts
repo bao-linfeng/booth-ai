@@ -4,27 +4,27 @@ export interface SchemeRecord {
   id: string;
   code: string;
   name: string;
-  parentCode: string | null;
-  lengthCm: number | null;
-  widthCm: number | null;
-  heightCm: number | null;
-  areaSqm: number | null;
-  openingCount: number | null;
+  parentCode: null | string;
+  lengthCm: null | number;
+  widthCm: null | number;
+  heightCm: null | number;
+  areaSqm: null | number;
+  openingCount: null | number;
   openingDirections: string[];
-  productLine: string | null;
-  style: string | null;
+  productLine: null | string;
+  style: null | string;
   industries: string[];
-  budgetTier: string | null;
+  budgetTier: null | string;
   functionalZones: string[];
   keyFeatures: string[];
-  description: string | null;
+  description: null | string;
   keywords: string[];
-  source: string | null;
-  visualTheme: string | null;
-  applicableConditions: Record<string, unknown> | null;
+  source: null | string;
+  visualTheme: null | string;
+  applicableConditions: null | Record<string, unknown>;
   publishStatus: 'draft' | 'published' | 'unpublished';
-  verificationStatus: 'unverified' | 'verified' | 'failed';
-  notes: string | null;
+  verificationStatus: 'failed' | 'unverified' | 'verified';
+  notes: null | string;
   revision: number;
   createdAt: string;
   updatedAt: string;
@@ -52,23 +52,23 @@ export interface SchemeListResult {
 export interface CreateSchemeInput {
   code: string;
   name: string;
-  parentCode?: string | null;
-  description?: string | null;
-  lengthCm?: number | null;
-  widthCm?: number | null;
-  heightCm?: number | null;
-  areaSqm?: number | null;
-  openingCount?: number | null;
-  productLine?: string | null;
-  style?: string | null;
+  parentCode?: null | string;
+  description?: null | string;
+  lengthCm?: null | number;
+  widthCm?: null | number;
+  heightCm?: null | number;
+  areaSqm?: null | number;
+  openingCount?: null | number;
+  productLine?: null | string;
+  style?: null | string;
   industries?: string[];
-  budgetTier?: string | null;
+  budgetTier?: null | string;
   keywords?: string[];
-  notes?: string | null;
+  notes?: null | string;
   openingDirections?: string[];
   functionalZones?: string[];
   keyFeatures?: string[];
-  source?: string | null;
+  source?: null | string;
 }
 
 export interface UpdateSchemeInput extends Omit<CreateSchemeInput, 'code'> {
@@ -89,7 +89,9 @@ export async function getSchemeListApi(params?: SchemeListParams) {
 }
 
 export async function getSchemeDetailApi(code: string) {
-  return requestClient.get<SchemeRecord>(`/v1/admin/schemes/${encodeURIComponent(code)}`);
+  return requestClient.get<SchemeRecord>(
+    `/v1/admin/schemes/${encodeURIComponent(code)}`,
+  );
 }
 
 export async function createSchemeApi(data: CreateSchemeInput) {
@@ -97,10 +99,13 @@ export async function createSchemeApi(data: CreateSchemeInput) {
 }
 
 export async function updateSchemeApi(code: string, data: UpdateSchemeInput) {
-  return requestClient.request<SchemeRecord>('/v1/admin/schemes/' + encodeURIComponent(code), {
-    method: 'PATCH',
-    data,
-  });
+  return requestClient.request<SchemeRecord>(
+    `/v1/admin/schemes/${encodeURIComponent(code)}`,
+    {
+      method: 'PATCH',
+      data,
+    },
+  );
 }
 
 export async function getCatalogOptionsApi(types?: string) {
@@ -110,11 +115,19 @@ export async function getCatalogOptionsApi(types?: string) {
 }
 
 export async function deleteSchemeApi(code: string) {
-  return requestClient.delete<void>(`/v1/admin/schemes/${encodeURIComponent(code)}`);
+  return requestClient.delete<void>(
+    `/v1/admin/schemes/${encodeURIComponent(code)}`,
+  );
 }
 
-export async function updateCatalogOptionsByTypeApi(type: string, options: CatalogOption[]) {
-  return requestClient.put<{ message: string }>(`/v1/admin/catalog-options/${encodeURIComponent(type)}`, { options });
+export async function updateCatalogOptionsByTypeApi(
+  type: string,
+  options: CatalogOption[],
+) {
+  return requestClient.put<{ message: string }>(
+    `/v1/admin/catalog-options/${encodeURIComponent(type)}`,
+    { options },
+  );
 }
 
 export interface ImportResult {
@@ -126,5 +139,7 @@ export interface ImportResult {
 }
 
 export async function importSchemesApi(file: File) {
-  return requestClient.upload<ImportResult>('/v1/admin/scheme-imports', { file });
+  return requestClient.upload<ImportResult>('/v1/admin/scheme-imports', {
+    file,
+  });
 }

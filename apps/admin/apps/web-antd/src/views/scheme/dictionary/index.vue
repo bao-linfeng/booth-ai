@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
-import { message, Modal } from 'ant-design-vue';
+
 import { Page } from '@vben/common-ui';
+
+import { message, Modal } from 'ant-design-vue';
+
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { getCatalogOptionsApi, updateCatalogOptionsByTypeApi } from '#/api/core/schemes';
+import {
+  getCatalogOptionsApi,
+  updateCatalogOptionsByTypeApi,
+} from '#/api/core/schemes';
 
 const dictTypes = [
   { label: '风格 (style)', value: 'style' },
@@ -37,7 +43,10 @@ const [Grid, gridApi] = useVbenVxeGrid({
         field: 'key',
         title: '标识符 (Key)',
         width: 200,
-        editRender: { name: 'input', attrs: { placeholder: '小写字母数字下划线' } },
+        editRender: {
+          name: 'input',
+          attrs: { placeholder: '小写字母数字下划线' },
+        },
       },
       {
         field: 'label',
@@ -79,7 +88,7 @@ async function fetchDict(type: string) {
       enabled: item.enabled,
     }));
     originalDataString = JSON.stringify(data);
-    
+
     // Fallback if grid is not fully mounted yet
     if (gridApi.grid) {
       gridApi.grid.loadData(data);
@@ -156,7 +165,9 @@ async function handleSave() {
       return;
     }
     if (!/^[a-z0-9_]+$/.test(item.key)) {
-      message.warning(`标识符格式错误: ${item.key}。只能包含小写字母、数字和下划线`);
+      message.warning(
+        `标识符格式错误: ${item.key}。只能包含小写字母、数字和下划线`,
+      );
       return;
     }
   }
@@ -194,17 +205,27 @@ onMounted(() => {
   <Page auto-content-height>
     <template #extra>
       <div class="flex gap-2">
-        <a-button type="dashed" @click="handleAdd" class="flex items-center gap-1">
-          <span class="icon-[lucide--plus]" />
+        <a-button
+          type="dashed"
+          @click="handleAdd"
+          class="flex items-center gap-1"
+        >
+          <span class="icon-[lucide--plus]"></span>
           新增字典项
         </a-button>
-        <a-button type="primary" :loading="saving" @click="handleSave">保存修改</a-button>
+        <a-button type="primary" :loading="saving" @click="handleSave">
+          保存修改
+        </a-button>
       </div>
     </template>
 
     <div class="mb-4">
       <a-tabs :active-key="activeTab" @change="handleTabChange">
-        <a-tab-pane v-for="type in dictTypes" :key="type.value" :tab="type.label" />
+        <a-tab-pane
+          v-for="type in dictTypes"
+          :key="type.value"
+          :tab="type.label"
+        />
       </a-tabs>
     </div>
 
@@ -214,7 +235,9 @@ onMounted(() => {
           <a-switch v-model:checked="row.enabled" />
         </template>
         <template #action="{ row }">
-          <a-button type="link" danger size="small" @click="handleDelete(row)">删除</a-button>
+          <a-button type="link" danger size="small" @click="handleDelete(row)">
+            删除
+          </a-button>
         </template>
       </Grid>
     </div>

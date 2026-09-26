@@ -146,6 +146,10 @@ class RequestClient {
     url: string,
     config: RequestClientConfig,
   ): Promise<T> {
+    if (config.data instanceof FormData) {
+      delete config.headers?.['Content-Type'];
+    }
+
     const response: AxiosResponse<T> = await this.instance({
       url,
       ...config,
