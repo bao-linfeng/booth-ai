@@ -7,6 +7,7 @@ const env = {
   NODE_ENV: 'test', LOG_LEVEL: 'silent', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',
   S3_ENDPOINT: 'http://localhost:9000', S3_PUBLIC_ENDPOINT: 'http://localhost:19000', S3_BUCKET: 'test',
   S3_ACCESS_KEY: 'test-only', S3_SECRET_KEY: 'test-only', CORS_ORIGINS: 'http://localhost:5173',
+  SESSION_SECRET: 'test-session-secret-must-be-at-least-32-bytes', EXTERNAL_API_URL: 'https://api.example.test',
 };
 const config = loadConfig(env);
 const healthy = { database: async () => {}, redis: async () => {}, storage: async () => {} };

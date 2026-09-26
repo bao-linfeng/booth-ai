@@ -27,6 +27,28 @@ npm run smoke          # E2E 冒烟（需 Postgres + Redis + Silo S3 全部在�
 
 ---
 
+## 容器重建规则
+
+**修改 `apps/server/src/` 下的任何源码后，必须重建并重启 API/Worker 容器，否则容器内跑的仍是旧代码。**
+
+```powershell
+# 重建 API 容器（最常用）
+docker compose --env-file .env -f infra/compose.dev.yaml build api
+docker compose --env-file .env -f infra/compose.dev.yaml up -d api
+
+# 重建 Worker 容器
+docker compose --env-file .env -f infra/compose.dev.yaml build worker
+docker compose --env-file .env -f infra/compose.dev.yaml up -d worker
+
+# 同时重建两者
+docker compose --env-file .env -f infra/compose.dev.yaml build api worker
+docker compose --env-file .env -f infra/compose.dev.yaml up -d api worker
+```
+
+> 容器 `STATUS` 显示 `healthy` 只说明进程在跑，**不代表代码是最新的**。
+
+---
+
 ## ESM 导入规则
 
 **所有内部相对导入必须带 `.js` 扩展名**，即使源文件是 `.ts`：
@@ -93,13 +115,19 @@ src/
 ## 当前已注册路由
 
 ```
-GET  /health/live    → { status: 'ok' }（liveness）
-GET  /health/ready   → { status: 'ok'|'degraded', checks: {database,redis,storage} }（readiness，503 on degraded）
-GET  /openapi.json   → OpenAPI schema（仅 NODE_ENV != production）
-GET  /docs           → Swagger UI（仅 NODE_ENV != production）
+GET  /health/live                    → { status: 'ok' }（liveness）
+GET  /health/ready                   → { status: 'ok'|'degraded', checks: {database,redis,storage} }（readiness，503 on degraded）
+GET  /openapi.json                   → OpenAPI schema（仅 NODE_ENV != production）
+GET  /docs                           → Swagger UI（仅 NODE_ENV != production）
+POST /api/v1/client/auth/login       → 参展商登录（外部 SSO，返回 accessToken）
+POST /api/v1/client/auth/logout      → 参展商登出（清除 Redis session）
+GET  /api/v1/client/me               → 参展商当前用户信息
+POST /api/v1/admin/auth/login        → 管理端登录（外部 SSO + 角色校验，返回 accessToken）
+POST /api/v1/admin/auth/logout       → 管理端登出（清除 Redis session）
+GET  /api/v1/admin/me                → 管理端当前用户信息
 ```
 
-业务路由（`/api/v1/admin/*`、`/api/v1/client/*`、`/api/v1/su/*`）全部是空 stub，尚未注册。
+其余业务路由（`/api/v1/su/*` 及各模块子路由）均为空 stub，尚未注册。
 
 ---
 

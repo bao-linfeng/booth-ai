@@ -375,6 +375,7 @@ D 和 R 去重，先 D 后 R，总计最多 3 套；不从前置集合以外随�
 | scheme_assets | id、scheme_id FK、kind、object_key、filename、checksum、dimensions、sort_order、related_asset_id、ready；同方案三个有效效果图顺序唯一 |
 | scheme_reviews | id、scheme_id、edit_revision、stage、decision、comment、admin_id FK、created_at；追加记录，不覆写结论 |
 | scheme_imports | id、owner_admin_id、file_checksum、normalized_rows、row_errors、expected_revisions、status、result、expires_at |
+| scheme_search_logs（规划暂缓） | id UUID PK、fingerprint（浏览器指纹）、user_id FK（可空，登录态关联）、raw_query、structured_params JSONB、result_count、matched_scheme_codes text[]、ip、user_agent、created_at |
 
 清单数据及实际核验复用清单模块；审计复用统一审计模块。现阶段不新增匹配任务表：解析和匹配是同步请求，不接入 BullMQ 图像任务队列。方案数量较小时读取有限已发布元数据进行规则排序即可；索引优先覆盖唯一编号、状态、体系和常用尺寸。
 

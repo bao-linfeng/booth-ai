@@ -24,11 +24,11 @@ function definePreferencesExtension<
 
 /** 应用级版权配置，供各 app 的 preferences 覆盖使用 */
 const appCopyrightPreferences = {
-  companyName: 'Vben',
-  companySiteLink: 'https://www.vben.pro',
+  companyName: '灵通展览系统股份有限公司',
+  companySiteLink: '',
   date: '2024',
   enable: true,
-  icp: '闽ICP备19024351号',
+  icp: '苏ICP备2022017033号-2',
   icpLink: 'https://beian.miit.gov.cn/',
   settingShow: true,
 } satisfies DeepPartial<Preferences>['copyright'];

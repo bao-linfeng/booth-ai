@@ -1,8 +1,8 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { login as loginApi } from '@/services/api/auth.api'
-import { fetchUserByUsername } from '@/services/api/user.api'
+import { loginApi, logoutApi } from '@/services/api/auth.api'
+import { fetchCurrentUser } from '@/services/api/user.api'
 
 export function useAuth() {
   const router = useRouter()
@@ -15,25 +15,13 @@ export function useAuth() {
     error.value = null
     try {
       const res = await loginApi({ username, password })
-      if (res.code !== '200' || !res.success) {
-        error.value = res.msg || '登录失败'
+      if (res.code !== 0) {
+        error.value = res.message || '登录失败'
         return
       }
-      const { JWT, data } = res.data
-      authStore.setAuth(JWT, data.username, data.id)
-
-      // 登录成功后拉取完整用户详情
-      try {
-        const userRes = await fetchUserByUsername(data.username)
-        if (userRes.code === '200' && userRes.success) {
-          authStore.setUserDetail(userRes.data)
-        }
-      } catch {
-        // 用户详情拉取失败不阻断登录流程
-      }
-
+      authStore.setLoginResult(res.data.accessToken, res.data.user)
       await router.push('/')
-    } catch (e) {
+    } catch {
       error.value = '登录失败，请检查用户名和密码'
     } finally {
       loading.value = false
@@ -53,14 +41,31 @@ export function useAuth() {
   }
 
   async function logout() {
+    try { await logoutApi() } catch {}
     authStore.clearAuth()
     await router.push('/auth/sign-in')
+  }
+
+  async function restoreSession() {
+    if (!authStore.token) return
+    try {
+      const res = await fetchCurrentUser()
+      if (res.code === 0) {
+        authStore.setCurrentUser(res.data)
+      } else {
+        authStore.clearAuth()
+        await router.push('/auth/sign-in')
+      }
+    } catch {
+      authStore.clearAuth()
+    }
   }
 
   return {
     login,
     loginWithWechat,
     logout,
+    restoreSession,
     loading,
     error,
     isLoggedIn: authStore.isLoggedIn,

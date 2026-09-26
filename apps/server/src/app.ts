@@ -1,10 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
+import type { FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import type { Redis } from 'ioredis';
+import type pg from 'pg';
 import type { Config } from './config.js';
+import { registerAdminModule } from './modules/admin/index.js';
+import { registerClientModule } from './modules/client/index.js';
 
 export interface HealthDependencies {
   database: () => Promise<unknown>;
@@ -12,7 +17,12 @@ export interface HealthDependencies {
   storage: () => Promise<unknown>;
 }
 
-export async function buildApp(config: Config, dependencies: HealthDependencies) {
+export interface AuthDependencies {
+  pool: pg.Pool;
+  redis: Redis;
+}
+
+export async function buildApp(config: Config, dependencies: HealthDependencies, authDependencies?: AuthDependencies) {
   const app = Fastify({
     logger: { level: config.logLevel, redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'] },
     // Do not log URL query strings: future presigned URLs / SSO tickets may be secrets.
@@ -35,7 +45,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies)
   app.addHook('onResponse', async (request, reply) => {
     request.log.info({ method: request.method, route: request.routeOptions.url, statusCode: reply.statusCode, responseTime: reply.elapsedTime }, 'request completed');
   });
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500;
     // Error messages can include upstream credentials; only emit stable diagnostic codes.
     request.log[status >= 500 ? 'error' : 'warn']({ code: error.code ?? 'REQUEST_ERROR', statusCode: status }, 'request failed');
@@ -62,6 +72,11 @@ export async function buildApp(config: Config, dependencies: HealthDependencies)
     const ok = results.every(result => result.status === 'fulfilled');
     return reply.code(ok ? 200 : 503).send({ status: ok ? 'ok' : 'degraded', checks });
   });
+
+  if (authDependencies) {
+    await registerClientModule(app, config, authDependencies.pool, authDependencies.redis);
+    await registerAdminModule(app, config, authDependencies.pool, authDependencies.redis);
+  }
 
   if (config.nodeEnv !== 'production') {
     await app.register(swaggerUi, { routePrefix: '/docs' });

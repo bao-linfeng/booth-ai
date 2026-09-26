@@ -20,10 +20,19 @@ if (-not (Test-Path -LiteralPath $envPath)) {
         "REDIS_PASSWORD=$(New-RandomSecret)"
         "S3_ACCESS_KEY=booth$(New-RandomSecret)"
         "S3_SECRET_KEY=$(New-RandomSecret)"
+        "SESSION_SECRET=$(New-RandomSecret)"
+        'EXTERNAL_API_URL=https://api.lingtong.net.cn'
     ) -join "`n"
     [System.IO.File]::WriteAllText($envPath, $content + "`n", [System.Text.UTF8Encoding]::new($false))
     Write-Host 'Created .env with random local credentials.'
 } else {
+    $existing = [System.IO.File]::ReadAllText($envPath)
+    if ($existing -notmatch '(?m)^SESSION_SECRET=') {
+        [System.IO.File]::AppendAllText($envPath, "SESSION_SECRET=$(New-RandomSecret)`n", [System.Text.UTF8Encoding]::new($false))
+    }
+    if ($existing -notmatch '(?m)^EXTERNAL_API_URL=') {
+        [System.IO.File]::AppendAllText($envPath, "EXTERNAL_API_URL=https://api.lingtong.net.cn`n", [System.Text.UTF8Encoding]::new($false))
+    }
     Write-Host 'Using existing .env; credentials were not changed.'
 }
 

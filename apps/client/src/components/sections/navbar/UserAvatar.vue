@@ -22,9 +22,9 @@ const { logout } = useAuth()
 
 const LINGTONG_BASE = import.meta.env.VITE_LINGTONG_API_URL ?? 'https://api.lingtong.net.cn'
 const avatarUrl = computed(() => {
-  const av = authStore.avatar
-  if (!av?.id) return ''
-  return `${LINGTONG_BASE}/api/attachment/images/${av.id}`
+  const path = authStore.avatarPath
+  if (!path) return ''
+  return path.startsWith('http') ? path : `${LINGTONG_BASE}${path}`
 })
 
 const avatarFallback = computed(() => authStore.displayName.charAt(0) || '?')
@@ -40,7 +40,7 @@ const avatarFallback = computed(() => authStore.displayName.charAt(0) || '?')
         </Avatar>
         <div class="hidden flex-col items-start md:flex">
           <span class="text-sm font-medium leading-none">{{ authStore.displayName }}</span>
-          <span class="text-xs text-muted-foreground mt-1">{{ authStore.username }}</span>
+          <span class="text-xs text-muted-foreground mt-1">{{ authStore.currentUser?.username }}</span>
         </div>
         <ChevronsUpDown class="h-4 w-4 text-muted-foreground ml-auto hidden md:block" />
       </Button>
@@ -54,7 +54,7 @@ const avatarFallback = computed(() => authStore.displayName.charAt(0) || '?')
           </Avatar>
           <div class="grid flex-1 text-left text-sm leading-tight">
             <span class="truncate font-semibold">{{ authStore.displayName }}</span>
-            <span class="truncate text-xs text-muted-foreground">{{ authStore.userDetail?.email ?? authStore.username }}</span>
+            <span class="truncate text-xs text-muted-foreground">{{ authStore.currentUser?.email ?? authStore.currentUser?.username }}</span>
           </div>
         </div>
       </DropdownMenuLabel>

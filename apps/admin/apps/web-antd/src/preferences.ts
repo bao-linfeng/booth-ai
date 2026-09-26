@@ -21,7 +21,17 @@ export const overridesPreferences = defineOverridesPreferences({
   app: {
     name: import.meta.env.VITE_APP_TITLE,
   },
-  copyright: appCopyrightPreferences,
+  logo: {
+    source: '/logo.png',
+  },
+  copyright: {
+    ...appCopyrightPreferences,
+    companyName: '灵通展览系统股份有限公司',
+    companySiteLink: '',
+    date: String(new Date().getFullYear()),
+    icp: '苏ICP备2022017033号-2',
+    icpLink: 'https://beian.miit.gov.cn/',
+  },
 });
 
 export const preferencesExtension =

@@ -1,0 +1,41 @@
+CREATE TABLE users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  external_user_id bigint NOT NULL UNIQUE,
+  username text NOT NULL UNIQUE,
+  nickname text,
+  email text,
+  mobile text,
+  avatar_path text,
+  company text,
+  country text,
+  city text,
+  language_code text,
+  enabled boolean NOT NULL DEFAULT true,
+  roles text[] NOT NULL DEFAULT '{}',
+  permissions text[] NOT NULL DEFAULT '{}',
+  last_login_at timestamptz,
+  last_synced_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE admins (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  external_user_id bigint NOT NULL UNIQUE,
+  username text NOT NULL UNIQUE,
+  nickname text,
+  email text,
+  mobile text,
+  avatar_path text,
+  company text,
+  country text,
+  city text,
+  language_code text,
+  enabled boolean NOT NULL DEFAULT true,
+  roles text[] NOT NULL DEFAULT '{}',
+  permissions text[] NOT NULL DEFAULT '{}',
+  last_login_at timestamptz,
+  last_synced_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);

@@ -13,7 +13,7 @@ async function main() {
     database: () => database.query('SELECT 1 FROM schema_migrations WHERE version = $1', ['001_foundation.sql']).then(result => { if (result.rowCount !== 1) throw new Error('Migration missing'); }),
     redis: () => redis.ping(),
     storage: () => storage.check(),
-  });
+  }, { pool: database, redis });
   app.addHook('onClose', async () => {
     redis.disconnect();
     storage.close();
