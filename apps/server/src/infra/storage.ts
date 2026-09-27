@@ -35,6 +35,9 @@ export function createStorage(config: Config) {
       return response.Body?.transformToString();
     },
     async delete(key: string) { await client.send(new DeleteObjectCommand({ Bucket, Key: key })); },
+    async deleteObject(key: string): Promise<void> {
+      await client.send(new DeleteObjectCommand({ Bucket, Key: key }));
+    },
     // Call only after the business layer has checked ownership and download permission.
     async signDownload(key: string, expiresIn = 300) {
       if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > 900) throw new Error('Invalid signed URL lifetime');

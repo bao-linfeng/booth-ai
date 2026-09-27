@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import type pg from 'pg';
+import { transaction } from '../../../infra/database.js';
 
 export interface ImportRow {
   code: string;
@@ -22,16 +23,38 @@ export interface ImportRow {
   notes: string | null;
 }
 
-export interface ImportResult {
+export interface ImportSummary {
   total: number;
-  created: number;
-  updated: number;
+  valid: number;
+  duplicate: number;
+  error: number;
   skipped: number;
-  errors: { row: number; code: string; reason: string }[];
 }
 
-interface UpsertResult {
-  created: boolean;
+export interface ImportPreviewRow {
+  rowNumber: number;
+  code: string;
+  name: string;
+  status: 'valid' | 'duplicate' | 'error';
+  reason?: string;
+  data?: ImportRow;
+}
+
+export interface PreviewImportResult {
+  importId: string;
+  rows: ImportPreviewRow[];
+  summary: ImportSummary;
+}
+
+export interface CommitImportOptions {
+  duplicateStrategy: 'skip' | 'update';
+  selectedRows?: number[];
+}
+
+export interface CommitImportResult {
+  created: number;
+  updated: number;
+  failed: { rowNumber: number; code: string; reason: string }[];
 }
 
 interface XlsxLoader {
@@ -113,7 +136,7 @@ function parseError(): Error & { statusCode: number } {
   return Object.assign(new Error('Failed to parse Excel file'), { statusCode: 400 });
 }
 
-const upsertSql = `
+const insertSql = `
   INSERT INTO schemes (
     code, name, parent_code, width_cm, length_cm, area_sqm, height_cm,
     opening_count, product_line, style, industries, budget_tier,
@@ -122,31 +145,36 @@ const upsertSql = `
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
-  ) ON CONFLICT (code) DO UPDATE SET
-    name = EXCLUDED.name,
-    parent_code = EXCLUDED.parent_code,
-    width_cm = EXCLUDED.width_cm,
-    length_cm = EXCLUDED.length_cm,
-    area_sqm = EXCLUDED.area_sqm,
-    height_cm = EXCLUDED.height_cm,
-    opening_count = EXCLUDED.opening_count,
-    product_line = EXCLUDED.product_line,
-    style = EXCLUDED.style,
-    industries = EXCLUDED.industries,
-    budget_tier = EXCLUDED.budget_tier,
-    functional_zones = EXCLUDED.functional_zones,
-    key_features = EXCLUDED.key_features,
-    description = EXCLUDED.description,
-    keywords = EXCLUDED.keywords,
-    verification_status = EXCLUDED.verification_status,
-    notes = EXCLUDED.notes,
-    updated_by = EXCLUDED.updated_by,
-    updated_at = now(),
-    revision = schemes.revision + 1
-  RETURNING (xmax = 0) AS created
+  )
 `;
 
-export async function importSchemesFromBuffer(pool: pg.Pool, adminId: string | null, buffer: Buffer): Promise<ImportResult> {
+const updateSql = `
+  UPDATE schemes SET
+    name = $2,
+    parent_code = $3,
+    width_cm = $4,
+    length_cm = $5,
+    area_sqm = $6,
+    height_cm = $7,
+    opening_count = $8,
+    product_line = $9,
+    style = $10,
+    industries = $11,
+    budget_tier = $12,
+    functional_zones = $13,
+    key_features = $14,
+    description = $15,
+    keywords = $16,
+    verification_status = $17,
+    notes = $18,
+    updated_by = $19,
+    updated_at = now(),
+    revision = revision + 1
+  WHERE code = $1
+  RETURNING id
+`;
+
+async function parseWorkbook(buffer: Buffer): Promise<ImportRow[]> {
   const workbook = new ExcelJS.Workbook();
   try {
     await (workbook.xlsx as unknown as XlsxLoader).load(buffer);
@@ -154,30 +182,134 @@ export async function importSchemesFromBuffer(pool: pg.Pool, adminId: string | n
     throw parseError();
   }
 
-  const result: ImportResult = { total: 0, created: 0, updated: 0, skipped: 0, errors: [] };
+  const rows: ImportRow[] = [];
   for (const worksheet of workbook.worksheets) {
     if (worksheet.name.includes('说明') || worksheet.name.includes('选项')) continue;
     for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-      const row = parseRow(worksheet.getRow(rowNumber));
-      result.total += 1;
-      if (row.code === '' || row.name === '') {
-        result.skipped += 1;
-        continue;
-      }
-      try {
-        const values: unknown[] = [
-          row.code, row.name, row.parentCode, row.widthCm, row.lengthCm, row.areaSqm, row.heightCm,
-          row.openingCount, row.productLine, row.style, row.industries, row.budgetTier,
-          row.functionalZones, row.keyFeatures, row.description, row.keywords,
-          row.verificationStatus, row.notes, adminId, adminId,
-        ];
-        const queryResult = await pool.query<UpsertResult>(upsertSql, values);
-        if (queryResult.rows[0]?.created) result.created += 1;
-        else result.updated += 1;
-      } catch (error) {
-        result.errors.push({ row: rowNumber, code: row.code, reason: error instanceof Error ? error.message : 'Unknown database error' });
-      }
+      rows.push(parseRow(worksheet.getRow(rowNumber)));
     }
   }
-  return result;
+  return rows;
+}
+
+function importRowFromJson(value: unknown): ImportPreviewRow | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as Partial<ImportPreviewRow>;
+  if (typeof row.rowNumber !== 'number' || typeof row.code !== 'string' || typeof row.name !== 'string' ||
+    (row.status !== 'valid' && row.status !== 'duplicate' && row.status !== 'error')) return null;
+  return row as ImportPreviewRow;
+}
+
+function mapDbError(error: unknown): string {
+  if (error instanceof Error) {
+    const msg = error.message;
+    if (msg.includes('parent_code') || msg.includes('foreign key')) return '母方案不存在';
+    if (msg.includes('schemes_code_key') || msg.includes('unique')) return '方案编号已存在';
+  }
+  return '数据库写入失败';
+}
+
+export async function previewImport(pool: pg.Pool, adminId: string | null, buffer: Buffer, filename: string): Promise<PreviewImportResult> {
+  const parsedRows = await parseWorkbook(buffer);
+  const codes = [...new Set(parsedRows.map(row => row.code).filter(code => code !== ''))];
+  const existingCodes = new Set<string>();
+  if (codes.length > 0) {
+    const existing = await pool.query<{ code: string }>('SELECT code FROM schemes WHERE code = ANY($1::text[])', [codes]);
+    for (const row of existing.rows) existingCodes.add(row.code);
+  }
+
+  const summary: ImportSummary = { total: parsedRows.length, valid: 0, duplicate: 0, error: 0, skipped: 0 };
+  const rows: ImportPreviewRow[] = [];
+  const seenCodes = new Set<string>();
+  for (let index = 0; index < parsedRows.length; index += 1) {
+    const data = parsedRows[index];
+    if (!data) continue;
+    const rowNumber = index + 2;
+    if (data.code === '' && data.name === '') {
+      summary.skipped += 1;
+      continue;
+    }
+    if (data.code === '' || data.name === '') {
+      summary.error += 1;
+      rows.push({ rowNumber, code: data.code, name: data.name, status: 'error', reason: data.code === '' ? 'Scheme code is required' : 'Scheme name is required' });
+      continue;
+    }
+    if (seenCodes.has(data.code)) {
+      summary.error += 1;
+      rows.push({ rowNumber, code: data.code, name: data.name, status: 'error', reason: '文件内方案编号重复' });
+      continue;
+    }
+    seenCodes.add(data.code);
+    if (existingCodes.has(data.code)) {
+      summary.duplicate += 1;
+      rows.push({ rowNumber, code: data.code, name: data.name, status: 'duplicate', data });
+      continue;
+    }
+    summary.valid += 1;
+    rows.push({ rowNumber, code: data.code, name: data.name, status: 'valid', data });
+  }
+
+  const inserted = await pool.query<{ id: string }>(`
+    INSERT INTO scheme_imports (source_filename, preview, summary, expires_at, created_by)
+    VALUES ($1, $2, $3, now() + interval '1 hour', $4)
+    RETURNING id::text AS id
+  `, [filename, rows, summary, adminId]);
+  const importId = inserted.rows[0]?.id;
+  if (!importId) throw Object.assign(new Error('Failed to create import preview'), { statusCode: 500 });
+  return { importId, rows, summary };
+}
+
+export async function commitImport(pool: pg.Pool, adminId: string | null, importId: string, options: CommitImportOptions): Promise<CommitImportResult> {
+  return transaction(pool, async client => {
+    const imported = await client.query<{ preview: unknown }>(`
+      SELECT preview
+      FROM scheme_imports
+      WHERE id = $1 AND status = 'pending' AND expires_at > now()
+      FOR UPDATE
+    `, [importId]);
+    const preview = imported.rows[0]?.preview;
+    if (!preview) throw Object.assign(new Error('Import preview not found or has expired'), { statusCode: 400 });
+    if (!Array.isArray(preview)) throw Object.assign(new Error('Import preview is invalid'), { statusCode: 400 });
+
+    const selectedRows = options.selectedRows && options.selectedRows.length > 0 ? new Set(options.selectedRows) : null;
+    const result: CommitImportResult = { created: 0, updated: 0, failed: [] };
+    for (const storedRow of preview) {
+      const row = importRowFromJson(storedRow);
+      if (!row || !row.data || (row.status !== 'valid' && row.status !== 'duplicate') ||
+        (selectedRows !== null && !selectedRows.has(row.rowNumber))) continue;
+      if (row.status === 'duplicate' && options.duplicateStrategy === 'skip') continue;
+      await client.query('SAVEPOINT row_save');
+      try {
+        if (row.status === 'valid') {
+          await client.query(insertSql, [
+            row.data.code, row.data.name, row.data.parentCode, row.data.widthCm, row.data.lengthCm,
+            row.data.areaSqm, row.data.heightCm, row.data.openingCount, row.data.productLine,
+            row.data.style, row.data.industries, row.data.budgetTier, row.data.functionalZones,
+            row.data.keyFeatures, row.data.description, row.data.keywords, row.data.verificationStatus,
+            row.data.notes, adminId, adminId,
+          ]);
+          result.created += 1;
+        } else {
+          const updateResult = await client.query(updateSql, [
+            row.data.code, row.data.name, row.data.parentCode, row.data.widthCm, row.data.lengthCm,
+            row.data.areaSqm, row.data.heightCm, row.data.openingCount, row.data.productLine,
+            row.data.style, row.data.industries, row.data.budgetTier, row.data.functionalZones,
+            row.data.keyFeatures, row.data.description, row.data.keywords, row.data.verificationStatus,
+            row.data.notes, adminId,
+          ]);
+          if (updateResult.rowCount === 0) {
+            result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: '原方案已不存在，请重新导入' });
+          } else {
+            result.updated += 1;
+          }
+        }
+        await client.query('RELEASE SAVEPOINT row_save');
+      } catch (err) {
+        await client.query('ROLLBACK TO SAVEPOINT row_save');
+        result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: mapDbError(err) });
+      }
+    }
+    await client.query("UPDATE scheme_imports SET status = 'committed', committed_at = now() WHERE id = $1", [importId]);
+    return result;
+  });
 }

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { UploadFile } from 'ant-design-vue';
 
-import { ref } from 'vue';
+import { h, markRaw, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
+import { IconifyIcon } from '@vben/icons';
 import { debounce } from '@vben/utils';
 
 import { message, Select, Upload } from 'ant-design-vue';
@@ -14,11 +15,15 @@ import { getSchemeListApi } from '#/api/core/schemes';
 
 const emit = defineEmits(['reload']);
 
-const fileList = ref<UploadFile[]>([]);
-
 const schemeCode = ref<string | undefined>(undefined);
 const schemeOptions = ref<{ label: string; value: string }[]>([]);
 const schemeLoading = ref(false);
+
+const DIMENSION_UNIT_OPTIONS = [
+  { label: 'mm（毫米）', value: 'mm' },
+  { label: 'cm（厘米）', value: 'cm' },
+  { label: 'm（米）', value: 'm' },
+];
 
 async function fetchSchemes(keyword?: string) {
   schemeLoading.value = true;
@@ -43,9 +48,8 @@ const handleSearch = debounce((value: string) => {
 const [Form, formApi] = useVbenForm({
   commonConfig: {
     componentProps: { class: 'w-full' },
-    labelWidth: 80,
   },
-  layout: 'horizontal',
+  layout: 'vertical',
   showDefaultActions: false,
   wrapperClass: 'grid-cols-1',
   schema: [
@@ -56,6 +60,72 @@ const [Form, formApi] = useVbenForm({
       rules: 'required',
       componentProps: { placeholder: '请输入资源名称' },
     },
+    {
+      component: 'Input' as const,
+      fieldName: 'artworkKey',
+      label: '画面键',
+      rules: 'required',
+      componentProps: { placeholder: '如：wall_a、wall_b（英文）' },
+    },
+    {
+      component: 'Input' as const,
+      fieldName: 'wallPosition',
+      label: '墙面位置',
+      componentProps: { placeholder: '如：正面左墙' },
+    },
+    {
+      component: 'InputNumber' as const,
+      fieldName: 'physicalWidth',
+      label: '物理宽度',
+      componentProps: { placeholder: '宽', min: 0.01, class: 'w-full' },
+    },
+    {
+      component: 'InputNumber' as const,
+      fieldName: 'physicalHeight',
+      label: '物理高度',
+      componentProps: { placeholder: '高', min: 0.01, class: 'w-full' },
+    },
+    {
+      component: 'Select' as const,
+      fieldName: 'dimensionUnit',
+      label: '尺寸单位',
+      componentProps: {
+        options: DIMENSION_UNIT_OPTIONS,
+        placeholder: '请选择单位',
+        allowClear: true,
+      },
+    },
+    {
+      component: 'Textarea' as const,
+      fieldName: 'dimensionEvidence',
+      label: '尺寸依据',
+      componentProps: { placeholder: '请填写尺寸来源或测量依据', rows: 2 },
+    },
+    {
+      component: markRaw(Upload.Dragger),
+      fieldName: 'file',
+      modelPropName: 'fileList',
+      label: '上传文件',
+      rules: 'selectRequired',
+      componentProps: {
+        accept: '.png,.jpg,.jpeg,.webp',
+        beforeUpload: () => false,
+        maxCount: 1,
+      },
+      renderComponentContent: () => ({
+        default: () =>
+          h('div', [
+            h('p', { class: 'ant-upload-drag-icon' }, [
+              h(IconifyIcon, {
+                icon: 'ant-design:inbox-outlined',
+                class: 'mx-auto size-10 text-primary',
+              }),
+            ]),
+            h('p', { class: 'ant-upload-text' }, '点击或拖拽文件到此区域上传'),
+            h('p', { class: 'ant-upload-hint' }, '支持图片格式（PNG 推荐）'),
+          ]),
+      }),
+    },
   ],
 });
 
@@ -65,25 +135,33 @@ const [Modal, modalApi] = useVbenModal({
       message.error('请选择归属方案');
       return;
     }
-
     const { valid } = await formApi.validate();
     if (!valid) return;
-
-    if (fileList.value.length === 0) {
+    const values = await formApi.getValues();
+    const uploadedFileList = values.file as undefined | UploadFile[];
+    const file = uploadedFileList?.[0]?.originFileObj;
+    if (!file) {
       message.error('请选择文件');
       return;
     }
-
-    const file = fileList.value[0]?.originFileObj;
-    if (!file) return;
-
     try {
       modalApi.setState({ confirmLoading: true });
-      const values = await formApi.getValues();
+      const metadata: Record<string, unknown> = {
+        artworkKey: values.artworkKey,
+      };
+      if (values.wallPosition) metadata.wallPosition = values.wallPosition;
+      if (values.physicalWidth !== null && values.physicalWidth !== undefined)
+        metadata.physicalWidth = values.physicalWidth;
+      if (values.physicalHeight !== null && values.physicalHeight !== undefined)
+        metadata.physicalHeight = values.physicalHeight;
+      if (values.dimensionUnit) metadata.dimensionUnit = values.dimensionUnit;
+      if (values.dimensionEvidence)
+        metadata.dimensionEvidence = values.dimensionEvidence;
       await uploadAssetApi(schemeCode.value, {
         type: 'artwork',
         name: values.name,
         file: file as File,
+        metadata: JSON.stringify(metadata),
       });
       message.success('上传成功');
       modalApi.close();
@@ -98,7 +176,6 @@ const [Modal, modalApi] = useVbenModal({
     if (isOpen) {
       fetchSchemes();
     } else {
-      fileList.value = [];
       schemeCode.value = undefined;
       schemeOptions.value = [];
       formApi.resetForm();
@@ -110,25 +187,13 @@ function open() {
   modalApi.open();
 }
 defineExpose({ open });
-
-const beforeUpload = (file: File) => {
-  fileList.value = [file as unknown as UploadFile];
-  return false;
-};
-
-const handleRemove = () => {
-  fileList.value = [];
-};
 </script>
 
 <template>
   <Modal class="w-[520px]" title="上传平面素材">
     <div class="px-4 pb-2">
       <div class="mb-4">
-        <div class="mb-1 flex items-center gap-1 text-sm">
-          <span class="text-red-500">*</span>
-          <span class="font-medium" style="min-width: 80px">归属方案</span>
-        </div>
+        <label class="mb-1 block text-sm font-medium">归属方案</label>
         <Select
           v-model:value="schemeCode"
           :options="schemeOptions"
@@ -142,22 +207,6 @@ const handleRemove = () => {
         />
       </div>
       <Form />
-      <div class="mt-2">
-        <div class="mb-2 flex items-center gap-1 text-sm">
-          <span class="text-red-500">*</span>
-          <span class="font-medium" style="min-width: 80px">上传文件</span>
-        </div>
-        <Upload.Dragger
-          v-model:file-list="fileList"
-          :max-count="1"
-          :before-upload="beforeUpload"
-          @remove="handleRemove"
-          accept=".png,.jpg,.jpeg,.webp"
-        >
-          <p class="ant-upload-text">点击或拖拽文件到此区域上传</p>
-          <p class="ant-upload-hint">支持图片格式（PNG 推荐）</p>
-        </Upload.Dragger>
-      </div>
     </div>
   </Modal>
 </template>

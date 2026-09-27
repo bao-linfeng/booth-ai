@@ -70,6 +70,20 @@ test('production does not expose development documentation', async t => {
   assert.equal((await app.inject('/openapi.json')).statusCode, 404);
 });
 
+test('admin business routes reject missing sessions before accessing data', async t => {
+  const app = await buildApp(config, healthy, {
+    pool: { query: async () => { throw new Error('database should not be queried'); } },
+    redis: { get: async () => null },
+    storage: {},
+  } as unknown as NonNullable<Parameters<typeof buildApp>[2]>);
+  t.after(() => app.close());
+  for (const path of ['/api/v1/admin/schemes', '/api/v1/admin/schemes/example/bill-of-materials', '/api/v1/admin/schemes/example/bill-of-materials/download?revision=1']) {
+    const response = await app.inject(path);
+    assert.equal(response.statusCode, 401, path);
+    assert.equal(response.json().error.reason, 'AUTH_REQUIRED');
+  }
+});
+
 test('configuration fails closed without printing supplied secrets', () => {
   assert.throws(() => loadConfig({ ...env, DATABASE_URL: 'sensitive-invalid-value' }), /Invalid URL environment variable: DATABASE_URL/);
   assert.throws(() => loadConfig({ ...env, S3_SECRET_KEY: '' }), /Missing environment variable: S3_SECRET_KEY/);

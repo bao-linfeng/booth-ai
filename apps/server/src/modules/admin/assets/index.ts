@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { createStorage } from '../../../infra/storage.js';
-import { addAssetVersion, createAsset, deleteAsset, getAsset, getAssetVersion, listAssets, listSchemeAssets, updateAsset, type AssetType, type ListAssetsOptions, type UpdateAssetInput } from './service.js';
+import { createAssetWithVersion, deleteAsset, getAsset, getAssetVersion, listAssets, listSchemeAssets, updateAsset, type AssetType, type ListAssetsOptions, type SchemeAsset, type UpdateAssetInput } from './service.js';
 
 interface CodeParams { code: string; }
 interface AssetParams extends CodeParams { assetId: string; }
@@ -14,6 +14,7 @@ interface DeleteBody { expectedRevision: number; }
 
 const assetTypes = ['model', 'checklist', 'rendering', 'mask', 'drawing', 'artwork'];
 const assetTypeSchema = { type: 'string', enum: assetTypes };
+const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 const codeParamsSchema = { type: 'object', required: ['code'], additionalProperties: false, properties: { code: { type: 'string', minLength: 1 } } };
 const assetParamsSchema = { type: 'object', required: ['code', 'assetId'], additionalProperties: false, properties: { code: { type: 'string', minLength: 1 }, assetId: { type: 'string', format: 'uuid' } } };
 
@@ -43,6 +44,37 @@ function parseMetadata(value: string | undefined): Record<string, unknown> | und
     return metadata as Record<string, unknown>;
   } catch {
     throw requestError('Metadata must be a JSON object', 400);
+  }
+}
+
+function validateAssetMetadata(type: AssetType, metadata: Record<string, unknown> | undefined): void {
+  if (type !== 'drawing' && type !== 'artwork') return;
+  if (type === 'artwork' && (!metadata || typeof metadata.artworkKey !== 'string' || metadata.artworkKey.trim() === '')) {
+    throw requestError('artwork metadata.artworkKey is required', 400);
+  }
+  if (!metadata) return;
+  if (type === 'drawing') {
+    if (Object.hasOwn(metadata, 'viewCodes') && (!Array.isArray(metadata.viewCodes) || !metadata.viewCodes.every(value => typeof value === 'string'))) {
+      throw requestError('drawing metadata.viewCodes must be a string array', 400);
+    }
+    for (const field of ['purpose', 'applicability', 'exportSpecVersion'] as const) {
+      if (Object.hasOwn(metadata, field) && typeof metadata[field] !== 'string') throw requestError(`drawing metadata.${field} must be a string`, 400);
+    }
+    if (Object.hasOwn(metadata, 'modelAssetVersionId') && (typeof metadata.modelAssetVersionId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(metadata.modelAssetVersionId))) {
+      throw requestError('drawing metadata.modelAssetVersionId must be a UUID', 400);
+    }
+    return;
+  }
+  for (const field of ['wallPosition', 'dimensionEvidence'] as const) {
+    if (Object.hasOwn(metadata, field) && typeof metadata[field] !== 'string') throw requestError(`artwork metadata.${field} must be a string`, 400);
+  }
+  for (const field of ['physicalWidth', 'physicalHeight'] as const) {
+    if (Object.hasOwn(metadata, field) && (typeof metadata[field] !== 'number' || !Number.isFinite(metadata[field]) || metadata[field] <= 0)) {
+      throw requestError(`artwork metadata.${field} must be a positive number`, 400);
+    }
+  }
+  if (Object.hasOwn(metadata, 'dimensionUnit') && (typeof metadata.dimensionUnit !== 'string' || !['mm', 'm', 'cm'].includes(metadata.dimensionUnit))) {
+    throw requestError('artwork metadata.dimensionUnit must be mm, m, or cm', 400);
   }
 }
 
@@ -99,15 +131,35 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     if (!name) throw requestError('Asset name is required', 400);
     const sortOrder = parseOptionalInteger(fields.sortOrder, 'sortOrder');
     const relatedAssetId = fields.relatedAssetId === undefined || fields.relatedAssetId === '' ? null : fields.relatedAssetId;
+    if (relatedAssetId !== null && !UUID_RE.test(relatedAssetId)) {
+      throw requestError('relatedAssetId must be a valid UUID', 400);
+    }
     const metadata = parseMetadata(fields.metadata);
+    if (type === 'mask' && !relatedAssetId) throw requestError('relatedAssetId is required for mask assets', 400);
+    validateAssetMetadata(type, metadata);
     const objectKey = `schemes/${schemeCode}/${type}/${randomUUID()}_${originalFilename}`;
     await storage.putBuffer(objectKey, fileBuffer, mimeType);
-    const asset = await createAsset(pool, adminId, { schemeCode, type, name, ...(sortOrder === undefined ? {} : { sortOrder }), relatedAssetId, ...(metadata === undefined ? {} : { metadata }) });
-    await addAssetVersion(pool, adminId, schemeCode, asset.id, {
-      objectKey, originalFilename, mimeType, byteSize: fileBuffer.byteLength,
-      checksum: createHash('sha256').update(fileBuffer).digest('hex'),
-    }, 1);
-    return { code: 0, data: await getAsset(pool, schemeCode, asset.id) };
+    let asset: SchemeAsset;
+    try {
+      asset = await createAssetWithVersion(pool, adminId, {
+        schemeCode,
+        type,
+        name,
+        ...(sortOrder === undefined ? {} : { sortOrder }),
+        relatedAssetId,
+        ...(metadata === undefined ? {} : { metadata }),
+      }, {
+        objectKey,
+        originalFilename,
+        mimeType,
+        byteSize: fileBuffer.byteLength,
+        checksum: createHash('sha256').update(fileBuffer).digest('hex'),
+      });
+    } catch (error) {
+      storage.deleteObject(objectKey).catch(() => {});
+      throw error;
+    }
+    return { code: 0, data: asset };
   });
 
   app.patch('/schemes/:code/assets/:assetId', {
@@ -118,7 +170,12 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
   }, async request => {
     const { expectedRevision, ...input } = request.body as UpdateBody;
     const params = request.params as AssetParams;
-    return { code: 0, data: await updateAsset(pool, adminId, decodedCode(params), params.assetId, input, expectedRevision) };
+    const schemeCode = decodedCode(params);
+    if (Object.hasOwn(input, 'metadata')) {
+      const asset = await getAsset(pool, schemeCode, params.assetId);
+      validateAssetMetadata(asset.type, input.metadata);
+    }
+    return { code: 0, data: await updateAsset(pool, adminId, schemeCode, params.assetId, input, expectedRevision) };
   });
 
   app.delete('/schemes/:code/assets/:assetId', {

@@ -105,6 +105,85 @@ apps/web-antd/src/
 - `baseRequestClient`：无拦截器的裸客户端，用于不需要鉴权的请求
 - **不支持 refresh token**（`doRefreshToken` 直接 reject），token 过期直接跳登录页
 
+### 业务页面组件规范（检索 / 列表 / 表单 / 弹窗）
+
+后续管理模块以 `apps/web-antd/src/views/scheme/list/` 的组合方式为参考：**Schema 描述检索和表单，columns 描述列表，插槽定制展示，API 控制交互**。框架负责通用 UI、表单状态与表格交互；业务代码负责字段定义、接口调用、数据转换和业务联动。
+
+以下路径均相对于 `apps/web-antd/src/`。参考页面用于理解组件组合方式；新代码仍须遵循 TypeScript 严格类型约定，不照搬其中的 `any` 或旧字段兼容写法。
+
+#### 组件选用
+
+| 场景 | 默认选用 | 导入位置 / 说明 |
+| --- | --- | --- |
+| 页面容器 | `Page` | `@vben/common-ui`；自适应高度列表页使用 `auto-content-height` |
+| 主业务列表 | `useVbenVxeGrid` | `#/adapter/vxe-table` |
+| 列表检索区 | Grid 的 `formOptions` | 复用 Vben Form，不单独手写重复的查询/重置逻辑 |
+| 新建 / 编辑表单 | `useVbenForm` | `#/adapter/form` |
+| 业务弹窗 | `useVbenModal` | `@vben/common-ui` |
+| 按钮、标签、提示、上传等基础 UI | Ant Design Vue 组件 | `ant-design-vue` |
+| 简单删除确认 | `Modal.confirm` | `ant-design-vue` |
+| 弹窗内轻量预览 / 结果表格 | 可直接使用 Ant Design Vue `Table` | 例如导入预览；需要完整检索、远程分页等能力时复用 Vben Grid |
+
+业务表单和主列表统一从项目 `adapter` 导入，不绕过适配层直接使用底层表单实例或自行重复封装通用 CRUD 框架。
+
+#### 检索与主列表
+
+- 使用 `useVbenVxeGrid({ formOptions, gridOptions })` 返回的 `[Grid, gridApi]` 组合检索和列表。
+- 检索字段定义在 `formOptions.schema` 中：`component` 指定控件，`fieldName` 指定表单字段，`label` 指定标题，`componentProps` 传递控件属性。需要折叠时配置 `showCollapseButton`。
+- 动态字典选项通过 `gridApi.formApi.updateSchema()` 更新；有接口转换要求时，在查询函数中显式转换表单值。
+- 普通列通过 `gridOptions.columns` 定义 `field`、`title`、宽度等；状态标签、组合字段、操作按钮通过 `slots` 和模板中的同名插槽实现。
+- 页面级按钮放在 `toolbar-actions` 插槽；行级操作放在操作列插槽，需要时将操作列固定在右侧。
+- 远程数据查询统一使用 `proxyConfig.ajax.query`。将分页参数与检索条件组装后调用 API，返回 `{ items, total }`，与适配层的响应字段映射一致。
+- 使用 `pagerConfig` 配置分页，按页面需求配置工具栏刷新、自定义列、最大化和溢出提示，不手写框架已有的通用能力。
+- 新增、编辑、删除、导入成功后，由列表页统一调用 `gridApi.reload()` 刷新。
+- 为列表行、检索值、接口入参提供明确类型，优先使用适配层导出的配置类型及 API 类型，避免 `any`。
+
+#### 新建 / 编辑表单
+
+- 同一业务的新建与编辑优先复用一个表单组件，通过当前操作模式决定初始化与提交行为。
+- 使用 `useVbenForm({ schema, handleSubmit, ... })` 返回的 `[Form, formApi]`；字段通过 Schema 声明，避免逐项手写重复的表单绑定、校验和布局。
+- `rules` 声明校验规则；通用必填规则复用适配层的 `required` / `selectRequired`，业务特有规则按实际需求配置。
+- 使用 `wrapperClass`、`formItemClass` 控制栅格布局；多选、标签输入等通过底层组件的 `componentProps` 配置。
+- 字段联动使用 `dependencies.triggerFields` 和 `dependencies.trigger`，由业务逻辑计算并通过 `formApi.setValues()` 更新关联字段。
+- 表单初始化和回填使用 `resetForm()`、`setValues()`；动态选项、禁用状态等使用 `updateSchema()`。复用组件时须重置上一次操作的值和动态状态。
+- 编辑需要完整记录时，先请求详情再回填，不假定列表行包含全部可编辑字段。
+- 在 `handleSubmit` 中显式构造创建 / 更新入参；涉及版本校验的接口应保存详情版本并按契约提交，如 `expectedRevision`。
+
+#### 弹窗与父子组件协作
+
+- 使用 `useVbenModal()` 返回的 `[Modal, modalApi]` 管理业务弹窗，以 `open()`、`close()`、`setState()` 控制显示、标题和提交状态。
+- 弹窗承载表单时，设置 `showDefaultActions: false`，由弹窗确认事件调用 `formApi.validateAndSubmitForm()`，避免重复显示提交按钮或绕过校验。
+- 异步提交期间设置 `confirmLoading`，在 `finally` 中恢复；成功后提示、通知父页面刷新并关闭弹窗，失败时保留表单以便修正或重试。
+- 采用方案列表的拆分方式时，子组件通过 `defineExpose({ open })` 暴露入口，父页面通过类型化组件 `ref` 调用 `open()` / `open(record)`；子组件通过 `reload` 事件通知父页面刷新，不直接耦合父页面的 Grid 实例。
+- 只读详情可使用禁用字段的 Vben Form，并通过 `footer: false` 隐藏操作区；纯展示内容也可按需求使用 `Descriptions`。只有字段定义确实复用时才提取共享 Schema，不提前建立抽象层。
+- 导入等多步骤流程使用明确的步骤状态控制内容和确认行为，外层复用 Vben Modal，内部组合 Upload、Table、Descriptions 等基础组件。
+
+#### 适配层职责
+
+- `adapter/component/index.ts`：注册 Schema 中组件名与实际 UI 组件的映射。
+- `adapter/form.ts`：维护双向绑定属性映射、通用校验规则以及表单类型适配。
+- `adapter/vxe-table.ts`：维护表格全局默认值、响应字段映射、通用渲染器，并接入 `useVbenForm`。
+- 当前已全局关闭 VXE 自带的 `formConfig`，检索统一使用 `formOptions`；业务页面不要另行启用第二套检索表单。
+- 页面特有配置留在业务模块；只有确实跨模块共享的行为才放入适配层，不因单页需求修改框架核心 `packages/`。
+
+#### 建议目录与参考入口
+
+按实际复杂度组织，简单页面无需机械拆分：
+
+```text
+views/<module>/list/
+├── index.vue                   # 页面组装、工具栏、列插槽、刷新协调
+├── options.ts                  # 检索 Schema、表格列、查询代理配置
+└── components/
+    ├── <Module>FormModal.vue    # 新建 / 编辑表单及提交逻辑
+    ├── <Module>DetailModal.vue  # 详情（有需要时）
+    └── <Module>ImportModal.vue  # 导入（有需要时）
+```
+
+接口请求及入参 / 返回类型放在 `api/` 对应业务模块，页面不直接拼接 HTTP 请求。
+
+参考：`views/scheme/list/index.vue`、`views/scheme/list/options.ts` 以及该目录下的 `components/SchemeFormModal.vue`、`SchemeDetailModal.vue`、`SchemeImportModal.vue`。
+
 ### 环境变量（web-antd）
 
 - `.env`：`VITE_APP_TITLE`、`VITE_APP_NAMESPACE`、`VITE_APP_STORE_SECURE_KEY`（**必须替换默认值**）

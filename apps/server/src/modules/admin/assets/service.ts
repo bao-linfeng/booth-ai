@@ -124,7 +124,7 @@ const latestVersionJoin = `
            av.byte_size, av.checksum, av.width_px, av.height_px, av.page_count, av.created_at
     FROM asset_versions av
     WHERE av.asset_id = sa.id
-    ORDER BY av.created_at DESC
+    ORDER BY av.created_at DESC, av.id DESC
     LIMIT 1
   ) av ON true
 `;
@@ -168,6 +168,24 @@ async function ensureRelatedAsset(pool: pg.Pool | pg.PoolClient, schemeId: strin
   if (!relatedAssetId) return;
   const related = await pool.query('SELECT 1 FROM scheme_assets WHERE id = $1 AND scheme_id = $2', [relatedAssetId, schemeId]);
   if (!related.rowCount) throw requestError('Related asset must belong to the same scheme', 400);
+}
+
+async function ensureMaskRelatedAsset(pool: pg.Pool | pg.PoolClient, schemeId: string, relatedAssetId: string | null | undefined, assetId?: string): Promise<void> {
+  if (!relatedAssetId) return;
+  const related = await pool.query<{ type: string }>(`
+    SELECT type
+    FROM scheme_assets
+    WHERE id = $1 AND scheme_id = $2 AND type = 'rendering' AND is_active = true
+    FOR UPDATE
+  `, [relatedAssetId, schemeId]);
+  if (related.rows[0]?.type !== 'rendering') throw requestError('Related asset for a mask must be a rendering', 400);
+  const paired = await pool.query(`
+    SELECT 1
+    FROM scheme_assets
+    WHERE scheme_id = $1 AND type = 'mask' AND related_asset_id = $2 AND is_active = true${assetId ? ' AND id <> $3' : ''}
+    LIMIT 1
+  `, assetId ? [schemeId, relatedAssetId, assetId] : [schemeId, relatedAssetId]);
+  if (paired.rowCount) throw requestError('This rendering is already paired with another mask', 409);
 }
 
 export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Promise<{ data: SchemeAsset[]; total: number; page: number; pageSize: number }> {
@@ -216,22 +234,61 @@ export async function getAsset(pool: pg.Pool, schemeCode: string, assetId: strin
 }
 
 export async function createAsset(pool: pg.Pool, adminId: string | null, input: CreateAssetInput): Promise<SchemeAsset> {
-  const scheme = await pool.query<{ id: string }>('SELECT id::text AS id FROM schemes WHERE code = $1', [input.schemeCode]);
-  const schemeRow = scheme.rows[0];
-  if (!schemeRow) throw requestError('Scheme not found', 404);
-  await ensureRelatedAsset(pool, schemeRow.id, input.relatedAssetId);
   const assetId = randomUUID();
-  await pool.query(`
-    INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, related_asset_id, metadata, created_by, updated_by)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-  `, [assetId, schemeRow.id, input.type, input.name, input.sortOrder ?? 0, input.relatedAssetId ?? null, input.metadata ?? {}, adminId, adminId]);
+  await transaction(pool, async client => {
+    const scheme = await client.query<{ id: string }>('SELECT id::text AS id FROM schemes WHERE code = $1', [input.schemeCode]);
+    const schemeRow = scheme.rows[0];
+    if (!schemeRow) throw requestError('Scheme not found', 404);
+    await ensureRelatedAsset(client, schemeRow.id, input.relatedAssetId);
+    if (input.type === 'mask') await ensureMaskRelatedAsset(client, schemeRow.id, input.relatedAssetId);
+    await client.query(`
+      INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, related_asset_id, metadata, created_by, updated_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [assetId, schemeRow.id, input.type, input.name, input.sortOrder ?? 0, input.relatedAssetId ?? null, input.metadata ?? {}, adminId, adminId]);
+  });
   const asset = await findAsset(pool, input.schemeCode, assetId);
   if (!asset) throw requestError('Failed to create asset', 500);
   return asset;
 }
 
+export async function createAssetWithVersion(
+  pool: pg.Pool,
+  adminId: string | null,
+  input: CreateAssetInput,
+  versionInput: UploadVersionInput,
+): Promise<SchemeAsset> {
+  return transaction(pool, async client => {
+    const scheme = await client.query<{ id: string }>('SELECT id::text AS id FROM schemes WHERE code = $1', [input.schemeCode]);
+    const schemeRow = scheme.rows[0];
+    if (!schemeRow) throw requestError('Scheme not found', 404);
+    if (input.relatedAssetId) {
+      await ensureRelatedAsset(client, schemeRow.id, input.relatedAssetId);
+    }
+    if (input.type === 'mask' && input.relatedAssetId) {
+      await ensureMaskRelatedAsset(client, schemeRow.id, input.relatedAssetId);
+    }
+
+    const assetId = randomUUID();
+    await client.query(`
+      INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, related_asset_id, metadata, created_by, updated_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [assetId, schemeRow.id, input.type, input.name, input.sortOrder ?? 0, input.relatedAssetId ?? null, input.metadata ?? {}, adminId, adminId]);
+    await client.query(`
+      INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, width_px, height_px, page_count, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `, [randomUUID(), assetId, versionInput.objectKey, versionInput.originalFilename, versionInput.mimeType,
+      versionInput.byteSize, versionInput.checksum, versionInput.widthPx ?? null, versionInput.heightPx ?? null,
+      versionInput.pageCount ?? null, adminId]);
+    const asset = await findAsset(client, input.schemeCode, assetId);
+    if (!asset) throw requestError('Failed to create asset', 500);
+    return asset;
+  });
+}
+
 export async function addAssetVersion(pool: pg.Pool, adminId: string | null, schemeCode: string, assetId: string, versionInput: UploadVersionInput, expectedRevision: number): Promise<AssetVersion> {
   return transaction(pool, async client => {
+    const schemeLock = await client.query<{ id: string }>('SELECT id::text AS id FROM schemes WHERE code=$1 FOR UPDATE', [schemeCode]);
+    if (!schemeLock.rows[0]) throw requestError('Scheme not found', 404);
     const asset = await findAsset(client, schemeCode, assetId);
     if (!asset) throw requestError('Asset not found', 404);
     if (asset.revision !== expectedRevision) throw requestError('Asset revision conflict', 409);
@@ -250,33 +307,52 @@ export async function addAssetVersion(pool: pg.Pool, adminId: string | null, sch
       WHERE id = $2 AND revision = $3 AND is_active = true
     `, [adminId, assetId, expectedRevision]);
     if (!updated.rowCount) throw requestError('Asset revision conflict', 409);
+    if (asset.type === 'model') await invalidateModelBom(client, schemeLock.rows[0].id, assetId, adminId);
     return toAssetVersion(version);
   });
 }
 
 export async function updateAsset(pool: pg.Pool, adminId: string | null, schemeCode: string, assetId: string, input: UpdateAssetInput, expectedRevision: number): Promise<SchemeAsset> {
-  const asset = await getAsset(pool, schemeCode, assetId);
-  if (Object.hasOwn(input, 'relatedAssetId')) await ensureRelatedAsset(pool, asset.schemeId, input.relatedAssetId);
-  const values: unknown[] = [];
-  const updates: string[] = [];
-  if (Object.hasOwn(input, 'name')) { values.push(input.name); updates.push(`name = $${values.length}`); }
-  if (Object.hasOwn(input, 'sortOrder')) { values.push(input.sortOrder); updates.push(`sort_order = $${values.length}`); }
-  if (Object.hasOwn(input, 'relatedAssetId')) { values.push(input.relatedAssetId); updates.push(`related_asset_id = $${values.length}`); }
-  if (Object.hasOwn(input, 'metadata')) { values.push(input.metadata); updates.push(`metadata = $${values.length}`); }
-  if (updates.length === 0) throw requestError('No fields to update', 400);
-  values.push(adminId);
-  updates.push(`updated_by = $${values.length}`, 'updated_at = now()', 'revision = revision + 1');
-  values.push(assetId, expectedRevision);
-  const updated = await pool.query(`UPDATE scheme_assets SET ${updates.join(', ')} WHERE id = $${values.length - 1} AND revision = $${values.length} AND is_active = true`, values);
-  if (!updated.rowCount) {
-    const current = await findAsset(pool, schemeCode, assetId);
-    if (!current) throw requestError('Asset not found', 404);
-    throw requestError('Asset revision conflict', 409);
-  }
+  await transaction(pool, async client => {
+    const schemeLock = await client.query<{ id: string }>('SELECT id::text AS id FROM schemes WHERE code=$1 FOR UPDATE',[schemeCode]);
+    if (!schemeLock.rows[0]) throw requestError('Scheme not found',404);
+    const asset = await findAsset(client, schemeCode, assetId);
+    if (!asset) throw requestError('Asset not found', 404);
+    const relatedAssetId = Object.hasOwn(input, 'relatedAssetId') ? input.relatedAssetId : asset.relatedAssetId;
+    if (Object.hasOwn(input, 'relatedAssetId')) await ensureRelatedAsset(client, asset.schemeId, relatedAssetId);
+    if (asset.type === 'mask') await ensureMaskRelatedAsset(client, asset.schemeId, relatedAssetId, assetId);
+    const values: unknown[] = [];
+    const updates: string[] = [];
+    if (Object.hasOwn(input, 'name')) { values.push(input.name); updates.push(`name = $${values.length}`); }
+    if (Object.hasOwn(input, 'sortOrder')) { values.push(input.sortOrder); updates.push(`sort_order = $${values.length}`); }
+    if (Object.hasOwn(input, 'relatedAssetId')) { values.push(input.relatedAssetId); updates.push(`related_asset_id = $${values.length}`); }
+    if (Object.hasOwn(input, 'metadata')) { values.push(input.metadata); updates.push(`metadata = $${values.length}`); }
+    if (updates.length === 0) throw requestError('No fields to update', 400);
+    values.push(adminId);
+    updates.push(`updated_by = $${values.length}`, 'updated_at = now()', 'revision = revision + 1');
+    values.push(assetId, expectedRevision);
+    const updated = await client.query(`UPDATE scheme_assets SET ${updates.join(', ')} WHERE id = $${values.length - 1} AND revision = $${values.length} AND is_active = true`, values);
+    if (!updated.rowCount) {
+      const current = await findAsset(client, schemeCode, assetId);
+      if (!current) throw requestError('Asset not found', 404);
+      throw requestError('Asset revision conflict', 409);
+    }
+    if (asset.type === 'model') await invalidateModelBom(client, schemeLock.rows[0].id, assetId, adminId);
+  });
   return getAsset(pool, schemeCode, assetId);
 }
 
 export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeCode: string, assetId: string, expectedRevision: number): Promise<number> {
+  if ((await getAsset(pool, schemeCode, assetId)).type === 'model') {
+    return transaction(pool, async client => {
+      const scheme = await client.query<{ id: string }>('SELECT id::text AS id FROM schemes WHERE code=$1 FOR UPDATE', [schemeCode]);
+      if (!scheme.rows[0]) throw requestError('Scheme not found', 404);
+      const result = await client.query<{ revision: number }>('UPDATE scheme_assets SET is_active=false,revision=revision+1,updated_by=$1,updated_at=now() WHERE id=$2 AND scheme_id=$3 AND revision=$4 AND is_active=true RETURNING revision', [adminId, assetId, scheme.rows[0].id, expectedRevision]);
+      if (!result.rows[0]) throw requestError('Asset revision conflict', 409);
+      await invalidateModelBom(client, scheme.rows[0].id, assetId, adminId);
+      return result.rows[0].revision;
+    });
+  }
   const asset = await getAsset(pool, schemeCode, assetId);
   const result = await pool.query<{ revision: number }>(`
     UPDATE scheme_assets
@@ -289,6 +365,15 @@ export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeC
   const current = await findAsset(pool, schemeCode, asset.id);
   if (!current) throw requestError('Asset not found', 404);
   throw requestError('Asset revision conflict', 409);
+}
+
+async function invalidateModelBom(client: pg.PoolClient, schemeId: string, assetId: string, adminId: string | null): Promise<void> {
+  const bom = await client.query<{ id: string; revision: number }>("SELECT id::text AS id,revision FROM scheme_boms WHERE scheme_id=$1 AND model_asset_id=$2 AND status='verified' FOR UPDATE", [schemeId,assetId]);
+  const row = bom.rows[0];
+  if (!row) return;
+  await client.query("UPDATE scheme_boms SET revision=revision+1,status='pending_verification',verified_at=NULL,model_asset_id=NULL,model_asset_version_id=NULL,model_hash=NULL,updated_by=$2,updated_at=now() WHERE id=$1", [row.id,adminId]);
+  await client.query("UPDATE schemes SET publish_status='draft',revision=revision+1,updated_by=$2,updated_at=now() WHERE id=$1 AND publish_status='published'", [schemeId,adminId]);
+  if (adminId) await client.query('INSERT INTO bom_change_logs (bom_id,before_revision,after_revision,action,change_reason,admin_id,summary) VALUES ($1,$2,$3,$4,$5,$6,$7)', [row.id,row.revision,row.revision+1,'model_invalidated','模型版本发生变化',adminId,JSON.stringify({assetId})]);
 }
 
 export async function getAssetVersion(pool: pg.Pool, assetId: string, versionId: string): Promise<AssetVersion> {

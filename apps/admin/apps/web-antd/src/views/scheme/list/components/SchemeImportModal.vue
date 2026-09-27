@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import type { ImportResult } from '#/api/core/schemes';
+import type {
+  ImportCommitResult,
+  ImportPreviewResult,
+} from '#/api/core/schemes';
 
-import { ref } from 'vue';
+import { h, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
@@ -10,42 +13,34 @@ import {
   Descriptions,
   DescriptionsItem,
   message,
+  Radio,
+  RadioGroup,
   Table,
+  Tag,
   Upload,
 } from 'ant-design-vue';
 
-import { importSchemesApi } from '#/api/core/schemes';
+import { commitImportApi, previewImportApi } from '#/api/core/schemes';
 
 const emit = defineEmits(['reload']);
 
+type Step = 'preview' | 'result' | 'upload';
+
+const step = ref<Step>('upload');
 const selectedFile = ref<File | null>(null);
-const importing = ref(false);
-const result = ref<ImportResult | null>(null);
+const loading = ref(false);
+const previewResult = ref<ImportPreviewResult | null>(null);
+const commitResult = ref<ImportCommitResult | null>(null);
+const duplicateStrategy = ref<'skip' | 'update'>('update');
 
 const [Modal, modalApi] = useVbenModal({
   onConfirm: async () => {
-    if (!selectedFile.value) {
-      message.warning('请先选择文件');
-      return;
-    }
-    importing.value = true;
-    modalApi.setState({ confirmLoading: true });
-    try {
-      const res = await importSchemesApi(selectedFile.value);
-      result.value = res;
-      message.success(
-        `导入完成：新增 ${res.created} 条，更新 ${res.updated} 条`,
-      );
-      emit('reload');
-      // 有错误时不关闭，让用户看到错误明细
-      if (res.errors.length === 0) {
-        modalApi.close();
-      }
-    } catch {
-      message.error('导入失败，请检查文件格式');
-    } finally {
-      importing.value = false;
-      modalApi.setState({ confirmLoading: false });
+    if (step.value === 'upload') {
+      await doPreview();
+    } else if (step.value === 'preview') {
+      await doCommit();
+    } else {
+      modalApi.close();
     }
   },
   onCancel: () => {
@@ -53,21 +48,103 @@ const [Modal, modalApi] = useVbenModal({
   },
 });
 
+function getConfirmText() {
+  if (step.value === 'upload') return '下一步：预览';
+  if (step.value === 'preview') return '确认导入';
+  return '完成';
+}
+
+async function doPreview() {
+  if (!selectedFile.value) {
+    message.warning('请先选择文件');
+    return;
+  }
+  loading.value = true;
+  modalApi.setState({ confirmLoading: true });
+  try {
+    const res = await previewImportApi(selectedFile.value);
+    previewResult.value = res;
+    step.value = 'preview';
+    modalApi.setState({
+      title: '批量导入方案 — 预览确认',
+      confirmText: getConfirmText(),
+    });
+  } catch {
+    message.error('文件解析失败，请检查格式');
+  } finally {
+    loading.value = false;
+    modalApi.setState({ confirmLoading: false });
+  }
+}
+
+async function doCommit() {
+  if (!previewResult.value) return;
+  loading.value = true;
+  modalApi.setState({ confirmLoading: true });
+  try {
+    const res = await commitImportApi(
+      previewResult.value.importId,
+      duplicateStrategy.value,
+    );
+    commitResult.value = res;
+    step.value = 'result';
+    modalApi.setState({
+      title: '批量导入方案 — 导入结果',
+      confirmText: getConfirmText(),
+      cancelText: '关闭',
+    });
+    emit('reload');
+  } catch {
+    message.error('提交失败，请重试');
+  } finally {
+    loading.value = false;
+    modalApi.setState({ confirmLoading: false });
+  }
+}
+
 const open = () => {
+  step.value = 'upload';
   selectedFile.value = null;
-  result.value = null;
+  previewResult.value = null;
+  commitResult.value = null;
+  duplicateStrategy.value = 'update';
   modalApi.open();
-  modalApi.setState({ title: '批量导入方案' });
+  modalApi.setState({
+    title: '批量导入方案',
+    confirmText: getConfirmText(),
+    cancelText: '取消',
+  });
 };
 
 const beforeUpload = (file: File) => {
   selectedFile.value = file;
-  return false; // 阻止自动上传
+  return false;
 };
 
+const previewColumns = [
+  { title: '行号', dataIndex: 'rowNumber', width: 70 },
+  { title: '方案编号', dataIndex: 'code', width: 140 },
+  { title: '方案名称', dataIndex: 'name', width: 180 },
+  {
+    title: '状态',
+    dataIndex: 'status',
+    width: 90,
+    customRender: ({ text }: { text: string }) => {
+      const map: Record<string, { color: string; label: string }> = {
+        valid: { color: 'green', label: '新增' },
+        duplicate: { color: 'blue', label: '重复' },
+        error: { color: 'red', label: '错误' },
+      };
+      const cfg = map[text] ?? { color: 'default', label: text };
+      return h(Tag, { color: cfg.color }, () => cfg.label);
+    },
+  },
+  { title: '原因', dataIndex: 'reason', ellipsis: true },
+];
+
 const errorColumns = [
-  { title: '行号', dataIndex: 'row', width: 80 },
-  { title: '方案编号', dataIndex: 'code', width: 150 },
+  { title: '行号', dataIndex: 'rowNumber', width: 70 },
+  { title: '方案编号', dataIndex: 'code', width: 140 },
   { title: '失败原因', dataIndex: 'reason' },
 ];
 
@@ -76,68 +153,108 @@ defineExpose({ open });
 
 <template>
   <Modal class="w-200">
-    <!-- 使用说明 -->
-    <Alert
-      type="info"
-      class="mb-4"
-      message="上传说明"
-      description="请上传 .xlsx 格式的方案打标模板，第 1 行为表头，从第 2 行开始为数据行。方案编号（B列）和方案名称（C列）为必填项。已存在的方案编号将被更新，不存在的将新建。"
-      show-icon
-    />
-
-    <!-- 上传区域 -->
-    <Upload.Dragger
-      :before-upload="beforeUpload"
-      accept=".xlsx,.xls"
-      :max-count="1"
-      :show-upload-list="false"
-      class="mb-4"
-    >
-      <p class="ant-upload-drag-icon">
+    <!-- 步骤1：上传 -->
+    <template v-if="step === 'upload'">
+      <Alert
+        type="info"
+        class="mb-4"
+        message="上传说明"
+        description="请上传 .xlsx 格式的方案打标模板，第 1 行为表头，从第 2 行开始为数据行。方案编号（B列）和方案名称（C列）为必填项。"
+        show-icon
+      />
+      <Upload.Dragger
+        :before-upload="beforeUpload"
+        accept=".xlsx,.xls"
+        :max-count="1"
+        :show-upload-list="false"
+        class="mb-4"
+      >
+        <p class="ant-upload-drag-icon">
+          <span
+            class="icon-[ant-design--inbox-outlined] text-4xl text-blue-400"
+          ></span>
+        </p>
+        <p class="ant-upload-text">点击或拖拽文件到此区域上传</p>
+        <p class="ant-upload-hint text-gray-400">仅支持 .xlsx / .xls 格式</p>
+      </Upload.Dragger>
+      <div
+        v-if="selectedFile"
+        class="flex items-center gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2"
+      >
         <span
-          class="icon-[ant-design--inbox-outlined] text-4xl text-blue-400"
+          class="icon-[ant-design--file-excel-outlined] text-green-500"
         ></span>
-      </p>
-      <p class="ant-upload-text">点击或拖拽文件到此区域上传</p>
-      <p class="ant-upload-hint text-gray-400">仅支持 .xlsx / .xls 格式</p>
-    </Upload.Dragger>
+        <span class="text-sm">{{ selectedFile.name }}</span>
+      </div>
+    </template>
 
-    <!-- 已选文件 -->
-    <div
-      v-if="selectedFile && !result"
-      class="mb-4 flex items-center gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2"
-    >
-      <span
-        class="icon-[ant-design--file-excel-outlined] text-green-500"
-      ></span>
-      <span class="text-sm">{{ selectedFile.name }}</span>
-    </div>
-
-    <!-- 导入结果 -->
-    <template v-if="result">
-      <Descriptions bordered size="small" :column="2" class="mb-4">
-        <DescriptionsItem label="共计">{{ result.total }} 行</DescriptionsItem>
-        <DescriptionsItem label="跳过">
-          {{ result.skipped }} 行
+    <!-- 步骤2：预览 -->
+    <template v-else-if="step === 'preview' && previewResult">
+      <Descriptions bordered size="small" :column="4" class="mb-4">
+        <DescriptionsItem label="总行数">
+          {{ previewResult.summary.total }}
         </DescriptionsItem>
         <DescriptionsItem label="新增">
-          <span class="text-green-600 font-medium">{{ result.created }} 条</span>
+          <span class="text-green-600 font-medium">{{
+            previewResult.summary.valid
+          }}</span>
         </DescriptionsItem>
-        <DescriptionsItem label="更新">
-          <span class="text-blue-600 font-medium">{{ result.updated }} 条</span>
+        <DescriptionsItem label="重复">
+          <span class="text-blue-600 font-medium">{{
+            previewResult.summary.duplicate
+          }}</span>
+        </DescriptionsItem>
+        <DescriptionsItem label="错误">
+          <span class="text-red-500 font-medium">{{
+            previewResult.summary.error
+          }}</span>
         </DescriptionsItem>
       </Descriptions>
 
+      <div
+        v-if="previewResult.summary.duplicate > 0"
+        class="mb-4 rounded border border-blue-100 bg-blue-50 px-4 py-3"
+      >
+        <div class="mb-2 text-sm font-medium">重复编号处理策略：</div>
+        <RadioGroup v-model:value="duplicateStrategy">
+          <Radio value="update">覆盖更新（用文件内容更新已有方案）</Radio>
+          <Radio value="skip">跳过（保留已有方案不变）</Radio>
+        </RadioGroup>
+      </div>
+
       <Table
-        v-if="result.errors.length > 0"
+        :columns="previewColumns"
+        :data-source="previewResult.rows"
+        size="small"
+        :pagination="{ pageSize: 10, showSizeChanger: false }"
+        row-key="rowNumber"
+        :scroll="{ y: 320 }"
+      />
+    </template>
+
+    <!-- 步骤3：结果 -->
+    <template v-else-if="step === 'result' && commitResult">
+      <Descriptions bordered size="small" :column="3" class="mb-4">
+        <DescriptionsItem label="新增">
+          <span class="text-green-600 font-medium">{{ commitResult.created }} 条</span>
+        </DescriptionsItem>
+        <DescriptionsItem label="更新">
+          <span class="text-blue-600 font-medium">{{ commitResult.updated }} 条</span>
+        </DescriptionsItem>
+        <DescriptionsItem label="失败">
+          <span class="text-red-500 font-medium">{{ commitResult.failed.length }} 条</span>
+        </DescriptionsItem>
+      </Descriptions>
+      <Table
+        v-if="commitResult.failed.length > 0"
         :columns="errorColumns"
-        :data-source="result.errors"
+        :data-source="commitResult.failed"
         size="small"
         :pagination="false"
-        row-key="row"
+        row-key="rowNumber"
       >
         <template #title>
-          <span class="text-red-500 font-medium">错误明细（{{ result.errors.length }} 行）</span>
+          <span class="text-red-500 font-medium">失败明细</span>
         </template>
       </Table>
     </template>

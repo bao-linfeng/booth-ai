@@ -130,16 +130,51 @@ export async function updateCatalogOptionsByTypeApi(
   );
 }
 
-export interface ImportResult {
-  total: number;
-  created: number;
-  updated: number;
-  skipped: number;
-  errors: { row: number; code: string; reason: string }[];
+export interface ImportPreviewRow {
+  rowNumber: number;
+  code: string;
+  name: string;
+  status: 'duplicate' | 'error' | 'valid';
+  reason?: string;
 }
 
-export async function importSchemesApi(file: File) {
-  return requestClient.upload<ImportResult>('/v1/admin/scheme-imports', {
-    file,
-  });
+export interface ImportPreviewSummary {
+  total: number;
+  valid: number;
+  duplicate: number;
+  error: number;
+  skipped: number;
+}
+
+export interface ImportPreviewResult {
+  importId: string;
+  rows: ImportPreviewRow[];
+  summary: ImportPreviewSummary;
+}
+
+export interface ImportCommitResult {
+  created: number;
+  updated: number;
+  failed: { rowNumber: number; code: string; reason: string }[];
+}
+
+export async function previewImportApi(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return requestClient.post<ImportPreviewResult>(
+    '/v1/admin/scheme-imports',
+    formData,
+  );
+}
+
+export async function commitImportApi(
+  importId: string,
+  duplicateStrategy: 'skip' | 'update',
+) {
+  return requestClient.post<ImportCommitResult>(
+    `/v1/admin/scheme-imports/${importId}/commit`,
+    {
+      duplicateStrategy,
+    },
+  );
 }

@@ -1,24 +1,25 @@
 <script setup lang="ts">
 import type { UploadFile } from 'ant-design-vue';
 
-import { ref } from 'vue';
+import { h, markRaw, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
+import { IconifyIcon } from '@vben/icons';
 import { debounce } from '@vben/utils';
 
 import { message, Select, Upload } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
-import { uploadAssetApi } from '#/api/core/assets';
+import { listSchemeAssetsApi, uploadAssetApi } from '#/api/core/assets';
 import { getSchemeListApi } from '#/api/core/schemes';
 
 const emit = defineEmits(['reload']);
 
-const fileList = ref<UploadFile[]>([]);
-
 const schemeCode = ref<string | undefined>(undefined);
 const schemeOptions = ref<{ label: string; value: string }[]>([]);
 const schemeLoading = ref(false);
+const renderingOptions = ref<{ label: string; value: string }[]>([]);
+const renderingLoading = ref(false);
 
 async function fetchSchemes(keyword?: string) {
   schemeLoading.value = true;
@@ -36,6 +37,27 @@ async function fetchSchemes(keyword?: string) {
   }
 }
 
+async function fetchRenderings(code: string) {
+  renderingLoading.value = true;
+  try {
+    const assets = await listSchemeAssetsApi(code, 'rendering');
+    renderingOptions.value = assets.map((a) => ({
+      label: a.name,
+      value: a.id,
+    }));
+  } catch {
+    renderingOptions.value = [];
+  } finally {
+    renderingLoading.value = false;
+  }
+}
+
+watch(schemeCode, (code) => {
+  renderingOptions.value = [];
+  formApi.setFieldValue('relatedAssetId', undefined);
+  if (code) fetchRenderings(code);
+});
+
 const handleSearch = debounce((value: string) => {
   fetchSchemes(value || undefined);
 }, 300);
@@ -43,18 +65,57 @@ const handleSearch = debounce((value: string) => {
 const [Form, formApi] = useVbenForm({
   commonConfig: {
     componentProps: { class: 'w-full' },
-    labelWidth: 80,
   },
-  layout: 'horizontal',
+  layout: 'vertical',
   showDefaultActions: false,
   wrapperClass: 'grid-cols-1',
   schema: [
+    {
+      component: 'Select' as const,
+      fieldName: 'relatedAssetId',
+      label: '配对效果图',
+      rules: 'required',
+      componentProps: () => ({
+        options: renderingOptions.value,
+        loading: renderingLoading.value,
+        placeholder: '请先选择归属方案，再选择配对效果图',
+        allowClear: true,
+        notFoundContent: schemeCode.value
+          ? '该方案暂无效果图'
+          : '请先选择归属方案',
+      }),
+    },
     {
       component: 'Input' as const,
       fieldName: 'name',
       label: '资源名称',
       rules: 'required',
       componentProps: { placeholder: '请输入资源名称' },
+    },
+    {
+      component: markRaw(Upload.Dragger),
+      fieldName: 'file',
+      modelPropName: 'fileList',
+      label: '上传文件',
+      rules: 'selectRequired',
+      componentProps: {
+        accept: '.png,.jpg,.jpeg,.webp',
+        beforeUpload: () => false,
+        maxCount: 1,
+      },
+      renderComponentContent: () => ({
+        default: () =>
+          h('div', [
+            h('p', { class: 'ant-upload-drag-icon' }, [
+              h(IconifyIcon, {
+                icon: 'ant-design:inbox-outlined',
+                class: 'mx-auto size-10 text-primary',
+              }),
+            ]),
+            h('p', { class: 'ant-upload-text' }, '点击或拖拽文件到此区域上传'),
+            h('p', { class: 'ant-upload-hint' }, '支持图片格式（PNG 推荐）'),
+          ]),
+      }),
     },
   ],
 });
@@ -69,21 +130,21 @@ const [Modal, modalApi] = useVbenModal({
     const { valid } = await formApi.validate();
     if (!valid) return;
 
-    if (fileList.value.length === 0) {
+    const values = await formApi.getValues();
+    const fileList = values.file as undefined | UploadFile[];
+    const file = fileList?.[0]?.originFileObj;
+    if (!file) {
       message.error('请选择文件');
       return;
     }
 
-    const file = fileList.value[0]?.originFileObj;
-    if (!file) return;
-
     try {
       modalApi.setState({ confirmLoading: true });
-      const values = await formApi.getValues();
       await uploadAssetApi(schemeCode.value, {
         type: 'mask',
         name: values.name,
         file: file as File,
+        relatedAssetId: values.relatedAssetId,
       });
       message.success('上传成功');
       modalApi.close();
@@ -98,9 +159,9 @@ const [Modal, modalApi] = useVbenModal({
     if (isOpen) {
       fetchSchemes();
     } else {
-      fileList.value = [];
       schemeCode.value = undefined;
       schemeOptions.value = [];
+      renderingOptions.value = [];
       formApi.resetForm();
     }
   },
@@ -110,25 +171,13 @@ function open() {
   modalApi.open();
 }
 defineExpose({ open });
-
-const beforeUpload = (file: File) => {
-  fileList.value = [file as unknown as UploadFile];
-  return false;
-};
-
-const handleRemove = () => {
-  fileList.value = [];
-};
 </script>
 
 <template>
   <Modal class="w-[520px]" title="上传蒙版">
     <div class="px-4 pb-2">
       <div class="mb-4">
-        <div class="mb-1 flex items-center gap-1 text-sm">
-          <span class="text-red-500">*</span>
-          <span class="font-medium" style="min-width: 80px">归属方案</span>
-        </div>
+        <label class="mb-1 block text-sm font-medium">归属方案</label>
         <Select
           v-model:value="schemeCode"
           :options="schemeOptions"
@@ -142,22 +191,6 @@ const handleRemove = () => {
         />
       </div>
       <Form />
-      <div class="mt-2">
-        <div class="mb-2 flex items-center gap-1 text-sm">
-          <span class="text-red-500">*</span>
-          <span class="font-medium" style="min-width: 80px">上传文件</span>
-        </div>
-        <Upload.Dragger
-          v-model:file-list="fileList"
-          :max-count="1"
-          :before-upload="beforeUpload"
-          @remove="handleRemove"
-          accept=".png,.jpg,.jpeg,.webp"
-        >
-          <p class="ant-upload-text">点击或拖拽文件到此区域上传</p>
-          <p class="ant-upload-hint">支持图片格式（PNG 推荐）</p>
-        </Upload.Dragger>
-      </div>
     </div>
   </Modal>
 </template>

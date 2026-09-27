@@ -53,7 +53,8 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
     const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500;
     // Error messages can include upstream credentials; only emit stable diagnostic codes.
     request.log[status >= 500 ? 'error' : 'warn']({ code: error.code ?? 'REQUEST_ERROR', statusCode: status }, 'request failed');
-    reply.code(status).send({ error: { code: error.validation ? 'VALIDATION_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR', message: status >= 500 ? 'Internal server error' : 'Invalid request', requestId: request.id } });
+    const reason = (error as FastifyError & { reason?: string }).reason;
+    reply.code(status).send({ error: { code: error.validation ? 'VALIDATION_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR', ...(reason && status < 500 ? { reason } : {}), message: status >= 500 ? 'Internal server error' : 'Invalid request', requestId: request.id } });
   });
   app.setNotFoundHandler((request, reply) => reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found', requestId: request.id } }));
 

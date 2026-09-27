@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import { importSchemesFromBuffer } from './service.js';
+import { commitImport, previewImport, type CommitImportOptions } from './service.js';
+
+interface ImportParams {
+  importId: string;
+}
 
 export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   app.post('/scheme-imports', {
@@ -10,8 +14,9 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
     if (!data) {
       return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'No file uploaded' } });
     }
-    if (!data.filename.endsWith('.xlsx') && !data.filename.endsWith('.xls')) {
-      return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Only Excel files (.xlsx/.xls) are supported' } });
+    const lowerFilename = data.filename.toLowerCase();
+    if (!lowerFilename.endsWith('.xlsx')) {
+      return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Only .xlsx files are supported' } });
     }
     const chunks: Buffer[] = [];
     for await (const chunk of data.file) {
@@ -19,7 +24,25 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
     }
     const buffer = Buffer.concat(chunks);
     const adminId: string | null = null;
-    const result = await importSchemesFromBuffer(pool, adminId, buffer);
+    const result = await previewImport(pool, adminId, buffer, data.filename);
     return { code: 0, data: result };
+  });
+
+  app.post('/scheme-imports/:importId/commit', {
+    schema: {
+      tags: ['admin-scheme-imports'],
+      params: { type: 'object', required: ['importId'], additionalProperties: false, properties: { importId: { type: 'string', format: 'uuid' } } },
+      body: {
+        type: 'object', required: ['duplicateStrategy'], additionalProperties: false,
+        properties: {
+          duplicateStrategy: { type: 'string', enum: ['skip', 'update'] },
+          selectedRows: { type: 'array', items: { type: 'integer', minimum: 2 }, uniqueItems: true },
+        },
+      },
+    },
+  }, async request => {
+    const adminId: string | null = null;
+    const params = request.params as ImportParams;
+    return { code: 0, data: await commitImport(pool, adminId, params.importId, request.body as CommitImportOptions) };
   });
 }
