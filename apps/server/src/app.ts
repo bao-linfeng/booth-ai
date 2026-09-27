@@ -79,7 +79,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
   });
 
   if (authDependencies) {
-    await registerClientModule(app, config, authDependencies.pool, authDependencies.redis);
+    await registerClientModule(app, config, authDependencies.pool, authDependencies.redis, authDependencies.storage);
     await registerAdminModule(app, config, authDependencies.pool, authDependencies.redis, authDependencies.storage);
   }
 

@@ -3,6 +3,30 @@ import type { RouteRecordRaw } from 'vue-router'
 
 export const routes: RouteRecordRaw[] = [
   {
+    path: '/ai-selection',
+    name: 'AISelection',
+    component: () => import('@/pages/AISelection.vue'),
+    meta: { title: 'AI 智选' },
+  },
+  {
+    path: '/ai-selection/preview',
+    name: 'AISelectionPreview',
+    component: () => import('@/pages/AISelection.vue'),
+    meta: { title: 'AI 智选 · 静态预览' },
+  },
+  {
+    path: '/ai-selection/preview/schemes/:code',
+    name: 'SchemePreview',
+    component: () => import('@/pages/SchemeDetail.vue'),
+    meta: { title: '方案详情 · 静态预览' },
+  },
+  {
+    path: '/schemes/:code',
+    name: 'SchemeDetail',
+    component: () => import('@/pages/SchemeDetail.vue'),
+    meta: { title: '方案详情' },
+  },
+  {
     path: '/',
     name: 'Home',
     component: () => import('@/pages/Home.vue'),

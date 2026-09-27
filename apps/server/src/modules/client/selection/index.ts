@@ -1,0 +1,129 @@
+import type { FastifyInstance } from 'fastify';
+import type pg from 'pg';
+import type { Redis } from 'ioredis';
+import { createHash } from 'node:crypto';
+import type { createStorage } from '../../../infra/storage.js';
+import { requirementSchema, validateRequirement, type Requirement } from './domain.js';
+import { loadCandidates, loadCatalog } from './repository.js';
+import { matchSchemes } from './match.js';
+import { parseRequirement } from './parse.js';
+
+export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>) {
+  const dependency = async <T>(operation: () => Promise<T>): Promise<T> => {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error && typeof error === 'object' && 'statusCode' in error) throw error;
+      throw Object.assign(new Error('Selection dependency unavailable'), { statusCode: 503 });
+    }
+  };
+  
+  await app.register(async selection => {
+    selection.addHook('onRequest', async (request, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      const key = `selection:rate:${createHash('sha256').update(request.ip).digest('hex')}:${Math.floor(Date.now() / 60000)}`;
+      const count = await dependency(() => redis.eval('local n = redis.call("INCR", KEYS[1]); if n == 1 then redis.call("EXPIRE", KEYS[1], 60) end; return n', 1, key));
+      if (Number(count) > 60) {
+        reply.header('Retry-After', '60');
+        throw Object.assign(new Error('Rate limited'), { statusCode: 429 });
+      }
+    });
+    
+    selection.get('/catalog/options', {
+      schema: { tags: ['AI 智选'], summary: '获取智选公共条件' }
+    }, async () => {
+      return { code: 0, data: await dependency(() => loadCatalog(pool)) };
+    });
+    
+    selection.post<{ Body: { text: string; form: Requirement } }>('/requirements/parse', {
+      schema: {
+        tags: ['AI 智选'],
+        summary: '规则识别需求，未识别内容需澄清',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['text', 'form'],
+          properties: {
+            text: { type: 'string', minLength: 1, maxLength: 1000, pattern: '\\S' },
+            form: requirementSchema
+          }
+        }
+      }
+    }, async request => {
+      const catalog = await dependency(() => loadCatalog(pool));
+      const form = validateRequirement(request.body.form, catalog);
+      return { code: 0, data: parseRequirement(request.body.text, form, catalog) };
+    });
+    
+    selection.post<{ Body: { mode: 'random' | 'filtered'; inputContext: { textProvided: boolean }; requirement: Requirement } }>('/scheme-matches', {
+      schema: {
+        tags: ['AI 智选'],
+        summary: '匹配已审核公开方案',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['mode', 'inputContext', 'requirement'],
+          properties: {
+            mode: { type: 'string', enum: ['random', 'filtered'] },
+            requirement: requirementSchema,
+            inputContext: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['textProvided'],
+              properties: { textProvided: { type: 'boolean' } }
+            }
+          }
+        }
+      }
+    }, async request => {
+      const catalog = await dependency(() => loadCatalog(pool));
+      const requirement = validateRequirement(request.body.requirement, catalog);
+      const candidates = await dependency(() => loadCandidates(pool, catalog, storage));
+      const result = matchSchemes(candidates, requirement, request.body.mode, request.body.inputContext.textProvided);
+      
+      request.log.info({
+        rulesVersion: result.rulesVersion,
+        candidateCount: candidates.length,
+        counts: result.counts
+      }, 'selection completed');
+      
+      return { code: 0, data: result };
+    });
+    
+    selection.get<{ Params: { code: string } }>('/schemes/:code', {
+      schema: {
+        tags: ['AI 智选'],
+        summary: '读取最新公开方案详情',
+        params: {
+          type: 'object',
+          required: ['code'],
+          properties: { code: { type: 'string', minLength: 1, maxLength: 200 } }
+        }
+      }
+    }, async request => {
+      const catalog = await dependency(() => loadCatalog(pool));
+      const [candidate] = await dependency(() => loadCandidates(pool, catalog, storage, request.params.code));
+      
+      if (!candidate) throw Object.assign(new Error('Scheme not visible'), { statusCode: 404 });
+      
+      return {
+        code: 0,
+        data: {
+          code: candidate.code,
+          images: candidate.images,
+          specifications: candidate.specifications,
+          applicabilityNotes: candidate.applicabilityNotes,
+          resources: { model: true, bom: true, renderings: true, masks: true, drawings: true, artworks: true },
+          actions: {
+            theme: 'unavailable',
+            bom: 'unavailable',
+            drawings: 'unavailable',
+            artworks: 'unavailable',
+            quote: 'unavailable',
+            modelDownload: 'unavailable'
+          },
+        }
+      };
+    });
+  });
+}
