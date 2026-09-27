@@ -5,7 +5,7 @@ export interface DictionaryRecord {
   code: string;
   name: string;
   type: string;
-  description: string | null;
+  description: null | string;
   enabled: boolean;
   sortOrder: number;
   itemCount?: number;
@@ -22,7 +22,7 @@ export interface DictionaryItemRecord {
   dictionaryId: string;
   itemValue: string;
   itemLabel: string;
-  description: string | null;
+  description: null | string;
   enabled: boolean;
   sortOrder: number;
   createdAt: string;
@@ -49,7 +49,7 @@ export interface CreateDictionaryInput {
   code: string;
   name: string;
   type: string;
-  description?: string | null;
+  description?: null | string;
   enabled?: boolean;
   sortOrder?: number;
 }
@@ -57,7 +57,7 @@ export interface CreateDictionaryInput {
 export interface UpdateDictionaryInput {
   name?: string;
   type?: string;
-  description?: string | null;
+  description?: null | string;
   enabled?: boolean;
   sortOrder?: number;
 }
@@ -65,24 +65,28 @@ export interface UpdateDictionaryInput {
 export interface CreateDictionaryItemInput {
   itemValue: string;
   itemLabel: string;
-  description?: string | null;
+  description?: null | string;
   enabled?: boolean;
   sortOrder?: number;
 }
 
 export interface UpdateDictionaryItemInput {
   itemLabel?: string;
-  description?: string | null;
+  description?: null | string;
   enabled?: boolean;
   sortOrder?: number;
 }
 
 export function getDictionaryListApi(params: DictionaryListParams) {
-  return requestClient.get<DictionaryListResult>('/v1/admin/dictionaries', { params });
+  return requestClient.get<DictionaryListResult>('/v1/admin/dictionaries', {
+    params,
+  });
 }
 
 export function getDictionaryDetailApi(id: string) {
-  return requestClient.get<DictionaryDetailRecord>(`/v1/admin/dictionaries/${id}`);
+  return requestClient.get<DictionaryDetailRecord>(
+    `/v1/admin/dictionaries/${id}`,
+  );
 }
 
 export function createDictionaryApi(data: CreateDictionaryInput) {
@@ -90,7 +94,10 @@ export function createDictionaryApi(data: CreateDictionaryInput) {
 }
 
 export function updateDictionaryApi(id: string, data: UpdateDictionaryInput) {
-  return requestClient.put<DictionaryRecord>(`/v1/admin/dictionaries/${id}`, data);
+  return requestClient.put<DictionaryRecord>(
+    `/v1/admin/dictionaries/${id}`,
+    data,
+  );
 }
 
 export function deleteDictionaryApi(id: string) {
@@ -98,17 +105,34 @@ export function deleteDictionaryApi(id: string) {
 }
 
 export function getDictionaryItemsApi(id: string) {
-  return requestClient.get<DictionaryItemRecord[]>(`/v1/admin/dictionaries/${id}/items`);
+  return requestClient.get<DictionaryItemRecord[]>(
+    `/v1/admin/dictionaries/${id}/items`,
+  );
 }
 
-export function createDictionaryItemApi(id: string, data: CreateDictionaryItemInput) {
-  return requestClient.post<DictionaryItemRecord>(`/v1/admin/dictionaries/${id}/items`, data);
+export function createDictionaryItemApi(
+  id: string,
+  data: CreateDictionaryItemInput,
+) {
+  return requestClient.post<DictionaryItemRecord>(
+    `/v1/admin/dictionaries/${id}/items`,
+    data,
+  );
 }
 
-export function updateDictionaryItemApi(id: string, itemId: string, data: UpdateDictionaryItemInput) {
-  return requestClient.put<DictionaryItemRecord>(`/v1/admin/dictionaries/${id}/items/${itemId}`, data);
+export function updateDictionaryItemApi(
+  id: string,
+  itemId: string,
+  data: UpdateDictionaryItemInput,
+) {
+  return requestClient.put<DictionaryItemRecord>(
+    `/v1/admin/dictionaries/${id}/items/${itemId}`,
+    data,
+  );
 }
 
 export function deleteDictionaryItemApi(id: string, itemId: string) {
-  return requestClient.delete<void>(`/v1/admin/dictionaries/${id}/items/${itemId}`);
+  return requestClient.delete<void>(
+    `/v1/admin/dictionaries/${id}/items/${itemId}`,
+  );
 }

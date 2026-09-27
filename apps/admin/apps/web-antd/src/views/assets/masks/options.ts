@@ -50,8 +50,8 @@ export const createGridOptions = (assetType: AssetType) => ({
     },
     {
       field: 'action',
-      title: '操作',
-      width: assetType === 'rendering' ? 180 : 120,
+      title: '',
+      width: 220,
       fixed: 'right' as const,
       slots: { default: 'action' },
     },

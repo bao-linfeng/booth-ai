@@ -1,15 +1,30 @@
 <script setup lang="ts">
+import type { VxeGridProps } from '#/adapter/vxe-table';
+import type { DictionaryDetailRecord } from '#/api/core/dictionaries';
+
 import { ref } from 'vue';
+
 import { useVbenModal } from '@vben/common-ui';
-import { Button, Descriptions, DescriptionsItem, Tag, message, Modal as AntModal, Switch, Input, InputNumber } from 'ant-design-vue';
-import { useVbenVxeGrid, type VxeGridProps } from '#/adapter/vxe-table';
-import { 
-  getDictionaryDetailApi, 
-  getDictionaryItemsApi,
+
+import {
+  Modal as AntModal,
+  Button,
+  Descriptions,
+  DescriptionsItem,
+  Input,
+  InputNumber,
+  message,
+  Switch,
+  Tag,
+} from 'ant-design-vue';
+
+import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import {
   createDictionaryItemApi,
-  updateDictionaryItemApi,
   deleteDictionaryItemApi,
-  type DictionaryDetailRecord
+  getDictionaryDetailApi,
+  getDictionaryItemsApi,
+  updateDictionaryItemApi,
 } from '#/api/core/dictionaries';
 
 const emit = defineEmits(['reload']);
@@ -19,45 +34,55 @@ const isLoading = ref(false);
 
 const gridOptions: VxeGridProps = {
   columns: [
-    { type: 'seq' as const, title: '序号', width: 60, align: 'center' as const },
-    { 
-      field: 'itemValue', 
-      title: '字典值', 
-      minWidth: 120, 
-      editRender: {}, 
-      slots: { default: 'default_itemValue', edit: 'edit_itemValue' } 
+    {
+      type: 'seq' as const,
+      title: '序号',
+      width: 60,
+      align: 'center' as const,
     },
-    { 
-      field: 'itemLabel', 
-      title: '字典标签', 
-      minWidth: 120, 
-      editRender: {}, 
-      slots: { default: 'default_itemLabel', edit: 'edit_itemLabel' } 
+    {
+      field: 'itemValue',
+      title: '字典值',
+      minWidth: 120,
+      editRender: {},
+      slots: { default: 'default_itemValue', edit: 'edit_itemValue' },
     },
-    { 
-      field: 'description', 
-      title: '描述', 
-      minWidth: 150, 
-      editRender: {}, 
-      slots: { default: 'default_description', edit: 'edit_description' } 
+    {
+      field: 'itemLabel',
+      title: '字典标签',
+      minWidth: 120,
+      editRender: {},
+      slots: { default: 'default_itemLabel', edit: 'edit_itemLabel' },
     },
-    { 
-      field: 'sortOrder', 
-      title: '排序', 
-      width: 80, 
-      align: 'center' as const, 
-      editRender: {}, 
-      slots: { default: 'default_sortOrder', edit: 'edit_sortOrder' } 
+    {
+      field: 'description',
+      title: '描述',
+      minWidth: 150,
+      editRender: {},
+      slots: { default: 'default_description', edit: 'edit_description' },
     },
-    { 
-      field: 'enabled', 
-      title: '状态', 
-      width: 100, 
-      align: 'center' as const, 
-      editRender: {}, 
-      slots: { default: 'default_enabled', edit: 'edit_enabled' } 
+    {
+      field: 'sortOrder',
+      title: '排序',
+      width: 80,
+      align: 'center' as const,
+      editRender: {},
+      slots: { default: 'default_sortOrder', edit: 'edit_sortOrder' },
     },
-    { title: '操作', width: 120, slots: { default: 'action' }, align: 'center' as const },
+    {
+      field: 'enabled',
+      title: '状态',
+      width: 100,
+      align: 'center' as const,
+      editRender: {},
+      slots: { default: 'default_enabled', edit: 'edit_enabled' },
+    },
+    {
+      title: '操作',
+      width: 120,
+      slots: { default: 'action' },
+      align: 'center' as const,
+    },
   ],
   editConfig: {
     trigger: 'manual',
@@ -80,7 +105,7 @@ const loadData = async (id: string) => {
     gridApi.setGridOptions({
       data: res.items || [],
     });
-  } catch (error) {
+  } catch {
     // handled
   } finally {
     isLoading.value = false;
@@ -111,7 +136,7 @@ const handleInsert = async () => {
     enabled: true,
     isNew: true,
   };
-  const { row: newRow } = await gridApi.grid?.insertAt(record, -1) || {};
+  const { row: newRow } = (await gridApi.grid?.insertAt(record, -1)) || {};
   if (newRow) {
     gridApi.grid?.setEditRow(newRow);
   }
@@ -144,11 +169,11 @@ const handleSaveRow = async (row: any) => {
       message.success('更新字典项成功');
     }
     await gridApi.grid?.clearEdit();
-    
+
     // Reload items to ensure consistency
     const items = await getDictionaryItemsApi(currentId.value);
     gridApi.setGridOptions({ data: items });
-  } catch (error) {
+  } catch {
     // handled
   }
 };
@@ -167,7 +192,7 @@ const handleDeleteRow = async (row: any) => {
     gridApi.grid?.remove(row);
     return;
   }
-  
+
   AntModal.confirm({
     title: '确认删除',
     content: `确定要删除字典项 ${row.itemLabel} 吗？`,
@@ -176,7 +201,7 @@ const handleDeleteRow = async (row: any) => {
         await deleteDictionaryItemApi(currentId.value, row.id);
         message.success('删除成功');
         gridApi.grid?.remove(row);
-      } catch (error) {
+      } catch {
         // handled
       }
     },
@@ -195,16 +220,26 @@ defineExpose({ open });
     <div v-if="detailInfo" class="flex flex-col gap-4">
       <div class="bg-background border-border p-4 rounded-md border">
         <Descriptions title="字典信息" :column="2" size="small">
-          <DescriptionsItem label="字典名称">{{ detailInfo.name }}</DescriptionsItem>
-          <DescriptionsItem label="字典类型">{{ detailInfo.type ?? '-' }}</DescriptionsItem>
-          <DescriptionsItem label="字典编码">{{ detailInfo.code }}</DescriptionsItem>
+          <DescriptionsItem label="字典名称">
+            {{ detailInfo.name }}
+          </DescriptionsItem>
+          <DescriptionsItem label="字典类型">
+            {{ detailInfo.type ?? '-' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="字典编码">
+            {{ detailInfo.code }}
+          </DescriptionsItem>
           <DescriptionsItem label="状态">
             <Tag :color="detailInfo.enabled ? 'success' : 'error'">
               {{ detailInfo.enabled ? '启用' : '禁用' }}
             </Tag>
           </DescriptionsItem>
-          <DescriptionsItem label="排序">{{ detailInfo.sortOrder }}</DescriptionsItem>
-          <DescriptionsItem label="描述" :span="2">{{ detailInfo.description || '-' }}</DescriptionsItem>
+          <DescriptionsItem label="排序">
+            {{ detailInfo.sortOrder }}
+          </DescriptionsItem>
+          <DescriptionsItem label="描述" :span="2">
+            {{ detailInfo.description || '-' }}
+          </DescriptionsItem>
         </Descriptions>
       </div>
 
@@ -215,7 +250,11 @@ defineExpose({ open });
           </template>
 
           <template #edit_itemValue="{ row }">
-            <Input v-model:value="row.itemValue" :disabled="!row.isNew" placeholder="输入值" />
+            <Input
+              v-model:value="row.itemValue"
+              :disabled="!row.isNew"
+              placeholder="输入值"
+            />
           </template>
           <template #default_itemValue="{ row }">
             <span>{{ row.itemValue }}</span>
@@ -236,7 +275,11 @@ defineExpose({ open });
           </template>
 
           <template #edit_sortOrder="{ row }">
-            <InputNumber v-model:value="row.sortOrder" :min="0" class="w-full" />
+            <InputNumber
+              v-model:value="row.sortOrder"
+              :min="0"
+              class="w-full"
+            />
           </template>
           <template #default_sortOrder="{ row }">
             <span>{{ row.sortOrder }}</span>
@@ -253,12 +296,29 @@ defineExpose({ open });
 
           <template #action="{ row }">
             <template v-if="hasActiveEditRow(row)">
-              <Button type="link" size="small" @click="handleSaveRow(row)">保存</Button>
-              <Button type="link" size="small" @click="handleCancelRow(row)">取消</Button>
+              <Button type="link" size="small" @click="handleSaveRow(row)">
+                保存
+              </Button>
+              <Button type="link" size="small" @click="handleCancelRow(row)">
+                取消
+              </Button>
             </template>
             <template v-else>
-              <Button type="link" size="small" @click="gridApi.grid?.setEditRow(row)">编辑</Button>
-              <Button danger type="link" size="small" @click="handleDeleteRow(row)">删除</Button>
+              <Button
+                type="link"
+                size="small"
+                @click="gridApi.grid?.setEditRow(row)"
+              >
+                编辑
+              </Button>
+              <Button
+                danger
+                type="link"
+                size="small"
+                @click="handleDeleteRow(row)"
+              >
+                删除
+              </Button>
             </template>
           </template>
         </Grid>

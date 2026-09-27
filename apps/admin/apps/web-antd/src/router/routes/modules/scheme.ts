@@ -37,15 +37,6 @@ const routes: RouteRecordRaw[] = [
           hideInMenu: true,
         },
       },
-      {
-        name: 'SchemeDictionary',
-        path: 'dictionary',
-        component: () => import('#/views/scheme/dictionary/index.vue'),
-        meta: {
-          icon: 'lucide:book-open',
-          title: '字典管理',
-        },
-      },
     ],
   },
 ];

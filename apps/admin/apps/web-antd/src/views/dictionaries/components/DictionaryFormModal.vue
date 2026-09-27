@@ -1,9 +1,17 @@
 <script setup lang="ts">
+import type { DictionaryRecord } from '#/api/core/dictionaries';
+
 import { ref } from 'vue';
+
 import { useVbenModal } from '@vben/common-ui';
+
 import { message } from 'ant-design-vue';
+
 import { useVbenForm } from '#/adapter/form';
-import { createDictionaryApi, updateDictionaryApi, type DictionaryRecord } from '#/api/core/dictionaries';
+import {
+  createDictionaryApi,
+  updateDictionaryApi,
+} from '#/api/core/dictionaries';
 
 const emit = defineEmits(['reload']);
 const type = ref<'新增' | '编辑'>('新增');
@@ -93,7 +101,7 @@ const open = async (row?: DictionaryRecord) => {
     type.value = '编辑';
     currentId.value = row.id;
     modalApi.setState({ title: '编辑字典' });
-    
+
     formApi.updateSchema([
       {
         fieldName: 'code',
@@ -105,7 +113,7 @@ const open = async (row?: DictionaryRecord) => {
     type.value = '新增';
     currentId.value = '';
     modalApi.setState({ title: '新建字典' });
-    
+
     formApi.updateSchema([
       {
         fieldName: 'code',

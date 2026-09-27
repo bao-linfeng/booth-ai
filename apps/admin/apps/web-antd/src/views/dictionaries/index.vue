@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+
 import { Page } from '@vben/common-ui';
-import { Button, Modal, Tag, message } from 'ant-design-vue';
+
+import { Button, message, Modal, Tag } from 'ant-design-vue';
+
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { deleteDictionaryApi } from '#/api/core/dictionaries';
+
 import DictionaryDetailModal from './components/DictionaryDetailModal.vue';
 import DictionaryFormModal from './components/DictionaryFormModal.vue';
 import { createFormOptions, createGridOptions } from './options';
@@ -37,7 +41,7 @@ function handleDelete(row: any) {
         await deleteDictionaryApi(row.id);
         message.success('删除成功');
         gridApi.reload();
-      } catch (error) {
+      } catch {
         // 错误通常已被请求拦截器处理
       }
     },
@@ -59,9 +63,13 @@ function handleDelete(row: any) {
       </template>
 
       <template #action="{ row }">
-        <Button type="link" size="small" @click="handleDetail(row.id)">详情</Button>
+        <Button type="link" size="small" @click="handleDetail(row.id)">
+          详情
+        </Button>
         <Button type="link" size="small" @click="handleEdit(row)">编辑</Button>
-        <Button danger type="link" size="small" @click="handleDelete(row)">删除</Button>
+        <Button danger type="link" size="small" @click="handleDelete(row)">
+          删除
+        </Button>
       </template>
     </Grid>
 

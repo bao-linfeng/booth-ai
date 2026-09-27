@@ -7,7 +7,11 @@ import { debounce, formatDate } from '@vben/utils';
 import { Button, message, Modal } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { deleteAssetApi, getAssetDownloadUrlApi } from '#/api/core/assets';
+import {
+  deleteAssetApi,
+  getAssetDownloadUrlApi,
+  replaceAssetFileApi,
+} from '#/api/core/assets';
 import { getSchemeListApi } from '#/api/core/schemes';
 
 import UploadModal from './components/UploadModal.vue';
@@ -55,6 +59,24 @@ function handleUpload() {
   uploadModalRef.value?.open();
 }
 
+async function handleReplace(row: any) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.pdf,.png,.jpg,.jpeg';
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      await replaceAssetFileApi(row.schemeCode, row.id, file, row.revision);
+      message.success('替换成功');
+      gridApi.reload();
+    } catch {
+      message.error('替换失败');
+    }
+  });
+  input.click();
+}
+
 async function handleDownload(row: any) {
   try {
     const res = await getAssetDownloadUrlApi(
@@ -100,6 +122,9 @@ function handleDelete(row: any) {
         {{ formatDate(row.createdAt) }}
       </template>
       <template #action="{ row }">
+        <Button type="link" size="small" @click="handleReplace(row)">
+          替换
+        </Button>
         <Button type="link" size="small" @click="handleDownload(row)">
           下载
         </Button>

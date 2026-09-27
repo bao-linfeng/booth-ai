@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -8,13 +9,12 @@ import { Button, message, Modal, Tag } from 'ant-design-vue';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { deleteSchemeApi, getCatalogOptionsApi } from '#/api/core/schemes';
 
-import SchemeDetailModal from './components/SchemeDetailModal.vue';
 import SchemeFormModal from './components/SchemeFormModal.vue';
 import SchemeImportModal from './components/SchemeImportModal.vue';
 import { createFormOptions, createGridOptions } from './options';
 
+const router = useRouter();
 const schemeFormModalRef = ref<InstanceType<typeof SchemeFormModal>>();
-const schemeDetailModalRef = ref<InstanceType<typeof SchemeDetailModal>>();
 const schemeImportModalRef = ref<InstanceType<typeof SchemeImportModal>>();
 
 const formOptions = createFormOptions();
@@ -59,7 +59,7 @@ function handleEdit(row: any) {
 }
 
 function handleDetail(code: string) {
-  schemeDetailModalRef.value?.open(code);
+  router.push(`/scheme/detail/${code}`);
 }
 
 function handleDelete(row: any) {
@@ -135,7 +135,6 @@ onMounted(() => {
     </Grid>
 
     <SchemeFormModal ref="schemeFormModalRef" @reload="onReload" />
-    <SchemeDetailModal ref="schemeDetailModalRef" />
     <SchemeImportModal ref="schemeImportModalRef" @reload="onReload" />
   </Page>
 </template>

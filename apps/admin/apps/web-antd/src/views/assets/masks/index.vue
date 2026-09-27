@@ -7,13 +7,20 @@ import { debounce, formatDate } from '@vben/utils';
 import { Button, message, Modal } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { deleteAssetApi, getAssetDownloadUrlApi } from '#/api/core/assets';
+import {
+  deleteAssetApi,
+  getAssetDownloadUrlApi,
+  listSchemeAssetsApi,
+  replaceAssetFileApi,
+} from '#/api/core/assets';
 import { getSchemeListApi } from '#/api/core/schemes';
 
+import MaskOverlayModal from './components/MaskOverlayModal.vue';
 import UploadModal from './components/UploadModal.vue';
 import { createFormOptions, createGridOptions } from './options';
 
 const uploadModalRef = ref<InstanceType<typeof UploadModal>>();
+const overlayModalRef = ref<InstanceType<typeof MaskOverlayModal>>();
 
 const schemeOptions = ref<{ label: string; value: string }[]>([]);
 const schemeLoading = ref(false);
@@ -53,6 +60,46 @@ const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
 
 function handleUpload() {
   uploadModalRef.value?.open();
+}
+
+async function handlePreview(row: any) {
+  if (!row.relatedAssetId) {
+    message.warning('该蒙版未配对效果图，无法叠加预览');
+    return;
+  }
+
+  try {
+    const assets = await listSchemeAssetsApi(row.schemeCode, 'rendering');
+    const renderingRow = assets.find((a: any) => a.id === row.relatedAssetId);
+
+    if (!renderingRow) {
+      message.error('未找到配对的效果图数据');
+      return;
+    }
+
+    overlayModalRef.value?.open(row, renderingRow);
+  } catch (error) {
+    console.error(error);
+    message.error('获取效果图信息失败');
+  }
+}
+
+async function handleReplace(row: any) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.png,.jpg,.jpeg,.webp';
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      await replaceAssetFileApi(row.schemeCode, row.id, file, row.revision);
+      message.success('替换成功');
+      gridApi.reload();
+    } catch {
+      message.error('替换失败');
+    }
+  });
+  input.click();
 }
 
 async function handleDownload(row: any) {
@@ -100,6 +147,12 @@ function handleDelete(row: any) {
         {{ formatDate(row.createdAt) }}
       </template>
       <template #action="{ row }">
+        <Button type="link" size="small" @click="handlePreview(row)">
+          预览
+        </Button>
+        <Button type="link" size="small" @click="handleReplace(row)">
+          替换
+        </Button>
         <Button type="link" size="small" @click="handleDownload(row)">
           下载
         </Button>
@@ -109,5 +162,6 @@ function handleDelete(row: any) {
       </template>
     </Grid>
     <UploadModal ref="uploadModalRef" @reload="gridApi.reload()" />
+    <MaskOverlayModal ref="overlayModalRef" />
   </Page>
 </template>

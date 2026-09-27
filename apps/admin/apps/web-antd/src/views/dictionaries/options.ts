@@ -38,16 +38,38 @@ export const createFormOptions = () => ({
 
 export const createGridOptions = () => ({
   columns: [
-    { type: 'seq' as const, title: '序号', width: 60, align: 'center' as const },
+    {
+      type: 'seq' as const,
+      title: '序号',
+      width: 60,
+      align: 'center' as const,
+    },
     { field: 'code', title: '字典编码', minWidth: 120 },
     { field: 'name', title: '字典名称', minWidth: 120 },
     { field: 'type', title: '类型', width: 120 },
     { field: 'description', title: '描述', minWidth: 150 },
-    { field: 'itemCount', title: '字典项数', width: 100, align: 'center' as const },
+    {
+      field: 'itemCount',
+      title: '字典项数',
+      width: 100,
+      align: 'center' as const,
+    },
     { field: 'sortOrder', title: '排序', width: 80, align: 'center' as const },
-    { field: 'enabled', title: '状态', slots: { default: 'enabled' }, width: 100, align: 'center' as const },
+    {
+      field: 'enabled',
+      title: '状态',
+      slots: { default: 'enabled' },
+      width: 100,
+      align: 'center' as const,
+    },
     { field: 'createdAt', title: '创建时间', width: 160 },
-    { title: '操作', width: 200, slots: { default: 'action' }, align: 'center' as const, fixed: 'right' as const },
+    {
+      title: '操作',
+      width: 200,
+      slots: { default: 'action' },
+      align: 'center' as const,
+      fixed: 'right' as const,
+    },
   ],
   pagerConfig: {
     enabled: true,

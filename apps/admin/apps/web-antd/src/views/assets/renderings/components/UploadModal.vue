@@ -62,7 +62,33 @@ const [Form, formApi] = useVbenForm({
       rules: 'selectRequired',
       componentProps: {
         accept: '.jpg,.jpeg,.png,.webp',
-        beforeUpload: () => false,
+        beforeUpload: (
+          file: File,
+        ): Promise<boolean | typeof Upload.LIST_IGNORE> => {
+          return new Promise((resolve) => {
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            img.onload = () => {
+              URL.revokeObjectURL(url);
+              const ratio = img.width / img.height;
+              const expected = 16 / 9;
+              if (Math.abs(ratio - expected) > 0.02) {
+                message.error(
+                  `图片比例不符合要求（当前 ${img.width}×${img.height}），需为 16:9`,
+                );
+                resolve(Upload.LIST_IGNORE);
+              } else {
+                resolve(false);
+              }
+            };
+            img.onerror = () => {
+              URL.revokeObjectURL(url);
+              message.error('图片读取失败，请重新选择');
+              resolve(Upload.LIST_IGNORE);
+            };
+            img.src = url;
+          });
+        },
         maxCount: 1,
       },
       renderComponentContent: () => ({
