@@ -8,7 +8,7 @@ import { useVbenModal } from '@vben/common-ui';
 import { message, Tag } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
-import { getSchemeOptionsApi, getSchemeDetailApi } from '#/api/core/schemes';
+import { getSchemeDetailApi, getSchemeOptionsApi } from '#/api/core/schemes';
 
 const optionsLoaded = ref(false);
 const detailData = ref<null | SchemeRecord>(null);
@@ -146,7 +146,7 @@ async function loadOptions() {
   try {
     const res = await getSchemeOptionsApi();
     if (res) {
-      const formatOpts = (arr: { id: string; label: string }[] | undefined) =>
+      const formatOpts = (arr: undefined | { id: string; label: string }[]) =>
         (arr || []).map((t) => ({ label: t.label, value: t.id }));
       schemeApi.updateSchema([
         {
@@ -172,13 +172,29 @@ async function loadOptions() {
         {
           fieldName: 'openSides',
           componentProps: {
-            options: ['front','right','back','left'].map((value) => ({ value, label: ({front:'正面',right:'右侧',back:'背面',left:'左侧'} as Record<string,string>)[value] })),
+            options: ['front', 'right', 'back', 'left'].map((value) => ({
+              value,
+              label: (
+                {
+                  front: '正面',
+                  right: '右侧',
+                  back: '背面',
+                  left: '左侧',
+                } as Record<string, string>
+              )[value],
+            })),
           },
         },
       ]);
       schemeApi.updateSchema([
-        { fieldName: 'zoneIds', componentProps: { options: formatOpts(res.functional_zone) } },
-        { fieldName: 'featureIds', componentProps: { options: formatOpts(res.key_feature) } },
+        {
+          fieldName: 'zoneIds',
+          componentProps: { options: formatOpts(res.functional_zone) },
+        },
+        {
+          fieldName: 'featureIds',
+          componentProps: { options: formatOpts(res.key_feature) },
+        },
       ]);
     }
     optionsLoaded.value = true;
@@ -198,7 +214,10 @@ const open = async (code: string) => {
     const detail = await getSchemeDetailApi(code);
     if (detail) {
       detailData.value = detail;
-      schemeApi.setValues({ ...detail, areaM2: detail.areaM2 === null ? null : Number(detail.areaM2) });
+      schemeApi.setValues({
+        ...detail,
+        areaM2: detail.areaM2 === null ? null : Number(detail.areaM2),
+      });
     }
   } catch (error) {
     console.error(error);

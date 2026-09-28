@@ -8,6 +8,7 @@ coverage/
 .local/
 **/.DS_Store
 apps/shadcn-vue-admin-main/
+.slim/deepwork/
 .bun/
 **/.bun/
 .turbo/

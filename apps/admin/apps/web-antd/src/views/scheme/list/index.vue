@@ -29,7 +29,11 @@ const [Grid, gridApi] = useVbenVxeGrid({
 async function fetchOptions() {
   try {
     const res = await getSchemeOptionsApi();
-    optionLabels.value = Object.fromEntries(Object.values(res).flat().map((item) => [item.id, item.label]));
+    optionLabels.value = Object.fromEntries(
+      Object.values(res)
+        .flat()
+        .map((item) => [item.id, item.label]),
+    );
     if (res && res.style) {
       gridApi.formApi.updateSchema([
         {
@@ -129,8 +133,12 @@ onMounted(() => {
         {{ row.openingCount ? `${row.openingCount} 面` : '-' }}
       </template>
 
-      <template #productSystem="{ row }">{{ optionLabels[row.productSystemId] ?? '-' }}</template>
-      <template #style="{ row }">{{ optionLabels[row.styleId] ?? '-' }}</template>
+      <template #productSystem="{ row }">
+        {{ optionLabels[row.productSystemId] ?? '-' }}
+      </template>
+      <template #style="{ row }">
+        {{ optionLabels[row.styleId] ?? '-' }}
+      </template>
 
       <template #publishStatus="{ row }">
         <Tag v-if="row.publishStatus === 'published'" color="green">已发布</Tag>

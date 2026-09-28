@@ -14,8 +14,8 @@ import { message } from 'ant-design-vue';
 import { useVbenForm } from '#/adapter/form';
 import {
   createSchemeApi,
-  getSchemeOptionsApi,
   getSchemeDetailApi,
+  getSchemeOptionsApi,
   updateSchemeApi,
 } from '#/api/core/schemes';
 
@@ -167,7 +167,12 @@ const [SchemeForm, schemeApi] = useVbenForm({
       component: 'Select',
       fieldName: 'industryIds',
       label: '适用行业',
-      componentProps: { placeholder: '请选择', mode: 'multiple', options: [], class: 'w-full' },
+      componentProps: {
+        placeholder: '请选择',
+        mode: 'multiple',
+        options: [],
+        class: 'w-full',
+      },
     },
     {
       component: 'Select',
@@ -185,19 +190,34 @@ const [SchemeForm, schemeApi] = useVbenForm({
       component: 'Select',
       fieldName: 'openSides',
       label: '开口方向',
-      componentProps: { placeholder: '请选择', mode: 'multiple', options: [], class: 'w-full' },
+      componentProps: {
+        placeholder: '请选择',
+        mode: 'multiple',
+        options: [],
+        class: 'w-full',
+      },
     },
     {
       component: 'Select',
       fieldName: 'zoneIds',
       label: '功能分区',
-      componentProps: { placeholder: '请选择', mode: 'multiple', options: [], class: 'w-full' },
+      componentProps: {
+        placeholder: '请选择',
+        mode: 'multiple',
+        options: [],
+        class: 'w-full',
+      },
     },
     {
       component: 'Select',
       fieldName: 'featureIds',
       label: '关键特征',
-      componentProps: { placeholder: '请选择', mode: 'multiple', options: [], class: 'w-full' },
+      componentProps: {
+        placeholder: '请选择',
+        mode: 'multiple',
+        options: [],
+        class: 'w-full',
+      },
     },
     {
       component: 'Select',
@@ -242,8 +262,9 @@ async function loadOptions() {
   try {
     const res = await getSchemeOptionsApi();
     if (res) {
-      const formatOpts = (arr: { id: string; label: string; itemValue: string }[] | undefined) =>
-        (arr || []).map((t) => ({ label: t.label, value: t.id }));
+      const formatOpts = (
+        arr: undefined | { id: string; label: string; itemValue: string }[],
+      ) => (arr || []).map((t) => ({ label: t.label, value: t.id }));
       schemeApi.updateSchema([
         {
           fieldName: 'styleId',
@@ -275,12 +296,25 @@ async function loadOptions() {
           componentProps: {
             options: ['front', 'right', 'back', 'left'].map((value) => ({
               value,
-              label: ({ front: '正面', right: '右侧', back: '背面', left: '左侧' } as Record<string, string>)[value],
+              label: (
+                {
+                  front: '正面',
+                  right: '右侧',
+                  back: '背面',
+                  left: '左侧',
+                } as Record<string, string>
+              )[value],
             })),
           },
         },
-        { fieldName: 'zoneIds', componentProps: { options: formatOpts(res.functional_zone) } },
-        { fieldName: 'featureIds', componentProps: { options: formatOpts(res.key_feature) } },
+        {
+          fieldName: 'zoneIds',
+          componentProps: { options: formatOpts(res.functional_zone) },
+        },
+        {
+          fieldName: 'featureIds',
+          componentProps: { options: formatOpts(res.key_feature) },
+        },
       ]);
     }
   } catch (error) {
@@ -304,7 +338,10 @@ const open = async (row?: SchemeRecord) => {
       const detail = await getSchemeDetailApi(row.code);
       if (detail) {
         currentRevision.value = detail.editRevision;
-        schemeApi.setValues({ ...detail, areaM2: detail.areaM2 === null ? null : Number(detail.areaM2) });
+        schemeApi.setValues({
+          ...detail,
+          areaM2: detail.areaM2 === null ? null : Number(detail.areaM2),
+        });
       }
     } catch (error) {
       console.error(error);

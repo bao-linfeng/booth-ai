@@ -76,7 +76,10 @@ export interface UpdateSchemeInput extends Omit<CreateSchemeInput, 'code'> {
   editRevision: number;
 }
 
-export type SchemeOptionsResult = Record<string, { id: string; label: string; itemValue: string }[]>;
+export type SchemeOptionsResult = Record<
+  string,
+  { id: string; label: string; itemValue: string }[]
+>;
 
 export async function getSchemeListApi(params?: SchemeListParams) {
   return requestClient.get<SchemeListResult>('/v1/admin/schemes', { params });
@@ -111,7 +114,6 @@ export async function deleteSchemeApi(code: string) {
     `/v1/admin/schemes/${encodeURIComponent(code)}`,
   );
 }
-
 
 export interface ImportPreviewRow {
   rowNumber: number;
