@@ -37,6 +37,15 @@ const routes: RouteRecordRaw[] = [
           hideInMenu: true,
         },
       },
+      {
+        name: 'SchemeChecklist',
+        path: 'detail/:code/checklist',
+        component: () => import('#/views/scheme/bom/index.vue'),
+        meta: {
+          title: '简化清单',
+          hideInMenu: true,
+        },
+      },
     ],
   },
 ];
