@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
+import { encryptJwt } from '../src/infra/session.js';
 
 const env = {
   NODE_ENV: 'test', LOG_LEVEL: 'silent', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',
@@ -77,11 +78,35 @@ test('admin business routes reject missing sessions before accessing data', asyn
     storage: {},
   } as unknown as NonNullable<Parameters<typeof buildApp>[2]>);
   t.after(() => app.close());
-  for (const path of ['/api/v1/admin/schemes', '/api/v1/admin/schemes/example/bill-of-materials', '/api/v1/admin/schemes/example/bill-of-materials/download?revision=1']) {
-    const response = await app.inject(path);
+  for (const [method,path] of [['GET','/api/v1/admin/schemes'],['GET','/api/v1/admin/schemes/example/bill-of-materials'],['GET','/api/v1/admin/schemes/example/bill-of-materials/download?revision=1'],['DELETE','/api/v1/admin/schemes/example/bill-of-materials?expectedRevision=1'],['DELETE','/api/v1/admin/schemes/example/bill-of-materials/items/123e4567-e89b-12d3-a456-426614174000?expectedRevision=1']]) {
+    const response = await app.inject({ method: method as 'DELETE' | 'GET', url: path! });
     assert.equal(response.statusCode, 401, path);
     assert.equal(response.json().error.reason, 'AUTH_REQUIRED');
   }
+});
+
+test('administrator can list BOMs without external scheme permissions', async t => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ success: true, data: {
+    id: 1, username: 'admin', enabled: true, roles: [{ name: 'ROLE_ADMIN', roleEntityPermissions: [] }],
+  } }), { status: 200 });
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const app = await buildApp(config, healthy, {
+    pool: { query: async (sql: string) => {
+      if (sql.includes('INSERT INTO admins')) return { rows: [{ id: 'admin-id' }] };
+      if (sql.includes('FROM admins WHERE id=')) return { rows: [{ enabled: true, roles: ['ROLE_ADMIN'] }] };
+      if (sql.includes('count(*)::text AS count FROM scheme_boms')) return { rows: [{ count: '0' }] };
+      if (sql.includes('FROM scheme_boms b JOIN schemes s')) return { rows: [] };
+      throw new Error('Unexpected query');
+    } },
+    redis: { get: async () => JSON.stringify({ site: 'admin', localId: 'admin-id', externalUserId: 1,
+      username: 'admin', externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret), expiresAt: Math.floor(Date.now() / 1000) + 60 }) },
+    storage: {},
+  } as unknown as NonNullable<Parameters<typeof buildApp>[2]>);
+  t.after(() => app.close());
+  const response = await app.inject({ url: '/api/v1/admin/bill-of-materials?page=1&pageSize=20', headers: { authorization: 'Bearer test-token' } });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json().data, { data: [], total: 0 });
 });
 
 test('configuration fails closed without printing supplied secrets', () => {

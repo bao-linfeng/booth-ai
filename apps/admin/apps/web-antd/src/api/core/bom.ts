@@ -6,16 +6,6 @@ export type BomStatus =
   | 'rejected'
   | 'verified';
 export type MeasurementKind = 'area' | 'count' | 'length';
-export type ConversionCode = 'identity' | 'mm2_to_m2' | 'mm_to_m';
-
-export interface BomUnitRule {
-  id: string;
-  bomId: string;
-  measurementKind: MeasurementKind;
-  sourceUnit: string;
-  pricingUnit: string;
-  conversionCode: ConversionCode;
-}
 
 export interface BomItem {
   id: string;
@@ -27,8 +17,11 @@ export interface BomItem {
   sourceQuantity: string;
   sourceUnit: string;
   quantity: string;
-  unitRuleId: null | string;
+  measurementKind: MeasurementKind;
   erpCode: null | string;
+  unitPrice: null | string;
+  totalPrice: null | string;
+  totalWeightKg: null | string;
   sourceSheet: null | string;
   sourceRow: null | number;
   diffNote: null | string;
@@ -42,10 +35,8 @@ export interface BomRecord {
   status: BomStatus;
   sourceAssetId?: null | string;
   contentHash?: null | string;
-  modelAssetId?: null | string;
   verifiedAt?: null | string;
   items: BomItem[];
-  unitRules: BomUnitRule[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -60,7 +51,6 @@ export interface BomImportResult {
   sourceHash: string;
   canCommit: boolean;
   mappingRevision: number;
-  unitRules: Array<Omit<BomUnitRule, 'bomId' | 'id'> & { id?: string }>;
   items: BomPreviewItem[];
   errors: Array<{
     code: string;
@@ -85,7 +75,11 @@ export interface BomPreviewItem {
   specificationMm?: null | string;
   sourceQuantity: string;
   sourceUnit: string;
+  measurementKind: MeasurementKind;
   erpCode?: null | string;
+  unitPrice?: null | string;
+  totalPrice?: null | string;
+  totalWeightKg?: null | string;
   sourceSheet?: null | string;
   sourceRow?: null | number;
   diffNote?: null | string;
@@ -98,10 +92,51 @@ export interface BomVerificationResult {
   verifiedAt: null | string;
 }
 
+export interface BomListEntry {
+  schemeCode: string;
+  schemeName: string;
+  revision: number;
+  status: Exclude<BomStatus, 'absent'>;
+  itemCount: number;
+  updatedAt: string;
+}
+
+export async function listBomsApi(params: {
+  code?: string;
+  page: number;
+  pageSize: number;
+}) {
+  return requestClient.get<{ data: BomListEntry[]; total: number }>(
+    '/v1/admin/bill-of-materials',
+    { params },
+  );
+}
+
 // API-053: 查看清单
 export async function getBomApi(schemeCode: string) {
   return requestClient.get<BomRecord>(
     `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/bill-of-materials`,
+  );
+}
+
+export async function deleteBomApi(
+  schemeCode: string,
+  expectedRevision: number,
+) {
+  return requestClient.delete(
+    `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/bill-of-materials`,
+    { params: { expectedRevision } },
+  );
+}
+
+export async function deleteBomItemApi(
+  schemeCode: string,
+  itemId: string,
+  expectedRevision: number,
+) {
+  return requestClient.delete<BomRecord>(
+    `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/bill-of-materials/items/${encodeURIComponent(itemId)}`,
+    { params: { expectedRevision } },
   );
 }
 
@@ -127,8 +162,6 @@ export async function commitBomImportApi(
   importId: string,
   params: {
     expectedRevision: number;
-    confirmedWarningCodes?: string[];
-    changeReason: string;
   },
 ) {
   return requestClient.post<{
@@ -156,8 +189,11 @@ export async function updateBomItemsApi(
       specificationMm?: null | string;
       sourceQuantity: string;
       sourceUnit: string;
-      unitRuleId?: string;
+      measurementKind: MeasurementKind;
       erpCode?: null | string;
+      unitPrice?: null | string;
+      totalPrice?: null | string;
+      totalWeightKg?: null | string;
       diffNote?: null | string;
       sourceSheet?: null | string;
       sourceRow?: null | number;
@@ -170,27 +206,6 @@ export async function updateBomItemsApi(
   );
 }
 
-// API-055: 保存计量规则
-export async function updateBomUnitRulesApi(
-  schemeCode: string,
-  params: {
-    expectedRevision: number;
-    changeReason: string;
-    unitRules: Array<{
-      id?: string;
-      measurementKind: MeasurementKind;
-      sourceUnit: string;
-      pricingUnit: string;
-      conversionCode: ConversionCode;
-    }>;
-  },
-) {
-  return requestClient.put<BomRecord>(
-    `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/bill-of-materials/unit-rules`,
-    params,
-  );
-}
-
 // API-056: 提交核验
 export async function submitBomVerificationApi(
   schemeCode: string,
@@ -198,13 +213,6 @@ export async function submitBomVerificationApi(
     requestKey: string;
     expectedRevision: number;
     decision: 'pass' | 'reject';
-    checks: {
-      sourceExtraction: boolean;
-      modelCrossCheck: boolean;
-      supportingParts: boolean;
-      unitConsistency: boolean;
-    };
-    modelAssetId?: string;
     notes?: string;
   },
 ) {

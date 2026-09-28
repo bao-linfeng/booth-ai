@@ -7,9 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
-import { cn } from '@/lib/utils'
 import OptionSelect from './OptionSelect.vue'
-import { sides, type Catalog, type Requirement, type Side } from './types'
+import type { Catalog, Requirement } from './types'
 
 const props = defineProps<{ modelValue: Requirement; catalog: Catalog; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: Requirement]; reset: [] }>()
@@ -21,11 +20,9 @@ const areaValue = computed(() => {
   const { lengthMm, widthMm } = props.modelValue
   return lengthMm && widthMm ? lengthMm * widthMm / 1_000_000 : null
 })
-const positions: Record<Side, string> = { back: 'col-start-2 row-start-1', left: 'col-start-1 row-start-2', right: 'col-start-3 row-start-2', front: 'col-start-2 row-start-3' }
 function update<K extends keyof Requirement>(key: K, value: Requirement[K]) {
   const next = { ...props.modelValue, [key]: value }
   if (key === 'lengthMm' || key === 'widthMm') next.areaM2 = next.lengthMm && next.widthMm ? next.lengthMm * next.widthMm / 1000000 : null
-  if (key === 'openingCount') next.openSides = value === 4 ? sides.map(side => side.id) : null
   emit('update:modelValue', next)
 }
 function updateBoothSpace(id: string | null) {
@@ -41,11 +38,6 @@ function updateBoothSpace(id: string | null) {
     maxHeightMm: space.heightMm,
     areaM2: space.lengthMm * space.widthMm / 1_000_000,
   })
-}
-function toggleSide(side: Side) {
-  const current = props.modelValue.openSides ?? []
-  const next = current.includes(side) ? current.filter(item => item !== side) : [...current, side]
-  update('openSides', next.length ? next : null)
 }
 function toggle(key: 'styleIds' | 'industryIds' | 'zoneIds' | 'featureIds', id: string) {
   const current = props.modelValue[key]
@@ -74,12 +66,6 @@ function answer(id: string, value: string | null) {
               <div class="space-y-2"><Label for="booth-area">面积 <span class="text-xs text-muted-foreground">/ ㎡</span></Label><Input id="booth-area" :model-value="areaValue === null ? '' : String(areaValue)" readonly aria-readonly="true" placeholder="选择展位空间后自动计算" /><p class="text-xs text-muted-foreground">根据所选长宽自动计算，不可修改</p></div>
            </div>
            <div class="space-y-2"><Label>开口面数</Label><OptionSelect label="开口面数" placeholder="暂不确定" :disabled="disabled" :model-value="modelValue.openingCount === null ? null : String(modelValue.openingCount)" :options="catalog.openingCounts" @update:model-value="update('openingCount', $event ? Number($event) : null)" /></div>
-          <div class="space-y-3"><div class="flex justify-between text-sm"><Label>开口方向</Label><span class="text-xs text-muted-foreground">{{ modelValue.openSides?.length ?? 0 }} / {{ modelValue.openingCount ?? '—' }} 已选</span></div>
-            <div class="grid grid-cols-[1fr_1.2fr_1fr] grid-rows-[auto_70px_auto] items-center gap-2 rounded-lg bg-muted/50 p-3" aria-label="上后下前，左右为长，前后为宽">
-              <div class="col-start-2 row-start-2 flex h-full flex-col items-center justify-center gap-2 rounded border border-dashed border-muted-foreground/40 text-sm">展位<span class="text-xs text-muted-foreground">长 ↔ · 宽 ↕</span></div>
-              <Button v-for="side in sides" :key="side.id" :class="cn('h-auto px-2 py-2 text-xs', positions[side.id])" :variant="modelValue.openSides?.includes(side.id) ? 'default' : 'outline'" :aria-pressed="modelValue.openSides?.includes(side.id) ?? false" :disabled="disabled || !modelValue.openingCount || modelValue.openingCount === 4 || (!modelValue.openSides?.includes(side.id) && (modelValue.openSides?.length ?? 0) >= modelValue.openingCount)" @click="toggleSide(side.id)">{{ side.label }}</Button>
-            </div><p class="text-xs leading-relaxed text-muted-foreground">方向未知可先探索参考方案。两面相邻与两面对边不同。</p>
-          </div>
         </section>
         <Separator />
          <section class="space-y-4"><h3 class="text-sm font-medium">体系与偏好</h3><div class="space-y-2"><Label>产品体系</Label><OptionSelect label="产品体系" :disabled="disabled" :model-value="modelValue.productSystemId" :options="catalog.productSystems" @update:model-value="update('productSystemId', $event)" /><p class="text-xs text-muted-foreground">指定体系后严格筛选</p></div>

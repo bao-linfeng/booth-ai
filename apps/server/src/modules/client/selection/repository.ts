@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../../infra/storage.js';
-import { rulesVersion, sides, type BoothSpace, type Candidate, type Catalog, type Option, type Side } from './domain.js';
+import { rulesVersion, type BoothSpace, type Candidate, type Catalog, type Option } from './domain.js';
 
 interface CandidateRow {
   id: string;
@@ -11,7 +11,6 @@ interface CandidateRow {
   heightMm: number;
   areaM2: number;
   openingCount: number;
-  openSides: Side[];
   productSystemId: string;
   styleId: string | null;
   industryIds: string[] | null;
@@ -79,7 +78,7 @@ export async function loadCandidates(pool: pg.Pool, catalog: Catalog, storage: P
   const result = await pool.query<CandidateRow>(`
     SELECT s.id, s.code, s.length_mm AS "lengthMm", s.width_mm AS "widthMm",
       s.height_mm AS "heightMm", s.area_sqm::float8 AS "areaM2", s.opening_count AS "openingCount",
-      s.opening_directions AS "openSides", s.product_system_id::text AS "productSystemId", s.style_id::text AS "styleId",
+      s.product_system_id::text AS "productSystemId", s.style_id::text AS "styleId",
       s.industry_ids::text[] AS "industryIds", s.budget_tier_id::text AS "budgetTierId", s.zone_ids::text[] AS "zoneIds",
       s.feature_ids::text[] AS "featureIds", s.keywords, s.applicable_conditions AS conditions
     FROM schemes s
@@ -111,7 +110,7 @@ export async function loadCandidates(pool: pg.Pool, catalog: Catalog, storage: P
   for (const row of result.rows) {
     if (![row.lengthMm, row.widthMm, row.heightMm].every(value => Number.isSafeInteger(value) && value > 0)) continue;
     if (row.areaM2 !== row.lengthMm * row.widthMm / 1_000_000) continue;
-    if (!Array.isArray(row.openSides) || row.openSides.length !== row.openingCount || new Set(row.openSides).size !== row.openingCount || !row.openSides.every(side => sides.includes(side as any))) continue;
+    if (!Number.isInteger(row.openingCount) || row.openingCount < 1 || row.openingCount > 4) continue;
     
     const product = catalog.productSystems.find(option => option.id === row.productSystemId);
     if (!product) continue;
@@ -136,7 +135,7 @@ export async function loadCandidates(pool: pg.Pool, catalog: Catalog, storage: P
       code: row.code,
       specifications: {
         lengthMm: row.lengthMm, widthMm: row.widthMm, heightMm: row.heightMm, areaM2: row.areaM2,
-        openingCount: row.openingCount, openSides: row.openSides,
+        openingCount: row.openingCount,
         productSystemId: product.id, productSystemLabel: product.label
       },
       images: await Promise.all(images.map(async image => {

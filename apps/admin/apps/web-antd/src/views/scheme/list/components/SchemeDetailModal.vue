@@ -96,12 +96,6 @@ const [SchemeForm, schemeApi] = useVbenForm({
     },
     {
       component: 'Select',
-      fieldName: 'openSides',
-      label: '开口方向',
-      componentProps: { disabled: true, mode: 'multiple', options: [] },
-    },
-    {
-      component: 'Select',
       fieldName: 'zoneIds',
       label: '功能分区',
       componentProps: { disabled: true, mode: 'multiple', options: [] },
@@ -167,22 +161,6 @@ async function loadOptions() {
           fieldName: 'budgetTierId',
           componentProps: {
             options: formatOpts(res.budget_tier),
-          },
-        },
-        {
-          fieldName: 'openSides',
-          componentProps: {
-            options: ['front', 'right', 'back', 'left'].map((value) => ({
-              value,
-              label: (
-                {
-                  front: '正面',
-                  right: '右侧',
-                  back: '背面',
-                  left: '左侧',
-                } as Record<string, string>
-              )[value],
-            })),
           },
         },
       ]);

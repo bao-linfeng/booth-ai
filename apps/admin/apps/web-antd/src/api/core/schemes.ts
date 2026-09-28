@@ -10,7 +10,6 @@ export interface SchemeRecord {
   heightMm: null | number;
   areaM2: null | string;
   openingCount: null | number;
-  openSides: string[];
   productSystemId: null | string;
   styleId: null | string;
   industryIds: string[];
@@ -65,7 +64,6 @@ export interface CreateSchemeInput {
   budgetTierId?: null | string;
   keywords?: string[];
   notes?: null | string;
-  openSides?: string[];
   zoneIds?: string[];
   featureIds?: string[];
   source?: null | string;

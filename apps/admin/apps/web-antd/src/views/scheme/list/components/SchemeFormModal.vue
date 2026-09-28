@@ -46,7 +46,6 @@ const [SchemeForm, schemeApi] = useVbenForm({
           industryIds: values.industryIds || [],
           budgetTierId: values.budgetTierId,
           keywords: values.keywords || [],
-          openSides: values.openSides || [],
           zoneIds: values.zoneIds || [],
           featureIds: values.featureIds || [],
         };
@@ -69,7 +68,6 @@ const [SchemeForm, schemeApi] = useVbenForm({
           industryIds: values.industryIds || [],
           budgetTierId: values.budgetTierId,
           keywords: values.keywords || [],
-          openSides: values.openSides || [],
           zoneIds: values.zoneIds || [],
           featureIds: values.featureIds || [],
           editRevision: currentRevision.value,
@@ -188,17 +186,6 @@ const [SchemeForm, schemeApi] = useVbenForm({
     },
     {
       component: 'Select',
-      fieldName: 'openSides',
-      label: '开口方向',
-      componentProps: {
-        placeholder: '请选择',
-        mode: 'multiple',
-        options: [],
-        class: 'w-full',
-      },
-    },
-    {
-      component: 'Select',
       fieldName: 'zoneIds',
       label: '功能分区',
       componentProps: {
@@ -288,22 +275,6 @@ async function loadOptions() {
             options: (res.opening_count || []).map((t) => ({
               label: t.label,
               value: Number(t.itemValue),
-            })),
-          },
-        },
-        {
-          fieldName: 'openSides',
-          componentProps: {
-            options: ['front', 'right', 'back', 'left'].map((value) => ({
-              value,
-              label: (
-                {
-                  front: '正面',
-                  right: '右侧',
-                  back: '背面',
-                  left: '左侧',
-                } as Record<string, string>
-              )[value],
             })),
           },
         },

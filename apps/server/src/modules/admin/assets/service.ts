@@ -309,7 +309,6 @@ export async function addAssetVersion(pool: pg.Pool, adminId: string | null, sch
       WHERE id = $2 AND revision = $3 AND is_active = true
     `, [adminId, assetId, expectedRevision]);
     if (!updated.rowCount) throw requestError('Asset revision conflict', 409);
-    if (asset.type === 'model') await invalidateModelBom(client, schemeLock.rows[0].id, assetId, adminId);
     await invalidatePublishedScheme(client, schemeLock.rows[0].id, adminId);
     return toAssetVersion(version);
   });
@@ -340,7 +339,6 @@ export async function updateAsset(pool: pg.Pool, adminId: string | null, schemeC
       if (!current) throw requestError('Asset not found', 404);
       throw requestError('Asset revision conflict', 409);
     }
-    if (asset.type === 'model') await invalidateModelBom(client, schemeLock.rows[0].id, assetId, adminId);
     await invalidatePublishedScheme(client, schemeLock.rows[0].id, adminId);
   });
   return getAsset(pool, schemeCode, assetId);
@@ -353,7 +351,6 @@ export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeC
       if (!scheme.rows[0]) throw requestError('Scheme not found', 404);
       const result = await client.query<{ revision: number }>('UPDATE scheme_assets SET is_active=false,revision=revision+1,updated_by=$1,updated_at=now() WHERE id=$2 AND scheme_id=$3 AND revision=$4 AND is_active=true RETURNING revision', [adminId, assetId, scheme.rows[0].id, expectedRevision]);
       if (!result.rows[0]) throw requestError('Asset revision conflict', 409);
-      await invalidateModelBom(client, scheme.rows[0].id, assetId, adminId);
       await invalidatePublishedScheme(client, scheme.rows[0].id, adminId);
       return result.rows[0].revision;
     });
@@ -376,14 +373,6 @@ export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeC
 async function invalidatePublishedScheme(client: pg.PoolClient, schemeId: string, adminId: string | null): Promise<void> {
   await client.query(`UPDATE schemes SET publish_status='draft', verification_status='unverified', revision=revision+1,
     updated_by=$2, updated_at=now() WHERE id=$1 AND publish_status='published'`, [schemeId, adminId]);
-}
-
-async function invalidateModelBom(client: pg.PoolClient, schemeId: string, assetId: string, adminId: string | null): Promise<void> {
-  const bom = await client.query<{ id: string; revision: number }>("SELECT id::text AS id,revision FROM scheme_boms WHERE scheme_id=$1 AND model_asset_id=$2 AND status='verified' FOR UPDATE", [schemeId,assetId]);
-  const row = bom.rows[0];
-  if (!row) return;
-  await client.query("UPDATE scheme_boms SET revision=revision+1,status='pending_verification',verified_at=NULL,model_asset_id=NULL,model_asset_version_id=NULL,model_hash=NULL,updated_by=$2,updated_at=now() WHERE id=$1", [row.id,adminId]);
-  if (adminId) await client.query('INSERT INTO bom_change_logs (bom_id,before_revision,after_revision,action,change_reason,admin_id,summary) VALUES ($1,$2,$3,$4,$5,$6,$7)', [row.id,row.revision,row.revision+1,'model_invalidated','模型版本发生变化',adminId,JSON.stringify({assetId})]);
 }
 
 export async function getAssetVersion(pool: pg.Pool, assetId: string, versionId: string): Promise<AssetVersion> {

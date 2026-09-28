@@ -43,3 +43,10 @@ test('strong requirements are preserved separately from soft preferences', () =>
   assert.deepEqual(result.requirement.zoneIds, []);
   assert.equal(result.status, 'ready');
 });
+
+test('opening count is parsed without adding an opening direction field', () => {
+  const result = parseRequirement('两面开口', emptyRequirement(), catalog);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.requirement.openingCount, 2);
+  assert.equal(Object.keys(result.requirement).includes('openSides'), false);
+});

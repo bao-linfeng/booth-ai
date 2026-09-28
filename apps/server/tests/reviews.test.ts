@@ -7,7 +7,7 @@ const scheme = {
   id: 'scheme-id', code: 'S-1', revision: 2, publishStatus: 'draft',
   verificationStatus: 'unverified', updatedAt: new Date('2026-01-01T00:00:00Z'),
   lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: '18',
-  openingCount: 2, openSides: ['front', 'left'], productSystemId: 'system-id',
+  openingCount: 2, productSystemId: 'system-id',
   applicableConditions: { status: 'confirmed', rules: [], labelsConfirmed: true },
 };
 
@@ -53,6 +53,19 @@ test('readiness reports active asset counts, verification and blockers', async (
   assert.equal(readiness.assets.model.count, 1);
   assert.equal(readiness.assets.checklist.count, 0);
   assert.equal(readiness.assets.model.verified, false);
+  assert.equal(readiness.canPublish, false);
+});
+
+test('readiness requires a valid opening count without directions', async () => {
+  const pool = poolFor(sql => {
+    if (sql.includes('FROM schemes WHERE code')) return { rows: [{ ...scheme, openingCount: null }] };
+    if (sql.includes('FROM scheme_assets')) return { rows: assets };
+    if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
+    if (sql.includes('FROM scheme_reviews')) return { rows: [passedReview] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  const readiness = await getSchemeReadiness(pool, 'S-1');
+  assert.ok(readiness.blockers.includes('开口面数未核对'));
   assert.equal(readiness.canPublish, false);
 });
 

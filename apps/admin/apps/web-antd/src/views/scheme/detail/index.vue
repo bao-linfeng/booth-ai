@@ -85,7 +85,6 @@ const formData = reactive<CreateSchemeInput & { editRevision?: number }>({
   budgetTierId: undefined,
   keywords: [],
   notes: undefined,
-  openSides: [],
   zoneIds: [],
   featureIds: [],
   source: undefined,
@@ -110,7 +109,6 @@ const options = reactive({
   industries: [] as { label: string; value: string }[],
   productSystems: [] as { label: string; value: string }[],
   budgetTiers: [] as { label: string; value: string }[],
-  openSides: [] as { label: string; value: string }[],
   zones: [] as { label: string; value: string }[],
   features: [] as { label: string; value: string }[],
 });
@@ -139,12 +137,6 @@ async function fetchOptions() {
           label: o.label,
           value: o.id,
         }));
-      options.openSides = [
-        { value: 'front', label: '正面' },
-        { value: 'right', label: '右侧' },
-        { value: 'back', label: '背面' },
-        { value: 'left', label: '左侧' },
-      ];
       options.zones = (res.functional_zone || []).map((o) => ({
         label: o.label,
         value: o.id,
@@ -726,16 +718,6 @@ onMounted(() => {
                 />
               </AFormItem>
 
-              <AFormItem label="开口方向" name="openSides">
-                <ASelect
-                  v-model:value="formData.openSides"
-                  :options="options.openSides"
-                  mode="multiple"
-                  placeholder="请选择"
-                  allow-clear
-                />
-              </AFormItem>
-
               <AFormItem label="功能分区" name="zoneIds">
                 <ASelect
                   v-model:value="formData.zoneIds"
@@ -890,14 +872,15 @@ onMounted(() => {
           <ATabPane v-if="!isCreate" key="checklist" tab="简化清单">
             <div class="py-4 flex flex-col items-start gap-4">
               <p class="text-muted-foreground text-sm">
-                在独立页面管理此方案的简化清单（导入、条目维护、核验、导出）。
+                在清单管理中查看此方案的简化清单（导入、条目维护、核验、导出）。
               </p>
               <AButton
                 type="primary"
                 @click="
-                  router.push(
-                    `/scheme/detail/${encodeURIComponent(currentCode)}/checklist`,
-                  )
+                  router.push({
+                    path: '/bill-of-materials',
+                    query: { code: currentCode },
+                  })
                 "
               >
                 进入清单管理

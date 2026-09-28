@@ -21,7 +21,7 @@ import {
 import SelectionShell from "@/features/selection/SelectionShell.vue";
 import SchemeGallery from "@/features/selection/SchemeGallery.vue";
 import { previewItems } from "@/features/selection/preview";
-import { sides, type SchemeDetail } from "@/features/selection/types";
+import type { SchemeDetail } from "@/features/selection/types";
 import { apiFetch } from "@/lib/api-client";
 import {
   getClientBomApi,
@@ -128,7 +128,7 @@ const item = computed(() => {
       images: matched.images,
       specifications: matched.specifications,
       applicabilityNotes:
-        "此处展示方案经审核的公开适用说明。选择前请确认场馆限高、开口方向以及搭建规范。",
+        "此处展示方案经审核的公开适用说明。选择前请确认场馆限高、开口面数以及搭建规范。",
       resources: {
         model: true,
         bom: true,
@@ -229,14 +229,6 @@ onMounted(async () => {
                       {
                         label: '开口数量',
                         value: `${item.specifications.openingCount} 面`,
-                      },
-                      {
-                        label: '开口方向',
-                        value: item.specifications.openSides
-                          .map(
-                            (id) => sides.find((side) => side.id === id)?.label,
-                          )
-                          .join(' / '),
                       },
                     ]"
                     :key="spec.label"
@@ -353,8 +345,9 @@ onMounted(async () => {
                                 <th class="pb-2 pr-2 font-medium">名称</th>
                                 <th class="pb-2 pr-2 font-medium">型号</th>
                                 <th class="pb-2 pr-2 font-medium">规格(mm)</th>
-                                <th class="pb-2 pr-2 font-medium">数量</th>
-                                <th class="pb-2 font-medium">ERP</th>
+                                 <th class="pb-2 pr-2 font-medium">数量</th>
+                                 <th class="pb-2 pr-2 font-medium">重量合计/kg</th>
+                                 <th class="pb-2 font-medium">ERP</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -377,13 +370,12 @@ onMounted(async () => {
                                 </td>
                                 <td class="py-1.5 pr-2 tabular-nums">
                                   {{ item.quantity }}
-                                  <span class="text-muted-foreground">{{
-                                    bomData.unitRules.find(
-                                      (r) => r.id === item.unitRuleId,
-                                    )?.pricingUnit ?? ""
-                                  }}</span>
-                                </td>
-                                <td class="py-1.5 font-mono text-xs">
+                                   <span class="text-muted-foreground">{{
+                                     item.measurementKind === 'length' ? 'm' : item.measurementKind === 'area' ? 'm²' : item.sourceUnit
+                                   }}</span>
+                                 </td>
+                                 <td class="py-1.5 pr-2 tabular-nums">{{ item.totalWeightKg ?? "—" }}</td>
+                                 <td class="py-1.5 font-mono text-xs">
                                   {{ item.erpCode ?? "—" }}
                                 </td>
                               </tr>
@@ -396,23 +388,6 @@ onMounted(async () => {
                         >
                           显示前 50 条，下载 XLSX 获取完整清单
                         </p>
-                        <!-- 单位说明 -->
-                        <div
-                          v-if="bomData.unitRules.length > 0"
-                          class="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground"
-                        >
-                          <div class="mb-1 font-medium text-foreground">
-                            计量说明
-                          </div>
-                          <div v-for="rule in bomData.unitRules" :key="rule.id">
-                            {{ rule.sourceUnit }} → {{ rule.pricingUnit }}：{{
-                              rule.conversionDescription
-                            }}
-                          </div>
-                          <div class="mt-2">
-                            价格由客服提供，下载清单后联系报价。
-                          </div>
-                        </div>
                       </div>
                     </div>
                   </div>

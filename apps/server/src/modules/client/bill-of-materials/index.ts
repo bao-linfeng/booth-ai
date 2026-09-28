@@ -10,11 +10,6 @@ interface DownloadQuery { revision: string }
 
 const params = { type: 'object', required: ['code'], properties: { code: { type: 'string', minLength: 1 } } };
 const querystring = { type: 'object', required: ['revision'], additionalProperties: false, properties: { revision: { type: 'string', pattern: '^[1-9][0-9]*$' } } };
-const conversionDescriptions = {
-  identity: '原单位计价，×1',
-  mm_to_m: '已核对总长度由毫米换算为米，除以1000',
-  mm2_to_m2: '已核对总面积由平方毫米换算为平方米，除以1000000',
-} as const;
 
 function code(request: FastifyRequest<{ Params: CodeParams }>): string {
   const raw = request.params.code;
@@ -73,16 +68,11 @@ export async function registerClientBomRoutes(app: FastifyInstance, pool: pg.Poo
         productName: item.productName,
         productModel: item.productModel,
         specificationMm: item.specificationMm,
-        quantity: item.quantity,
+         quantity: item.quantity,
+         sourceUnit: item.sourceUnit,
         erpCode: item.erpCode,
-        unitRuleId: item.unitRuleId,
-      })),
-      unitRules: bom.unitRules.map(rule => ({
-        id: rule.id,
-        measurementKind: rule.measurementKind,
-        sourceUnit: rule.sourceUnit,
-        pricingUnit: rule.pricingUnit,
-        conversionDescription: conversionDescriptions[rule.conversionCode],
+        totalWeightKg: item.totalWeightKg,
+         measurementKind: item.measurementKind,
       })),
     };
   });

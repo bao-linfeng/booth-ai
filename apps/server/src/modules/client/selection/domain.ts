@@ -1,6 +1,4 @@
-export const sides = ['front', 'right', 'back', 'left'] as const;
-export type Side = typeof sides[number];
-export const rulesVersion = 'selection-2026-09-27-preview';
+export const rulesVersion = 'selection-2026-09-28';
 
 export interface Requirement {
   lengthMm: number | null;
@@ -8,7 +6,6 @@ export interface Requirement {
   maxHeightMm: number | null;
   areaM2: number | null;
   openingCount: number | null;
-  openSides: Side[] | null;
   productSystemId: string | null;
   styleIds: string[];
   industryIds: string[];
@@ -45,7 +42,6 @@ export interface Specifications {
   heightMm: number;
   areaM2: number;
   openingCount: number;
-  openSides: Side[];
   productSystemId: string;
   productSystemLabel: string;
 }
@@ -88,7 +84,7 @@ export interface MatchItem {
 export function emptyRequirement(): Requirement {
   return {
     lengthMm: null, widthMm: null, maxHeightMm: null, areaM2: null,
-    openingCount: null, openSides: null, productSystemId: null,
+    openingCount: null, productSystemId: null,
     styleIds: [], industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
     requiredZoneIds: [], requiredFeatureIds: [], excludedZoneIds: [], excludedFeatureIds: [],
     applicabilityAnswers: {}
@@ -110,7 +106,6 @@ export function validateRequirement(input: Requirement, catalog: Catalog): Requi
     if (r.areaM2 !== null && Math.abs(area - r.areaM2) > 0.0000001) invalid('Area conflicts with dimensions');
     r.areaM2 = area;
   }
-  if (r.openSides && (!r.openingCount || r.openSides.length !== r.openingCount)) invalid('Opening directions conflict with count');
   if (r.openingCount !== null && !catalog.openingCounts.some(option => option.id === String(r.openingCount))) invalid('Unknown catalog option');
   
   const groups = [
@@ -152,7 +147,6 @@ export const requirementSchema = {
     maxHeightMm: nullableDimension,
     areaM2: { anyOf: [{ type: 'number', exclusiveMinimum: 0, maximum: 1_000_000, multipleOf: 0.000001 }, { type: 'null' }] },
     openingCount: { anyOf: [{ type: 'integer', minimum: 1, maximum: 4 }, { type: 'null' }] },
-    openSides: { anyOf: [{ type: 'array', minItems: 1, maxItems: 4, uniqueItems: true, items: { type: 'string', enum: sides } }, { type: 'null' }] },
     productSystemId: nullableId,
     styleIds: ids,
     industryIds: ids,

@@ -66,25 +66,8 @@ export function parseRequirement(text: string, form: Requirement, catalog: Catal
     clarify('openingCount', '开口面数存在冲突，请确认。');
   } else if (opening[0]) {
     set('openingCount', counts[0]!, opening[0][0]);
-    set('openSides', counts[0] === 4 ? ['front', 'right', 'back', 'left'] : null, opening[0][0]);
   }
   opening.forEach(consume);
-  
-  const direction = [...normalized.matchAll(/(前侧|后侧|左侧|右侧|前后|左右)(?:和|与|、|及)?/g)];
-  if (direction.length && /开口/.test(normalized)) {
-    const map: Record<string, Requirement['openSides']> = {
-      前侧: ['front'], 后侧: ['back'], 左侧: ['left'], 右侧: ['right'],
-      前后: ['front', 'back'], 左右: ['left', 'right']
-    };
-    const found = [...new Set(direction.flatMap(match => map[match[1]!] ?? []))];
-    if (requirement.openingCount && requirement.openingCount !== found.length) {
-      clarify('openSides', '开口数量与识别到的方向不一致，请确认。');
-    } else {
-      set('openSides', found, direction.map(match => match[0]).join('、'));
-      set('openingCount', found.length, '明确的开口方向');
-    }
-    direction.forEach(consume);
-  }
   
   // Dictionaries
   for (const [field, options] of [

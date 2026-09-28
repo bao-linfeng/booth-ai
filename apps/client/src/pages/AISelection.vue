@@ -15,7 +15,7 @@ import SelectionShell from '@/features/selection/SelectionShell.vue'
 import RequirementForm from '@/features/selection/RequirementForm.vue'
 import SchemeCard from '@/features/selection/SchemeCard.vue'
 import BoothIllustration from '@/features/selection/BoothIllustration.vue'
-import { emptyRequirement, sides, type SelectionState, type Catalog, type MatchItem, type MatchResponse, type ParseResponse, type Requirement } from '@/features/selection/types'
+import { emptyRequirement, type SelectionState, type Catalog, type MatchItem, type MatchResponse, type ParseResponse, type Requirement } from '@/features/selection/types'
 import { previewCatalog, previewItems, previewStates } from '@/features/selection/preview'
 import { apiFetch } from '@/lib/api-client'
 
@@ -67,7 +67,7 @@ const sourceRows = computed(() => parseResult.value ? Object.entries(parseResult
     evidence: source.evidence
   })) : [])
 const items = computed(() => isPreview.value 
-  ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: ['尺寸、开口方向、限高和适用条件待确认'] } : item)
+  ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: ['尺寸、开口面数、限高和适用条件待确认'] } : item)
   : liveItems.value
 )
 
@@ -82,7 +82,6 @@ const chips = computed(() => {
     r.areaM2 ? `${r.areaM2} ㎡` : '', 
     boothSpace ? '' : (r.maxHeightMm ? `限高 ${r.maxHeightMm / 1000} m` : ''),
     r.openingCount ? `${r.openingCount} 面开口` : '', 
-    ...(r.openSides ?? []).map(id => sides.find(side => side.id === id)!.label), 
     ...currentCatalog.styles.filter(option => r.styleIds.includes(option.id)).map(option => option.label)
   ].filter(Boolean)
 })
@@ -99,7 +98,7 @@ function clearText() {
 
 const fieldLabels: Record<keyof Requirement, string> = {
   lengthMm: '展位长', widthMm: '展位宽', maxHeightMm: '场馆限高', areaM2: '面积',
-  openingCount: '开口面数', openSides: '开口方向', productSystemId: '产品体系',
+  openingCount: '开口面数', productSystemId: '产品体系',
   styleIds: '设计风格', industryIds: '适用行业', budgetTierId: '材料预算',
   zoneIds: '功能分区', featureIds: '特色功能', keywords: '关键词',
   requiredZoneIds: '必须分区', requiredFeatureIds: '必须特色',
@@ -110,7 +109,7 @@ function displayValue(field: string, value: unknown): string {
   if (value === null || value === undefined || (Array.isArray(value) && !value.length)) return '未填写'
   if (typeof value === 'number') return ['lengthMm', 'widthMm', 'maxHeightMm'].includes(field) ? `${value / 1000} m` : field === 'areaM2' ? `${value} ㎡` : String(value)
   const options = [...catalog.value.productSystems, ...catalog.value.styles, ...catalog.value.industries, ...catalog.value.budgetTiers, ...catalog.value.zones, ...catalog.value.features]
-  const label = (id: string) => field === 'openSides' ? sides.find(side => side.id === id)?.label ?? id : options.find(option => option.id === id)?.label ?? id
+  const label = (id: string) => options.find(option => option.id === id)?.label ?? id
   if (Array.isArray(value)) return value.map(id => label(String(id))).join('、')
   if (typeof value === 'object') return Object.entries(value).map(([id, answer]) => `${catalog.value.applicabilityQuestions.find(question => question.id === id)?.label ?? id}：${answer ? '是' : '否'}`).join('、') || '未填写'
   return label(String(value))
@@ -152,7 +151,7 @@ async function reparseText() {
 function choosePreview(value: string) {
   previewMode.value = value
   if (value === 'results' || value === 'needs_clarification') {
-    requirement.value = { ...emptyRequirement(), lengthMm: 6000, widthMm: 3000, areaM2: 18, maxHeightMm: 4500, openingCount: 2, openSides: ['front', 'left'], styleIds: ['modern-minimal'], productSystemId: 'fs62' }
+    requirement.value = { ...emptyRequirement(), lengthMm: 6000, widthMm: 3000, areaM2: 18, maxHeightMm: 4500, openingCount: 2, styleIds: ['modern-minimal'], productSystemId: 'fs62' }
     text.value = '长6米，宽3米，两面开口，现代简约风格，需要洽谈区。'
   } else if (value === 'random' || value === 'idle') reset()
   state.value = value === 'random' ? 'results' : value as SelectionState
@@ -262,7 +261,7 @@ onMounted(() => {
             </CardHeader>
             <CardContent class="space-y-3">
               <Label for="requirement-text" class="sr-only">一句话描述需求</Label>
-              <Textarea id="requirement-text" :model-value="text" maxlength="1000" :disabled="busy" class="min-h-28" placeholder="例如：长6米、宽3米，前侧和左侧开口，限高4.5米，希望有洽谈区……" @update:model-value="text = String($event)" />
+              <Textarea id="requirement-text" :model-value="text" maxlength="1000" :disabled="busy" class="min-h-28" placeholder="例如：长6米、宽3米，两面开口，限高4.5米，希望有洽谈区……" @update:model-value="text = String($event)" />
               <div class="flex flex-wrap items-center gap-2">
                 <span class="text-xs text-muted-foreground">试试：</span>
                 <Button variant="secondary" size="sm" :disabled="busy" @click="text = '长6米、宽3米，现代简约风格，需要洽谈区'">简约洽谈空间<ArrowUpRight class="ml-1 size-3" /></Button>

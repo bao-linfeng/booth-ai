@@ -10,6 +10,7 @@
     "archiver",
     "astro",
     "axios",
+    "boms",
     "brotli",
     "cascader",
     "chatcmpl",

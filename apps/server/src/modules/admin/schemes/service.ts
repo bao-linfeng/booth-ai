@@ -10,7 +10,6 @@ export interface SchemeInput {
   heightMm?: number | null;
   areaM2?: number | null;
   openingCount?: number | null;
-  openSides?: string[] | null;
   productSystemId?: string | null;
   styleId?: string | null;
   industryIds?: string[] | null;
@@ -48,7 +47,6 @@ export interface SchemeRecord {
   heightMm: number | null;
   areaM2: string | null;
   openingCount: number | null;
-  openSides: string[] | null;
   productSystemId: string | null;
   styleId: string | null;
   industryIds: string[];
@@ -78,7 +76,7 @@ interface SchemeRow extends Omit<SchemeRecord, 'createdAt' | 'updatedAt'> {
 const schemeColumns = `
   id, code, name, parent_code AS "parentCode", length_mm AS "lengthMm",
   width_mm AS "widthMm", height_mm AS "heightMm", area_sqm::text AS "areaM2",
-  opening_count AS "openingCount", opening_directions AS "openSides", product_system_id::text AS "productSystemId",
+  opening_count AS "openingCount", product_system_id::text AS "productSystemId",
   style_id::text AS "styleId", industry_ids::text[] AS "industryIds", budget_tier_id::text AS "budgetTierId", zone_ids::text[] AS "zoneIds",
   feature_ids::text[] AS "featureIds", description, keywords, source, visual_theme AS "visualTheme",
   applicable_conditions AS "applicableConditions", publish_status AS "publishStatus",
@@ -88,7 +86,7 @@ const schemeColumns = `
 
 const columnByInput: Record<keyof SchemeInput, string> = {
   code: 'code', name: 'name', parentCode: 'parent_code', lengthMm: 'length_mm', widthMm: 'width_mm',
-  heightMm: 'height_mm', areaM2: 'area_sqm', openingCount: 'opening_count', openSides: 'opening_directions',
+  heightMm: 'height_mm', areaM2: 'area_sqm', openingCount: 'opening_count',
   productSystemId: 'product_system_id', styleId: 'style_id', industryIds: 'industry_ids', budgetTierId: 'budget_tier_id',
   zoneIds: 'zone_ids', featureIds: 'feature_ids', description: 'description', keywords: 'keywords',
   source: 'source', visualTheme: 'visual_theme', applicableConditions: 'applicable_conditions',

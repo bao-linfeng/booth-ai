@@ -15,7 +15,6 @@ interface SchemeRow {
   heightMm: number | null;
   areaM2: string | null;
   openingCount: number | null;
-  openSides: string[] | null;
   productSystemId: string | null;
   applicableConditions: Record<string, unknown> | null;
 }
@@ -85,7 +84,7 @@ export interface PublishedScheme {
   updatedAt: string;
 }
 
-const schemeColumns = 'id::text AS id, code, revision, publish_status AS "publishStatus", verification_status AS "verificationStatus", updated_at AS "updatedAt", length_mm AS "lengthMm", width_mm AS "widthMm", height_mm AS "heightMm", area_sqm::text AS "areaM2", opening_count AS "openingCount", opening_directions AS "openSides", product_system_id::text AS "productSystemId", applicable_conditions AS "applicableConditions"';
+const schemeColumns = 'id::text AS id, code, revision, publish_status AS "publishStatus", verification_status AS "verificationStatus", updated_at AS "updatedAt", length_mm AS "lengthMm", width_mm AS "widthMm", height_mm AS "heightMm", area_sqm::text AS "areaM2", opening_count AS "openingCount", product_system_id::text AS "productSystemId", applicable_conditions AS "applicableConditions"';
 const reviewColumns = 'id::text AS id, scheme_id::text AS "schemeId", request_key AS "requestKey", scheme_revision AS "schemeRevision", phase, decision, checks, notes, admin_id::text AS "adminId", created_at AS "createdAt"';
 
 function requestError(message: string, statusCode: number): Error & { statusCode: number } {
@@ -158,10 +157,7 @@ async function readinessForScheme(client: DbClient, scheme: SchemeRow): Promise<
   const heightMm = scheme.heightMm;
   if (scheme.areaM2 === null || ![lengthMm, widthMm, heightMm].every(value => value !== null && Number.isSafeInteger(value) && value > 0) ||
     Number(scheme.areaM2) !== (lengthMm ?? 0) * (widthMm ?? 0) / 1_000_000) blockers.push('方案尺寸或面积不完整');
-  const directions = scheme.openSides;
-  if (!scheme.openingCount || scheme.openingCount < 1 || scheme.openingCount > 4 ||
-    !Array.isArray(directions) || directions.length !== scheme.openingCount ||
-    new Set(directions).size !== directions.length || directions.some(side => !['front', 'right', 'back', 'left'].includes(side))) blockers.push('开口方向未核对');
+  if (!scheme.openingCount || scheme.openingCount < 1 || scheme.openingCount > 4) blockers.push('开口面数未核对');
   const product = scheme.productSystemId ? await client.query<{ exists: boolean }>(
     "SELECT EXISTS (SELECT 1 FROM dictionary_items i JOIN dictionaries d ON d.id = i.dictionary_id WHERE d.code = 'product_system' AND d.enabled AND i.enabled AND i.id = $1) AS exists", [scheme.productSystemId]) : null;
   if (!product?.rows[0]?.exists) blockers.push('产品体系未映射到可用字典');

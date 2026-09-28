@@ -1,13 +1,5 @@
 import { apiFetch } from '@/lib/api-client';
 
-export interface ClientBomUnitRule {
-  id: string;
-  measurementKind: 'count' | 'length' | 'area';
-  sourceUnit: string;
-  pricingUnit: string;
-  conversionDescription: string;
-}
-
 export interface ClientBomItem {
   id: string;
   ordinal: number;
@@ -15,8 +7,10 @@ export interface ClientBomItem {
   productModel: string | null;
   specificationMm: string | null;
   quantity: string;
+  sourceUnit: string;
   erpCode: string | null;
-  unitRuleId: string | null;
+  totalWeightKg: string | null;
+  measurementKind: 'count' | 'length' | 'area';
 }
 
 export interface ClientBomResponse {
@@ -25,7 +19,6 @@ export interface ClientBomResponse {
   status: 'verified';
   verifiedAt: string;
   items: ClientBomItem[];
-  unitRules: ClientBomUnitRule[];
 }
 
 export async function getClientBomApi(schemeCode: string): Promise<ClientBomResponse> {

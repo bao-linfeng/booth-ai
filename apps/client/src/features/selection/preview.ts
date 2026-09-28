@@ -28,9 +28,9 @@ export const previewItems: MatchItem[] = [0, 1, 2].map(index => ({
   code: ['DEMO_63_001', 'DEMO_63_002', 'DEMO_66_003'][index]!,
   matchType: index === 0 ? 'direct' : 'reference',
   images: [1, 2, 3].map(order => ({ assetId: `demo-${index}-${order}`, url: '', thumbnailUrl: '', order, width: 1600, height: 900 })),
-  specifications: { lengthMm: 6000, widthMm: index === 2 ? 6000 : 3000, heightMm: 3500, areaM2: index === 2 ? 36 : 18, openingCount: 2, openSides: index === 1 ? ['front', 'back'] : ['front', 'left'], productSystemId: 'fs62', productSystemLabel: 'FS62 布框' },
-  reasons: index === 0 ? ['长宽、开口方向与已确认条件一致', '实际高度 3.5 m，未超过场馆限高'] : [],
-  differences: index === 1 ? [{ field: 'openSides', requested: '前侧、左侧', actual: '前侧、后侧', reason: '开口方向不同，需重新设计并核验' }] : index === 2 ? [{ field: 'widthMm', requested: '3 m', actual: '6 m', reason: '仅演示尺寸差异状态，不代表真实匹配结果' }] : [],
+  specifications: { lengthMm: 6000, widthMm: index === 2 ? 6000 : 3000, heightMm: 3500, areaM2: index === 2 ? 36 : 18, openingCount: index === 1 ? 3 : 2, productSystemId: 'fs62', productSystemLabel: 'FS62 布框' },
+  reasons: index === 0 ? ['长宽、开口面数与已确认条件一致', '实际高度 3.5 m，未超过场馆限高'] : [],
+  differences: index === 1 ? [{ field: 'openingCount', requested: '2 面', actual: '3 面', reason: '开口面数不同，需重新设计并核验' }] : index === 2 ? [{ field: 'widthMm', requested: '3 m', actual: '6 m', reason: '仅演示尺寸差异状态，不代表真实匹配结果' }] : [],
   pendingConfirmations: index === 0 ? [] : ['需技术人员核对具体场馆适用条件'],
   preferenceMisses: index === 2 ? ['材料预算档位与所选偏好不同'] : [],
 }))

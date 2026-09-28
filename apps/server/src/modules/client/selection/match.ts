@@ -1,9 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { isEmpty, invalid, rulesVersion, type Candidate, type MatchItem, type Requirement } from './domain.js';
 
-const sideLabels = { front: '前侧', right: '右侧', back: '后侧', left: '左侧' };
 const intersects = (left: string[], right: string[]) => left.some(value => right.includes(value));
-const sameSet = (left: string[], right: string[]) => left.length === right.length && left.every(value => right.includes(value));
 
 export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean) {
   if (mode === 'random' && (textProvided || !isEmpty(requirement))) invalid('Random requires empty input');
@@ -12,8 +10,7 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
     !requirement.lengthMm && '展位长',
     !requirement.widthMm && '展位宽',
     !requirement.maxHeightMm && '场馆限高',
-    !requirement.openingCount && '开口面数',
-    !requirement.openSides && '开口方向'
+    !requirement.openingCount && '开口面数'
   ].filter((value): value is string => !!value);
   
   const base = { mode, requirement, missingFields, rulesVersion };
@@ -43,7 +40,7 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
     }
     items = shuffled.slice(0, 3).map(candidate => ({
       ...toItem(candidate, 'random'),
-      pendingConfirmations: ['随机推荐，尺寸、方向、限高及适用条件待确认']
+      pendingConfirmations: ['随机推荐，尺寸、开口面数、限高及适用条件待确认']
     }));
   } else {
     const ranked: { item: MatchItem; deviation: number; preference: number }[] = [];
@@ -86,9 +83,6 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
       }
       if (requirement.openingCount && requirement.openingCount !== s.openingCount) {
         item.differences.push({ field: 'openingCount', requested: `${requirement.openingCount} 面`, actual: `${s.openingCount} 面`, reason: '开口数不同，需重新设计并核验' });
-      }
-      if (requirement.openSides && !sameSet(requirement.openSides, s.openSides)) {
-        item.differences.push({ field: 'openSides', requested: requirement.openSides.map(side => sideLabels[side]).join('、'), actual: s.openSides.map(side => sideLabels[side]).join('、'), reason: '开口方向不同，未自动旋转或镜像方案' });
       }
       
       if (!item.differences.length && !item.pendingConfirmations.length) {
