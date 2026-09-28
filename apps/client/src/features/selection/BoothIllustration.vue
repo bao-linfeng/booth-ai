@@ -5,7 +5,7 @@ const gridId = useId()
 </script>
 
 <template>
-  <svg viewBox="0 0 960 540" role="img" aria-label="展台空间示意图，非真实方案效果图" class="booth-illustration">
+  <svg viewBox="0 0 960 540" role="img" aria-label="展位空间示意图，非真实方案效果图" class="booth-illustration">
     <defs>
       <pattern :id="gridId" width="48" height="27" patternUnits="userSpaceOnUse"><path d="M 48 0 L 0 0 0 27" fill="none" stroke="currentColor" stroke-width=".5" opacity=".1" /></pattern>
     </defs>

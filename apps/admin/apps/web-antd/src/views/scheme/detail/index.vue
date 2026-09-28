@@ -18,7 +18,23 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { downloadFileFromBlob, formatDate } from '@vben/utils';
 
-import { message } from 'ant-design-vue';
+import {
+  Button as AButton,
+  Card as ACard,
+  Checkbox as ACheckbox,
+  Divider as ADivider,
+  Empty as AEmpty,
+  Form as AForm,
+  Input as AInput,
+  InputNumber as AInputNumber,
+  message,
+  Modal as AModal,
+  Radio as ARadio,
+  Select as ASelect,
+  Table as ATable,
+  Tabs as ATabs,
+  Tag as ATag,
+} from 'ant-design-vue';
 
 import {
   getAssetDownloadUrlApi,
@@ -46,6 +62,12 @@ import {
   getSchemeDetailApi,
   updateSchemeApi,
 } from '#/api/core/schemes';
+
+const AFormItem = AForm.Item;
+const ARadioGroup = ARadio.Group;
+const ASelectOption = ASelect.Option;
+const ATabPane = ATabs.TabPane;
+const ATextarea = AInput.TextArea;
 
 const route = useRoute();
 const router = useRouter();
@@ -772,11 +794,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="p-4" v-loading="loading">
+  <div class="space-y-4 p-4" v-loading="loading">
     <div
-      class="mb-4 bg-background p-4 rounded-lg shadow-sm flex justify-between items-center"
+      class="bg-background border-border flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4 shadow-sm"
     >
-      <div class="flex items-center gap-4">
+      <div class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
         <a-button
           type="link"
           @click="handleBack"
@@ -785,11 +807,14 @@ onMounted(() => {
           <span class="icon-[lucide--arrow-left]"></span>
           返回
         </a-button>
-        <h2 class="text-xl font-medium m-0">
+        <h2 class="m-0 break-all text-xl font-semibold">
           {{ isCreate ? '新建方案' : `方案详情: ${currentCode}` }}
         </h2>
 
-        <div v-if="!isCreate && originalData" class="flex gap-2 ml-4">
+        <div
+          v-if="!isCreate && originalData"
+          class="flex flex-wrap items-center gap-2"
+        >
           <a-tag
             v-if="originalData.publishStatus === 'published'"
             color="green"
@@ -819,15 +844,17 @@ onMounted(() => {
           <a-tag v-else>未核验</a-tag>
         </div>
       </div>
-      <div class="flex gap-2">
-        <a-button type="primary" :loading="saving" @click="handleSave">
+      <div class="flex flex-wrap items-center gap-2">
+        <a-button
+          :type="isCreate ? 'primary' : 'default'"
+          :loading="saving"
+          @click="handleSave"
+        >
           保存草稿
         </a-button>
         <template v-if="!isCreate && originalData">
           <a-button
             v-if="originalData.publishStatus !== 'published'"
-            type="primary"
-            ghost
             @click="openReviewModal"
           >
             整体审核
@@ -851,11 +878,11 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="bg-background p-4 rounded-lg shadow-sm">
+    <div class="bg-background border-border rounded-lg border p-4 shadow-sm">
       <a-form ref="formRef" :model="formData" layout="vertical">
-        <a-tabs v-model:active-key="activeTab">
+        <a-tabs v-model:active-key="activeTab" class="min-w-0">
           <a-tab-pane key="basic" tab="基础信息">
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
               <a-form-item
                 label="方案编号"
                 name="code"
@@ -881,14 +908,16 @@ onMounted(() => {
 
               <a-form-item label="来源" name="source">
                 <a-input
-                  v-model:value="formData.source"
+                  :value="formData.source ?? undefined"
+                  @update:value="formData.source = $event"
                   placeholder="请输入来源"
                 />
               </a-form-item>
 
               <a-form-item label="母方案编号" name="parentCode">
                 <a-input
-                  v-model:value="formData.parentCode"
+                  :value="formData.parentCode ?? undefined"
+                  @update:value="formData.parentCode = $event"
                   placeholder="可选填已有方案编号"
                 />
               </a-form-item>
@@ -896,7 +925,8 @@ onMounted(() => {
 
             <a-form-item label="一句话描述" name="description">
               <a-textarea
-                v-model:value="formData.description"
+                :value="formData.description ?? undefined"
+                @update:value="formData.description = $event"
                 :rows="3"
                 placeholder="请输入描述"
               />
@@ -904,17 +934,19 @@ onMounted(() => {
 
             <a-form-item label="备注" name="notes">
               <a-textarea
-                v-model:value="formData.notes"
+                :value="formData.notes ?? undefined"
+                @update:value="formData.notes = $event"
                 :rows="3"
                 placeholder="请输入备注"
               />
             </a-form-item>
 
             <a-divider orientation="left">空间信息</a-divider>
-            <div class="grid grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2 xl:grid-cols-4">
               <a-form-item label="长 (mm)" name="lengthMm">
                 <a-input-number
-                  v-model:value="formData.lengthMm"
+                  :value="formData.lengthMm ?? undefined"
+                  @update:value="formData.lengthMm = typeof $event === 'number' ? $event : null"
                   @change="calculateArea"
                   class="w-full"
                   :min="1"
@@ -924,7 +956,8 @@ onMounted(() => {
 
               <a-form-item label="宽 (mm)" name="widthMm">
                 <a-input-number
-                  v-model:value="formData.widthMm"
+                  :value="formData.widthMm ?? undefined"
+                  @update:value="formData.widthMm = typeof $event === 'number' ? $event : null"
                   @change="calculateArea"
                   class="w-full"
                   :min="1"
@@ -934,7 +967,8 @@ onMounted(() => {
 
               <a-form-item label="高 (mm)" name="heightMm">
                 <a-input-number
-                  v-model:value="formData.heightMm"
+                  :value="formData.heightMm ?? undefined"
+                  @update:value="formData.heightMm = typeof $event === 'number' ? $event : null"
                   class="w-full"
                   :min="1"
                   :precision="0"
@@ -943,7 +977,7 @@ onMounted(() => {
 
               <a-form-item label="面积 (m²)" name="areaM2">
                 <a-input-number
-                  v-model:value="formData.areaM2"
+                  :value="formData.areaM2 ?? undefined"
                   class="w-full"
                   :min="0"
                   disabled
@@ -953,10 +987,11 @@ onMounted(() => {
           </a-tab-pane>
 
           <a-tab-pane key="tags" tab="打标">
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
               <a-form-item label="产品体系" name="productSystemId">
                 <a-select
-                  v-model:value="formData.productSystemId"
+                  :value="formData.productSystemId ?? undefined"
+                  @update:value="formData.productSystemId = typeof $event === 'string' ? $event : null"
                   :options="options.productSystems"
                   placeholder="请选择"
                   allow-clear
@@ -965,7 +1000,8 @@ onMounted(() => {
 
               <a-form-item label="风格" name="styleId">
                 <a-select
-                  v-model:value="formData.styleId"
+                  :value="formData.styleId ?? undefined"
+                  @update:value="formData.styleId = typeof $event === 'string' ? $event : null"
                   :options="options.styles"
                   placeholder="请选择"
                   allow-clear
@@ -984,7 +1020,8 @@ onMounted(() => {
 
               <a-form-item label="预算档位" name="budgetTierId">
                 <a-select
-                  v-model:value="formData.budgetTierId"
+                  :value="formData.budgetTierId ?? undefined"
+                  @update:value="formData.budgetTierId = typeof $event === 'string' ? $event : null"
                   :options="options.budgetTiers"
                   placeholder="请选择"
                   allow-clear
@@ -993,7 +1030,8 @@ onMounted(() => {
 
               <a-form-item label="开口面数" name="openingCount">
                 <a-input-number
-                  v-model:value="formData.openingCount"
+                  :value="formData.openingCount ?? undefined"
+                  @update:value="formData.openingCount = typeof $event === 'number' ? $event : null"
                   class="w-full"
                   :min="0"
                   :max="4"
@@ -1028,7 +1066,7 @@ onMounted(() => {
                 />
               </a-form-item>
 
-              <a-form-item label="关键词" name="keywords" class="col-span-2">
+              <a-form-item label="关键词" name="keywords" class="sm:col-span-2">
                 <a-select
                   v-model:value="formData.keywords"
                   mode="tags"
@@ -1043,13 +1081,13 @@ onMounted(() => {
               <a-form-item label="公开适用说明">
                 <a-textarea v-model:value="publicNotes" :maxlength="2000" :rows="3" placeholder="仅填写可向客户公开的适用说明，不含内部备注" />
               </a-form-item>
-              <p class="text-xs text-gray-500">受控适用问题尚未配置；有额外限制的方案请保持未确认，暂不可发布为智选候选。</p>
+              <p class="text-muted-foreground text-xs">受控适用问题尚未配置；有额外限制的方案请保持未确认，暂不可发布为智选候选。</p>
             </div>
           </a-tab-pane>
 
           <a-tab-pane v-if="!isCreate" key="model" tab="模型">
-            <div class="flex justify-between items-center mb-4">
-              <span class="text-sm text-gray-500">共 {{ modelAssets.length }} 个模型文件</span>
+            <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <span class="text-muted-foreground text-sm">共 {{ modelAssets.length }} 个模型文件</span>
               <a-button
                 type="primary"
                 :loading="modelUploading"
@@ -1066,11 +1104,11 @@ onMounted(() => {
               <div
                 v-for="asset in modelAssets"
                 :key="asset.id"
-                class="flex items-center justify-between rounded border border-gray-200 bg-gray-50 px-4 py-3"
+                class="border-border bg-muted/50 flex items-center justify-between gap-3 rounded border px-4 py-3"
               >
                 <div>
                   <div class="font-medium">{{ asset.name }}</div>
-                  <div class="text-xs text-gray-400 mt-1">
+                  <div class="text-muted-foreground mt-1 text-xs">
                     {{ asset.currentVersion?.originalFilename || '未上传文件' }}
                     · {{ formatDate(asset.createdAt) }}
                   </div>
@@ -1088,7 +1126,7 @@ onMounted(() => {
           </a-tab-pane>
 
           <a-tab-pane v-if="!isCreate" key="assets" tab="资产汇总">
-            <div class="grid grid-cols-3 gap-6">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <a-card
                 hoverable
                 class="text-center"
@@ -1096,7 +1134,7 @@ onMounted(() => {
                   router.push(`/assets/renderings?schemeCode=${currentCode}`)
                 "
               >
-                <div class="text-gray-500 mb-2">效果图</div>
+                <div class="text-muted-foreground mb-2">效果图</div>
                 <div class="text-2xl font-semibold">
                   {{ assetCounts.rendering }}
                 </div>
@@ -1106,7 +1144,7 @@ onMounted(() => {
                 class="text-center"
                 @click="router.push(`/assets/masks?schemeCode=${currentCode}`)"
               >
-                <div class="text-gray-500 mb-2">蒙版</div>
+                <div class="text-muted-foreground mb-2">蒙版</div>
                 <div class="text-2xl font-semibold">{{ assetCounts.mask }}</div>
               </a-card>
               <a-card
@@ -1118,7 +1156,7 @@ onMounted(() => {
                   )
                 "
               >
-                <div class="text-gray-500 mb-2">报馆图</div>
+                <div class="text-muted-foreground mb-2">报馆图</div>
                 <div class="text-2xl font-semibold">
                   {{ assetCounts.drawing }}
                 </div>
@@ -1130,19 +1168,19 @@ onMounted(() => {
                   router.push(`/assets/artworks?schemeCode=${currentCode}`)
                 "
               >
-                <div class="text-gray-500 mb-2">平面素材</div>
+                <div class="text-muted-foreground mb-2">平面素材</div>
                 <div class="text-2xl font-semibold">
                   {{ assetCounts.artwork }}
                 </div>
               </a-card>
-              <a-card hoverable class="text-center">
-                <div class="text-gray-500 mb-2">模型</div>
+              <a-card class="text-center">
+                <div class="text-muted-foreground mb-2">模型</div>
                 <div class="text-2xl font-semibold">
                   {{ assetCounts.model }}
                 </div>
               </a-card>
-              <a-card hoverable class="text-center">
-                <div class="text-gray-500 mb-2">清单</div>
+              <a-card class="text-center">
+                <div class="text-muted-foreground mb-2">清单</div>
                 <div class="text-2xl font-semibold">
                   {{ assetCounts.checklist }}
                 </div>
@@ -1154,10 +1192,10 @@ onMounted(() => {
             <div v-loading="bomLoading" class="space-y-4">
               <!-- 状态栏 -->
               <div
-                class="flex items-center justify-between rounded-lg border bg-gray-50 px-4 py-3"
+                class="border-border bg-muted/50 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3"
               >
-                <div class="flex items-center gap-3">
-                  <span class="text-sm font-medium text-gray-600">清单状态</span>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm font-medium">清单状态</span>
                   <a-tag v-if="!hasBom" color="default">无清单</a-tag>
                   <a-tag
                     v-else-if="bomData && bomData.status === 'verified'"
@@ -1172,10 +1210,17 @@ onMounted(() => {
                     核验不通过
                   </a-tag>
                   <a-tag v-else color="warning">待核验</a-tag>
-                  <span v-if="hasBom" class="text-xs text-gray-400">修订版本 {{ bomData?.revision }}</span>
-                  <span v-if="bomData?.verifiedAt" class="text-xs text-gray-400">· 核验于 {{ formatDate(bomData.verifiedAt) }}</span>
+                  <span v-if="hasBom" class="text-muted-foreground text-xs">
+                    修订版本 {{ bomData?.revision }}
+                  </span>
+                  <span
+                    v-if="bomData?.verifiedAt"
+                    class="text-muted-foreground text-xs"
+                  >
+                    · 核验于 {{ formatDate(bomData.verifiedAt) }}
+                  </span>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap gap-2">
                   <a-button
                     v-if="bomData && bomData.status === 'verified'"
                     size="small"
@@ -1208,15 +1253,15 @@ onMounted(() => {
               <!-- 导入预览区 -->
               <div
                 v-if="bomImportResult"
-                class="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3"
+                class="border-border bg-muted/50 space-y-3 rounded-lg border p-4"
               >
-                <div class="flex items-center justify-between">
-                  <span class="font-medium text-blue-800">导入预览</span>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="font-medium">导入预览</span>
                   <a-button size="small" @click="bomImportResult = null">
                     取消
                   </a-button>
                 </div>
-                <div class="text-sm text-gray-600 space-y-1">
+                <div class="text-muted-foreground space-y-1 text-sm">
                   <div>文件：{{ bomImportResult.sourceFileName }}</div>
                   <div>基础修订：{{ bomImportResult.baseRevision }}</div>
                   <div>
@@ -1229,13 +1274,13 @@ onMounted(() => {
                 />
                 <!-- 错误列表 -->
                 <div v-if="bomImportResult.errors.length > 0" class="space-y-1">
-                  <div class="text-sm font-medium text-red-700">
+                  <div class="text-destructive text-sm font-medium">
                     错误（{{ bomImportResult.errors.length }} 条）
                   </div>
                   <div
                     v-for="(err, i) in bomImportResult.errors"
                     :key="i"
-                    class="text-xs text-red-600 bg-red-50 rounded px-2 py-1"
+                    class="text-destructive bg-destructive/10 rounded px-2 py-1 text-xs"
                   >
                     [{{ err.code }}] {{ err.message }}
                     <span v-if="err.sheet"> · {{ err.sheet }}</span>
@@ -1247,13 +1292,15 @@ onMounted(() => {
                   v-if="bomImportResult.warnings.length > 0"
                   class="space-y-1"
                 >
-                  <div class="text-sm font-medium text-amber-700">
+                  <div
+                    class="text-sm font-medium text-amber-700 dark:text-amber-400"
+                  >
                     警告（{{ bomImportResult.warnings.length }} 条）
                   </div>
                   <div
                     v-for="(warn, i) in bomImportResult.warnings"
                     :key="i"
-                    class="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1"
+                    class="bg-warning/10 rounded px-2 py-1 text-xs text-amber-700 dark:text-amber-400"
                   >
                     [{{ warn.code }}] {{ warn.message }}
                   </div>
@@ -1325,7 +1372,7 @@ onMounted(() => {
 
               <!-- 当前清单条目 -->
               <div v-if="hasBom && bomData && bomData.items.length > 0">
-                <div class="text-sm font-medium mb-2 text-gray-700">
+                <div class="mb-2 text-sm font-medium">
                   当前清单（{{ bomData.items.length }} 行）
                 </div>
                 <a-table
@@ -1445,11 +1492,13 @@ onMounted(() => {
                       placeholder="产品名称"
                     />
                     <a-input
-                      v-model:value="item.productModel"
+                      :value="item.productModel ?? undefined"
+                      @update:value="item.productModel = $event"
                       placeholder="型号"
                     />
                     <a-input
-                      v-model:value="item.specificationMm"
+                      :value="item.specificationMm ?? undefined"
+                      @update:value="item.specificationMm = $event"
                       placeholder="规格(mm)"
                     />
                     <a-input
@@ -1457,13 +1506,16 @@ onMounted(() => {
                       placeholder="源数量"
                     />
                     <a-select
-                      v-model:value="item.unitRuleId"
+                      :value="item.unitRuleId ?? undefined"
+                      @update:value="item.unitRuleId = typeof $event === 'string' ? $event : null"
                       class="min-w-32"
                       @change="
-                        (id: string) => {
-                          item.sourceUnit =
-                            bomData?.unitRules.find((rule) => rule.id === id)
-                              ?.sourceUnit ?? item.sourceUnit;
+                        (id) => {
+                          if (typeof id === 'string') {
+                            item.sourceUnit =
+                              bomData?.unitRules.find((rule) => rule.id === id)
+                                ?.sourceUnit ?? item.sourceUnit;
+                          }
                         }
                       "
                     >
@@ -1476,9 +1528,14 @@ onMounted(() => {
                         {{ rule.pricingUnit }}
                       </a-select-option>
                     </a-select>
-                    <a-input v-model:value="item.erpCode" placeholder="ERP" />
                     <a-input
-                      v-model:value="item.diffNote"
+                      :value="item.erpCode ?? undefined"
+                      @update:value="item.erpCode = $event"
+                      placeholder="ERP"
+                    />
+                    <a-input
+                      :value="item.diffNote ?? undefined"
+                      @update:value="item.diffNote = $event"
                       placeholder="差异说明"
                     />
                     <a-button
@@ -1532,7 +1589,7 @@ onMounted(() => {
                       删除
                     </a-button>
                   </div>
-                  <p class="text-xs text-gray-500">
+                  <p class="text-muted-foreground text-xs">
                     被条目引用的规则不可删除；更改源单位前请先调整条目。
                   </p>
                   <a-button @click="addRule">新增规则</a-button>
@@ -1548,7 +1605,8 @@ onMounted(() => {
                     @click="saveBomDraft"
                   >
                     保存
-</a-button><a-button
+                  </a-button>
+                  <a-button
                     @click="
                       editingItems = false;
                       editingRules = false;
@@ -1563,17 +1621,19 @@ onMounted(() => {
 
           <a-tab-pane v-if="!isCreate" key="publish" tab="审核发布">
             <div v-loading="readinessLoading" class="space-y-4">
-              <div v-if="!readinessData" class="text-center py-8">
+              <div v-if="!readinessData" class="py-8 text-center">
                 <a-button :loading="readinessLoading" @click="fetchReadiness">
                   加载就绪状态
                 </a-button>
               </div>
               <template v-else>
                 <!-- 就绪状态概览 -->
-                <div class="rounded-lg border bg-gray-50 px-4 py-3">
-                  <div class="flex items-center justify-between mb-3">
-                    <span class="font-medium text-gray-700">发布就绪状态</span>
-                    <div class="flex items-center gap-2">
+                <div class="border-border bg-muted/50 rounded-lg border p-4">
+                  <div
+                    class="mb-4 flex flex-wrap items-center justify-between gap-3"
+                  >
+                    <span class="font-semibold">发布就绪状态</span>
+                    <div class="flex flex-wrap items-center gap-2">
                       <a-tag v-if="readinessData.canPublish" color="success">
                         可发布
                       </a-tag>
@@ -1588,22 +1648,22 @@ onMounted(() => {
                     </div>
                   </div>
                   <!-- 阻断项 -->
-                  <div v-if="readinessData.blockers.length > 0" class="mb-3">
-                    <div class="text-sm font-medium text-red-600 mb-1">
+                  <div v-if="readinessData.blockers.length > 0" class="mb-4">
+                    <div class="text-destructive mb-2 text-sm font-medium">
                       发布阻断项
                     </div>
                     <div
                       v-for="(blocker, i) in readinessData.blockers"
                       :key="i"
-                      class="text-sm text-red-500 bg-red-50 rounded px-2 py-1 mb-1"
+                      class="text-destructive bg-destructive/10 mb-1 rounded px-3 py-2 text-sm"
                     >
                       {{ blocker }}
                     </div>
                   </div>
                   <!-- 资产汇总 -->
-                  <div class="grid grid-cols-3 gap-3">
-                    <div class="rounded border bg-white px-3 py-2 text-sm">
-                      <div class="text-gray-500 mb-1">效果图</div>
+                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <div class="border-border bg-background rounded border p-3 text-sm">
+                      <div class="text-muted-foreground mb-2">效果图</div>
                       <div class="flex items-center gap-2">
                         <span class="font-semibold">{{
                           readinessData.assets.rendering.count
@@ -1618,8 +1678,8 @@ onMounted(() => {
                         <a-tag v-else color="error" class="text-xs">需≥3</a-tag>
                       </div>
                     </div>
-                    <div class="rounded border bg-white px-3 py-2 text-sm">
-                      <div class="text-gray-500 mb-1">蒙版</div>
+                    <div class="border-border bg-background rounded border p-3 text-sm">
+                      <div class="text-muted-foreground mb-2">蒙版</div>
                       <div class="flex items-center gap-2">
                         <span class="font-semibold">{{
                           readinessData.assets.mask.count
@@ -1634,8 +1694,8 @@ onMounted(() => {
                         <a-tag v-else color="error" class="text-xs">需≥3</a-tag>
                       </div>
                     </div>
-                    <div class="rounded border bg-white px-3 py-2 text-sm">
-                      <div class="text-gray-500 mb-1">模型</div>
+                    <div class="border-border bg-background rounded border p-3 text-sm">
+                      <div class="text-muted-foreground mb-2">模型</div>
                       <div class="flex items-center gap-2">
                         <span class="font-semibold">{{
                           readinessData.assets.model.count
@@ -1650,20 +1710,20 @@ onMounted(() => {
                         <a-tag v-else color="error" class="text-xs">缺失</a-tag>
                       </div>
                     </div>
-                    <div class="rounded border bg-white px-3 py-2 text-sm">
-                      <div class="text-gray-500 mb-1">报馆图</div>
+                    <div class="border-border bg-background rounded border p-3 text-sm">
+                      <div class="text-muted-foreground mb-2">报馆图</div>
                       <span class="font-semibold">{{
                         readinessData.assets.drawing.count
                       }}</span>
                     </div>
-                    <div class="rounded border bg-white px-3 py-2 text-sm">
-                      <div class="text-gray-500 mb-1">平面素材</div>
+                    <div class="border-border bg-background rounded border p-3 text-sm">
+                      <div class="text-muted-foreground mb-2">平面素材</div>
                       <span class="font-semibold">{{
                         readinessData.assets.artwork.count
                       }}</span>
                     </div>
-                    <div class="rounded border bg-white px-3 py-2 text-sm">
-                      <div class="text-gray-500 mb-1">清单核验</div>
+                    <div class="border-border bg-background rounded border p-3 text-sm">
+                      <div class="text-muted-foreground mb-2">清单核验</div>
                       <a-tag
                         v-if="readinessData.assets.checklist.verified"
                         color="success"
@@ -1679,7 +1739,7 @@ onMounted(() => {
                 </div>
 
                 <!-- 操作区 -->
-                <div class="flex gap-3">
+                <div class="flex flex-wrap gap-3">
                   <a-button type="primary" ghost @click="openReviewModal">
                     整体审核
                   </a-button>
@@ -1836,7 +1896,7 @@ onMounted(() => {
       ok-type="danger"
     >
       <div class="space-y-3">
-        <p class="text-gray-600">
+        <p class="text-muted-foreground">
           下架后，客户端将无法匹配和使用该方案。历史项目引用不受影响。
         </p>
         <a-form layout="vertical">

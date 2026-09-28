@@ -2,6 +2,8 @@ import { getSchemeListApi } from '#/api/core/schemes';
 
 export const createFormOptions = (
   styleOptions: { label: string; value: string }[] = [],
+  productSystemOptions: { label: string; value: string }[] = [],
+  industryOptions: { label: string; value: string }[] = [],
 ) => ({
   schema: [
     {
@@ -24,6 +26,18 @@ export const createFormOptions = (
         placeholder: '请选择风格',
         options: styleOptions.length > 0 ? styleOptions : [],
       },
+    },
+    {
+      component: 'Select' as const,
+      fieldName: 'productSystemId',
+      label: '产品体系',
+      componentProps: { placeholder: '请选择产品体系', options: productSystemOptions },
+    },
+    {
+      component: 'Select' as const,
+      fieldName: 'industryId',
+      label: '适用行业',
+      componentProps: { placeholder: '请选择行业', options: industryOptions },
     },
     {
       component: 'Select' as const,
@@ -69,6 +83,7 @@ export const createGridOptions = () => ({
       slots: { default: 'dimensions' },
     },
     { field: 'areaM2', title: '面积(m²)', width: 100 },
+    { field: 'openingCount', title: '开口面数', width: 100, slots: { default: 'openingCount' } },
     { field: 'productSystemId', title: '产品体系', width: 120, slots: { default: 'productSystem' } },
     { field: 'styleId', title: '风格', width: 100, slots: { default: 'style' } },
     {

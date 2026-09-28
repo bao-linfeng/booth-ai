@@ -2,6 +2,13 @@ import type { Catalog, MatchItem, SelectionState } from './types'
 
 export const previewCatalog: Catalog = {
   dimensions: { lengthMm: [3000, 6000, 9000, 12000], widthMm: [3000, 6000, 9000], maxHeightMm: [3500, 4000, 4500, 5000], areaM2: [9, 18, 27, 36, 54, 72] },
+  boothSpaces: [
+    { id: '6000-3000-3500', label: '6 × 3 × 3.5 m', lengthMm: 6000, widthMm: 3000, heightMm: 3500 },
+    { id: '6000-3000-4500', label: '6 × 3 × 4.5 m', lengthMm: 6000, widthMm: 3000, heightMm: 4500 },
+    { id: '9000-3000-4500', label: '9 × 3 × 4.5 m', lengthMm: 9000, widthMm: 3000, heightMm: 4500 },
+    { id: '9000-6000-5000', label: '9 × 6 × 5 m', lengthMm: 9000, widthMm: 6000, heightMm: 5000 },
+  ],
+  openingCounts: [{ id: '1', label: '1面开口' }, { id: '2', label: '2面开口' }, { id: '3', label: '3面开口' }, { id: '4', label: '4面开口（岛式）' }],
   productSystems: [{ id: 'fs62', label: 'FS62 布框' }, { id: 'fs80', label: 'FS80 布框' }, { id: 'truss', label: '桁架体系' }],
   styles: [{ id: 'modern-minimal', label: '现代简约' }, { id: 'technology', label: '科技未来' }, { id: 'natural', label: '自然生态' }, { id: 'industrial', label: '工业风' }, { id: 'elegant', label: '精致典雅' }],
   industries: [{ id: 'technology', label: '科技电子' }, { id: 'medical', label: '医疗健康' }, { id: 'home', label: '家居生活' }, { id: 'food', label: '食品饮料' }, { id: 'general', label: '通用' }],

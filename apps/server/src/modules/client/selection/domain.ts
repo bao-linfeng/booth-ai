@@ -24,9 +24,12 @@ export interface Requirement {
 }
 
 export interface Option { id: string; label: string; }
+export interface BoothSpace { id: string; label: string; lengthMm: number; widthMm: number; heightMm: number; }
 
 export interface Catalog {
   dimensions: { lengthMm: number[]; widthMm: number[]; maxHeightMm: number[]; areaM2: number[]; };
+  boothSpaces: BoothSpace[];
+  openingCounts: Option[];
   productSystems: Option[];
   styles: Option[];
   industries: Option[];
@@ -108,6 +111,7 @@ export function validateRequirement(input: Requirement, catalog: Catalog): Requi
     r.areaM2 = area;
   }
   if (r.openSides && (!r.openingCount || r.openSides.length !== r.openingCount)) invalid('Opening directions conflict with count');
+  if (r.openingCount !== null && !catalog.openingCounts.some(option => option.id === String(r.openingCount))) invalid('Unknown catalog option');
   
   const groups = [
     [r.productSystemId ? [r.productSystemId] : [], catalog.productSystems],

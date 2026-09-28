@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../../infra/storage.js';
-import { rulesVersion, sides, type Candidate, type Catalog, type Option, type Side } from './domain.js';
+import { rulesVersion, sides, type BoothSpace, type Candidate, type Catalog, type Option, type Side } from './domain.js';
 
 interface CandidateRow {
   id: string;
@@ -35,14 +35,34 @@ interface AssetRow {
 }
 
 export async function loadCatalog(pool: pg.Pool): Promise<Catalog & { rulesVersion: string; dictionaryVersion: string }> {
-  const result = await pool.query<{ type: string; id: string; label: string }>(`SELECT d.code AS type, i.id::text AS id, i.item_label AS label
+  const result = await pool.query<{ type: string; id: string; value: string; label: string }>(`SELECT d.code AS type, i.id::text AS id, i.item_value AS value, i.item_label AS label
     FROM dictionaries d JOIN dictionary_items i ON i.dictionary_id = d.id
-    WHERE d.enabled AND i.enabled AND d.code IN ('product_system','style','industry','budget_tier','functional_zone','key_feature')
+    WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','booth_length','booth_width','booth_height','booth_area','product_system','style','industry','budget_tier','functional_zone','key_feature')
     ORDER BY d.code, i.sort_order, i.id`);
-  const byType = (type: string): Option[] => result.rows.filter(row => row.type === type).map(({ id, label }) => ({ id, label }));
+  const byType = (type: string, useValue = false): Option[] => result.rows
+    .filter(row => row.type === type)
+    .map(({ id, value, label }) => ({ id: useValue ? value : id, label }));
+  const numericValues = (type: string): number[] => [...new Set(result.rows
+    .filter(row => row.type === type)
+    .map(row => Number(row.value))
+    .filter(value => Number.isFinite(value)))].sort((left, right) => left - right);
+  const spaces = await pool.query<{ lengthMm: number; widthMm: number; heightMm: number }>(`
+    SELECT DISTINCT length_mm AS "lengthMm", width_mm AS "widthMm", height_mm AS "heightMm"
+    FROM schemes
+    WHERE length_mm > 0 AND width_mm > 0 AND height_mm > 0
+    ORDER BY length_mm, width_mm, height_mm`);
+  const boothSpaces: BoothSpace[] = spaces.rows.map(row => ({
+    id: `${row.lengthMm}-${row.widthMm}-${row.heightMm}`,
+    label: `${row.lengthMm / 1000} × ${row.widthMm / 1000} × ${row.heightMm / 1000} m`,
+    lengthMm: row.lengthMm,
+    widthMm: row.widthMm,
+    heightMm: row.heightMm,
+  }));
   
   return {
-    dimensions: { lengthMm: [3000, 6000, 9000, 12000], widthMm: [3000, 6000, 9000], maxHeightMm: [3500, 4000, 4500, 5000], areaM2: [9, 18, 27, 36, 54, 72] },
+    dimensions: { lengthMm: numericValues('booth_length'), widthMm: numericValues('booth_width'), maxHeightMm: numericValues('booth_height'), areaM2: numericValues('booth_area') },
+    boothSpaces,
+    openingCounts: byType('opening_count', true),
     productSystems: byType('product_system'),
     styles: byType('style'),
     industries: byType('industry'),

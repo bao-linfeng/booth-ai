@@ -92,6 +92,7 @@ export interface CommitImportOptions {
 export interface CommitImportResult {
   created: number;
   updated: number;
+  dictionaryItemsCreated: number;
   failed: { rowNumber: number; code: string; reason: string }[];
 }
 
@@ -148,7 +149,7 @@ function verificationStatus(value: ExcelJS.CellValue): ImportRow['verificationSt
 }
 
 function parseRow(row: ExcelJS.Row): ImportRow {
-  return {
+  const parsed: ImportRow = {
     code: cellText(row.getCell(2).value),
     name: cellText(row.getCell(3).value),
     parentCode: optionalText(row.getCell(4).value),
@@ -168,6 +169,10 @@ function parseRow(row: ExcelJS.Row): ImportRow {
     verificationStatus: verificationStatus(row.getCell(19).value),
     notes: optionalText(row.getCell(20).value),
   };
+  if (parsed.areaM2 === null && parsed.lengthMm !== null && parsed.widthMm !== null) {
+    parsed.areaM2 = parsed.lengthMm * parsed.widthMm / 1_000_000;
+  }
+  return parsed;
 }
 
 function parseError(): Error & { statusCode: number } {
@@ -248,6 +253,57 @@ function mapDbError(error: unknown): string {
   return '数据库写入失败';
 }
 
+const generatedDictionaries = [
+  { code: 'opening_count', name: '开口面数' },
+  { code: 'booth_length', name: '展位长' },
+  { code: 'booth_width', name: '展位宽' },
+  { code: 'booth_height', name: '展位高' },
+  { code: 'booth_area', name: '展位面积' },
+] as const;
+
+function generatedDictionaryValue(code: (typeof generatedDictionaries)[number]['code'], row: ImportRow): { value: string; label: string; sortOrder: number } | null {
+  if (code === 'opening_count' && row.openingCount !== null) {
+    return {
+      value: String(row.openingCount),
+      label: row.openingCount === 4 ? '4面开口（岛式）' : `${row.openingCount}面开口`,
+      sortOrder: row.openingCount,
+    };
+  }
+  const dimension = code === 'booth_length' ? row.lengthMm : code === 'booth_width' ? row.widthMm : code === 'booth_height' ? row.heightMm : null;
+  if (dimension !== null) {
+    return { value: String(dimension), label: `${dimension / 1000} m`, sortOrder: dimension };
+  }
+  if (code === 'booth_area' && row.areaM2 !== null) {
+    return { value: String(row.areaM2), label: `${row.areaM2} ㎡`, sortOrder: Math.round(row.areaM2 * 1_000_000) };
+  }
+  return null;
+}
+
+async function createGeneratedDictionaryItems(client: pg.PoolClient, rows: ImportRow[]): Promise<number> {
+  let created = 0;
+  for (const dictionary of generatedDictionaries) {
+    await client.query(
+      'INSERT INTO dictionaries (code, name, type) VALUES ($1, $2, \'selection\') ON CONFLICT (code) DO NOTHING',
+      [dictionary.code, dictionary.name],
+    );
+    const values = new Map<string, { label: string; sortOrder: number }>();
+    for (const row of rows) {
+      const item = generatedDictionaryValue(dictionary.code, row);
+      if (item) values.set(item.value, { label: item.label, sortOrder: item.sortOrder });
+    }
+    for (const [value, item] of values) {
+      const result = await client.query(
+        `INSERT INTO dictionary_items (dictionary_id, item_value, item_label, sort_order)
+         SELECT id, $2, $3, $4 FROM dictionaries WHERE code = $1
+         ON CONFLICT (dictionary_id, item_value) DO NOTHING`,
+        [dictionary.code, value, item.label, item.sortOrder],
+      );
+      created += result.rowCount ?? 0;
+    }
+  }
+  return created;
+}
+
 export async function previewImport(pool: pg.Pool, adminId: string | null, buffer: Buffer, filename: string): Promise<PreviewImportResult> {
   const parsedRows = await parseWorkbook(buffer);
   const codes = [...new Set(parsedRows.map(row => row.code).filter(code => code !== ''))];
@@ -300,7 +356,7 @@ export async function previewImport(pool: pg.Pool, adminId: string | null, buffe
     INSERT INTO scheme_imports (source_filename, preview, summary, expires_at, created_by)
     VALUES ($1, $2, $3, now() + interval '1 hour', $4)
     RETURNING id::text AS id
-  `, [filename, rows, summary, adminId]);
+  `, [filename, JSON.stringify(rows), JSON.stringify(summary), adminId]);
   const importId = inserted.rows[0]?.id;
   if (!importId) throw Object.assign(new Error('Failed to create import preview'), { statusCode: 500 });
   return { importId, rows, summary };
@@ -319,7 +375,8 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
     if (!Array.isArray(preview)) throw Object.assign(new Error('Import preview is invalid'), { statusCode: 400 });
 
     const selectedRows = options.selectedRows && options.selectedRows.length > 0 ? new Set(options.selectedRows) : null;
-    const result: CommitImportResult = { created: 0, updated: 0, failed: [] };
+    const result: CommitImportResult = { created: 0, updated: 0, dictionaryItemsCreated: 0, failed: [] };
+    const committedRows: ImportRow[] = [];
     for (const storedRow of preview) {
       const row = importRowFromJson(storedRow);
       if (!row || !row.data || (row.status !== 'valid' && row.status !== 'duplicate') ||
@@ -337,7 +394,8 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
             row.data.featureIds ?? [], row.data.description, row.data.keywords,
             row.data.notes, adminId, adminId,
           ]);
-          result.created += 1;
+           result.created += 1;
+           committedRows.push(row.data);
         } else {
           const updateResult = await client.query(updateSql, [
             row.data.code, row.data.name, row.data.parentCode, row.data.widthMm, row.data.lengthMm,
@@ -350,6 +408,7 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
             result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: '原方案已不存在，请重新导入' });
           } else {
             result.updated += 1;
+            committedRows.push(row.data);
           }
         }
         await client.query('RELEASE SAVEPOINT row_save');
@@ -358,6 +417,7 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
         result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: err instanceof Error && 'statusCode' in err && err.statusCode === 400 ? err.message : mapDbError(err) });
       }
     }
+    result.dictionaryItemsCreated = await createGeneratedDictionaryItems(client, committedRows);
     await client.query("UPDATE scheme_imports SET status = 'committed', committed_at = now() WHERE id = $1", [importId]);
     return result;
   });

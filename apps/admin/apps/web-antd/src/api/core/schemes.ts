@@ -76,7 +76,7 @@ export interface UpdateSchemeInput extends Omit<CreateSchemeInput, 'code'> {
   editRevision: number;
 }
 
-export type SchemeOptionsResult = Record<string, { id: string; label: string }[]>;
+export type SchemeOptionsResult = Record<string, { id: string; label: string; itemValue: string }[]>;
 
 export async function getSchemeListApi(params?: SchemeListParams) {
   return requestClient.get<SchemeListResult>('/v1/admin/schemes', { params });
@@ -138,6 +138,7 @@ export interface ImportPreviewResult {
 export interface ImportCommitResult {
   created: number;
   updated: number;
+  dictionaryItemsCreated: number;
   failed: { rowNumber: number; code: string; reason: string }[];
 }
 

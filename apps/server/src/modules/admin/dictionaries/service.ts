@@ -165,7 +165,7 @@ export async function updateDictionary(pool: pg.Pool, id: string, input: Diction
 
 export async function deleteDictionary(pool: pg.Pool, id: string): Promise<void> {
   const protectedDictionary = await pool.query<{ code: string }>('SELECT code FROM dictionaries WHERE id = $1', [id]);
-  if (protectedDictionary.rows[0] && ['product_system','style','industry','budget_tier','functional_zone','key_feature'].includes(protectedDictionary.rows[0].code)) throw requestError('Selection dictionaries cannot be deleted', 409);
+  if (protectedDictionary.rows[0] && ['product_system','style','industry','budget_tier','functional_zone','key_feature','opening_count','booth_length','booth_width','booth_height','booth_area'].includes(protectedDictionary.rows[0].code)) throw requestError('Selection dictionaries cannot be deleted', 409);
   const used = await pool.query<{ used: boolean }>(`SELECT EXISTS (
     SELECT 1 FROM dictionary_items i JOIN schemes s ON
       s.product_system_id = i.id OR s.style_id = i.id OR s.budget_tier_id = i.id

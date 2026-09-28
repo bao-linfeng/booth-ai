@@ -41,6 +41,24 @@ async function fetchOptions() {
             })),
           },
         },
+        {
+          fieldName: 'productSystemId',
+          componentProps: {
+            options: (res.product_system || []).map((o) => ({
+              label: o.label,
+              value: o.id,
+            })),
+          },
+        },
+        {
+          fieldName: 'industryId',
+          componentProps: {
+            options: (res.industry || []).map((o) => ({
+              label: o.label,
+              value: o.id,
+            })),
+          },
+        },
       ]);
     }
   } catch (error) {
@@ -105,6 +123,10 @@ onMounted(() => {
       <template #dimensions="{ row }">
         {{ row.lengthMm ?? '-' }} × {{ row.widthMm ?? '-' }} ×
         {{ row.heightMm ?? '-' }}
+      </template>
+
+      <template #openingCount="{ row }">
+        {{ row.openingCount ? `${row.openingCount} 面` : '-' }}
       </template>
 
       <template #productSystem="{ row }">{{ optionLabels[row.productSystemId] ?? '-' }}</template>

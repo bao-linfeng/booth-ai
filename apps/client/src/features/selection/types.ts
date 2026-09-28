@@ -23,8 +23,11 @@ export interface Requirement {
 }
 
 export interface Option { id: string; label: string }
+export interface BoothSpace { id: string; label: string; lengthMm: number; widthMm: number; heightMm: number }
 export interface Catalog {
   dimensions: { lengthMm: number[]; widthMm: number[]; maxHeightMm: number[]; areaM2: number[] }
+  boothSpaces: BoothSpace[]
+  openingCounts: Option[]
   productSystems: Option[]
   styles: Option[]
   industries: Option[]

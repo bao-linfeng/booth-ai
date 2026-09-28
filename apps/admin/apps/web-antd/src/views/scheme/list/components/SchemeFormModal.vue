@@ -23,7 +23,6 @@ const emit = defineEmits(['reload']);
 
 const type = ref<'新增' | '编辑'>('新增');
 const currentRevision = ref<number>(0);
-const optionsLoaded = ref(false);
 
 const [SchemeForm, schemeApi] = useVbenForm({
   handleSubmit: async (values: Record<string, any>) => {
@@ -156,57 +155,49 @@ const [SchemeForm, schemeApi] = useVbenForm({
       component: 'Select',
       fieldName: 'productSystemId',
       label: '产品体系',
-      componentProps: { placeholder: '请选择', options: [] },
+      componentProps: { placeholder: '请选择', options: [], class: 'w-full' },
     },
     {
       component: 'Select',
       fieldName: 'styleId',
       label: '风格',
-      componentProps: { placeholder: '请选择', options: [] },
+      componentProps: { placeholder: '请选择', options: [], class: 'w-full' },
     },
     {
       component: 'Select',
       fieldName: 'industryIds',
       label: '适用行业',
-      componentProps: { placeholder: '请选择', mode: 'multiple', options: [] },
+      componentProps: { placeholder: '请选择', mode: 'multiple', options: [], class: 'w-full' },
     },
     {
       component: 'Select',
       fieldName: 'budgetTierId',
       label: '预算档位',
-      componentProps: { placeholder: '请选择', options: [] },
+      componentProps: { placeholder: '请选择', options: [], class: 'w-full' },
     },
     {
-      component: 'InputNumber',
+      component: 'Select',
       fieldName: 'openingCount',
       label: '开口面数',
-      componentProps: { min: 0, max: 4, class: 'w-full' },
+      componentProps: { placeholder: '请选择', options: [], class: 'w-full' },
     },
     {
       component: 'Select',
       fieldName: 'openSides',
       label: '开口方向',
-      componentProps: { placeholder: '请选择', mode: 'multiple', options: [] },
+      componentProps: { placeholder: '请选择', mode: 'multiple', options: [], class: 'w-full' },
     },
     {
       component: 'Select',
       fieldName: 'zoneIds',
       label: '功能分区',
-      componentProps: {
-        placeholder: '请选择',
-        mode: 'multiple',
-        options: [],
-      },
+      componentProps: { placeholder: '请选择', mode: 'multiple', options: [], class: 'w-full' },
     },
     {
       component: 'Select',
       fieldName: 'featureIds',
       label: '关键特征',
-      componentProps: {
-        placeholder: '请选择',
-        mode: 'multiple',
-        options: [],
-      },
+      componentProps: { placeholder: '请选择', mode: 'multiple', options: [], class: 'w-full' },
     },
     {
       component: 'Select',
@@ -216,6 +207,7 @@ const [SchemeForm, schemeApi] = useVbenForm({
         placeholder: '请输入后回车',
         mode: 'tags',
         options: [],
+        class: 'w-full',
       },
     },
     {
@@ -247,11 +239,10 @@ const [Modal, modalApi] = useVbenModal({
 });
 
 async function loadOptions() {
-  if (optionsLoaded.value) return;
   try {
     const res = await getSchemeOptionsApi();
     if (res) {
-      const formatOpts = (arr: { id: string; label: string }[] | undefined) =>
+      const formatOpts = (arr: { id: string; label: string; itemValue: string }[] | undefined) =>
         (arr || []).map((t) => ({ label: t.label, value: t.id }));
       schemeApi.updateSchema([
         {
@@ -264,29 +255,34 @@ async function loadOptions() {
         },
         {
           fieldName: 'productSystemId',
-          componentProps: {
-            options: formatOpts(res.product_system),
-          },
+          componentProps: { options: formatOpts(res.product_system) },
         },
         {
           fieldName: 'budgetTierId',
+          componentProps: { options: formatOpts(res.budget_tier) },
+        },
+        {
+          fieldName: 'openingCount',
           componentProps: {
-            options: formatOpts(res.budget_tier),
+            options: (res.opening_count || []).map((t) => ({
+              label: t.label,
+              value: Number(t.itemValue),
+            })),
           },
         },
         {
           fieldName: 'openSides',
           componentProps: {
-            options: ['front','right','back','left'].map((value) => ({ value, label: ({front:'正面',right:'右侧',back:'背面',left:'左侧'} as Record<string,string>)[value] })),
+            options: ['front', 'right', 'back', 'left'].map((value) => ({
+              value,
+              label: ({ front: '正面', right: '右侧', back: '背面', left: '左侧' } as Record<string, string>)[value],
+            })),
           },
         },
-      ]);
-      schemeApi.updateSchema([
         { fieldName: 'zoneIds', componentProps: { options: formatOpts(res.functional_zone) } },
         { fieldName: 'featureIds', componentProps: { options: formatOpts(res.key_feature) } },
       ]);
     }
-    optionsLoaded.value = true;
   } catch (error) {
     console.error('Failed to load catalogs', error);
   }

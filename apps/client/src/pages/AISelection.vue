@@ -42,7 +42,8 @@ const catalogState = ref<'loading' | 'ready' | 'error'>('loading')
 let requestSequence = 0
 let catalogSequence = 0
 
-const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value ?? { dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] }, productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [] }))
+const emptyCatalog: Catalog = { dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] }, boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [] }
+const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value ?? emptyCatalog))
 const textChangedSinceParse = computed(() => parsedText.value !== null && parsedText.value !== text.value)
 const unresolvedClarifications = computed(() => liveClarifications.value.filter(item => {
   if (!parsedRequirement.value || item.field === 'text') return true
@@ -73,11 +74,13 @@ const items = computed(() => isPreview.value
 const chips = computed(() => {
   const r = requirement.value
   const currentCatalog = catalog.value
+  const boothSpace = currentCatalog.boothSpaces.find(space => space.lengthMm === r.lengthMm && space.widthMm === r.widthMm && space.heightMm === r.maxHeightMm)
   return [
-    r.lengthMm ? `长 ${r.lengthMm / 1000} m` : '', 
-    r.widthMm ? `宽 ${r.widthMm / 1000} m` : '', 
+    boothSpace ? `空间 ${boothSpace.label}` : '',
+    boothSpace ? '' : (r.lengthMm ? `长 ${r.lengthMm / 1000} m` : ''),
+    boothSpace ? '' : (r.widthMm ? `宽 ${r.widthMm / 1000} m` : ''),
     r.areaM2 ? `${r.areaM2} ㎡` : '', 
-    r.maxHeightMm ? `限高 ${r.maxHeightMm / 1000} m` : '', 
+    boothSpace ? '' : (r.maxHeightMm ? `限高 ${r.maxHeightMm / 1000} m` : ''),
     r.openingCount ? `${r.openingCount} 面开口` : '', 
     ...(r.openSides ?? []).map(id => sides.find(side => side.id === id)!.label), 
     ...currentCatalog.styles.filter(option => r.styleIds.includes(option.id)).map(option => option.label)
@@ -164,7 +167,7 @@ async function loadCatalog() {
     const res = await apiFetch<{ code: number; data: Catalog }>('/api/v1/client/catalog/options')
     if (sequence !== catalogSequence) return
     if (res.code !== 0) throw new Error('Catalog unavailable')
-    liveCatalog.value = res.data
+    liveCatalog.value = { ...res.data, boothSpaces: Array.isArray(res.data.boothSpaces) ? res.data.boothSpaces : [] }
     catalogState.value = 'ready'
   } catch (error) {
     if (sequence !== catalogSequence) return

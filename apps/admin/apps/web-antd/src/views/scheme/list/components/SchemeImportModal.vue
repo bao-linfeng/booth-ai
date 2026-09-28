@@ -159,12 +159,12 @@ defineExpose({ open });
         type="info"
         class="mb-4"
         message="上传说明"
-        description="请上传 .xlsx 格式的方案打标模板，第 1 行为表头，从第 2 行开始为数据行。方案编号（B列）和方案名称（C列）为必填项。"
+        description="请上传 .xlsx 格式的方案打标模板，第 1 行为表头，从第 2 行开始为数据行。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按有效方案自动补齐开口面数、展位长宽高和面积字典。"
         show-icon
       />
       <Upload.Dragger
         :before-upload="beforeUpload"
-        accept=".xlsx,.xls"
+        accept=".xlsx"
         :max-count="1"
         :show-upload-list="false"
         class="mb-4"
@@ -175,11 +175,11 @@ defineExpose({ open });
           ></span>
         </p>
         <p class="ant-upload-text">点击或拖拽文件到此区域上传</p>
-        <p class="ant-upload-hint text-gray-400">仅支持 .xlsx / .xls 格式</p>
+        <p class="ant-upload-hint text-gray-400">仅支持 .xlsx 格式</p>
       </Upload.Dragger>
       <div
         v-if="selectedFile"
-        class="flex items-center gap-2 rounded border border-blue-200 bg-blue-50 px-3 py-2"
+        class="bg-muted/50 text-foreground flex items-center gap-2 rounded border border-border px-3 py-2"
       >
         <span
           class="icon-[ant-design--file-excel-outlined] text-green-500"
@@ -213,7 +213,7 @@ defineExpose({ open });
 
       <div
         v-if="previewResult.summary.duplicate > 0"
-        class="mb-4 rounded border border-blue-100 bg-blue-50 px-4 py-3"
+        class="bg-muted/50 text-foreground mb-4 rounded border border-border px-4 py-3"
       >
         <div class="mb-2 text-sm font-medium">重复编号处理策略：</div>
         <RadioGroup v-model:value="duplicateStrategy">
@@ -243,6 +243,9 @@ defineExpose({ open });
         </DescriptionsItem>
         <DescriptionsItem label="失败">
           <span class="text-red-500 font-medium">{{ commitResult.failed.length }} 条</span>
+        </DescriptionsItem>
+        <DescriptionsItem label="新增字典项">
+          <span class="text-purple-600 font-medium">{{ commitResult.dictionaryItemsCreated }} 条</span>
         </DescriptionsItem>
       </Descriptions>
       <Table
