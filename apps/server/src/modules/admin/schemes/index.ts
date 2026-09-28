@@ -9,6 +9,17 @@ interface UpdateBody extends SchemeInput { expectedRevision: number; }
 const nullableString = { type: ['string', 'null'] };
 const nullableNumber = { type: ['number', 'null'] };
 const nullableStringArray = { type: ['array', 'null'], items: { type: 'string' } };
+const applicabilityConditions = {
+  type: ['object', 'null'], additionalProperties: false,
+  required: ['status', 'rules', 'labelsConfirmed', 'publicNotes'],
+  properties: {
+    status: { type: 'string', enum: ['pending', 'confirmed'] },
+    rules: { type: 'array', maxItems: 20, items: { type: 'object', additionalProperties: false,
+      required: ['id', 'expectedValue'], properties: { id: { type: 'string', minLength: 1, maxLength: 100 }, expectedValue: { type: 'boolean' } } } },
+    labelsConfirmed: { type: 'boolean' },
+    publicNotes: { type: 'string', maxLength: 2000 },
+  },
+};
 const schemeProperties = {
   code: { type: 'string', minLength: 1, maxLength: 200 },
   name: { type: 'string', minLength: 1, maxLength: 500 },
@@ -29,9 +40,7 @@ const schemeProperties = {
   keywords: nullableStringArray,
   source: nullableString,
   visualTheme: nullableString,
-  applicableConditions: { type: ['object', 'null'], additionalProperties: true },
-  publishStatus: { type: 'string', enum: ['draft', 'published', 'unpublished'] },
-  verificationStatus: { type: 'string', enum: ['unverified', 'verified', 'failed'] },
+  applicableConditions: applicabilityConditions,
   notes: nullableString,
 };
 
@@ -54,9 +63,7 @@ const updateProperties = {
   keywords: nullableStringArray,
   source: nullableString,
   visualTheme: nullableString,
-  applicableConditions: { type: ['object', 'null'], additionalProperties: true },
-  publishStatus: { type: 'string', enum: ['draft', 'published', 'unpublished'] },
-  verificationStatus: { type: 'string', enum: ['unverified', 'verified', 'failed'] },
+  applicableConditions: applicabilityConditions,
   notes: nullableString,
   expectedRevision: { type: 'integer', minimum: 0 },
 };
@@ -125,4 +132,3 @@ export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.
     return { code: 0, data: null };
   });
 }
-

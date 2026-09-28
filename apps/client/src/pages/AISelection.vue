@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowRight, Sparkles, ShieldCheck, SlidersHorizontal, MessageCircle, Search, LoaderCircle, CircleAlert, ArrowUpRight } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ import SelectionShell from '@/features/selection/SelectionShell.vue'
 import RequirementForm from '@/features/selection/RequirementForm.vue'
 import SchemeCard from '@/features/selection/SchemeCard.vue'
 import BoothIllustration from '@/features/selection/BoothIllustration.vue'
-import { emptyRequirement, sides, type SelectionState, type Catalog, type MatchItem, type MatchResponse, type ParseResponse } from '@/features/selection/types'
+import { emptyRequirement, sides, type SelectionState, type Catalog, type MatchItem, type MatchResponse, type ParseResponse, type Requirement } from '@/features/selection/types'
 import { previewCatalog, previewItems, previewStates } from '@/features/selection/preview'
 import { apiFetch } from '@/lib/api-client'
 
@@ -35,8 +35,26 @@ const liveCatalog = ref<Catalog | null>(null)
 const liveItems = ref<MatchItem[]>([])
 const liveMatchData = ref<MatchResponse | null>(null)
 const liveClarifications = ref<ParseResponse['clarifications']>([])
+const parsedText = ref<string | null>(null)
+const parsedRequirement = ref<Requirement | null>(null)
+const catalogState = ref<'loading' | 'ready' | 'error'>('loading')
+let requestSequence = 0
+let catalogSequence = 0
 
-const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value || previewCatalog))
+const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value ?? { dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] }, productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [] }))
+const canConfirm = computed(() => {
+  if (!parsedRequirement.value || parsedText.value !== text.value) return false
+  if (liveClarifications.value.some(item => item.field === 'text')) return false
+  if (JSON.stringify(requirement.value) === JSON.stringify(parsedRequirement.value)) return false
+  return liveClarifications.value.every(item => {
+    const field = item.field as keyof Requirement
+    if (!(field in requirement.value)) return false
+    if (field === 'lengthMm' && item.question.includes('长宽方向')) {
+      return !!requirement.value.lengthMm && !!requirement.value.widthMm
+    }
+    return JSON.stringify(requirement.value[field]) !== JSON.stringify(parsedRequirement.value?.[field])
+  })
+})
 const items = computed(() => isPreview.value 
   ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: ['尺寸、开口方向、限高和适用条件待确认'] } : item)
   : liveItems.value
@@ -56,35 +74,43 @@ const chips = computed(() => {
   ].filter(Boolean)
 })
 
-function reset() { requirement.value = emptyRequirement(); text.value = '' }
+function reset() { requestSequence++; requirement.value = emptyRequirement(); text.value = ''; parsedText.value = null; parsedRequirement.value = null; liveClarifications.value = []; state.value = 'idle'; snapshot.value = '' }
 
 function choosePreview(value: string) {
   previewMode.value = value
-  state.value = value === 'random' ? 'results' : value as SelectionState
   if (value === 'results' || value === 'needs_clarification') {
     requirement.value = { ...emptyRequirement(), lengthMm: 6000, widthMm: 3000, areaM2: 18, maxHeightMm: 4500, openingCount: 2, openSides: ['front', 'left'], styleIds: ['modern-minimal'], productSystemId: 'fs62' }
     text.value = '长6米，宽3米，两面开口，现代简约风格，需要洽谈区。'
   } else if (value === 'random' || value === 'idle') reset()
+  state.value = value === 'random' ? 'results' : value as SelectionState
   snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
 }
 
 async function loadCatalog() {
   if (isPreview.value) return
+  const sequence = ++catalogSequence
+  catalogState.value = 'loading'
   try {
     const res = await apiFetch<{ code: number; data: Catalog }>('/api/v1/client/catalog/options')
-    if (res.code === 0) liveCatalog.value = res.data
+    if (sequence !== catalogSequence) return
+    if (res.code !== 0) throw new Error('Catalog unavailable')
+    liveCatalog.value = res.data
+    catalogState.value = 'ready'
   } catch (error) {
+    if (sequence !== catalogSequence) return
     console.error('Failed to load catalog', error)
+    catalogState.value = 'error'
   }
 }
 
-async function doMatch(mode: 'random' | 'filtered', textProvided: boolean) {
+async function doMatch(mode: 'random' | 'filtered', textProvided: boolean, sequence: number) {
   state.value = 'matching'
   try {
     const res = await apiFetch<{ code: number; data: MatchResponse }>('/api/v1/client/scheme-matches', {
       method: 'POST',
       body: { mode, requirement: requirement.value, inputContext: { textProvided } }
     })
+    if (sequence !== requestSequence) return
     if (res.code === 0) {
       liveMatchData.value = res.data
       liveItems.value = res.data.items
@@ -94,29 +120,34 @@ async function doMatch(mode: 'random' | 'filtered', textProvided: boolean) {
       state.value = 'error'
     }
   } catch (error) {
+    if (sequence !== requestSequence) return
     console.error('Match failed', error)
     state.value = 'error'
   }
 }
 
 async function submit() {
+  if (busy.value || (!isPreview.value && catalogState.value !== 'ready')) return
   if (isPreview.value) {
     choosePreview(text.value.trim() ? 'needs_clarification' : chips.value.length ? 'results' : 'random')
     return
   }
-  
+  const sequence = ++requestSequence
   const textProvided = !!text.value.trim()
-  if (textProvided) {
+  if (textProvided && (parsedText.value !== text.value || !parsedRequirement.value)) {
     state.value = 'parsing'
     try {
       const res = await apiFetch<{ code: number; data: ParseResponse }>('/api/v1/client/requirements/parse', {
         method: 'POST',
         body: { text: text.value, form: requirement.value }
       })
+      if (sequence !== requestSequence) return
       if (res.code === 0) {
         requirement.value = res.data.requirement
+        parsedText.value = text.value
+        parsedRequirement.value = structuredClone(res.data.requirement)
+        liveClarifications.value = res.data.clarifications
         if (res.data.status === 'needs_clarification') {
-          liveClarifications.value = res.data.clarifications
           state.value = 'needs_clarification'
           snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
           return
@@ -126,14 +157,19 @@ async function submit() {
         return
       }
     } catch (error) {
+      if (sequence !== requestSequence) return
       console.error('Parse failed', error)
       state.value = 'error'
       return
     }
   }
+  if (textProvided && liveClarifications.value.length) {
+    state.value = 'needs_clarification'
+    return
+  }
   
   const isReqEmpty = Object.values(requirement.value).every(val => val === null || (Array.isArray(val) && val.length === 0) || (typeof val === 'object' && Object.keys(val).length === 0))
-  await doMatch(isReqEmpty && !textProvided ? 'random' : 'filtered', textProvided)
+  await doMatch(isReqEmpty && !textProvided ? 'random' : 'filtered', textProvided, sequence)
 }
 
 function confirm() { 
@@ -141,16 +177,23 @@ function confirm() {
     state.value = 'results'
     snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
   } else {
-    doMatch('filtered', !!text.value.trim())
+    if (busy.value || !canConfirm.value) return
+    liveClarifications.value = []
+    void doMatch('filtered', !!text.value.trim(), ++requestSequence)
   }
 }
 
 watch(isPreview, (newVal) => { 
-  state.value = 'idle'
+  catalogSequence++
   reset()
-  snapshot.value = ''
   if (!newVal) loadCatalog()
 })
+
+watch(text, () => {
+  if (state.value === 'needs_clarification' && parsedText.value !== text.value) liveClarifications.value = []
+})
+
+onUnmounted(() => { requestSequence++; catalogSequence++ })
 
 onMounted(() => {
   if (!isPreview.value) loadCatalog()
@@ -164,10 +207,11 @@ onMounted(() => {
         <div class="space-y-2"><Badge variant="secondary">AI 智选 · 展台方案</Badge><h1 class="text-2xl font-semibold tracking-tight md:text-3xl">好展台，从选对方案开始</h1><p class="text-sm text-muted-foreground">描述参展需求，发现适合您的空间方案。</p></div>
         <p class="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck class="size-4 text-primary" />免费匹配 · 无需登录 · 不扣积分</p>
       </section>
+      <Card v-if="!isPreview && catalogState !== 'ready'" :role="catalogState === 'error' ? 'alert' : 'status'"><CardContent class="flex items-center justify-between gap-4 p-5 text-sm"><span>{{ catalogState === 'loading' ? '正在加载选型条件…' : '选型条件加载失败，请重试。' }}</span><Button v-if="catalogState === 'error'" variant="outline" @click="loadCatalog">重新加载</Button></CardContent></Card>
       <Card v-if="isPreview" class="border-dashed"><CardHeader class="pb-3"><CardTitle class="text-sm">UI 静态预览</CardTitle><CardDescription>示例编号与空间示意仅用于界面评审，不代表真实匹配。</CardDescription></CardHeader><CardContent class="flex flex-wrap gap-2"><Button v-for="option in previewStates" :key="option.id" size="sm" :variant="previewMode === option.id ? 'default' : 'outline'" :aria-pressed="previewMode === option.id" @click="choosePreview(option.id)">{{ option.label }}</Button></CardContent></Card>
       <Button variant="outline" class="w-full justify-between lg:hidden" :aria-expanded="mobileConditions" aria-controls="selection-conditions" @click="mobileConditions = !mobileConditions"><span class="flex items-center gap-2"><SlidersHorizontal class="size-4" />展位条件与偏好</span><Badge variant="secondary">{{ chips.length ? `${chips.length} 项` : '选填' }}</Badge></Button>
       <div class="grid items-start gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <aside id="selection-conditions" :class="cn('space-y-4 lg:block', !mobileConditions && 'hidden')"><RequirementForm v-model="requirement" :catalog="catalog" :disabled="busy" @reset="reset" /><p class="px-2 text-xs leading-relaxed text-muted-foreground">结构条件决定适用性，风格与预算帮助排序。信息不全时也可以先看参考方案。</p></aside>
+        <aside id="selection-conditions" :class="cn('space-y-4 lg:block', !mobileConditions && 'hidden')"><RequirementForm v-model="requirement" :catalog="catalog" :disabled="busy || (!isPreview && catalogState !== 'ready')" @reset="reset" /><p class="px-2 text-xs leading-relaxed text-muted-foreground">结构条件决定适用性，风格与预算帮助排序。信息不全时也可以先看参考方案。</p></aside>
         <div class="min-w-0 space-y-6">
           <Card>
             <CardHeader>
@@ -188,7 +232,7 @@ onMounted(() => {
               <Button variant="ghost" size="sm" :disabled="busy || !text" @click="text = ''">清空</Button>
             </CardFooter>
           </Card>
-          <div class="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t bg-background/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:static lg:border-0 lg:bg-transparent lg:p-0"><p class="text-xs text-muted-foreground">不填条件，也能发现随机灵感</p><Button :disabled="busy" class="gap-2" @click="submit"><LoaderCircle v-if="busy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ busy ? state === 'parsing' ? '识别需求中' : '查找方案中' : 'AI 智选' }}<ArrowRight v-if="!busy" class="size-4" /></Button></div>
+           <div class="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t bg-background/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:static lg:border-0 lg:bg-transparent lg:p-0"><p class="text-xs text-muted-foreground">不填条件，也能发现随机灵感</p><Button :disabled="busy || (!isPreview && catalogState !== 'ready')" class="gap-2" @click="submit"><LoaderCircle v-if="busy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ busy ? state === 'parsing' ? '识别需求中' : '查找方案中' : 'AI 智选' }}<ArrowRight v-if="!busy" class="size-4" /></Button></div>
           <Card v-if="chips.length" class="bg-muted/30"><CardHeader class="pb-3"><div class="flex flex-wrap items-center justify-between gap-2"><CardTitle class="text-sm">当前条件 <span class="font-normal text-muted-foreground">/ 表单</span></CardTitle><Badge v-if="stale" variant="outline">条件已修改 · 结果基于上次条件</Badge></div></CardHeader><CardContent class="space-y-3"><div class="flex flex-wrap gap-2"><Badge v-for="chip in chips" :key="chip" variant="outline">{{ chip }}</Badge></div><p class="text-xs text-muted-foreground">风格、行业及预算为排序偏好；限高与产品体系为严格条件。</p></CardContent></Card>
           
           <Card v-if="state === 'needs_clarification'"><CardHeader><CardTitle class="flex items-center gap-2 text-base"><CircleAlert class="size-5" />请先确认，我们是否理解正确？</CardTitle><CardDescription>{{ isPreview ? '澄清状态示例：“6×3”尚不能确定左右跨度和前后进深。' : '解析过程中遇到模糊要求，需您确认。' }}</CardDescription></CardHeader><CardContent class="space-y-4">
@@ -202,7 +246,7 @@ onMounted(() => {
                 </div>
               </div>
             </template>
-            <p class="text-xs text-muted-foreground">可修改表单条件。{{ isPreview ? '静态预览不会调用解析服务。' : '' }}</p><Button @click="confirm">确认条件，继续匹配<ArrowRight class="ml-2 size-4" /></Button></CardContent></Card>
+             <p class="text-xs text-muted-foreground">{{ !isPreview && liveClarifications.some(item => item.field === 'text') ? '仍有未识别的文字，请修改描述重新识别，或转人工确认。' : '请先核对并修正表单条件。修改文字后点击 AI 智选重新识别。' }}</p><Button :disabled="!isPreview && !canConfirm" @click="confirm">确认已修正条件，继续匹配<ArrowRight class="ml-2 size-4" /></Button><Button v-if="!isPreview && liveClarifications.some(item => item.field === 'text')" variant="outline" @click="manualOpen = true">转人工确认</Button></CardContent></Card>
           
           <Card v-if="state === 'idle'" class="overflow-hidden"><CardContent class="grid items-center gap-3 p-0 xl:grid-cols-2"><div class="space-y-5 p-6"><Badge variant="outline">从想法到空间</Badge><h2 class="text-2xl font-semibold leading-relaxed">让参展想法，<br />有一个具体的空间</h2><p class="text-sm leading-relaxed text-muted-foreground">填写展位尺寸，或用一句话描述需求。先筛选结构，再匹配偏好。</p><ol class="flex flex-wrap gap-4 text-xs text-muted-foreground"><li>01 描述需求</li><li>02 匹配方案</li><li>03 查看详情</li></ol></div><BoothIllustration class="w-full" /></CardContent><CardFooter class="flex-wrap justify-between gap-2 border-t pt-4 text-xs text-muted-foreground"><span>最多 3 套方案 · 每套 3 个视角</span><span>条件不全时明确标注待确认项</span></CardFooter></Card>
           <Card v-else-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? '正在识别您的需求' : '正在查找适合的方案' }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? '加载状态预览，可使用顶部工具栏切换。' : '正在调用接口匹配方案，请稍后。' }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>

@@ -60,6 +60,9 @@ const saving = ref(false);
 const activeTab = ref('basic');
 
 const formRef = ref();
+const applicabilityConfirmed = ref(false);
+const labelsConfirmed = ref(false);
+const publicNotes = ref('');
 
 const formData = reactive<CreateSchemeInput & { expectedRevision?: number }>({
   code: '',
@@ -132,7 +135,7 @@ async function fetchOptions() {
           value: o.key,
         }));
       if (res.openingDirection)
-        options.openingDirections = res.openingDirection.map((o) => ({
+        options.openingDirections = res.openingDirection.filter((o) => ['front', 'right', 'back', 'left'].includes(o.key)).map((o) => ({
           label: o.label,
           value: o.key,
         }));
@@ -152,6 +155,10 @@ async function fetchDetail() {
     if (sequence !== detailRequestSequence || requestCode !== currentCode.value)
       return;
     originalData.value = res;
+    const conditions = res.applicableConditions;
+    applicabilityConfirmed.value = conditions?.['status'] === 'confirmed';
+    labelsConfirmed.value = conditions?.['labelsConfirmed'] === true;
+    publicNotes.value = typeof conditions?.['publicNotes'] === 'string' ? conditions['publicNotes'] : '';
 
     // Fetch asset counts
     const assets = await listSchemeAssetsApi(requestCode);
@@ -250,13 +257,23 @@ async function handleSave() {
 
   saving.value = true;
   try {
+    const applicableConditions = {
+      status: applicabilityConfirmed.value ? 'confirmed' : 'pending',
+      rules: Array.isArray(originalData.value?.applicableConditions?.['rules'])
+        ? originalData.value.applicableConditions['rules']
+        : [],
+      labelsConfirmed: labelsConfirmed.value,
+      publicNotes: publicNotes.value,
+    };
     if (isCreate.value) {
-      const res = await createSchemeApi(formData as CreateSchemeInput);
+      const res = await createSchemeApi({ ...formData, applicableConditions });
       message.success('创建成功');
       router.replace(`/scheme/detail/${encodeURIComponent(res.code)}`);
     } else {
+      const { code: _code, ...editable } = formData;
       const payload: UpdateSchemeInput = {
-        ...formData,
+        ...editable,
+        applicableConditions,
         expectedRevision: formData.expectedRevision!,
       };
       const res = await updateSchemeApi(currentCode.value, payload);
@@ -1009,6 +1026,15 @@ onMounted(() => {
                   placeholder="输入并回车添加关键词"
                 />
               </a-form-item>
+            </div>
+            <a-divider orientation="left">智选准入核对</a-divider>
+            <div class="space-y-3">
+              <a-checkbox v-model:checked="applicabilityConfirmed">已核对本方案的适用条件，确认没有未录入的限制条款</a-checkbox>
+              <a-checkbox v-model:checked="labelsConfirmed">已核对功能分区和关键特征标签的完整性</a-checkbox>
+              <a-form-item label="公开适用说明">
+                <a-textarea v-model:value="publicNotes" :maxlength="2000" :rows="3" placeholder="仅填写可向客户公开的适用说明，不含内部备注" />
+              </a-form-item>
+              <p class="text-xs text-gray-500">受控适用问题尚未配置；有额外限制的方案请保持未确认，暂不可发布为智选候选。</p>
             </div>
           </a-tab-pane>
 

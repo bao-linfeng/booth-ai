@@ -21,8 +21,6 @@ export interface SchemeInput {
   source?: string | null;
   visualTheme?: string | null;
   applicableConditions?: Record<string, unknown> | null;
-  publishStatus?: 'draft' | 'published' | 'unpublished';
-  verificationStatus?: 'unverified' | 'verified' | 'failed';
   notes?: string | null;
 }
 
@@ -93,7 +91,7 @@ const columnByInput: Record<keyof SchemeInput, string> = {
   productLine: 'product_line', style: 'style', industries: 'industries', budgetTier: 'budget_tier',
   functionalZones: 'functional_zones', keyFeatures: 'key_features', description: 'description', keywords: 'keywords',
   source: 'source', visualTheme: 'visual_theme', applicableConditions: 'applicable_conditions',
-  publishStatus: 'publish_status', verificationStatus: 'verification_status', notes: 'notes',
+  notes: 'notes',
 };
 
 function requestError(message: string, statusCode: number): Error & { statusCode: number } {
@@ -152,6 +150,7 @@ export async function getScheme(pool: pg.Pool, code: string): Promise<SchemeReco
 }
 
 export async function createScheme(pool: pg.Pool, adminId: string | null, input: SchemeInput): Promise<SchemeRecord> {
+  if ('publishStatus' in input || 'verificationStatus' in input) throw requestError('Publication and verification require review', 400);
   const code = input.code?.trim();
   const name = input.name?.trim();
   if (!code || !name) throw requestError('Code and name are required', 400);
@@ -185,6 +184,7 @@ export async function deleteScheme(pool: pg.Pool, code: string): Promise<void> {
 }
 
 export async function updateScheme(pool: pg.Pool, code: string, adminId: string | null, input: SchemeInput, expectedRevision: number): Promise<SchemeRecord> {
+  if ('publishStatus' in input || 'verificationStatus' in input) throw requestError('Publication and verification require review', 400);
   if (hasInput(input, 'code')) throw requestError('Scheme code cannot be changed', 400);
   const values: unknown[] = [];
   const updates: string[] = [];
@@ -200,7 +200,7 @@ export async function updateScheme(pool: pg.Pool, code: string, adminId: string 
   }
   if (updates.length === 0) throw requestError('No fields to update', 400);
   values.push(adminId);
-  updates.push(`updated_by = $${values.length}`, 'updated_at = now()', 'revision = revision + 1');
+  updates.push(`updated_by = $${values.length}`, 'updated_at = now()', 'revision = revision + 1', "publish_status = CASE WHEN publish_status = 'published' THEN 'draft' ELSE publish_status END", "verification_status = 'unverified'");
   values.push(code, expectedRevision);
   const result = await pool.query<SchemeRow>(`UPDATE schemes SET ${updates.join(', ')} WHERE code = $${values.length - 1} AND revision = $${values.length} RETURNING ${schemeColumns}`, values);
   const row = result.rows[0];

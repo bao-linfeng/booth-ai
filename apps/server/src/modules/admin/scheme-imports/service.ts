@@ -141,10 +141,10 @@ const insertSql = `
     code, name, parent_code, width_cm, length_cm, area_sqm, height_cm,
     opening_count, product_line, style, industries, budget_tier,
     functional_zones, key_features, description, keywords,
-    verification_status, notes, created_by, updated_by
+    notes, created_by, updated_by
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+    $11, $12, $13, $14, $15, $16, $17, $18, $19
   )
 `;
 
@@ -165,11 +165,12 @@ const updateSql = `
     key_features = $14,
     description = $15,
     keywords = $16,
-    verification_status = $17,
-    notes = $18,
-    updated_by = $19,
+    notes = $17,
+    updated_by = $18,
     updated_at = now(),
-    revision = revision + 1
+    revision = revision + 1,
+    verification_status = 'unverified',
+    publish_status = CASE WHEN publish_status = 'published' THEN 'draft' ELSE publish_status END
   WHERE code = $1
   RETURNING id
 `;
@@ -285,7 +286,7 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
             row.data.code, row.data.name, row.data.parentCode, row.data.widthCm, row.data.lengthCm,
             row.data.areaSqm, row.data.heightCm, row.data.openingCount, row.data.productLine,
             row.data.style, row.data.industries, row.data.budgetTier, row.data.functionalZones,
-            row.data.keyFeatures, row.data.description, row.data.keywords, row.data.verificationStatus,
+            row.data.keyFeatures, row.data.description, row.data.keywords,
             row.data.notes, adminId, adminId,
           ]);
           result.created += 1;
@@ -294,7 +295,7 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
             row.data.code, row.data.name, row.data.parentCode, row.data.widthCm, row.data.lengthCm,
             row.data.areaSqm, row.data.heightCm, row.data.openingCount, row.data.productLine,
             row.data.style, row.data.industries, row.data.budgetTier, row.data.functionalZones,
-            row.data.keyFeatures, row.data.description, row.data.keywords, row.data.verificationStatus,
+            row.data.keyFeatures, row.data.description, row.data.keywords,
             row.data.notes, adminId,
           ]);
           if (updateResult.rowCount === 0) {

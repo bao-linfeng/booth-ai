@@ -55,8 +55,8 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
       if (requirement.productSystemId && requirement.productSystemId !== s.productSystemId) continue;
       if (requirement.maxHeightMm && s.heightMm > requirement.maxHeightMm) continue;
       if (candidate.applicabilityRules.some(rule => requirement.applicabilityAnswers[rule.id] !== undefined && requirement.applicabilityAnswers[rule.id] !== rule.expectedValue)) continue;
+      if ((requirement.requiredZoneIds.length || requirement.requiredFeatureIds.length || requirement.excludedZoneIds.length || requirement.excludedFeatureIds.length) && !candidate.labelsConfirmed) continue;
       if (requirement.requiredZoneIds.some(id => !candidate.zoneIds.includes(id)) || requirement.requiredFeatureIds.some(id => !candidate.featureIds.includes(id))) continue;
-      if ((requirement.excludedZoneIds.length || requirement.excludedFeatureIds.length) && !candidate.labelsConfirmed) continue;
       if (intersects(requirement.excludedZoneIds, candidate.zoneIds) || intersects(requirement.excludedFeatureIds, candidate.featureIds)) continue;
       
       const item = toItem(candidate, 'reference');
@@ -67,10 +67,12 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
         }
       }
       
-      let deviation = 0;
-      if (requirement.areaM2) deviation = Math.abs(s.areaM2 - requirement.areaM2) / requirement.areaM2;
-      else if (requirement.lengthMm) deviation = Math.abs(s.lengthMm - requirement.lengthMm) / requirement.lengthMm;
-      else if (requirement.widthMm) deviation = Math.abs(s.widthMm - requirement.widthMm) / requirement.widthMm;
+      const deviations = [
+        requirement.areaM2 && Math.abs(s.areaM2 - requirement.areaM2) / requirement.areaM2,
+        requirement.lengthMm && Math.abs(s.lengthMm - requirement.lengthMm) / requirement.lengthMm,
+        requirement.widthMm && Math.abs(s.widthMm - requirement.widthMm) / requirement.widthMm,
+      ].filter((value): value is number => typeof value === 'number');
+      const deviation = Math.max(0, ...deviations);
       
       if (deviation > 0.3 + Number.EPSILON) continue;
       

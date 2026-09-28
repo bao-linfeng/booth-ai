@@ -65,6 +65,7 @@ export async function loadCandidates(pool: pg.Pool, catalog: Catalog, storage: P
         AND r.phase = 'overall' ORDER BY r.created_at DESC, r.id DESC LIMIT 1) = 'pass'
       AND NOT EXISTS (SELECT 1 FROM scheme_assets a WHERE a.scheme_id = s.id AND a.updated_at >
         (SELECT max(r.created_at) FROM scheme_reviews r WHERE r.scheme_id = s.id AND r.scheme_revision = s.revision AND r.phase = 'overall'))
+      AND s.applicable_conditions->>'labelsConfirmed' = 'true'
       ${code === undefined ? '' : 'AND s.code = $1'}
     ORDER BY s.code`, code === undefined ? [] : [code]);
     

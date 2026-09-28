@@ -69,6 +69,7 @@ export interface CreateSchemeInput {
   functionalZones?: string[];
   keyFeatures?: string[];
   source?: null | string;
+  applicableConditions?: null | Record<string, unknown>;
 }
 
 export interface UpdateSchemeInput extends Omit<CreateSchemeInput, 'code'> {
@@ -102,7 +103,7 @@ export async function updateSchemeApi(code: string, data: UpdateSchemeInput) {
   return requestClient.request<SchemeRecord>(
     `/v1/admin/schemes/${encodeURIComponent(code)}`,
     {
-      method: 'PATCH',
+      method: 'PUT',
       data,
     },
   );

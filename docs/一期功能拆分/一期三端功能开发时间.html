@@ -88,9 +88,9 @@
         <h1>三端功能开发时间</h1>
         <p class="lead">按工作包拆分客户端、管理后台与服务端的开发人日。原有区间取下限，缺失工时结合现有实现暂估。</p>
         <div class="summary" aria-label="各端开发人日概览">
-          <div class="summary-item"><small>客户端 · UI + 联调</small><strong>41 d</strong><span>12 个有工时的工作包</span></div>
-          <div class="summary-item"><small>管理后台 · UI + 联调</small><strong>51 d*</strong><span>15 个工作包，其中 5 项为暂估</span></div>
-          <div class="summary-item"><small>服务端 · 实现 + 自测</small><strong>121 d*</strong><span>17 个工作包，其中 5 项为暂估</span></div>
+          <div class="summary-item"><small>客户端 · UI + 联调</small><strong>18 d</strong><span>11 个有工时的工作包</span></div>
+          <div class="summary-item"><small>管理后台 · UI + 联调</small><strong>25 d*</strong><span>14 个工作包，其中 6 项为暂估</span></div>
+          <div class="summary-item"><small>服务端 · 实现 + 自测</small><strong>33 d*</strong><span>14 个工作包，其中 5 项为暂估</span></div>
         </div>
       </div>
     </header>
@@ -101,73 +101,68 @@
       <div class="scope"><strong>口径：</strong>1 d = 1 人日（8 小时）。原表有区间的取最低值，原表“待重估/待估”的结合当前代码按剩余交付范围暂估，标 *；同端合计直接相加。客户端/后台已含 UI 和接口联调，服务端含开发者自测；不含专项验收。这是规划参考人日，不是日历天数或经过完整代码审计的剩余工时。</div>
 
       <section id="client" aria-labelledby="client-title">
-        <div class="section-head"><div><span class="index">01 / CUSTOMER PORTAL</span><h2 id="client-title">客户端</h2><p>参展商选型、资料取用、生成与询价；已登录提交人可查询本人项目。</p></div><span class="count">12 项 · 41 d</span></div>
+        <div class="section-head"><div><span class="index">01 / CUSTOMER PORTAL</span><h2 id="client-title">客户端</h2><p>参展商选型、资料取用、生成与询价；已登录提交人可查询本人项目。</p></div><span class="count">11 项 · 18 d</span></div>
         <div class="list">
-          <div class="row"><span class="code">W00</span><span class="feature">公共工程</span><span class="detail">响应式框架、请求状态与文件下载</span><span class="time">3<small>d</small></span></div>
-          <div class="row"><span class="code">W01</span><span class="feature">账户登录与会话</span><span class="detail">企业登录、官网注册跳转、登录回跳、SU 静默登录</span><span class="time">4<small>d</small></span></div>
-          <div class="row"><span class="code">W02</span><span class="feature">权限与伙伴入口</span><span class="detail">伙伴身份入口、资料及操作权限提示</span><span class="time">1<small>d</small></span></div>
-          <div class="row"><span class="code">W04</span><span class="feature">AI 智选与方案详情</span><span class="detail">条件解析与修正、匹配结果、三视角详情、模型下载</span><span class="time">7<small>d</small></span></div>
-          <div class="row"><span class="code">W05</span><span class="feature">积分状态</span><span class="detail">余额、冻结/结算状态与余额不足提示</span><span class="time">1<small>d</small></span></div>
-          <div class="row"><span class="code">W07</span><span class="feature">品牌主题调整</span><span class="detail">参数与费用确认、生成进度、效果对比与选定</span><span class="time">6<small>d</small></span></div>
-          <div class="row"><span class="code">W08</span><span class="feature">简化清单</span><span class="detail">六列清单查看、八列空价 XLSX 下载</span><span class="time">2<small>d</small></span></div>
-          <div class="row"><span class="code">W09</span><span class="feature">报馆图素材</span><span class="detail">图纸预览、视向信息、单张和整套下载</span><span class="time">3<small>d</small></span></div>
-          <div class="row"><span class="code">W10</span><span class="feature">平面素材</span><span class="detail">素材预览、尺寸与来源、单张和整套下载</span><span class="time">3<small>d</small></span></div>
-          <div class="row"><span class="code">W11</span><span class="feature">AIGC 四面素材</span><span class="detail">独立发起生成、四方向进度、结果与一致性提示</span><span class="time">3<small>d</small></span></div>
-          <div class="row"><span class="code">W12</span><span class="feature">申请与我的项目</span><span class="detail">报价/人工需求、受理回执、提交人本人项目只读列表与详情</span><span class="time">6<small>d</small></span></div>
-          <div class="row"><span class="code">W14</span><span class="feature">第三方在线客服</span><span class="detail">咨询入口、会话上下文与故障提示</span><span class="time">2<small>d</small></span></div>
+          <div class="row"><span class="code">W01</span><span class="feature">账户登录与会话</span><span class="detail">企业登录、官网注册跳转、登录回跳、SU 静默登录</span><span class="time">1<small>d</small></span></div>
+          <div class="row"><span class="code">W02</span><span class="feature">用户类型与端入口</span><span class="detail">用户类型读取、客户端/SU 入口提示</span><span class="time">0.5<small>d</small></span></div>
+          <div class="row"><span class="code">W03</span><span class="feature">AI 智选与方案详情</span><span class="detail">条件解析与修正、匹配结果、三视角详情、模型下载、检索埋点</span><span class="time">4<small>d</small></span></div>
+          <div class="row"><span class="code">W04</span><span class="feature">积分状态</span><span class="detail">余额、冻结/结算状态与余额不足提示</span><span class="time">1<small>d</small></span></div>
+          <div class="row"><span class="code">W05</span><span class="feature">品牌主题调整</span><span class="detail">参数与费用确认、生成进度、效果对比与选定</span><span class="time">3<small>d</small></span></div>
+          <div class="row"><span class="code">W06</span><span class="feature">简化清单</span><span class="detail">六列清单查看、八列空价 XLSX 下载</span><span class="time">2<small>d</small></span></div>
+          <div class="row"><span class="code">W07</span><span class="feature">报馆图素材</span><span class="detail">图纸预览、视向信息、单张和整套下载</span><span class="time">0.5<small>d</small></span></div>
+          <div class="row"><span class="code">W08</span><span class="feature">平面素材</span><span class="detail">素材预览、尺寸与来源、单张和整套下载</span><span class="time">0.5<small>d</small></span></div>
+          <div class="row"><span class="code">W09</span><span class="feature">AIGC 四面素材</span><span class="detail">独立发起生成、四方向进度、结果与一致性提示</span><span class="time">1.5<small>d</small></span></div>
+          <div class="row"><span class="code">W10</span><span class="feature">申请与我的项目</span><span class="detail">报价/人工需求、受理回执、提交人本人项目只读列表与详情</span><span class="time">2.5<small>d</small></span></div>
+          <div class="row"><span class="code">W11</span><span class="feature">第三方在线客服</span><span class="detail">咨询入口、会话上下文与故障提示</span><span class="time">1.5<small>d</small></span></div>
         </div>
-        <div class="notice">W03、W06、W13、W15、W16 在估算表中的客户端工时为 0；其公共能力或页面交付已归入上面的相关工作包，不额外凑数。</div>
-        <div class="notice"><strong>我的项目列表与详情：</strong>仅限已登录的申请提交人查看本人报价申请和人工需求项目；详情显示申请、方案/效果、资料状态与可公开结果，不返回内部联系记录或人工报价。项目分配、跟进和状态处理仅由管理后台获授权人员完成，伙伴渠道归属不授予客户端跨客户项目权限。W12 客户端沿用 6 d 规划参考值，新边界下正式报价需复核。</div>
+        <div class="notice">相关公共能力与页面交付已归入各工作包，不额外凑数。</div>
+        <div class="notice"><strong>我的项目列表与详情：</strong>仅限已登录的申请提交人查看本人报价申请和人工需求项目；详情显示申请、方案/效果、资料状态与可公开结果，不返回内部联系记录或人工报价。项目分配、跟进和状态处理仅由管理后台完成。W10 客户端调整为 2.5 d 规划参考值，新边界下正式报价需复核。</div>
       </section>
 
       <section id="admin" aria-labelledby="admin-title">
-        <div class="section-head"><div><span class="index">02 / OPERATIONS CONSOLE</span><h2 id="admin-title">管理后台</h2><p>方案与资产维护、运营配置、账户授权、项目承接和人工报价。</p></div><span class="count">15 项 · 51 d*</span></div>
+        <div class="section-head"><div><span class="index">02 / OPERATIONS CONSOLE</span><h2 id="admin-title">管理后台</h2><p>方案与资产维护、运营配置、账户授权、项目承接、人工报价与统计分析。</p></div><span class="count">14 项 · 25 d*</span></div>
         <div class="list">
-          <div class="row"><span class="code">W00</span><span class="feature">后台公共工程</span><span class="detail">框架接入、通用列表/表单/上传及权限路由</span><span class="time">3<small>d</small></span></div>
-          <div class="row"><span class="code">W01</span><span class="feature">管理员登录</span><span class="detail">企业认证、权限上下文、会话恢复和退出</span><span class="time">2<small>d</small></span></div>
-          <div class="row"><span class="code">W02</span><span class="feature">权限、伙伴、渠道与审计</span><span class="detail">账户管理、角色授权、客户归属及审计查询</span><span class="time">5<small>d</small></span></div>
-          <div class="row"><span class="code">W03</span><span class="feature">方案库与审核发布</span><span class="detail">方案列表/编辑、导入、字典、完整性检查与发布</span><span class="time provisional">4<small>d*</small></span></div>
-          <div class="row"><span class="code">W05</span><span class="feature">积分流水</span><span class="detail">用户流水、任务对账与未完成操作查询</span><span class="time">2<small>d</small></span></div>
-          <div class="row"><span class="code">W06</span><span class="feature">生成运营配置</span><span class="detail">提示词模板、模型配置、任务列表和详情</span><span class="time">5<small>d</small></span></div>
-          <div class="row"><span class="code">W07</span><span class="feature">主题蒙版专项核验</span><span class="detail">蒙版配对、叠加预览与对齐审核增量</span><span class="time provisional">2<small>d*</small></span></div>
-          <div class="row"><span class="code">W08</span><span class="feature">简化清单维护</span><span class="detail">源文件导入、条目与计量规则、分项核验</span><span class="time">6<small>d</small></span></div>
-          <div class="row"><span class="code">W09</span><span class="feature">报馆图专项核验</span><span class="detail">视向、模型绑定与人工复核增量</span><span class="time provisional">2<small>d*</small></span></div>
-          <div class="row"><span class="code">W10</span><span class="feature">平面素材专项核验</span><span class="detail">画面映射、物理尺寸与来源复核增量</span><span class="time provisional">2<small>d*</small></span></div>
-          <div class="row"><span class="code">W11</span><span class="feature">四面任务质量明细</span><span class="detail">在公共任务详情中展示方向结果和质量信息</span><span class="time">1<small>d</small></span></div>
-          <div class="row"><span class="code">W12</span><span class="feature">申请与项目承接</span><span class="detail">项目列表/详情、分配、跟进和补关联方案</span><span class="time">7<small>d</small></span></div>
-          <div class="row"><span class="code">W13</span><span class="feature">人工报价</span><span class="detail">报价编辑、修订历史及文件导出</span><span class="time">4<small>d</small></span></div>
-          <div class="row"><span class="code">W14</span><span class="feature">客服工作台入口</span><span class="detail">第三方工作台入口与项目定位</span><span class="time">1<small>d</small></span></div>
-          <div class="row"><span class="code">W15</span><span class="feature">方案资产独立管理</span><span class="detail">四类独立管理页、跨方案筛选、上传关联及模型维护</span><span class="time provisional">5<small>d*</small></span></div>
+          <div class="row"><span class="code">W01</span><span class="feature">管理员登录</span><span class="detail">企业认证、权限上下文、会话恢复和退出</span><span class="time">1<small>d</small></span></div>
+          <div class="row"><span class="code">W02</span><span class="feature">用户类型与端入口</span><span class="detail">账户类型查看、标记与入口提示</span><span class="time">0.5<small>d</small></span></div>
+          <div class="row"><span class="code">W03</span><span class="feature">方案库与审核发布</span><span class="detail">方案列表/编辑、导入、字典、完整性检查与发布</span><span class="time provisional">3.5<small>d*</small></span></div>
+          <div class="row"><span class="code">W04</span><span class="feature">积分流水</span><span class="detail">用户流水、任务对账与未完成操作查询</span><span class="time">2<small>d</small></span></div>
+          <div class="row"><span class="code">W05</span><span class="feature">生成运营配置</span><span class="detail">提示词模板、模型配置、任务列表和详情</span><span class="time">4<small>d</small></span></div>
+          <div class="row"><span class="code">W06</span><span class="feature">主题蒙版专项核验</span><span class="detail">蒙版配对、叠加预览与对齐审核增量</span><span class="time provisional">0.5<small>d*</small></span></div>
+          <div class="row"><span class="code">W07</span><span class="feature">简化清单维护</span><span class="detail">源文件导入、条目与计量规则、分项核验</span><span class="time">2<small>d</small></span></div>
+          <div class="row"><span class="code">W08</span><span class="feature">报馆图专项核验</span><span class="detail">视向、模型绑定与人工复核增量</span><span class="time provisional">0.5<small>d*</small></span></div>
+          <div class="row"><span class="code">W09</span><span class="feature">平面素材专项核验</span><span class="detail">画面映射、物理尺寸与来源复核增量</span><span class="time provisional">0.5<small>d*</small></span></div>
+          <div class="row"><span class="code">W10</span><span class="feature">四面任务质量明细</span><span class="detail">在公共任务详情中展示方向结果和质量信息</span><span class="time">1<small>d</small></span></div>
+          <div class="row"><span class="code">W11</span><span class="feature">申请与项目承接</span><span class="detail">项目列表/详情、分配、跟进和补关联方案</span><span class="time">3<small>d</small></span></div>
+          <div class="row"><span class="code">W12</span><span class="feature">人工报价</span><span class="detail">报价编辑、修订历史及文件导出</span><span class="time">2<small>d</small></span></div>
+          <div class="row"><span class="code">W13</span><span class="feature">方案资产独立管理</span><span class="detail">四类独立管理页、跨方案筛选、上传关联及模型维护</span><span class="time provisional">2<small>d*</small></span></div>
+          <div class="row"><span class="code">W14</span><span class="feature">方案检索与统计分析</span><span class="detail">检索记录多维查询与明细（AP-20）、偏好排行/0命中缺口/转化分析看板（AP-21）</span><span class="time provisional">2.5<small>d*</small></span></div>
         </div>
-        <div class="notice">* 暂估分工：W03 4d 补发布完整性/审核交互；W07 2d 补蒙版对齐核验；W09 2d 补视向/模型复核；W10 2d 补画面/尺寸复核；W15 5d 补公共资产替换、排序与文件操作。四类列表和基础上传已有实现，上述工时不重复计算已有页面。W04、W16 的后台工时为 0。</div>
+        <div class="notice">* 暂估分工：W03 3.5d 补发布完整性/审核交互；W06 0.5d 补蒙版对齐核验；W08 0.5d 补视向/模型复核；W09 0.5d 补画面/尺寸复核；W13 2d 补公共资产替换、排序与文件操作；W14 2.5d 检索记录查询与统计分析看板。四类列表和基础上传已有实现，上述工时不重复计算已有页面。</div>
       </section>
 
       <section id="server" aria-labelledby="server-title">
-        <div class="section-head"><div><span class="index">03 / API &amp; WORKER</span><h2 id="server-title">服务端</h2><p>数据库、业务接口、鉴权、文件交付与异步任务；包含开发者自测。</p></div><span class="count">17 项 · 121 d*</span></div>
+        <div class="section-head"><div><span class="index">03 / API &amp; WORKER</span><h2 id="server-title">服务端</h2><p>数据库、业务接口、鉴权、文件交付与异步任务；包含开发者自测。</p></div><span class="count">14 项 · 33 d*</span></div>
         <div class="list">
-          <div class="row"><span class="code">W00</span><span class="feature">公共契约与工程</span><span class="detail">统一 Schema、迁移规范、幂等约定与现有基础设施复用</span><span class="time">4<small>d</small></span></div>
-          <div class="row"><span class="code">W01</span><span class="feature">统一账户与会话</span><span class="detail">企业身份校验、用户/管理员同步、平台会话与 SU 验票</span><span class="time">7<small>d</small></span></div>
-          <div class="row"><span class="code">W02</span><span class="feature">权限、渠道与审计</span><span class="detail">操作/数据/文件权限、归属修订和审计写入查询</span><span class="time">7<small>d</small></span></div>
-          <div class="row"><span class="code">W03</span><span class="feature">方案库与发布</span><span class="detail">编号、字典、导入、就绪汇总、审核与发布事务</span><span class="time provisional">6<small>d*</small></span></div>
-          <div class="row"><span class="code">W04</span><span class="feature">AI 智选</span><span class="detail">LLM 条件解析、规则降级、确定性匹配及授权模型下载</span><span class="time">8<small>d</small></span></div>
-          <div class="row"><span class="code">W05</span><span class="feature">积分协调</span><span class="detail">权威账本接入、预占/结算/释放、故障恢复</span><span class="time">8<small>d</small></span></div>
-          <div class="row"><span class="code">W06</span><span class="feature">生成公共服务</span><span class="detail">模型适配、任务/Outbox、Worker 恢复与结果存储</span><span class="time">12<small>d</small></span></div>
-          <div class="row"><span class="code">W07</span><span class="feature">品牌主题生成</span><span class="detail">费用提议、蒙版处理、任务快照与最终效果选择</span><span class="time provisional">9<small>d*</small></span></div>
-          <div class="row"><span class="code">W08</span><span class="feature">清单导入与导出</span><span class="detail">表格安全提取、计量核验、空价导出及修订快照</span><span class="time">9<small>d</small></span></div>
-          <div class="row"><span class="code">W09</span><span class="feature">报馆图交付</span><span class="detail">视向及模型绑定校验、受控预览和打包下载</span><span class="time provisional">6<small>d*</small></span></div>
-          <div class="row"><span class="code">W10</span><span class="feature">平面素材交付</span><span class="detail">标准/SU 素材集合、画面关联、私有结果读取与 ZIP 交付</span><span class="time provisional">7<small>d*</small></span></div>
-          <div class="row"><span class="code">W11</span><span class="feature">AIGC 四面生成</span><span class="detail">固定主题快照、分方向尝试、一致性与交付状态</span><span class="time">7<small>d</small></span></div>
-          <div class="row"><span class="code">W12</span><span class="feature">项目受理与跟进</span><span class="detail">申请/资料快照事务、提交人隔离、后台承接分配与状态机</span><span class="time">12<small>d</small></span></div>
-          <div class="row"><span class="code">W13</span><span class="feature">人工报价</span><span class="detail">精确金额计算、不可变报价修订与安全导出</span><span class="time">5<small>d</small></span></div>
-          <div class="row"><span class="code">W14</span><span class="feature">客服连接</span><span class="detail">身份与项目范围校验、第三方会话上下文</span><span class="time">2<small>d</small></span></div>
-          <div class="row"><span class="code">W15</span><span class="feature">资产与文件服务</span><span class="detail">一对多资产、版本、Silo 存储、上传关联与历史保护</span><span class="time provisional">9<small>d*</small></span></div>
-          <div class="row"><span class="code">W16</span><span class="feature">总联调与上线</span><span class="detail">试点数据、部署迁移、备份恢复及交付支持</span><span class="time">3<small>d</small></span></div>
+          <div class="row"><span class="code">W01</span><span class="feature">统一账户与会话</span><span class="detail">企业身份校验、用户/管理员同步、平台会话与 SU 验票</span><span class="time">2<small>d</small></span></div>
+          <div class="row"><span class="code">W02</span><span class="feature">用户类型与端入口</span><span class="detail">用户类型字段同步、读取与入口提示</span><span class="time">0.5<small>d</small></span></div>
+          <div class="row"><span class="code">W03</span><span class="feature">方案库与发布</span><span class="detail">编号、字典、导入、就绪汇总、审核与发布事务</span><span class="time provisional">3<small>d*</small></span></div>
+          <div class="row"><span class="code">W04</span><span class="feature">AI 智选与检索统计</span><span class="detail">LLM 条件解析、确定性匹配、模型下载、检索流水及统计聚合</span><span class="time">3.5<small>d</small></span></div>
+          <div class="row"><span class="code">W05</span><span class="feature">积分协调</span><span class="detail">权威账本接入、预占/结算/释放、故障恢复</span><span class="time">2.5<small>d</small></span></div>
+          <div class="row"><span class="code">W06</span><span class="feature">生成公共服务</span><span class="detail">模型适配、任务/Outbox、Worker 恢复与结果存储</span><span class="time">3<small>d</small></span></div>
+          <div class="row"><span class="code">W07</span><span class="feature">品牌主题生成</span><span class="detail">费用提议、蒙版处理、任务快照与最终效果选择</span><span class="time provisional">3.5<small>d*</small></span></div>
+          <div class="row"><span class="code">W08</span><span class="feature">清单导入与导出</span><span class="detail">表格安全提取、计量核验、空价导出及修订快照</span><span class="time">3<small>d</small></span></div>
+          <div class="row"><span class="code">W09</span><span class="feature">报馆图交付</span><span class="detail">视向及模型绑定校验、受控预览和打包下载</span><span class="time provisional">1<small>d*</small></span></div>
+          <div class="row"><span class="code">W10</span><span class="feature">平面素材交付</span><span class="detail">标准/SU 素材集合、画面关联、私有结果读取与 ZIP 交付</span><span class="time provisional">1<small>d*</small></span></div>
+          <div class="row"><span class="code">W11</span><span class="feature">AIGC 四面生成</span><span class="detail">固定主题快照、分方向尝试、一致性与交付状态</span><span class="time">2<small>d</small></span></div>
+          <div class="row"><span class="code">W12</span><span class="feature">项目受理与跟进</span><span class="detail">申请/资料快照事务、提交人隔离、后台承接分配与状态机</span><span class="time">3<small>d</small></span></div>
+          <div class="row"><span class="code">W13</span><span class="feature">人工报价</span><span class="detail">精确金额计算、不可变报价修订与安全导出</span><span class="time">2<small>d</small></span></div>
+          <div class="row"><span class="code">W14</span><span class="feature">资产与文件服务</span><span class="detail">一对多资产、版本、Silo 存储、上传关联与历史保护</span><span class="time provisional">3<small>d*</small></span></div>
         </div>
-        <div class="notice">* 暂估分工：W03 6d 补六类完整性与审核发布约束；W07 9d 开发主题业务规则与蒙版快照；W09 6d 开发视向/模型复核及图纸交付；W10 7d 开发画面映射及两类素材交付；W15 9d 补文件替换、历史版本保护和统一鉴权。已存在的方案 CRUD、导入、清单、基础资产表与上传不重复计时。</div>
+        <div class="notice">* 暂估分工：W03 3d 补六类完整性与审核发布约束；W07 3.5d 开发主题业务规则与蒙版快照；W09 1d 开发视向/模型复核及图纸交付；W10 1d 开发画面映射及两类素材交付；W14 3d 补文件替换、历史版本保护和统一鉴权。已存在的方案 CRUD、导入、清单、基础资产表与上传不重复计时。</div>
       </section>
 
       <footer id="notes" class="foot">
-        <p><strong>估算说明：</strong>原有区间来源于《一期业务模块开发与报价总集》第 7.2 节，下限不因现有代码而自动扣减；* 为结合当前代码的新增暂估，非来源文档已确认报价。W12 的 6/7/12 d 沿用旧规划参考值，改为提交人本人查询及后台处理后尚待复核。模块归属参照总集第 4 节及《一期客户端与管理后台页面及功能清单》。总开发量 213 人日，其中客户端 41d、后台 51d、服务端 121d；不同角色并行，不能换算为 213 个日历日。</p>
+        <p><strong>估算说明：</strong>原有区间来源于《一期业务模块开发与报价总集》第 7.2 节，下限不因现有代码而自动扣减；* 为结合当前代码的新增暂估，非来源文档已确认报价。申请与项目相关工作包（客户端 2.5d、后台 3d、服务端 3d）沿用规划参考值，改为提交人本人查询及后台处理后尚待复核。模块归属参照总集第 4 节及《一期客户端与管理后台页面及功能清单》。总开发量 76 人日，其中客户端 18d、后台 25d、服务端 33d；不同角色并行，不能换算为 76 个日历日。</p>
         <p>暂估基于静态代码检查，未完成运行验收；既有方案/资产路由不等于交付完成（例如资产替换前后端契约尚未对齐，发布检查尚缺图纸/素材阻断）。专项验收与外部等待时间均未计入三端开发人日；正式报价仍需确认外部协议、资产样包、质量标准和现有实现的复用程度。</p>
         <p>原始文档：<a href="一期业务模块开发与报价总集.md">一期业务模块开发与报价总集</a> · <a href="一期客户端与管理后台页面及功能清单.md">一期客户端与管理后台页面及功能清单</a></p>
       </footer>
