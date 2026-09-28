@@ -4,11 +4,13 @@ import { createScheme, deleteScheme, getScheme, listSchemes, updateScheme, type 
 
 interface SchemeQuery extends Partial<ListSchemesOptions> {}
 interface CodeParams { code: string; }
-interface UpdateBody extends SchemeInput { expectedRevision: number; }
+interface UpdateBody extends SchemeInput { editRevision: number; }
 
 const nullableString = { type: ['string', 'null'] };
 const nullableNumber = { type: ['number', 'null'] };
 const nullableStringArray = { type: ['array', 'null'], items: { type: 'string' } };
+const dictionaryId = { type: ['string', 'null'], format: 'uuid' };
+const dictionaryIds = { type: 'array', uniqueItems: true, items: { type: 'string', format: 'uuid' } };
 const applicabilityConditions = {
   type: ['object', 'null'], additionalProperties: false,
   required: ['status', 'rules', 'labelsConfirmed', 'publicNotes'],
@@ -24,18 +26,18 @@ const schemeProperties = {
   code: { type: 'string', minLength: 1, maxLength: 200 },
   name: { type: 'string', minLength: 1, maxLength: 500 },
   parentCode: nullableString,
-  lengthCm: nullableNumber,
-  widthCm: nullableNumber,
-  heightCm: nullableNumber,
-  areaSqm: nullableNumber,
+  lengthMm: { type: ['integer', 'null'], minimum: 1 },
+  widthMm: { type: ['integer', 'null'], minimum: 1 },
+  heightMm: { type: ['integer', 'null'], minimum: 1 },
+  areaM2: nullableNumber,
   openingCount: { type: ['integer', 'null'], minimum: 0 },
-  openingDirections: nullableStringArray,
-  productLine: nullableString,
-  style: nullableString,
-  industries: nullableStringArray,
-  budgetTier: nullableString,
-  functionalZones: nullableStringArray,
-  keyFeatures: nullableStringArray,
+  openSides: { type: ['array', 'null'], uniqueItems: true, items: { type: 'string', enum: ['front', 'right', 'back', 'left'] } },
+  productSystemId: dictionaryId,
+  styleId: dictionaryId,
+  industryIds: dictionaryIds,
+  budgetTierId: dictionaryId,
+  zoneIds: dictionaryIds,
+  featureIds: dictionaryIds,
   description: nullableString,
   keywords: nullableStringArray,
   source: nullableString,
@@ -47,25 +49,25 @@ const schemeProperties = {
 const updateProperties = {
   name: { type: 'string', minLength: 1, maxLength: 500 },
   parentCode: nullableString,
-  lengthCm: nullableNumber,
-  widthCm: nullableNumber,
-  heightCm: nullableNumber,
-  areaSqm: nullableNumber,
+  lengthMm: schemeProperties.lengthMm,
+  widthMm: schemeProperties.widthMm,
+  heightMm: schemeProperties.heightMm,
+  areaM2: nullableNumber,
   openingCount: { type: ['integer', 'null'], minimum: 0 },
-  openingDirections: nullableStringArray,
-  productLine: nullableString,
-  style: nullableString,
-  industries: nullableStringArray,
-  budgetTier: nullableString,
-  functionalZones: nullableStringArray,
-  keyFeatures: nullableStringArray,
+  openSides: schemeProperties.openSides,
+  productSystemId: dictionaryId,
+  styleId: dictionaryId,
+  industryIds: dictionaryIds,
+  budgetTierId: dictionaryId,
+  zoneIds: dictionaryIds,
+  featureIds: dictionaryIds,
   description: nullableString,
   keywords: nullableStringArray,
   source: nullableString,
   visualTheme: nullableString,
   applicableConditions: applicabilityConditions,
   notes: nullableString,
-  expectedRevision: { type: 'integer', minimum: 0 },
+  editRevision: { type: 'integer', minimum: 1 },
 };
 
 const codeParamsSchema = {
@@ -77,8 +79,8 @@ const listQuerySchema = {
   type: 'object', additionalProperties: false,
   properties: {
     page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
-    code: { type: 'string', minLength: 1 }, name: { type: 'string', minLength: 1 }, style: { type: 'string', minLength: 1 },
-    industry: { type: 'string', minLength: 1 }, productLine: { type: 'string', minLength: 1 },
+    code: { type: 'string', minLength: 1 }, name: { type: 'string', minLength: 1 }, styleId: { type: 'string', format: 'uuid' },
+    industryId: { type: 'string', format: 'uuid' }, productSystemId: { type: 'string', format: 'uuid' },
     publishStatus: { type: 'string', enum: ['draft', 'published', 'unpublished'] },
     verificationStatus: { type: 'string', enum: ['unverified', 'verified', 'failed'] }, parentCode: { type: 'string', minLength: 1 },
   },
@@ -98,9 +100,9 @@ function listOptions(query: SchemeQuery): ListSchemesOptions {
     pageSize: query.pageSize ?? 20,
     ...(query.code ? { code: query.code.trim() } : {}),
     ...(query.name ? { name: query.name.trim() } : {}),
-    ...(query.style ? { style: query.style } : {}),
-    ...(query.industry ? { industry: query.industry } : {}),
-    ...(query.productLine ? { productLine: query.productLine } : {}),
+    ...(query.styleId ? { styleId: query.styleId } : {}),
+    ...(query.industryId ? { industryId: query.industryId } : {}),
+    ...(query.productSystemId ? { productSystemId: query.productSystemId } : {}),
     ...(query.publishStatus ? { publishStatus: query.publishStatus } : {}),
     ...(query.verificationStatus ? { verificationStatus: query.verificationStatus } : {}),
     ...(query.parentCode ? { parentCode: query.parentCode } : {}),
@@ -110,6 +112,17 @@ function listOptions(query: SchemeQuery): ListSchemesOptions {
 export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   // TODO(P1): enforce admin session authentication and pass the authenticated admin id.
   const adminId: string | null = null;
+  app.get('/schemes/options', { schema: { tags: ['admin-schemes'] } }, async () => {
+    const result = await pool.query<{ code: string; id: string; label: string }>(`
+      SELECT d.code, i.id::text AS id, i.item_label AS label FROM dictionaries d
+      JOIN dictionary_items i ON i.dictionary_id = d.id
+      WHERE d.enabled AND i.enabled AND d.code IN ('product_system','style','industry','budget_tier','functional_zone','key_feature')
+      ORDER BY d.code, i.sort_order, i.id`);
+    return { code: 0, data: result.rows.reduce<Record<string, { id: string; label: string }[]>>((options, item) => {
+      (options[item.code] ??= []).push({ id: item.id, label: item.label });
+      return options;
+    }, {}) };
+  });
   app.get('/schemes', { schema: { tags: ['admin-schemes'], querystring: listQuerySchema } }, async request => {
     return { code: 0, data: await listSchemes(pool, listOptions(request.query as SchemeQuery)) };
   });
@@ -122,10 +135,10 @@ export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.
     return { code: 0, data: await createScheme(pool, adminId, request.body as SchemeInput) };
   });
   app.put('/schemes/:code', {
-    schema: { tags: ['admin-schemes'], params: codeParamsSchema, body: { type: 'object', required: ['expectedRevision'], additionalProperties: false, properties: updateProperties } },
+    schema: { tags: ['admin-schemes'], params: codeParamsSchema, body: { type: 'object', required: ['editRevision'], additionalProperties: false, properties: updateProperties } },
   }, async request => {
-    const { expectedRevision, ...input } = request.body as UpdateBody;
-    return { code: 0, data: await updateScheme(pool, decodedCode(request.params as CodeParams), adminId, input, expectedRevision) };
+    const { editRevision, ...input } = request.body as UpdateBody;
+    return { code: 0, data: await updateScheme(pool, decodedCode(request.params as CodeParams), adminId, input, editRevision) };
   });
   app.delete('/schemes/:code', { schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async (request) => {
     await deleteScheme(pool, decodedCode(request.params as CodeParams));

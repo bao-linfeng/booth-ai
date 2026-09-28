@@ -10,13 +10,13 @@ interface SchemeRow {
   publishStatus: string;
   verificationStatus: string;
   updatedAt: Date | string;
-  lengthCm: string | null;
-  widthCm: string | null;
-  heightCm: string | null;
-  areaSqm: string | null;
+  lengthMm: number | null;
+  widthMm: number | null;
+  heightMm: number | null;
+  areaM2: string | null;
   openingCount: number | null;
-  openingDirections: string[] | null;
-  productLine: string | null;
+  openSides: string[] | null;
+  productSystemId: string | null;
   applicableConditions: Record<string, unknown> | null;
 }
 
@@ -85,7 +85,7 @@ export interface PublishedScheme {
   updatedAt: string;
 }
 
-const schemeColumns = 'id::text AS id, code, revision, publish_status AS "publishStatus", verification_status AS "verificationStatus", updated_at AS "updatedAt", length_cm::text AS "lengthCm", width_cm::text AS "widthCm", height_cm::text AS "heightCm", area_sqm::text AS "areaSqm", opening_count AS "openingCount", opening_directions AS "openingDirections", product_line AS "productLine", applicable_conditions AS "applicableConditions"';
+const schemeColumns = 'id::text AS id, code, revision, publish_status AS "publishStatus", verification_status AS "verificationStatus", updated_at AS "updatedAt", length_mm AS "lengthMm", width_mm AS "widthMm", height_mm AS "heightMm", area_sqm::text AS "areaM2", opening_count AS "openingCount", opening_directions AS "openSides", product_system_id::text AS "productSystemId", applicable_conditions AS "applicableConditions"';
 const reviewColumns = 'id::text AS id, scheme_id::text AS "schemeId", request_key AS "requestKey", scheme_revision AS "schemeRevision", phase, decision, checks, notes, admin_id::text AS "adminId", created_at AS "createdAt"';
 
 function requestError(message: string, statusCode: number): Error & { statusCode: number } {
@@ -153,18 +153,26 @@ async function readinessForScheme(client: DbClient, scheme: SchemeRow): Promise<
     new Set(images.map(image => image.objectKey)).size !== 3 ||
     images.some(image => !image.widthPx || !image.heightPx || image.widthPx * 9 !== image.heightPx * 16 || !/^image\/(png|jpeg|webp)$/.test(image.mimeType ?? '') ||
       masks.filter(mask => mask.relatedAssetId === image.id && mask.widthPx === image.widthPx && mask.heightPx === image.heightPx && /^image\/(png|jpeg|webp)$/.test(mask.mimeType ?? '')).length !== 1))) blockers.push('效果图与蒙版未逐一配对或图片规格不符');
-  const lengthMm = scheme.lengthCm === null ? NaN : Number(scheme.lengthCm) * 10;
-  const widthMm = scheme.widthCm === null ? NaN : Number(scheme.widthCm) * 10;
-  const heightMm = scheme.heightCm === null ? NaN : Number(scheme.heightCm) * 10;
-  if (scheme.areaSqm === null || ![lengthMm, widthMm, heightMm].every(value => Number.isSafeInteger(value) && value > 0) ||
-    Number(scheme.areaSqm) !== lengthMm * widthMm / 1_000_000) blockers.push('方案尺寸或面积不完整');
-  const directions = scheme.openingDirections;
+  const lengthMm = scheme.lengthMm;
+  const widthMm = scheme.widthMm;
+  const heightMm = scheme.heightMm;
+  if (scheme.areaM2 === null || ![lengthMm, widthMm, heightMm].every(value => value !== null && Number.isSafeInteger(value) && value > 0) ||
+    Number(scheme.areaM2) !== (lengthMm ?? 0) * (widthMm ?? 0) / 1_000_000) blockers.push('方案尺寸或面积不完整');
+  const directions = scheme.openSides;
   if (!scheme.openingCount || scheme.openingCount < 1 || scheme.openingCount > 4 ||
     !Array.isArray(directions) || directions.length !== scheme.openingCount ||
     new Set(directions).size !== directions.length || directions.some(side => !['front', 'right', 'back', 'left'].includes(side))) blockers.push('开口方向未核对');
-  const product = scheme.productLine ? await client.query<{ exists: boolean }>(
-    "SELECT EXISTS (SELECT 1 FROM catalog_options WHERE type = 'product_line' AND key = $1 AND enabled = true) AS exists", [scheme.productLine]) : null;
+  const product = scheme.productSystemId ? await client.query<{ exists: boolean }>(
+    "SELECT EXISTS (SELECT 1 FROM dictionary_items i JOIN dictionaries d ON d.id = i.dictionary_id WHERE d.code = 'product_system' AND d.enabled AND i.enabled AND i.id = $1) AS exists", [scheme.productSystemId]) : null;
   if (!product?.rows[0]?.exists) blockers.push('产品体系未映射到可用字典');
+  const invalidTags = await client.query<{ invalid: boolean }>(`SELECT EXISTS (
+    SELECT 1 FROM schemes s CROSS JOIN LATERAL unnest(array_remove(
+      ARRAY[s.product_system_id, s.style_id, s.budget_tier_id] || s.industry_ids || s.zone_ids || s.feature_ids, NULL)) tag(id)
+    LEFT JOIN dictionary_items i ON i.id = tag.id AND i.enabled
+    LEFT JOIN dictionaries d ON d.id = i.dictionary_id AND d.enabled
+    WHERE s.id = $1 AND d.id IS NULL
+  ) AS invalid`, [scheme.id]);
+  if (invalidTags.rows[0]?.invalid) blockers.push('方案标签含停用或失效字典项');
   const conditions = scheme.applicableConditions;
   if (conditions?.status !== 'confirmed' || !Array.isArray(conditions.rules) ||
     !conditions.rules.every((rule: unknown) => rule !== null && typeof rule === 'object' &&
@@ -204,6 +212,8 @@ export async function createReview(pool: pg.Pool, code: string, adminId: string 
     if (previous.rows[0]) return toReviewRecord(previous.rows[0]);
     if (scheme.revision !== input.schemeRevision) throw requestError('Scheme revision conflict', 409);
     if (input.phase === 'overall' && input.decision === 'pass') {
+      if (!['assetsComplete', 'bomVerified', 'renderingsAndMasks', 'drawingsComplete'].every(key => input.checks[key] === true))
+        throw requestError('Overall review checks must all pass', 400);
       const readiness = await readinessForScheme(client, scheme);
       const blockers = readiness.blockers.filter(blocker => blocker !== '缺少当前修订的整体审核通过记录' && blocker !== '审核后资产发生变化');
       if (blockers.length) throw requestError(blockers[0]!, 400);

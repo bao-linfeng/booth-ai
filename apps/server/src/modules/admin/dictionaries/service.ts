@@ -151,6 +151,7 @@ export async function createDictionary(pool: pg.Pool, input: DictionaryInput): P
 }
 
 export async function updateDictionary(pool: pg.Pool, id: string, input: DictionaryInput): Promise<DictionaryRecord> {
+  if (input.code !== undefined || input.type !== undefined) throw requestError('Dictionary code and type cannot be changed', 400);
   const { assignments, values } = fieldsFor(input, dictionaryFields);
   if (!assignments.length) throw requestError('No fields to update', 400);
   try {
@@ -163,6 +164,15 @@ export async function updateDictionary(pool: pg.Pool, id: string, input: Diction
 }
 
 export async function deleteDictionary(pool: pg.Pool, id: string): Promise<void> {
+  const protectedDictionary = await pool.query<{ code: string }>('SELECT code FROM dictionaries WHERE id = $1', [id]);
+  if (protectedDictionary.rows[0] && ['product_system','style','industry','budget_tier','functional_zone','key_feature'].includes(protectedDictionary.rows[0].code)) throw requestError('Selection dictionaries cannot be deleted', 409);
+  const used = await pool.query<{ used: boolean }>(`SELECT EXISTS (
+    SELECT 1 FROM dictionary_items i JOIN schemes s ON
+      s.product_system_id = i.id OR s.style_id = i.id OR s.budget_tier_id = i.id
+      OR i.id = ANY(s.industry_ids) OR i.id = ANY(s.zone_ids) OR i.id = ANY(s.feature_ids)
+    WHERE i.dictionary_id = $1
+  ) AS used`, [id]);
+  if (used.rows[0]?.used) throw requestError('Dictionary is referenced by schemes; disable it instead', 409);
   const result = await pool.query('DELETE FROM dictionaries WHERE id = $1', [id]);
   if (!result.rowCount) throw requestError('Dictionary not found', 404);
 }
@@ -190,6 +200,7 @@ export async function createDictionaryItem(pool: pg.Pool, dictionaryId: string, 
 }
 
 export async function updateDictionaryItem(pool: pg.Pool, itemId: string, input: DictionaryItemInput, dictionaryId?: string): Promise<DictionaryItemRecord> {
+  if (input.itemValue !== undefined) throw requestError('Dictionary item value cannot be changed', 400);
   const { assignments, values } = fieldsFor(input, itemFields);
   if (!assignments.length) throw requestError('No fields to update', 400);
   const scope = dictionaryId === undefined ? '' : ` AND dictionary_id = $${values.length + 2}`;
@@ -203,6 +214,11 @@ export async function updateDictionaryItem(pool: pg.Pool, itemId: string, input:
 }
 
 export async function deleteDictionaryItem(pool: pg.Pool, itemId: string, dictionaryId?: string): Promise<void> {
+  const used = await pool.query<{ used: boolean }>(`SELECT EXISTS (
+    SELECT 1 FROM schemes WHERE product_system_id = $1 OR style_id = $1 OR budget_tier_id = $1
+      OR $1 = ANY(industry_ids) OR $1 = ANY(zone_ids) OR $1 = ANY(feature_ids)
+  ) AS used`, [itemId]);
+  if (used.rows[0]?.used) throw requestError('Dictionary item is referenced by schemes; disable it instead', 409);
   const result = dictionaryId === undefined
     ? await pool.query('DELETE FROM dictionary_items WHERE id = $1', [itemId])
     : await pool.query('DELETE FROM dictionary_items WHERE id = $1 AND dictionary_id = $2', [itemId, dictionaryId]);

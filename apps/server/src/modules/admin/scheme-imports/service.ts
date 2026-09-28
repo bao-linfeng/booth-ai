@@ -1,22 +1,60 @@
 import ExcelJS from 'exceljs';
 import type pg from 'pg';
 import { transaction } from '../../../infra/database.js';
+import { validateSchemeDictionaryIds } from '../schemes/dictionary-ids.js';
+
+const importDictionaries = {
+  productSystemId: 'product_system', styleId: 'style', industryIds: 'industry',
+  budgetTierId: 'budget_tier', zoneIds: 'functional_zone', featureIds: 'key_feature',
+} as const;
+
+type ImportDictionaryField = keyof typeof importDictionaries;
+
+async function resolveImportLabels(client: pg.Pool | pg.PoolClient, row: ImportRow): Promise<ImportRow> {
+  const result = { ...row };
+  for (const [field, code] of Object.entries(importDictionaries) as [ImportDictionaryField, string][]) {
+    const value = row[field];
+    if (value === null) continue;
+    const labels = Array.isArray(value) ? value : [value];
+    if (labels.length === 0) continue;
+    const matches = await client.query<{ id: string; label: string; itemValue: string }>(`
+      SELECT i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue"
+      FROM dictionary_items i JOIN dictionaries d ON d.id = i.dictionary_id
+      WHERE d.code = $1 AND d.enabled AND i.enabled AND (i.item_label = ANY($2::text[]) OR i.item_value = ANY($2::text[]))`, [code, labels]);
+    const ids = labels.map(label => matches.rows.find(item => item.label === label || item.itemValue === label)?.id);
+    if (ids.some(id => !id)) throw Object.assign(new Error(`未映射的${code}标签: ${labels.filter((_, index) => !ids[index]).join('、')}`), { statusCode: 400 });
+    (result as Record<ImportDictionaryField, string | string[] | null>)[field] = Array.isArray(value) ? ids as string[] : ids[0]!;
+  }
+  return result;
+}
+
+function validateImportedSize(row: ImportRow): void {
+  for (const dimension of [row.lengthMm, row.widthMm, row.heightMm]) {
+    if (dimension !== null && (!Number.isSafeInteger(dimension) || dimension <= 0 || dimension > 2147483647))
+      throw Object.assign(new Error('尺寸无法精确表示为整数毫米'), { statusCode: 400 });
+  }
+  if (row.areaM2 !== null && (!Number.isFinite(row.areaM2) || row.areaM2 <= 0))
+    throw Object.assign(new Error('面积必须为正数'), { statusCode: 400 });
+  if (row.areaM2 !== null && row.lengthMm !== null && row.widthMm !== null &&
+    Math.abs(row.areaM2 - row.lengthMm * row.widthMm / 1_000_000) > 0.000001)
+    throw Object.assign(new Error('面积与长宽不一致'), { statusCode: 400 });
+}
 
 export interface ImportRow {
   code: string;
   name: string;
   parentCode: string | null;
-  widthCm: number | null;
-  lengthCm: number | null;
-  areaSqm: number | null;
-  heightCm: number | null;
+  widthMm: number | null;
+  lengthMm: number | null;
+  areaM2: number | null;
+  heightMm: number | null;
   openingCount: number | null;
-  productLine: string | null;
-  style: string | null;
-  industries: string[] | null;
-  budgetTier: string | null;
-  functionalZones: string[] | null;
-  keyFeatures: string[] | null;
+  productSystemId: string | null;
+  styleId: string | null;
+  industryIds: string[] | null;
+  budgetTierId: string | null;
+  zoneIds: string[] | null;
+  featureIds: string[] | null;
   description: string | null;
   keywords: string[] | null;
   verificationStatus: 'unverified' | 'verified' | 'failed';
@@ -82,7 +120,7 @@ function numericValue(value: ExcelJS.CellValue, multiplier = 1): number | null {
   const text = cellText(value);
   if (text === '') return null;
   const number = Number(text);
-  return Number.isFinite(number) ? number * multiplier : null;
+  return Number.isFinite(number) ? number * multiplier : NaN;
 }
 
 function listValue(value: ExcelJS.CellValue): string[] | null {
@@ -114,17 +152,17 @@ function parseRow(row: ExcelJS.Row): ImportRow {
     code: cellText(row.getCell(2).value),
     name: cellText(row.getCell(3).value),
     parentCode: optionalText(row.getCell(4).value),
-    widthCm: numericValue(row.getCell(6).value, 100),
-    lengthCm: numericValue(row.getCell(7).value, 100),
-    areaSqm: numericValue(row.getCell(8).value),
-    heightCm: numericValue(row.getCell(9).value, 100),
+    widthMm: numericValue(row.getCell(6).value, 1000),
+    lengthMm: numericValue(row.getCell(7).value, 1000),
+    areaM2: numericValue(row.getCell(8).value),
+    heightMm: numericValue(row.getCell(9).value, 1000),
     openingCount: openingCount(row.getCell(10).value),
-    productLine: optionalText(row.getCell(11).value),
-    style: optionalText(row.getCell(12).value),
-    industries: listValue(row.getCell(13).value),
-    budgetTier: optionalText(row.getCell(14).value),
-    functionalZones: listValue(row.getCell(15).value),
-    keyFeatures: listValue(row.getCell(16).value),
+    productSystemId: optionalText(row.getCell(11).value),
+    styleId: optionalText(row.getCell(12).value),
+    industryIds: listValue(row.getCell(13).value),
+    budgetTierId: optionalText(row.getCell(14).value),
+    zoneIds: listValue(row.getCell(15).value),
+    featureIds: listValue(row.getCell(16).value),
     description: optionalText(row.getCell(17).value),
     keywords: listValue(row.getCell(18).value),
     verificationStatus: verificationStatus(row.getCell(19).value),
@@ -138,9 +176,9 @@ function parseError(): Error & { statusCode: number } {
 
 const insertSql = `
   INSERT INTO schemes (
-    code, name, parent_code, width_cm, length_cm, area_sqm, height_cm,
-    opening_count, product_line, style, industries, budget_tier,
-    functional_zones, key_features, description, keywords,
+    code, name, parent_code, width_mm, length_mm, area_sqm, height_mm,
+    opening_count, product_system_id, style_id, industry_ids, budget_tier_id,
+    zone_ids, feature_ids, description, keywords,
     notes, created_by, updated_by
   ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
@@ -152,17 +190,17 @@ const updateSql = `
   UPDATE schemes SET
     name = $2,
     parent_code = $3,
-    width_cm = $4,
-    length_cm = $5,
+    width_mm = $4,
+    length_mm = $5,
     area_sqm = $6,
-    height_cm = $7,
+    height_mm = $7,
     opening_count = $8,
-    product_line = $9,
-    style = $10,
-    industries = $11,
-    budget_tier = $12,
-    functional_zones = $13,
-    key_features = $14,
+    product_system_id = $9,
+    style_id = $10,
+    industry_ids = $11,
+    budget_tier_id = $12,
+    zone_ids = $13,
+    feature_ids = $14,
     description = $15,
     keywords = $16,
     notes = $17,
@@ -235,6 +273,14 @@ export async function previewImport(pool: pg.Pool, adminId: string | null, buffe
       rows.push({ rowNumber, code: data.code, name: data.name, status: 'error', reason: data.code === '' ? 'Scheme code is required' : 'Scheme name is required' });
       continue;
     }
+    try {
+      validateImportedSize(data);
+      parsedRows[index] = await resolveImportLabels(pool, data);
+    } catch (error) {
+      summary.error += 1;
+      rows.push({ rowNumber, code: data.code, name: data.name, status: 'error', reason: error instanceof Error ? error.message : '导入数据无效' });
+      continue;
+    }
     if (seenCodes.has(data.code)) {
       summary.error += 1;
       rows.push({ rowNumber, code: data.code, name: data.name, status: 'error', reason: '文件内方案编号重复' });
@@ -243,11 +289,11 @@ export async function previewImport(pool: pg.Pool, adminId: string | null, buffe
     seenCodes.add(data.code);
     if (existingCodes.has(data.code)) {
       summary.duplicate += 1;
-      rows.push({ rowNumber, code: data.code, name: data.name, status: 'duplicate', data });
+      rows.push({ rowNumber, code: data.code, name: data.name, status: 'duplicate', data: parsedRows[index] });
       continue;
     }
     summary.valid += 1;
-    rows.push({ rowNumber, code: data.code, name: data.name, status: 'valid', data });
+    rows.push({ rowNumber, code: data.code, name: data.name, status: 'valid', data: parsedRows[index] });
   }
 
   const inserted = await pool.query<{ id: string }>(`
@@ -281,21 +327,23 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
       if (row.status === 'duplicate' && options.duplicateStrategy === 'skip') continue;
       await client.query('SAVEPOINT row_save');
       try {
+        validateImportedSize(row.data);
+        await validateSchemeDictionaryIds(client, row.data);
         if (row.status === 'valid') {
           await client.query(insertSql, [
-            row.data.code, row.data.name, row.data.parentCode, row.data.widthCm, row.data.lengthCm,
-            row.data.areaSqm, row.data.heightCm, row.data.openingCount, row.data.productLine,
-            row.data.style, row.data.industries, row.data.budgetTier, row.data.functionalZones,
-            row.data.keyFeatures, row.data.description, row.data.keywords,
+            row.data.code, row.data.name, row.data.parentCode, row.data.widthMm, row.data.lengthMm,
+            row.data.areaM2, row.data.heightMm, row.data.openingCount, row.data.productSystemId,
+            row.data.styleId, row.data.industryIds ?? [], row.data.budgetTierId, row.data.zoneIds ?? [],
+            row.data.featureIds ?? [], row.data.description, row.data.keywords,
             row.data.notes, adminId, adminId,
           ]);
           result.created += 1;
         } else {
           const updateResult = await client.query(updateSql, [
-            row.data.code, row.data.name, row.data.parentCode, row.data.widthCm, row.data.lengthCm,
-            row.data.areaSqm, row.data.heightCm, row.data.openingCount, row.data.productLine,
-            row.data.style, row.data.industries, row.data.budgetTier, row.data.functionalZones,
-            row.data.keyFeatures, row.data.description, row.data.keywords,
+            row.data.code, row.data.name, row.data.parentCode, row.data.widthMm, row.data.lengthMm,
+            row.data.areaM2, row.data.heightMm, row.data.openingCount, row.data.productSystemId,
+            row.data.styleId, row.data.industryIds ?? [], row.data.budgetTierId, row.data.zoneIds ?? [],
+            row.data.featureIds ?? [], row.data.description, row.data.keywords,
             row.data.notes, adminId,
           ]);
           if (updateResult.rowCount === 0) {
@@ -307,7 +355,7 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
         await client.query('RELEASE SAVEPOINT row_save');
       } catch (err) {
         await client.query('ROLLBACK TO SAVEPOINT row_save');
-        result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: mapDbError(err) });
+        result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: err instanceof Error && 'statusCode' in err && err.statusCode === 400 ? err.message : mapDbError(err) });
       }
     }
     await client.query("UPDATE scheme_imports SET status = 'committed', committed_at = now() WHERE id = $1", [importId]);

@@ -9,7 +9,6 @@ import { registerAdminMeRoutes } from './me/index.js';
 import { registerAdminUserRoutes } from './users.controller.js';
 import { registerAdminSchemesRoutes } from './schemes/index.js';
 import { registerAdminSchemeImportsRoutes } from './scheme-imports/index.js';
-import { registerAdminCatalogOptionsRoutes } from './catalog-options/index.js';
 import { registerAdminAssetsRoutes } from './assets/index.js';
 import { registerAdminBomRoutes } from './bill-of-materials/index.js';
 import { registerAdminReviewsRoutes } from './reviews/index.js';
@@ -31,7 +30,6 @@ export async function registerAdminModule(app: FastifyInstance, config: Config, 
     await registerAdminUserRoutes(admin, pool);
     await registerAdminSchemesRoutes(admin, pool);
     await registerAdminSchemeImportsRoutes(admin, pool);
-    await registerAdminCatalogOptionsRoutes(admin, pool);
     await registerAdminAssetsRoutes(admin, pool, storage);
     await registerAdminBomRoutes(admin, pool, storage, redis, config);
     await registerAdminReviewsRoutes(admin, pool);

@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { createHash } from 'node:crypto';
 import type { createStorage } from '../../../infra/storage.js';
 import { rulesVersion, sides, type Candidate, type Catalog, type Option, type Side } from './domain.js';
 
@@ -34,12 +35,15 @@ interface AssetRow {
 }
 
 export async function loadCatalog(pool: pg.Pool): Promise<Catalog & { rulesVersion: string; dictionaryVersion: string }> {
-  const result = await pool.query<{ type: string; id: string; label: string }>('SELECT type, key AS id, label FROM catalog_options WHERE enabled = true ORDER BY type, sort_order, key');
+  const result = await pool.query<{ type: string; id: string; label: string }>(`SELECT d.code AS type, i.id::text AS id, i.item_label AS label
+    FROM dictionaries d JOIN dictionary_items i ON i.dictionary_id = d.id
+    WHERE d.enabled AND i.enabled AND d.code IN ('product_system','style','industry','budget_tier','functional_zone','key_feature')
+    ORDER BY d.code, i.sort_order, i.id`);
   const byType = (type: string): Option[] => result.rows.filter(row => row.type === type).map(({ id, label }) => ({ id, label }));
   
   return {
     dimensions: { lengthMm: [3000, 6000, 9000, 12000], widthMm: [3000, 6000, 9000], maxHeightMm: [3500, 4000, 4500, 5000], areaM2: [9, 18, 27, 36, 54, 72] },
-    productSystems: byType('product_line'),
+    productSystems: byType('product_system'),
     styles: byType('style'),
     industries: byType('industry'),
     budgetTiers: byType('budget_tier'),
@@ -47,17 +51,17 @@ export async function loadCatalog(pool: pg.Pool): Promise<Catalog & { rulesVersi
     features: byType('key_feature'),
     applicabilityQuestions: [], // Currently empty, implement based on specific project needs
     rulesVersion,
-    dictionaryVersion: 'live',
+    dictionaryVersion: createHash('sha256').update(JSON.stringify(result.rows)).digest('hex').slice(0, 16),
   };
 }
 
 export async function loadCandidates(pool: pg.Pool, catalog: Catalog, storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>, code?: string): Promise<Candidate[]> {
   const result = await pool.query<CandidateRow>(`
-    SELECT s.id, s.code, (s.length_cm * 10)::float8 AS "lengthMm", (s.width_cm * 10)::float8 AS "widthMm",
-      (s.height_cm * 10)::float8 AS "heightMm", s.area_sqm::float8 AS "areaM2", s.opening_count AS "openingCount",
-      s.opening_directions AS "openSides", s.product_line AS "productSystemId", s.style AS "styleId",
-      s.industries AS "industryIds", s.budget_tier AS "budgetTierId", s.functional_zones AS "zoneIds",
-      s.key_features AS "featureIds", s.keywords, s.applicable_conditions AS conditions
+    SELECT s.id, s.code, s.length_mm AS "lengthMm", s.width_mm AS "widthMm",
+      s.height_mm AS "heightMm", s.area_sqm::float8 AS "areaM2", s.opening_count AS "openingCount",
+      s.opening_directions AS "openSides", s.product_system_id::text AS "productSystemId", s.style_id::text AS "styleId",
+      s.industry_ids::text[] AS "industryIds", s.budget_tier_id::text AS "budgetTierId", s.zone_ids::text[] AS "zoneIds",
+      s.feature_ids::text[] AS "featureIds", s.keywords, s.applicable_conditions AS conditions
     FROM schemes s
     WHERE s.publish_status = 'published'
       AND EXISTS (SELECT 1 FROM scheme_boms b WHERE b.scheme_id = s.id AND b.status = 'verified')
@@ -65,7 +69,10 @@ export async function loadCandidates(pool: pg.Pool, catalog: Catalog, storage: P
         AND r.phase = 'overall' ORDER BY r.created_at DESC, r.id DESC LIMIT 1) = 'pass'
       AND NOT EXISTS (SELECT 1 FROM scheme_assets a WHERE a.scheme_id = s.id AND a.updated_at >
         (SELECT max(r.created_at) FROM scheme_reviews r WHERE r.scheme_id = s.id AND r.scheme_revision = s.revision AND r.phase = 'overall'))
-      AND s.applicable_conditions->>'labelsConfirmed' = 'true'
+       AND s.applicable_conditions->>'labelsConfirmed' = 'true'
+       AND NOT EXISTS (SELECT 1 FROM unnest(array_remove(ARRAY[s.product_system_id, s.style_id, s.budget_tier_id] || s.industry_ids || s.zone_ids || s.feature_ids, NULL)) AS selected(id)
+         LEFT JOIN dictionary_items di ON di.id = selected.id AND di.enabled
+         LEFT JOIN dictionaries d ON d.id = di.dictionary_id AND d.enabled WHERE d.id IS NULL)
       ${code === undefined ? '' : 'AND s.code = $1'}
     ORDER BY s.code`, code === undefined ? [] : [code]);
     

@@ -1,21 +1,22 @@
 import type pg from 'pg';
+import { validateSchemeDictionaryIds } from './dictionary-ids.js';
 
 export interface SchemeInput {
   code?: string;
   name?: string;
   parentCode?: string | null;
-  lengthCm?: number | null;
-  widthCm?: number | null;
-  heightCm?: number | null;
-  areaSqm?: number | null;
+  lengthMm?: number | null;
+  widthMm?: number | null;
+  heightMm?: number | null;
+  areaM2?: number | null;
   openingCount?: number | null;
-  openingDirections?: string[] | null;
-  productLine?: string | null;
-  style?: string | null;
-  industries?: string[] | null;
-  budgetTier?: string | null;
-  functionalZones?: string[] | null;
-  keyFeatures?: string[] | null;
+  openSides?: string[] | null;
+  productSystemId?: string | null;
+  styleId?: string | null;
+  industryIds?: string[] | null;
+  budgetTierId?: string | null;
+  zoneIds?: string[] | null;
+  featureIds?: string[] | null;
   description?: string | null;
   keywords?: string[] | null;
   source?: string | null;
@@ -29,9 +30,9 @@ export interface ListSchemesOptions {
   pageSize: number;
   code?: string;
   name?: string;
-  style?: string;
-  industry?: string;
-  productLine?: string;
+  styleId?: string;
+  industryId?: string;
+  productSystemId?: string;
   publishStatus?: string;
   verificationStatus?: string;
   parentCode?: string;
@@ -42,18 +43,18 @@ export interface SchemeRecord {
   code: string;
   name: string;
   parentCode: string | null;
-  lengthCm: string | null;
-  widthCm: string | null;
-  heightCm: string | null;
-  areaSqm: string | null;
+  lengthMm: number | null;
+  widthMm: number | null;
+  heightMm: number | null;
+  areaM2: string | null;
   openingCount: number | null;
-  openingDirections: string[] | null;
-  productLine: string | null;
-  style: string | null;
-  industries: string[] | null;
-  budgetTier: string | null;
-  functionalZones: string[] | null;
-  keyFeatures: string[] | null;
+  openSides: string[] | null;
+  productSystemId: string | null;
+  styleId: string | null;
+  industryIds: string[];
+  budgetTierId: string | null;
+  zoneIds: string[];
+  featureIds: string[];
   description: string | null;
   keywords: string[] | null;
   source: string | null;
@@ -62,7 +63,7 @@ export interface SchemeRecord {
   publishStatus: string;
   verificationStatus: string;
   notes: string | null;
-  revision: number;
+  editRevision: number;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: string;
@@ -75,21 +76,21 @@ interface SchemeRow extends Omit<SchemeRecord, 'createdAt' | 'updatedAt'> {
 }
 
 const schemeColumns = `
-  id, code, name, parent_code AS "parentCode", length_cm::text AS "lengthCm",
-  width_cm::text AS "widthCm", height_cm::text AS "heightCm", area_sqm::text AS "areaSqm",
-  opening_count AS "openingCount", opening_directions AS "openingDirections", product_line AS "productLine",
-  style, industries, budget_tier AS "budgetTier", functional_zones AS "functionalZones",
-  key_features AS "keyFeatures", description, keywords, source, visual_theme AS "visualTheme",
+  id, code, name, parent_code AS "parentCode", length_mm AS "lengthMm",
+  width_mm AS "widthMm", height_mm AS "heightMm", area_sqm::text AS "areaM2",
+  opening_count AS "openingCount", opening_directions AS "openSides", product_system_id::text AS "productSystemId",
+  style_id::text AS "styleId", industry_ids::text[] AS "industryIds", budget_tier_id::text AS "budgetTierId", zone_ids::text[] AS "zoneIds",
+  feature_ids::text[] AS "featureIds", description, keywords, source, visual_theme AS "visualTheme",
   applicable_conditions AS "applicableConditions", publish_status AS "publishStatus",
-  verification_status AS "verificationStatus", notes, revision, created_by::text AS "createdBy",
+  verification_status AS "verificationStatus", notes, revision AS "editRevision", created_by::text AS "createdBy",
   updated_by::text AS "updatedBy", created_at AS "createdAt", updated_at AS "updatedAt"
 `;
 
 const columnByInput: Record<keyof SchemeInput, string> = {
-  code: 'code', name: 'name', parentCode: 'parent_code', lengthCm: 'length_cm', widthCm: 'width_cm',
-  heightCm: 'height_cm', areaSqm: 'area_sqm', openingCount: 'opening_count', openingDirections: 'opening_directions',
-  productLine: 'product_line', style: 'style', industries: 'industries', budgetTier: 'budget_tier',
-  functionalZones: 'functional_zones', keyFeatures: 'key_features', description: 'description', keywords: 'keywords',
+  code: 'code', name: 'name', parentCode: 'parent_code', lengthMm: 'length_mm', widthMm: 'width_mm',
+  heightMm: 'height_mm', areaM2: 'area_sqm', openingCount: 'opening_count', openSides: 'opening_directions',
+  productSystemId: 'product_system_id', styleId: 'style_id', industryIds: 'industry_ids', budgetTierId: 'budget_tier_id',
+  zoneIds: 'zone_ids', featureIds: 'feature_ids', description: 'description', keywords: 'keywords',
   source: 'source', visualTheme: 'visual_theme', applicableConditions: 'applicable_conditions',
   notes: 'notes',
 };
@@ -111,11 +112,18 @@ function hasInput(input: SchemeInput, key: keyof SchemeInput): boolean {
 }
 
 function calculatedArea(input: SchemeInput): number | null | undefined {
-  if (hasInput(input, 'areaSqm')) return input.areaSqm;
-  if (input.lengthCm !== undefined && input.lengthCm !== null && input.widthCm !== undefined && input.widthCm !== null) {
-    return input.lengthCm * input.widthCm / 10000;
+  if (input.lengthMm !== undefined && input.lengthMm !== null && input.widthMm !== undefined && input.widthMm !== null) {
+    const calculated = input.lengthMm * input.widthMm / 1_000_000;
+    if (input.areaM2 !== undefined && input.areaM2 !== null && Math.abs(input.areaM2 - calculated) > 0.000001) throw requestError('Area conflicts with dimensions', 400);
+    return calculated;
   }
-  return undefined;
+  return hasInput(input, 'areaM2') ? input.areaM2 : undefined;
+}
+
+function validateDimensions(input: SchemeInput): void {
+  for (const value of [input.lengthMm, input.widthMm, input.heightMm]) {
+    if (value !== undefined && value !== null && (!Number.isSafeInteger(value) || value < 1 || value > 2147483647)) throw requestError('Dimensions must be positive integer millimeters', 400);
+  }
 }
 
 export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): Promise<{ data: SchemeRecord[]; total: number; page: number; pageSize: number }> {
@@ -127,9 +135,9 @@ export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): P
   };
   if (options.code) add('code ILIKE ?', `%${options.code}%`);
   if (options.name) add('name ILIKE ?', `%${options.name}%`);
-  if (options.style) add('style = ?', options.style);
-  if (options.industry) add('? = ANY(industries)', options.industry);
-  if (options.productLine) add('product_line = ?', options.productLine);
+  if (options.styleId) add('style_id = ?::uuid', options.styleId);
+  if (options.industryId) add('?::uuid = ANY(industry_ids)', options.industryId);
+  if (options.productSystemId) add('product_system_id = ?::uuid', options.productSystemId);
   if (options.publishStatus) add('publish_status = ?', options.publishStatus);
   if (options.verificationStatus) add('verification_status = ?', options.verificationStatus);
   if (options.parentCode) add('parent_code = ?', options.parentCode);
@@ -154,6 +162,8 @@ export async function createScheme(pool: pg.Pool, adminId: string | null, input:
   const code = input.code?.trim();
   const name = input.name?.trim();
   if (!code || !name) throw requestError('Code and name are required', 400);
+  validateDimensions(input);
+  await validateSchemeDictionaryIds(pool, input);
   const existing = await pool.query('SELECT 1 FROM schemes WHERE code = $1', [code]);
   if (existing.rowCount) throw requestError('Scheme code already exists', 409);
 
@@ -161,13 +171,13 @@ export async function createScheme(pool: pg.Pool, adminId: string | null, input:
   const columns = ['code', 'name', 'created_by', 'updated_by'];
   const placeholders = ['$1', '$2', '$3', '$4'];
   for (const key of Object.keys(columnByInput) as (keyof SchemeInput)[]) {
-    if (key === 'code' || key === 'name' || !hasInput(input, key)) continue;
+    if (key === 'code' || key === 'name' || key === 'areaM2' || !hasInput(input, key)) continue;
     columns.push(columnByInput[key]);
     values.push(input[key]);
     placeholders.push(`$${values.length}`);
   }
   const area = calculatedArea(input);
-  if (area !== undefined && !hasInput(input, 'areaSqm')) {
+  if (area !== undefined) {
     columns.push('area_sqm');
     values.push(area);
     placeholders.push(`$${values.length}`);
@@ -186,17 +196,34 @@ export async function deleteScheme(pool: pg.Pool, code: string): Promise<void> {
 export async function updateScheme(pool: pg.Pool, code: string, adminId: string | null, input: SchemeInput, expectedRevision: number): Promise<SchemeRecord> {
   if ('publishStatus' in input || 'verificationStatus' in input) throw requestError('Publication and verification require review', 400);
   if (hasInput(input, 'code')) throw requestError('Scheme code cannot be changed', 400);
+  validateDimensions(input);
+  await validateSchemeDictionaryIds(pool, input);
+  if (input.areaM2 !== undefined && input.areaM2 !== null) {
+    const current = await pool.query<{ lengthMm: number | null; widthMm: number | null }>(
+      'SELECT length_mm AS "lengthMm", width_mm AS "widthMm" FROM schemes WHERE code = $1', [code]);
+    if (!current.rows[0]) throw requestError('Scheme not found', 404);
+    const lengthMm = hasInput(input, 'lengthMm') ? input.lengthMm : current.rows[0].lengthMm;
+    const widthMm = hasInput(input, 'widthMm') ? input.widthMm : current.rows[0].widthMm;
+    if (lengthMm !== null && lengthMm !== undefined && widthMm !== null && widthMm !== undefined &&
+      Math.abs(input.areaM2 - lengthMm * widthMm / 1_000_000) > 0.000001) throw requestError('Area conflicts with dimensions', 400);
+  }
   const values: unknown[] = [];
   const updates: string[] = [];
   for (const key of Object.keys(columnByInput) as (keyof SchemeInput)[]) {
-    if (key === 'code' || !hasInput(input, key)) continue;
+    if (key === 'code' || key === 'areaM2' || !hasInput(input, key)) continue;
     values.push(input[key]);
     updates.push(`${columnByInput[key]} = $${values.length}`);
   }
-  const area = calculatedArea(input);
-  if (area !== undefined && !hasInput(input, 'areaSqm')) {
-    values.push(area);
-    updates.push(`area_sqm = $${values.length}`);
+  if (hasInput(input, 'lengthMm') || hasInput(input, 'widthMm') || hasInput(input, 'areaM2')) {
+    const requestedArea = `$${values.length + 1}::numeric`;
+    const length = hasInput(input, 'lengthMm') ? updates.find(update => update.startsWith('length_mm = '))!.split(' = ')[1]! : 'length_mm';
+    const width = hasInput(input, 'widthMm') ? updates.find(update => update.startsWith('width_mm = '))!.split(' = ')[1]! : 'width_mm';
+    if (input.areaM2 !== undefined && input.areaM2 !== null) {
+      values.push(input.areaM2);
+      updates.push(`area_sqm = CASE WHEN ${length} IS NOT NULL AND ${width} IS NOT NULL THEN ${length}::numeric * ${width}::numeric / 1000000 ELSE ${requestedArea} END`);
+    } else {
+      updates.push(`area_sqm = CASE WHEN ${length} IS NOT NULL AND ${width} IS NOT NULL THEN ${length}::numeric * ${width}::numeric / 1000000 ELSE NULL END`);
+    }
   }
   if (updates.length === 0) throw requestError('No fields to update', 400);
   values.push(adminId);

@@ -42,7 +42,7 @@ import {
 } from '#/api/core/reviews';
 import {
   createSchemeApi,
-  getCatalogOptionsApi,
+  getSchemeOptionsApi,
   getSchemeDetailApi,
   updateSchemeApi,
 } from '#/api/core/schemes';
@@ -64,25 +64,25 @@ const applicabilityConfirmed = ref(false);
 const labelsConfirmed = ref(false);
 const publicNotes = ref('');
 
-const formData = reactive<CreateSchemeInput & { expectedRevision?: number }>({
+const formData = reactive<CreateSchemeInput & { editRevision?: number }>({
   code: '',
   name: '',
   parentCode: undefined,
   description: undefined,
-  lengthCm: undefined,
-  widthCm: undefined,
-  heightCm: undefined,
-  areaSqm: undefined,
+  lengthMm: undefined,
+  widthMm: undefined,
+  heightMm: undefined,
+  areaM2: undefined,
   openingCount: undefined,
-  productLine: undefined,
-  style: undefined,
-  industries: [],
-  budgetTier: undefined,
+  productSystemId: undefined,
+  styleId: undefined,
+  industryIds: [],
+  budgetTierId: undefined,
   keywords: [],
   notes: undefined,
-  openingDirections: [],
-  functionalZones: [],
-  keyFeatures: [],
+  openSides: [],
+  zoneIds: [],
+  featureIds: [],
   source: undefined,
 });
 
@@ -103,42 +103,43 @@ const assetCounts = reactive({
 const options = reactive({
   styles: [] as { label: string; value: string }[],
   industries: [] as { label: string; value: string }[],
-  productLines: [] as { label: string; value: string }[],
+  productSystems: [] as { label: string; value: string }[],
   budgetTiers: [] as { label: string; value: string }[],
-  openingDirections: [] as { label: string; value: string }[],
+  openSides: [] as { label: string; value: string }[],
+  zones: [] as { label: string; value: string }[],
+  features: [] as { label: string; value: string }[],
 });
 
 async function fetchOptions() {
   try {
-    const res = await getCatalogOptionsApi(
-      'style,industry,productLine,budgetTier,openingDirection',
-    );
+    const res = await getSchemeOptionsApi();
     if (res) {
       if (res.style)
         options.styles = res.style.map((o) => ({
           label: o.label,
-          value: o.key,
+          value: o.id,
         }));
       if (res.industry)
         options.industries = res.industry.map((o) => ({
           label: o.label,
-          value: o.key,
+          value: o.id,
         }));
-      if (res.productLine)
-        options.productLines = res.productLine.map((o) => ({
+      if (res.product_system)
+        options.productSystems = res.product_system.map((o) => ({
           label: o.label,
-          value: o.key,
+          value: o.id,
         }));
-      if (res.budgetTier)
-        options.budgetTiers = res.budgetTier.map((o) => ({
+      if (res.budget_tier)
+        options.budgetTiers = res.budget_tier.map((o) => ({
           label: o.label,
-          value: o.key,
+          value: o.id,
         }));
-      if (res.openingDirection)
-        options.openingDirections = res.openingDirection.filter((o) => ['front', 'right', 'back', 'left'].includes(o.key)).map((o) => ({
-          label: o.label,
-          value: o.key,
-        }));
+      options.openSides = [
+        { value: 'front', label: '正面' }, { value: 'right', label: '右侧' },
+        { value: 'back', label: '背面' }, { value: 'left', label: '左侧' },
+      ];
+      options.zones = (res.functional_zone || []).map((o) => ({ label: o.label, value: o.id }));
+      options.features = (res.key_feature || []).map((o) => ({ label: o.label, value: o.id }));
     }
   } catch (error) {
     console.error('Failed to load catalog options:', error);
@@ -176,14 +177,16 @@ async function fetchDetail() {
     Object.keys(formData).forEach((key) => {
       const k = key as keyof typeof formData;
       if (
-        k !== 'expectedRevision' &&
+        k !== 'editRevision' &&
         res[k as keyof SchemeRecord] !== undefined &&
         res[k as keyof SchemeRecord] !== null
       ) {
-        (formData as any)[k] = res[k as keyof SchemeRecord];
+        (formData as any)[k] = k === 'areaM2' && res.areaM2 !== null
+          ? Number(res.areaM2)
+          : res[k as keyof SchemeRecord];
       }
     });
-    formData.expectedRevision = res.revision;
+    formData.editRevision = res.editRevision;
   } catch (error: any) {
     message.error(error.message || '获取方案详情失败');
   } finally {
@@ -240,11 +243,11 @@ async function handleModelDownload(asset: SchemeAsset) {
 }
 
 function calculateArea() {
-  if (formData.lengthCm && formData.widthCm) {
-    formData.areaSqm = Number(
-      ((formData.lengthCm * formData.widthCm) / 10_000).toFixed(2),
+  if (formData.lengthMm && formData.widthMm) {
+    formData.areaM2 = Number(
+      ((formData.lengthMm * formData.widthMm) / 1_000_000).toFixed(6),
     );
-  }
+  } else formData.areaM2 = null;
 }
 
 async function handleSave() {
@@ -274,12 +277,12 @@ async function handleSave() {
       const payload: UpdateSchemeInput = {
         ...editable,
         applicableConditions,
-        expectedRevision: formData.expectedRevision!,
+        editRevision: formData.editRevision!,
       };
       const res = await updateSchemeApi(currentCode.value, payload);
       message.success('保存成功');
       originalData.value = res;
-      formData.expectedRevision = res.revision;
+      formData.editRevision = res.editRevision;
     }
   } catch (error: any) {
     if (
@@ -330,7 +333,7 @@ async function handleReviewSubmit() {
   try {
     await createSchemeReviewApi(currentCode.value, {
       requestKey: reviewRequestKey.value,
-      schemeRevision: originalData.value.revision,
+      schemeRevision: originalData.value.editRevision,
       phase: reviewForm.phase,
       decision: reviewForm.decision,
       checks: { ...reviewForm.checks },
@@ -909,37 +912,41 @@ onMounted(() => {
 
             <a-divider orientation="left">空间信息</a-divider>
             <div class="grid grid-cols-4 gap-4">
-              <a-form-item label="长 (cm)" name="lengthCm">
+              <a-form-item label="长 (mm)" name="lengthMm">
                 <a-input-number
-                  v-model:value="formData.lengthCm"
+                  v-model:value="formData.lengthMm"
                   @change="calculateArea"
                   class="w-full"
-                  :min="0"
+                  :min="1"
+                  :precision="0"
                 />
               </a-form-item>
 
-              <a-form-item label="宽 (cm)" name="widthCm">
+              <a-form-item label="宽 (mm)" name="widthMm">
                 <a-input-number
-                  v-model:value="formData.widthCm"
+                  v-model:value="formData.widthMm"
                   @change="calculateArea"
                   class="w-full"
-                  :min="0"
+                  :min="1"
+                  :precision="0"
                 />
               </a-form-item>
 
-              <a-form-item label="高 (cm)" name="heightCm">
+              <a-form-item label="高 (mm)" name="heightMm">
                 <a-input-number
-                  v-model:value="formData.heightCm"
+                  v-model:value="formData.heightMm"
                   class="w-full"
-                  :min="0"
+                  :min="1"
+                  :precision="0"
                 />
               </a-form-item>
 
-              <a-form-item label="面积 (m²)" name="areaSqm">
+              <a-form-item label="面积 (m²)" name="areaM2">
                 <a-input-number
-                  v-model:value="formData.areaSqm"
+                  v-model:value="formData.areaM2"
                   class="w-full"
                   :min="0"
+                  disabled
                 />
               </a-form-item>
             </div>
@@ -947,27 +954,27 @@ onMounted(() => {
 
           <a-tab-pane key="tags" tab="打标">
             <div class="grid grid-cols-2 gap-4">
-              <a-form-item label="产品体系" name="productLine">
+              <a-form-item label="产品体系" name="productSystemId">
                 <a-select
-                  v-model:value="formData.productLine"
-                  :options="options.productLines"
+                  v-model:value="formData.productSystemId"
+                  :options="options.productSystems"
                   placeholder="请选择"
                   allow-clear
                 />
               </a-form-item>
 
-              <a-form-item label="风格" name="style">
+              <a-form-item label="风格" name="styleId">
                 <a-select
-                  v-model:value="formData.style"
+                  v-model:value="formData.styleId"
                   :options="options.styles"
                   placeholder="请选择"
                   allow-clear
                 />
               </a-form-item>
 
-              <a-form-item label="适用行业" name="industries">
+              <a-form-item label="适用行业" name="industryIds">
                 <a-select
-                  v-model:value="formData.industries"
+                  v-model:value="formData.industryIds"
                   :options="options.industries"
                   mode="multiple"
                   placeholder="请选择"
@@ -975,9 +982,9 @@ onMounted(() => {
                 />
               </a-form-item>
 
-              <a-form-item label="预算档位" name="budgetTier">
+              <a-form-item label="预算档位" name="budgetTierId">
                 <a-select
-                  v-model:value="formData.budgetTier"
+                  v-model:value="formData.budgetTierId"
                   :options="options.budgetTiers"
                   placeholder="请选择"
                   allow-clear
@@ -993,29 +1000,31 @@ onMounted(() => {
                 />
               </a-form-item>
 
-              <a-form-item label="开口方向" name="openingDirections">
+              <a-form-item label="开口方向" name="openSides">
                 <a-select
-                  v-model:value="formData.openingDirections"
-                  :options="options.openingDirections"
+                  v-model:value="formData.openSides"
+                  :options="options.openSides"
                   mode="multiple"
                   placeholder="请选择"
                   allow-clear
                 />
               </a-form-item>
 
-              <a-form-item label="功能分区" name="functionalZones">
+              <a-form-item label="功能分区" name="zoneIds">
                 <a-select
-                  v-model:value="formData.functionalZones"
-                  mode="tags"
-                  placeholder="输入并回车添加"
+                  v-model:value="formData.zoneIds"
+                  :options="options.zones"
+                  mode="multiple"
+                  placeholder="请选择"
                 />
               </a-form-item>
 
-              <a-form-item label="关键特征" name="keyFeatures">
+              <a-form-item label="关键特征" name="featureIds">
                 <a-select
-                  v-model:value="formData.keyFeatures"
-                  mode="tags"
-                  placeholder="输入并回车添加"
+                  v-model:value="formData.featureIds"
+                  :options="options.features"
+                  mode="multiple"
+                  placeholder="请选择"
                 />
               </a-form-item>
 

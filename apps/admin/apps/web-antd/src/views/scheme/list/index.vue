@@ -7,7 +7,7 @@ import { Page } from '@vben/common-ui';
 import { Button, message, Modal, Tag } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { deleteSchemeApi, getCatalogOptionsApi } from '#/api/core/schemes';
+import { deleteSchemeApi, getSchemeOptionsApi } from '#/api/core/schemes';
 
 import SchemeFormModal from './components/SchemeFormModal.vue';
 import SchemeImportModal from './components/SchemeImportModal.vue';
@@ -16,6 +16,7 @@ import { createFormOptions, createGridOptions } from './options';
 const router = useRouter();
 const schemeFormModalRef = ref<InstanceType<typeof SchemeFormModal>>();
 const schemeImportModalRef = ref<InstanceType<typeof SchemeImportModal>>();
+const optionLabels = ref<Record<string, string>>({});
 
 const formOptions = createFormOptions();
 const gridOptions = createGridOptions();
@@ -27,15 +28,16 @@ const [Grid, gridApi] = useVbenVxeGrid({
 
 async function fetchOptions() {
   try {
-    const res = await getCatalogOptionsApi('style');
+    const res = await getSchemeOptionsApi();
+    optionLabels.value = Object.fromEntries(Object.values(res).flat().map((item) => [item.id, item.label]));
     if (res && res.style) {
       gridApi.formApi.updateSchema([
         {
-          fieldName: 'style',
+          fieldName: 'styleId',
           componentProps: {
-            options: res.style.map((opt: any) => ({
+            options: res.style.map((opt) => ({
               label: opt.label,
-              value: opt.key,
+              value: opt.id,
             })),
           },
         },
@@ -101,9 +103,12 @@ onMounted(() => {
       </template>
 
       <template #dimensions="{ row }">
-        {{ row.lengthCm ?? '-' }} × {{ row.widthCm ?? '-' }} ×
-        {{ row.heightCm ?? '-' }}
+        {{ row.lengthMm ?? '-' }} × {{ row.widthMm ?? '-' }} ×
+        {{ row.heightMm ?? '-' }}
       </template>
+
+      <template #productSystem="{ row }">{{ optionLabels[row.productSystemId] ?? '-' }}</template>
+      <template #style="{ row }">{{ optionLabels[row.styleId] ?? '-' }}</template>
 
       <template #publishStatus="{ row }">
         <Tag v-if="row.publishStatus === 'published'" color="green">已发布</Tag>

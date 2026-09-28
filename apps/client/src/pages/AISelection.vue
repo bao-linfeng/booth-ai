@@ -35,6 +35,7 @@ const liveCatalog = ref<Catalog | null>(null)
 const liveItems = ref<MatchItem[]>([])
 const liveMatchData = ref<MatchResponse | null>(null)
 const liveClarifications = ref<ParseResponse['clarifications']>([])
+const parseResult = ref<ParseResponse | null>(null)
 const parsedText = ref<string | null>(null)
 const parsedRequirement = ref<Requirement | null>(null)
 const catalogState = ref<'loading' | 'ready' | 'error'>('loading')
@@ -42,19 +43,28 @@ let requestSequence = 0
 let catalogSequence = 0
 
 const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value ?? { dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] }, productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [] }))
-const canConfirm = computed(() => {
-  if (!parsedRequirement.value || parsedText.value !== text.value) return false
-  if (liveClarifications.value.some(item => item.field === 'text')) return false
-  if (JSON.stringify(requirement.value) === JSON.stringify(parsedRequirement.value)) return false
-  return liveClarifications.value.every(item => {
-    const field = item.field as keyof Requirement
-    if (!(field in requirement.value)) return false
-    if (field === 'lengthMm' && item.question.includes('长宽方向')) {
-      return !!requirement.value.lengthMm && !!requirement.value.widthMm
-    }
-    return JSON.stringify(requirement.value[field]) !== JSON.stringify(parsedRequirement.value?.[field])
-  })
-})
+const textChangedSinceParse = computed(() => parsedText.value !== null && parsedText.value !== text.value)
+const unresolvedClarifications = computed(() => liveClarifications.value.filter(item => {
+  if (!parsedRequirement.value || item.field === 'text') return true
+  const field = item.field as keyof Requirement
+  if (!(field in requirement.value)) return true
+  if (item.field === 'lengthMm' && item.question.includes('长宽方向')) {
+    return !requirement.value.lengthMm || !requirement.value.widthMm ||
+      (requirement.value.lengthMm === parsedRequirement.value.lengthMm && requirement.value.widthMm === parsedRequirement.value.widthMm)
+  }
+  return JSON.stringify(requirement.value[field]) === JSON.stringify(parsedRequirement.value[field])
+}))
+const canConfirm = computed(() => !!parsedRequirement.value && !textChangedSinceParse.value && !unresolvedClarifications.value.length)
+const sourceRows = computed(() => parseResult.value ? Object.entries(parseResult.value.fieldSources)
+  .filter(([field, source]) => source.source !== 'form' || displayValue(field, requirement.value[field as keyof Requirement]) !== '未填写' ||
+    (parsedRequirement.value && JSON.stringify(requirement.value[field as keyof Requirement]) !== JSON.stringify(parsedRequirement.value[field as keyof Requirement])))
+  .map(([field, source]) => ({
+    field,
+    label: fieldLabel(field),
+    source: parsedRequirement.value && JSON.stringify(requirement.value[field as keyof Requirement]) !== JSON.stringify(parsedRequirement.value[field as keyof Requirement]) ? '人工修正' : { form: '表单', text: '文字识别', derived: '自动计算' }[source.source],
+    value: displayValue(field, requirement.value[field as keyof Requirement]),
+    evidence: source.evidence
+  })) : [])
 const items = computed(() => isPreview.value 
   ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: ['尺寸、开口方向、限高和适用条件待确认'] } : item)
   : liveItems.value
@@ -74,7 +84,67 @@ const chips = computed(() => {
   ].filter(Boolean)
 })
 
-function reset() { requestSequence++; requirement.value = emptyRequirement(); text.value = ''; parsedText.value = null; parsedRequirement.value = null; liveClarifications.value = []; state.value = 'idle'; snapshot.value = '' }
+function reset() { requestSequence++; requirement.value = emptyRequirement(); text.value = ''; parsedText.value = null; parsedRequirement.value = null; parseResult.value = null; liveClarifications.value = []; state.value = 'idle'; snapshot.value = '' }
+function clearText() {
+  text.value = ''
+  parsedText.value = null
+  parsedRequirement.value = null
+  parseResult.value = null
+  liveClarifications.value = []
+  if (state.value === 'needs_clarification') state.value = 'idle'
+}
+
+const fieldLabels: Record<keyof Requirement, string> = {
+  lengthMm: '展位长', widthMm: '展位宽', maxHeightMm: '场馆限高', areaM2: '面积',
+  openingCount: '开口面数', openSides: '开口方向', productSystemId: '产品体系',
+  styleIds: '设计风格', industryIds: '适用行业', budgetTierId: '材料预算',
+  zoneIds: '功能分区', featureIds: '特色功能', keywords: '关键词',
+  requiredZoneIds: '必须分区', requiredFeatureIds: '必须特色',
+  excludedZoneIds: '禁止分区', excludedFeatureIds: '禁止特色', applicabilityAnswers: '适用条件'
+}
+function fieldLabel(field: string) { return fieldLabels[field as keyof Requirement] ?? field }
+function displayValue(field: string, value: unknown): string {
+  if (value === null || value === undefined || (Array.isArray(value) && !value.length)) return '未填写'
+  if (typeof value === 'number') return ['lengthMm', 'widthMm', 'maxHeightMm'].includes(field) ? `${value / 1000} m` : field === 'areaM2' ? `${value} ㎡` : String(value)
+  const options = [...catalog.value.productSystems, ...catalog.value.styles, ...catalog.value.industries, ...catalog.value.budgetTiers, ...catalog.value.zones, ...catalog.value.features]
+  const label = (id: string) => field === 'openSides' ? sides.find(side => side.id === id)?.label ?? id : options.find(option => option.id === id)?.label ?? id
+  if (Array.isArray(value)) return value.map(id => label(String(id))).join('、')
+  if (typeof value === 'object') return Object.entries(value).map(([id, answer]) => `${catalog.value.applicabilityQuestions.find(question => question.id === id)?.label ?? id}：${answer ? '是' : '否'}`).join('、') || '未填写'
+  return label(String(value))
+}
+
+async function parseText(sequence: number) {
+  state.value = 'parsing'
+  try {
+    const res = await apiFetch<{ code: number; data: ParseResponse }>('/api/v1/client/requirements/parse', {
+      method: 'POST', body: { text: text.value, form: requirement.value }
+    })
+    if (sequence !== requestSequence) return false
+    if (res.code !== 0) throw new Error('Parse unavailable')
+    requirement.value = res.data.requirement
+    parsedText.value = text.value
+    parsedRequirement.value = structuredClone(res.data.requirement)
+    parseResult.value = res.data
+    liveClarifications.value = res.data.clarifications
+    if (res.data.status === 'needs_clarification') {
+      state.value = 'needs_clarification'
+      snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
+      return false
+    }
+    return true
+  } catch (error) {
+    if (sequence !== requestSequence) return false
+    console.error('Parse failed', error)
+    state.value = 'error'
+    return false
+  }
+}
+
+async function reparseText() {
+  if (busy.value || !text.value.trim() || catalogState.value !== 'ready') return
+  const sequence = ++requestSequence
+  if (await parseText(sequence)) await doMatch('filtered', true, sequence)
+}
 
 function choosePreview(value: string) {
   previewMode.value = value
@@ -134,36 +204,10 @@ async function submit() {
   }
   const sequence = ++requestSequence
   const textProvided = !!text.value.trim()
-  if (textProvided && (parsedText.value !== text.value || !parsedRequirement.value)) {
-    state.value = 'parsing'
-    try {
-      const res = await apiFetch<{ code: number; data: ParseResponse }>('/api/v1/client/requirements/parse', {
-        method: 'POST',
-        body: { text: text.value, form: requirement.value }
-      })
-      if (sequence !== requestSequence) return
-      if (res.code === 0) {
-        requirement.value = res.data.requirement
-        parsedText.value = text.value
-        parsedRequirement.value = structuredClone(res.data.requirement)
-        liveClarifications.value = res.data.clarifications
-        if (res.data.status === 'needs_clarification') {
-          state.value = 'needs_clarification'
-          snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
-          return
-        }
-      } else {
-        state.value = 'error'
-        return
-      }
-    } catch (error) {
-      if (sequence !== requestSequence) return
-      console.error('Parse failed', error)
-      state.value = 'error'
-      return
-    }
+  if (textProvided && !parsedRequirement.value) {
+    if (!await parseText(sequence)) return
   }
-  if (textProvided && liveClarifications.value.length) {
+  if (textChangedSinceParse.value || (textProvided && unresolvedClarifications.value.length)) {
     state.value = 'needs_clarification'
     return
   }
@@ -178,7 +222,6 @@ function confirm() {
     snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
   } else {
     if (busy.value || !canConfirm.value) return
-    liveClarifications.value = []
     void doMatch('filtered', !!text.value.trim(), ++requestSequence)
   }
 }
@@ -187,10 +230,6 @@ watch(isPreview, (newVal) => {
   catalogSequence++
   reset()
   if (!newVal) loadCatalog()
-})
-
-watch(text, () => {
-  if (state.value === 'needs_clarification' && parsedText.value !== text.value) liveClarifications.value = []
 })
 
 onUnmounted(() => { requestSequence++; catalogSequence++ })
@@ -229,11 +268,12 @@ onMounted(() => {
             </CardContent>
             <CardFooter class="justify-between border-t pt-3">
               <span class="text-xs text-muted-foreground">文字可覆盖表单条件 · {{ text.length }} / 1000</span>
-              <Button variant="ghost" size="sm" :disabled="busy || !text" @click="text = ''">清空</Button>
+               <Button variant="ghost" size="sm" :disabled="busy || (!text && !parseResult)" @click="clearText">清空</Button>
             </CardFooter>
           </Card>
            <div class="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between gap-3 border-t bg-background/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:static lg:border-0 lg:bg-transparent lg:p-0"><p class="text-xs text-muted-foreground">不填条件，也能发现随机灵感</p><Button :disabled="busy || (!isPreview && catalogState !== 'ready')" class="gap-2" @click="submit"><LoaderCircle v-if="busy" class="size-4 animate-spin" /><Sparkles v-else class="size-4" />{{ busy ? state === 'parsing' ? '识别需求中' : '查找方案中' : 'AI 智选' }}<ArrowRight v-if="!busy" class="size-4" /></Button></div>
-          <Card v-if="chips.length" class="bg-muted/30"><CardHeader class="pb-3"><div class="flex flex-wrap items-center justify-between gap-2"><CardTitle class="text-sm">当前条件 <span class="font-normal text-muted-foreground">/ 表单</span></CardTitle><Badge v-if="stale" variant="outline">条件已修改 · 结果基于上次条件</Badge></div></CardHeader><CardContent class="space-y-3"><div class="flex flex-wrap gap-2"><Badge v-for="chip in chips" :key="chip" variant="outline">{{ chip }}</Badge></div><p class="text-xs text-muted-foreground">风格、行业及预算为排序偏好；限高与产品体系为严格条件。</p></CardContent></Card>
+           <Card v-if="chips.length" class="bg-muted/30"><CardHeader class="pb-3"><div class="flex flex-wrap items-center justify-between gap-2"><CardTitle class="text-sm">当前条件 <span class="font-normal text-muted-foreground">/ 表单</span></CardTitle><Badge v-if="stale" variant="outline">条件已修改 · 结果基于上次条件</Badge></div></CardHeader><CardContent class="space-y-3"><div class="flex flex-wrap gap-2"><Badge v-for="chip in chips" :key="chip" variant="outline">{{ chip }}</Badge></div><p class="text-xs text-muted-foreground">风格、行业及预算为排序偏好；限高与产品体系为严格条件。</p></CardContent></Card>
+           <Card v-if="!isPreview && parseResult"><CardHeader class="flex-row items-start justify-between gap-3"><div class="space-y-1"><CardTitle class="text-sm">需求识别与修正</CardTitle><CardDescription>核对文字覆盖的条件；手动修改表单后直接匹配，旧文字不会再次覆盖。</CardDescription></div><Button size="sm" variant="outline" :disabled="busy || !text.trim()" @click="reparseText">重新解析文字</Button></CardHeader><CardContent class="space-y-4 text-sm"><p v-if="textChangedSinceParse" class="text-warning" role="status">描述已修改；当前条件仍来自上次解析。需要应用新文字时请点击“重新解析文字”。</p><p v-if="parseResult.degraded" class="text-xs text-muted-foreground">当前使用规则识别；未识别文字须确认后再匹配。</p><dl class="grid gap-2 sm:grid-cols-2"><div v-for="row in sourceRows" :key="row.field" class="rounded-md border p-3"><dt class="flex items-center justify-between gap-2 font-medium"><span>{{ row.label }}</span><Badge variant="outline">{{ row.source }}</Badge></dt><dd class="mt-1 break-words">{{ row.value }}</dd><p v-if="row.evidence" class="mt-1 break-words text-xs text-muted-foreground">依据：{{ row.evidence }}</p></div></dl><div v-if="parseResult.overrides.length" class="space-y-2"><strong class="text-xs">文字覆盖了表单条件</strong><p v-for="override in parseResult.overrides" :key="override.field" class="break-words text-xs">{{ fieldLabel(override.field) }}：{{ displayValue(override.field, override.previousValue) }} → {{ displayValue(override.field, override.value) }} · 依据：{{ override.evidence }}</p></div><div v-if="parseResult.unhandledText.length" class="text-xs text-warning">未识别：{{ parseResult.unhandledText.join('、') }}</div></CardContent></Card>
           
           <Card v-if="state === 'needs_clarification'"><CardHeader><CardTitle class="flex items-center gap-2 text-base"><CircleAlert class="size-5" />请先确认，我们是否理解正确？</CardTitle><CardDescription>{{ isPreview ? '澄清状态示例：“6×3”尚不能确定左右跨度和前后进深。' : '解析过程中遇到模糊要求，需您确认。' }}</CardDescription></CardHeader><CardContent class="space-y-4">
             <template v-if="isPreview">
@@ -242,11 +282,11 @@ onMounted(() => {
             <template v-else>
               <div class="space-y-3">
                 <div v-for="(clarification, i) in liveClarifications" :key="i" class="text-sm text-foreground">
-                  <p class="font-medium text-warning">{{ clarification.question }}</p>
+                  <p :class="unresolvedClarifications.includes(clarification) ? 'font-medium text-warning' : 'text-muted-foreground'">{{ clarification.question }} <span v-if="!unresolvedClarifications.includes(clarification)">· 已修正</span></p>
                 </div>
               </div>
             </template>
-             <p class="text-xs text-muted-foreground">{{ !isPreview && liveClarifications.some(item => item.field === 'text') ? '仍有未识别的文字，请修改描述重新识别，或转人工确认。' : '请先核对并修正表单条件。修改文字后点击 AI 智选重新识别。' }}</p><Button :disabled="!isPreview && !canConfirm" @click="confirm">确认已修正条件，继续匹配<ArrowRight class="ml-2 size-4" /></Button><Button v-if="!isPreview && liveClarifications.some(item => item.field === 'text')" variant="outline" @click="manualOpen = true">转人工确认</Button></CardContent></Card>
+             <p class="text-xs text-muted-foreground">{{ !isPreview && liveClarifications.some(item => item.field === 'text') ? '仍有未识别的文字，请修改描述后重新解析，或转人工确认。' : '请先核对并修正表单条件；只有点击“重新解析文字”才会再次识别。' }}</p><Button :disabled="!isPreview && !canConfirm" @click="confirm">确认已修正条件，继续匹配<ArrowRight class="ml-2 size-4" /></Button><Button v-if="!isPreview && liveClarifications.some(item => item.field === 'text')" variant="outline" @click="manualOpen = true">转人工确认</Button></CardContent></Card>
           
           <Card v-if="state === 'idle'" class="overflow-hidden"><CardContent class="grid items-center gap-3 p-0 xl:grid-cols-2"><div class="space-y-5 p-6"><Badge variant="outline">从想法到空间</Badge><h2 class="text-2xl font-semibold leading-relaxed">让参展想法，<br />有一个具体的空间</h2><p class="text-sm leading-relaxed text-muted-foreground">填写展位尺寸，或用一句话描述需求。先筛选结构，再匹配偏好。</p><ol class="flex flex-wrap gap-4 text-xs text-muted-foreground"><li>01 描述需求</li><li>02 匹配方案</li><li>03 查看详情</li></ol></div><BoothIllustration class="w-full" /></CardContent><CardFooter class="flex-wrap justify-between gap-2 border-t pt-4 text-xs text-muted-foreground"><span>最多 3 套方案 · 每套 3 个视角</span><span>条件不全时明确标注待确认项</span></CardFooter></Card>
           <Card v-else-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? '正在识别您的需求' : '正在查找适合的方案' }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? '加载状态预览，可使用顶部工具栏切换。' : '正在调用接口匹配方案，请稍后。' }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>

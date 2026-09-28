@@ -59,17 +59,19 @@ test('dictionary CRUD trims fields, rejects duplicate code and detects missing d
       return { rows: [{ ...dictionary, type: '尺寸' }] };
     }
     if (sql.startsWith('UPDATE')) {
-      assert.deepEqual(params, ['Updated', '开口', false, dictionary.id]);
-      assert.match(sql, /type = \$2/);
-      return { rows: [{ ...dictionary, name: 'Updated', type: '开口', enabled: false }] };
+      assert.deepEqual(params, ['Updated', false, dictionary.id]);
+      return { rows: [{ ...dictionary, name: 'Updated', enabled: false }] };
     }
+    if (sql.startsWith('SELECT code FROM dictionaries')) return { rows: [{ code: 'gender' }] };
+    if (sql.includes('JOIN schemes s ON')) return { rows: [{ used: false }] };
     if (sql.startsWith('DELETE')) return { rows: [], rowCount: 0 };
     throw new Error(`Unexpected query: ${sql}`);
   });
   assert.equal((await createDictionary(pool, { code: ' gender ', name: ' Gender ', type: '尺寸' })).type, '尺寸');
-  const updated = await updateDictionary(pool, dictionary.id, { name: ' Updated ', type: '开口', enabled: false });
+  const updated = await updateDictionary(pool, dictionary.id, { name: ' Updated ', enabled: false });
   assert.equal(updated.enabled, false);
-  assert.equal(updated.type, '开口');
+  assert.equal(updated.type, 'default');
+  await assert.rejects(updateDictionary(pool, dictionary.id, { type: '开口' }), { statusCode: 400 });
   await assert.rejects(deleteDictionary(pool, dictionary.id), { statusCode: 404 });
   const conflict = poolFor(() => { throw Object.assign(new Error('duplicate'), { code: '23505' }); });
   await assert.rejects(createDictionary(conflict, { code: 'gender', name: 'Gender', type: '尺寸' }), { statusCode: 409 });
@@ -88,6 +90,7 @@ test('item CRUD scopes mutations to dictionary and handles foreign key and confl
       assert.deepEqual(params, ['Female', item.id, dictionary.id]);
       return { rows: [{ ...item, itemLabel: 'Female' }] };
     }
+    if (sql.includes('FROM schemes WHERE product_system_id')) return { rows: [{ used: false }] };
     if (sql.startsWith('DELETE')) {
       assert.deepEqual(params, [item.id, dictionary.id]);
       return { rows: [], rowCount: 0 };
@@ -100,5 +103,6 @@ test('item CRUD scopes mutations to dictionary and handles foreign key and confl
   const missingParent = poolFor(() => { throw Object.assign(new Error('foreign key'), { code: '23503' }); });
   await assert.rejects(createDictionaryItem(missingParent, 'missing', { itemValue: 'm', itemLabel: 'Male' }), { statusCode: 404 });
   const conflict = poolFor(() => { throw Object.assign(new Error('duplicate'), { code: '23505' }); });
-  await assert.rejects(updateDictionaryItem(conflict, item.id, { itemValue: 'm' }), { statusCode: 409 });
+  await assert.rejects(updateDictionaryItem(conflict, item.id, { itemLabel: 'm' }), { statusCode: 409 });
+  await assert.rejects(updateDictionaryItem(pool, item.id, { itemValue: 'other' }), { statusCode: 400 });
 });

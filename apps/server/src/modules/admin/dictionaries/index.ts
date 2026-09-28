@@ -31,9 +31,9 @@ const itemProperties = {
   description: { type: ['string', 'null'] }, enabled: { type: 'boolean' }, sortOrder: { type: 'integer' },
 };
 const dictionaryCreateSchema = { type: 'object', required: ['code', 'name', 'type'], additionalProperties: false, properties: dictionaryProperties };
-const dictionaryUpdateSchema = { type: 'object', minProperties: 1, additionalProperties: false, properties: dictionaryProperties };
+const dictionaryUpdateSchema = { type: 'object', minProperties: 1, additionalProperties: false, properties: { name: dictionaryProperties.name, description: dictionaryProperties.description, enabled: dictionaryProperties.enabled, sortOrder: dictionaryProperties.sortOrder } };
 const itemCreateSchema = { type: 'object', required: ['itemValue', 'itemLabel'], additionalProperties: false, properties: itemProperties };
-const itemUpdateSchema = { type: 'object', minProperties: 1, additionalProperties: false, properties: itemProperties };
+const itemUpdateSchema = { type: 'object', minProperties: 1, additionalProperties: false, properties: { itemLabel: itemProperties.itemLabel, description: itemProperties.description, enabled: itemProperties.enabled, sortOrder: itemProperties.sortOrder } };
 
 export async function registerAdminDictionariesRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   const tags = ['admin-dictionaries'];

@@ -5,18 +5,18 @@ export interface SchemeRecord {
   code: string;
   name: string;
   parentCode: null | string;
-  lengthCm: null | number;
-  widthCm: null | number;
-  heightCm: null | number;
-  areaSqm: null | number;
+  lengthMm: null | number;
+  widthMm: null | number;
+  heightMm: null | number;
+  areaM2: null | string;
   openingCount: null | number;
-  openingDirections: string[];
-  productLine: null | string;
-  style: null | string;
-  industries: string[];
-  budgetTier: null | string;
-  functionalZones: string[];
-  keyFeatures: string[];
+  openSides: string[];
+  productSystemId: null | string;
+  styleId: null | string;
+  industryIds: string[];
+  budgetTierId: null | string;
+  zoneIds: string[];
+  featureIds: string[];
   description: null | string;
   keywords: string[];
   source: null | string;
@@ -25,7 +25,7 @@ export interface SchemeRecord {
   publishStatus: 'draft' | 'published' | 'unpublished';
   verificationStatus: 'failed' | 'unverified' | 'verified';
   notes: null | string;
-  revision: number;
+  editRevision: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,9 +35,9 @@ export interface SchemeListParams {
   pageSize?: number;
   code?: string;
   name?: string;
-  style?: string;
-  industry?: string;
-  productLine?: string;
+  styleId?: string;
+  industryId?: string;
+  productSystemId?: string;
   publishStatus?: string;
   verificationStatus?: string;
 }
@@ -54,36 +54,29 @@ export interface CreateSchemeInput {
   name: string;
   parentCode?: null | string;
   description?: null | string;
-  lengthCm?: null | number;
-  widthCm?: null | number;
-  heightCm?: null | number;
-  areaSqm?: null | number;
+  lengthMm?: null | number;
+  widthMm?: null | number;
+  heightMm?: null | number;
+  areaM2?: null | number;
   openingCount?: null | number;
-  productLine?: null | string;
-  style?: null | string;
-  industries?: string[];
-  budgetTier?: null | string;
+  productSystemId?: null | string;
+  styleId?: null | string;
+  industryIds?: string[];
+  budgetTierId?: null | string;
   keywords?: string[];
   notes?: null | string;
-  openingDirections?: string[];
-  functionalZones?: string[];
-  keyFeatures?: string[];
+  openSides?: string[];
+  zoneIds?: string[];
+  featureIds?: string[];
   source?: null | string;
   applicableConditions?: null | Record<string, unknown>;
 }
 
 export interface UpdateSchemeInput extends Omit<CreateSchemeInput, 'code'> {
-  expectedRevision: number;
+  editRevision: number;
 }
 
-export interface CatalogOption {
-  key: string;
-  label: string;
-  sortOrder: number;
-  enabled: boolean;
-}
-
-export type CatalogOptionsResult = Record<string, CatalogOption[]>;
+export type SchemeOptionsResult = Record<string, { id: string; label: string }[]>;
 
 export async function getSchemeListApi(params?: SchemeListParams) {
   return requestClient.get<SchemeListResult>('/v1/admin/schemes', { params });
@@ -109,10 +102,8 @@ export async function updateSchemeApi(code: string, data: UpdateSchemeInput) {
   );
 }
 
-export async function getCatalogOptionsApi(types?: string) {
-  return requestClient.get<CatalogOptionsResult>('/v1/admin/catalog-options', {
-    params: types ? { types } : undefined,
-  });
+export async function getSchemeOptionsApi() {
+  return requestClient.get<SchemeOptionsResult>('/v1/admin/schemes/options');
 }
 
 export async function deleteSchemeApi(code: string) {
@@ -121,15 +112,6 @@ export async function deleteSchemeApi(code: string) {
   );
 }
 
-export async function updateCatalogOptionsByTypeApi(
-  type: string,
-  options: CatalogOption[],
-) {
-  return requestClient.put<{ message: string }>(
-    `/v1/admin/catalog-options/${encodeURIComponent(type)}`,
-    { options },
-  );
-}
 
 export interface ImportPreviewRow {
   rowNumber: number;

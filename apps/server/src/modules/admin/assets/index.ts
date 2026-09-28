@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { createStorage } from '../../../infra/storage.js';
-import { createAssetWithVersion, deleteAsset, getAsset, getAssetVersion, listAssets, listSchemeAssets, updateAsset, type AssetType, type ListAssetsOptions, type SchemeAsset, type UpdateAssetInput } from './service.js';
+import { addAssetVersion, createAssetWithVersion, deleteAsset, getAsset, getAssetVersion, listAssets, listSchemeAssets, updateAsset, type AssetType, type ListAssetsOptions, type SchemeAsset, type UpdateAssetInput } from './service.js';
 
 interface CodeParams { code: string; }
 interface AssetParams extends CodeParams { assetId: string; }
@@ -45,6 +45,32 @@ function parseMetadata(value: string | undefined): Record<string, unknown> | und
   } catch {
     throw requestError('Metadata must be a JSON object', 400);
   }
+}
+
+function imageDimensions(buffer: Buffer, mimeType: string): { widthPx: number; heightPx: number } | null {
+  if (mimeType === 'image/png' && buffer.length >= 24 && buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])))
+    return { widthPx: buffer.readUInt32BE(16), heightPx: buffer.readUInt32BE(20) };
+  if (mimeType === 'image/webp' && buffer.length >= 30 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP' && buffer.toString('ascii', 12, 16) === 'VP8X')
+    return { widthPx: 1 + buffer.readUIntLE(24, 3), heightPx: 1 + buffer.readUIntLE(27, 3) };
+  if (mimeType === 'image/webp' && buffer.length >= 30 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP' && buffer.toString('ascii', 12, 16) === 'VP8 ' && buffer[23] === 0x9d && buffer[24] === 0x01 && buffer[25] === 0x2a)
+    return { widthPx: buffer.readUInt16LE(26) & 0x3fff, heightPx: buffer.readUInt16LE(28) & 0x3fff };
+  if (mimeType === 'image/webp' && buffer.length >= 25 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP' && buffer.toString('ascii', 12, 16) === 'VP8L' && buffer[20] === 0x2f)
+    return { widthPx: 1 + (((buffer[22]! & 0x3f) << 8) | buffer[21]!), heightPx: 1 + (((buffer[24]! & 0x0f) << 10) | (buffer[23]! << 2) | (buffer[22]! >> 6)) };
+  if (mimeType === 'image/jpeg' && buffer.length > 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 4 < buffer.length) {
+      if (buffer[offset] !== 0xff) return null;
+      const marker = buffer[offset + 1];
+      if (marker === 0xd8 || marker === 0x01) { offset += 2; continue; }
+      const length = buffer.readUInt16BE(offset + 2);
+      if (length < 2 || offset + length + 2 > buffer.length) return null;
+      if (marker !== undefined && length >= 7 && [0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker)) {
+        return { heightPx: buffer.readUInt16BE(offset + 5), widthPx: buffer.readUInt16BE(offset + 7) };
+      }
+      offset += length + 2;
+    }
+  }
+  return null;
 }
 
 function validateAssetMetadata(type: AssetType, metadata: Record<string, unknown> | undefined): void {
@@ -123,7 +149,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
         fields[part.fieldname] = part.value as string;
       }
     }
-    if (!fileBuffer) throw requestError('File is required', 400);
+    if (!fileBuffer?.length) throw requestError('File is required', 400);
     const schemeCode = decodedCode(request.params as CodeParams);
     const type = fields.type as AssetType | undefined;
     const name = fields.name?.trim();
@@ -137,6 +163,8 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     const metadata = parseMetadata(fields.metadata);
     if (type === 'mask' && !relatedAssetId) throw requestError('relatedAssetId is required for mask assets', 400);
     validateAssetMetadata(type, metadata);
+    const dimensions = imageDimensions(fileBuffer, mimeType);
+    if ((type === 'rendering' || type === 'mask') && !dimensions) throw requestError('Unsupported or invalid image', 400);
     const objectKey = `schemes/${schemeCode}/${type}/${randomUUID()}_${originalFilename}`;
     await storage.putBuffer(objectKey, fileBuffer, mimeType);
     let asset: SchemeAsset;
@@ -154,6 +182,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
         mimeType,
         byteSize: fileBuffer.byteLength,
         checksum: createHash('sha256').update(fileBuffer).digest('hex'),
+        ...(dimensions ?? {}),
       });
     } catch (error) {
       storage.deleteObject(objectKey).catch(() => {});
@@ -176,6 +205,46 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
       validateAssetMetadata(asset.type, input.metadata);
     }
     return { code: 0, data: await updateAsset(pool, adminId, schemeCode, params.assetId, input, expectedRevision) };
+  });
+
+  app.post('/schemes/:code/assets/:assetId/versions', {
+    schema: { tags: ['admin-assets'], params: assetParamsSchema },
+  }, async request => {
+    const params = request.params as AssetParams;
+    const schemeCode = decodedCode(params);
+    let fileBuffer: Buffer | null = null;
+    let originalFilename = '';
+    let mimeType = 'application/octet-stream';
+    const fields: Record<string, string> = {};
+    for await (const part of request.parts()) {
+      if (part.type === 'file') {
+        if (fileBuffer !== null) throw requestError('Only one file is allowed', 400);
+        const chunks: Buffer[] = [];
+        for await (const chunk of part.file) chunks.push(chunk);
+        fileBuffer = Buffer.concat(chunks);
+        originalFilename = part.filename ?? 'file';
+        mimeType = part.mimetype;
+      } else fields[part.fieldname] = part.value as string;
+    }
+    if (!fileBuffer?.length) throw requestError('File is required', 400);
+    const expectedRevision = parseOptionalInteger(fields.expectedRevision, 'expectedRevision');
+    if (!expectedRevision || expectedRevision < 1) throw requestError('expectedRevision is required', 400);
+    const asset = await getAsset(pool, schemeCode, params.assetId);
+    const dimensions = imageDimensions(fileBuffer, mimeType);
+    if ((asset.type === 'rendering' || asset.type === 'mask') && !dimensions) throw requestError('Unsupported or invalid image', 400);
+    const objectKey = `schemes/${schemeCode}/${asset.type}/${randomUUID()}_${originalFilename}`;
+    await storage.putBuffer(objectKey, fileBuffer, mimeType);
+    try {
+      const version = await addAssetVersion(pool, adminId, schemeCode, params.assetId, {
+        objectKey, originalFilename, mimeType, byteSize: fileBuffer.byteLength,
+        checksum: createHash('sha256').update(fileBuffer).digest('hex'),
+        ...(dimensions ?? {}),
+      }, expectedRevision);
+      return { code: 0, data: version };
+    } catch (error) {
+      storage.deleteObject(objectKey).catch(() => {});
+      throw error;
+    }
   });
 
   app.delete('/schemes/:code/assets/:assetId', {

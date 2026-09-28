@@ -8,7 +8,7 @@ import { useVbenModal } from '@vben/common-ui';
 import { message, Tag } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
-import { getCatalogOptionsApi, getSchemeDetailApi } from '#/api/core/schemes';
+import { getSchemeOptionsApi, getSchemeDetailApi } from '#/api/core/schemes';
 
 const optionsLoaded = ref(false);
 const detailData = ref<null | SchemeRecord>(null);
@@ -42,49 +42,49 @@ const [SchemeForm, schemeApi] = useVbenForm({
     },
     {
       component: 'InputNumber',
-      fieldName: 'lengthCm',
-      label: '长(cm)',
+      fieldName: 'lengthMm',
+      label: '长(mm)',
       componentProps: { disabled: true, class: 'w-full' },
     },
     {
       component: 'InputNumber',
-      fieldName: 'widthCm',
-      label: '宽(cm)',
+      fieldName: 'widthMm',
+      label: '宽(mm)',
       componentProps: { disabled: true, class: 'w-full' },
     },
     {
       component: 'InputNumber',
-      fieldName: 'heightCm',
-      label: '高(cm)',
+      fieldName: 'heightMm',
+      label: '高(mm)',
       componentProps: { disabled: true, class: 'w-full' },
     },
     {
       component: 'InputNumber',
-      fieldName: 'areaSqm',
+      fieldName: 'areaM2',
       label: '面积(m²)',
       componentProps: { disabled: true, class: 'w-full' },
     },
     {
       component: 'Select',
-      fieldName: 'productLine',
+      fieldName: 'productSystemId',
       label: '产品体系',
       componentProps: { disabled: true, options: [] },
     },
     {
       component: 'Select',
-      fieldName: 'style',
+      fieldName: 'styleId',
       label: '风格',
       componentProps: { disabled: true, options: [] },
     },
     {
       component: 'Select',
-      fieldName: 'industries',
+      fieldName: 'industryIds',
       label: '适用行业',
       componentProps: { disabled: true, mode: 'multiple', options: [] },
     },
     {
       component: 'Select',
-      fieldName: 'budgetTier',
+      fieldName: 'budgetTierId',
       label: '预算档位',
       componentProps: { disabled: true, options: [] },
     },
@@ -96,21 +96,21 @@ const [SchemeForm, schemeApi] = useVbenForm({
     },
     {
       component: 'Select',
-      fieldName: 'openingDirections',
+      fieldName: 'openSides',
       label: '开口方向',
       componentProps: { disabled: true, mode: 'multiple', options: [] },
     },
     {
       component: 'Select',
-      fieldName: 'functionalZones',
+      fieldName: 'zoneIds',
       label: '功能分区',
-      componentProps: { disabled: true, mode: 'tags', options: [] },
+      componentProps: { disabled: true, mode: 'multiple', options: [] },
     },
     {
       component: 'Select',
-      fieldName: 'keyFeatures',
+      fieldName: 'featureIds',
       label: '关键特征',
-      componentProps: { disabled: true, mode: 'tags', options: [] },
+      componentProps: { disabled: true, mode: 'multiple', options: [] },
     },
     {
       component: 'Select',
@@ -144,39 +144,41 @@ const [Modal, modalApi] = useVbenModal({
 async function loadOptions() {
   if (optionsLoaded.value) return;
   try {
-    const res = await getCatalogOptionsApi(
-      'style,industry,productLine,budgetTier,openingDirection',
-    );
+    const res = await getSchemeOptionsApi();
     if (res) {
-      const formatOpts = (arr: any[] | undefined) =>
-        (arr || []).map((t) => ({ label: t.label, value: t.key }));
+      const formatOpts = (arr: { id: string; label: string }[] | undefined) =>
+        (arr || []).map((t) => ({ label: t.label, value: t.id }));
       schemeApi.updateSchema([
         {
-          fieldName: 'style',
+          fieldName: 'styleId',
           componentProps: { options: formatOpts(res.style) },
         },
         {
-          fieldName: 'industries',
+          fieldName: 'industryIds',
           componentProps: { options: formatOpts(res.industry) },
         },
         {
-          fieldName: 'productLine',
+          fieldName: 'productSystemId',
           componentProps: {
-            options: formatOpts(res.productLine || res.product_line),
+            options: formatOpts(res.product_system),
           },
         },
         {
-          fieldName: 'budgetTier',
+          fieldName: 'budgetTierId',
           componentProps: {
-            options: formatOpts(res.budgetTier || res.budget_tier),
+            options: formatOpts(res.budget_tier),
           },
         },
         {
-          fieldName: 'openingDirections',
+          fieldName: 'openSides',
           componentProps: {
-            options: formatOpts(res.openingDirection || res.opening_direction),
+            options: ['front','right','back','left'].map((value) => ({ value, label: ({front:'正面',right:'右侧',back:'背面',left:'左侧'} as Record<string,string>)[value] })),
           },
         },
+      ]);
+      schemeApi.updateSchema([
+        { fieldName: 'zoneIds', componentProps: { options: formatOpts(res.functional_zone) } },
+        { fieldName: 'featureIds', componentProps: { options: formatOpts(res.key_feature) } },
       ]);
     }
     optionsLoaded.value = true;
@@ -196,7 +198,7 @@ const open = async (code: string) => {
     const detail = await getSchemeDetailApi(code);
     if (detail) {
       detailData.value = detail;
-      schemeApi.setValues({ ...detail });
+      schemeApi.setValues({ ...detail, areaM2: detail.areaM2 === null ? null : Number(detail.areaM2) });
     }
   } catch (error) {
     console.error(error);

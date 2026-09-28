@@ -3,11 +3,26 @@ import test from 'node:test';
 import type pg from 'pg';
 import { createScheme, updateScheme } from '../src/modules/admin/schemes/service.js';
 import { commitImport } from '../src/modules/admin/scheme-imports/service.js';
+import { validateSchemeDictionaryIds } from '../src/modules/admin/schemes/dictionary-ids.js';
 
 test('draft CRUD rejects publication and verification supplied by clients', async () => {
   const pool = { query: async () => { throw new Error('request must be rejected before database access'); } } as unknown as pg.Pool;
   await assert.rejects(createScheme(pool, null, { code: 'S-1', name: 'test', publishStatus: 'published' } as never), { statusCode: 400 });
   await assert.rejects(updateScheme(pool, 'S-1', null, { verificationStatus: 'verified' } as never, 1), { statusCode: 400 });
+});
+
+test('scheme dictionary IDs must exist under the correct enabled dictionary', async () => {
+  const id1 = '00000000-0000-4000-8000-000000000001';
+  const id2 = '00000000-0000-4000-8000-000000000002';
+  const pool = { query: async (_sql: string, values: unknown[]) => ({ rows: values[1] === 'industry' ? [{ id: id1 }] : [] }) } as unknown as pg.Pool;
+  await validateSchemeDictionaryIds(pool, { industryIds: [id1] });
+  await assert.rejects(validateSchemeDictionaryIds(pool, { industryIds: [id1, id2] }), { statusCode: 400 });
+  await assert.rejects(validateSchemeDictionaryIds(pool, { productSystemId: id1 }), { statusCode: 400 });
+});
+
+test('scheme CRUD rejects fractional millimeters and conflicting area before writes', async () => {
+  const pool = { query: async () => { throw new Error('must not access database'); } } as unknown as pg.Pool;
+  await assert.rejects(createScheme(pool, null, { code: 'S', name: 'test', lengthMm: 1000.5 }), { statusCode: 400 });
 });
 
 test('draft route schema excludes publication and verification writes', async () => {
@@ -31,6 +46,7 @@ test('editing a published scheme atomically removes its publication and verifica
   let updateSql = '';
   const pool = {
     query: async (sql: string) => {
+      if (sql.includes('FROM dictionary_items')) return { rows: [] };
       if (sql.startsWith('UPDATE schemes SET')) {
         updateSql = sql;
         return { rows: [{ id: 'id', code: 'S-1', name: 'test', revision: 2, createdAt: new Date(), updatedAt: new Date() }] };
@@ -46,9 +62,9 @@ test('editing a published scheme atomically removes its publication and verifica
 test('import update invalidates publication without trusting source verification claim', async () => {
   const sqls: string[] = [];
   const preview = [{ rowNumber: 2, code: 'S-1', name: 'imported', status: 'duplicate', data: {
-    code: 'S-1', name: 'imported', parentCode: null, widthCm: 300, lengthCm: 600,
-    areaSqm: 18, heightCm: 350, openingCount: 2, productLine: 'island', style: null,
-    industries: [], budgetTier: null, functionalZones: [], keyFeatures: [], description: null,
+    code: 'S-1', name: 'imported', parentCode: null, widthMm: 3000, lengthMm: 6000,
+    areaM2: 18, heightMm: 3500, openingCount: 2, productSystemId: null, styleId: null,
+    industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], description: null,
     keywords: [], verificationStatus: 'verified', notes: null,
   } }];
   const query = async (sql: string, params?: unknown[]) => {

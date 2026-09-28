@@ -6,8 +6,8 @@ import { createReview, getSchemeReadiness, publishScheme, unpublishScheme } from
 const scheme = {
   id: 'scheme-id', code: 'S-1', revision: 2, publishStatus: 'draft',
   verificationStatus: 'unverified', updatedAt: new Date('2026-01-01T00:00:00Z'),
-  lengthCm: '600', widthCm: '300', heightCm: '350', areaSqm: '18',
-  openingCount: 2, openingDirections: ['front', 'left'], productLine: 'island',
+  lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: '18',
+  openingCount: 2, openSides: ['front', 'left'], productSystemId: 'system-id',
   applicableConditions: { status: 'confirmed', rules: [], labelsConfirmed: true },
 };
 
@@ -28,7 +28,8 @@ type QueryHandler = (sql: string, params?: unknown[]) => QueryResult;
 
 function poolFor(query: QueryHandler): pg.Pool {
   const run = (sql: string, params?: unknown[]) => ['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql) ? { rows: [] } :
-    sql.includes('FROM catalog_options') ? { rows: [{ exists: true }] } : query(sql, params);
+    sql.includes("d.code = 'product_system'") ? { rows: [{ exists: true }] } :
+    sql.includes('AS invalid') ? { rows: [{ invalid: false }] } : query(sql, params);
   return {
     query: async (sql: string, params?: unknown[]) => run(sql, params),
     connect: async () => ({ query: async (sql: string, params?: unknown[]) => run(sql, params), release: () => {} }),
@@ -124,7 +125,7 @@ test('passing an overall review requires complete assets and confirmed applicabi
     throw new Error(`Unexpected query: ${sql}`);
   });
   await assert.rejects(createReview(pool, 'S-1', null, {
-    requestKey: 'overall-pass', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: {},
+    requestKey: 'overall-pass', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: { assetsComplete: true, bomVerified: true, renderingsAndMasks: true, drawingsComplete: true },
   }), { statusCode: 400, message: '适用条件未确认' });
 });
 
@@ -141,9 +142,20 @@ test('a complete draft can receive an overall pass before publication', async ()
     throw new Error(`Unexpected query: ${sql}`);
   });
   const review = await createReview(pool, 'S-1', null, {
-    requestKey: 'overall-new', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: {},
+    requestKey: 'overall-new', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: { assetsComplete: true, bomVerified: true, renderingsAndMasks: true, drawingsComplete: true },
   });
   assert.equal(review.decision, 'pass');
+});
+
+test('overall pass rejects unchecked evidence before writing a review', async () => {
+  const pool = poolFor(sql => {
+    if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
+    if (sql.includes('FROM scheme_reviews')) return { rows: [] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  await assert.rejects(createReview(pool, 'S-1', null, {
+    requestKey: 'unchecked', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: { assetsComplete: true },
+  }), { statusCode: 400, message: 'Overall review checks must all pass' });
 });
 
 test('unconfigured applicability questions cannot be published as invisible candidates', async () => {

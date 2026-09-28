@@ -126,11 +126,12 @@ export async function replaceAssetFileApi(
   const formData = new FormData();
   formData.append('file', file);
   formData.append('expectedRevision', String(expectedRevision));
-  return requestClient.request<SchemeAsset>(
-    `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/assets/${assetId}`,
+  return requestClient.request<AssetVersion>(
+    `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/assets/${assetId}/versions`,
     {
-      method: 'PATCH',
+      method: 'POST',
       data: formData,
+      headers: { 'Content-Type': undefined },
     },
   );
 }

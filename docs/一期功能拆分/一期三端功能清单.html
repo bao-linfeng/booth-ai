@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>一期三端功能清单｜灵通 AI 展台方案平台</title>
+  <style>
+    :root { --paper:#f5f3ec; --ink:#192c32; --muted:#566b6e; --line:#d8ddd7; --client:#167971; --admin:#a15437; --server:#3b5686; font-family:"Noto Sans SC","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--paper); }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; }
+    a { color:inherit; text-underline-offset:3px; }
+    button, input { font:inherit; }
+    .wrap { width:min(1240px, calc(100% - 64px)); margin:auto; }
+    .hero { position:relative; overflow:hidden; background:#142d34; color:#f7f5ed; }
+    .hero::after { content:"三端 / 01"; position:absolute; right:-24px; bottom:-45px; font:700 clamp(85px,15vw,210px)/1 Georgia,"Noto Serif SC",serif; color:#ffffff0a; white-space:nowrap; pointer-events:none; }
+    .hero .wrap { position:relative; z-index:1; padding-top:65px; padding-bottom:55px; }
+    .eyebrow { color:#9bcbc3; font-size:12px; font-weight:700; letter-spacing:.2em; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { max-width:850px; margin:21px 0 18px; font:600 clamp(38px,5vw,67px)/1.17 "Noto Serif SC","Songti SC",serif; letter-spacing:.025em; }
+    .intro { max-width:720px; color:#c5d3d1; font-size:15px; line-height:1.9; }
+    .hero-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; margin-top:40px; border:1px solid #52747a; background:#52747a; }
+    .stat { min-height:130px; padding:19px 24px; background:#1c3940; border-top:3px solid var(--accent); }
+    .stat span { display:block; font-size:12px; color:#bad0cf; }
+    .stat strong { display:block; margin:11px 0 4px; font:500 30px/1.2 Georgia,"Noto Serif SC",serif; }
+    .stat small { color:#b3cac9; line-height:1.5; }
+    .client { --accent:var(--client); --tint:#eaf5f1; }
+    .admin { --accent:var(--admin); --tint:#f9eee8; }
+    .server { --accent:var(--server); --tint:#edf1f8; }
+    .topbar { position:sticky; top:0; z-index:10; background:#f5f3ecf2; border-bottom:1px solid var(--line); backdrop-filter:blur(14px); }
+    .topbar .wrap { display:flex; align-items:center; gap:22px; min-height:64px; }
+    .topbar a { flex:none; text-decoration:none; font-size:13px; font-weight:700; }
+    .topbar a:hover, .topbar a:focus-visible { color:var(--admin); }
+    .search { width:min(320px,100%); margin-left:auto; padding:10px 14px; color:var(--ink); background:#fff; border:1px solid #ccd5cf; border-radius:3px; outline-offset:2px; font-size:13px; }
+    main { padding-bottom:80px; }
+    .context { margin:33px 0 65px; padding:19px 23px; border-left:3px solid var(--client); background:#fff; color:var(--muted); font-size:13px; line-height:1.85; }
+    .context strong { color:var(--ink); }
+    .context p:last-child { margin-bottom:0; }
+    .portal { scroll-margin-top:90px; margin-bottom:86px; }
+    .portal-head { display:grid; grid-template-columns:110px 1fr auto; gap:24px; align-items:end; padding-bottom:23px; border-bottom:3px solid var(--accent); }
+    .index { color:var(--accent); font:700 12px Georgia,serif; letter-spacing:.12em; }
+    h2 { margin:0 0 8px; font:600 clamp(29px,3vw,39px)/1.25 "Noto Serif SC","Songti SC",serif; }
+    .portal-head p { margin:0; color:var(--muted); font-size:13px; line-height:1.7; }
+    .count { color:var(--accent); font:600 13px/1.6 "Noto Sans SC",sans-serif; text-align:right; }
+    .block-title { display:flex; align-items:baseline; gap:14px; margin:33px 0 15px; }
+    .block-title h3 { margin:0; font-size:16px; }
+    .block-title small { color:var(--muted); font-size:12px; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .item { position:relative; min-height:125px; padding:20px 22px 18px; border:1px solid var(--line); border-left:3px solid var(--accent); background:#fff; transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
+    .item:hover { transform:translateY(-2px); border-color:var(--accent); box-shadow:0 9px 22px #192c3212; }
+    .item-head { display:flex; align-items:baseline; gap:14px; margin-bottom:9px; }
+    .code { flex:none; color:var(--accent); font:700 13px Georgia,serif; letter-spacing:.03em; }
+    .item h4 { margin:0; font-size:15px; line-height:1.5; }
+    .item p { margin:0; color:#526367; font-size:13px; line-height:1.75; }
+    .item footer { margin-top:12px; color:var(--accent); font-size:11px; font-weight:700; }
+    .compact .item { min-height:105px; }
+    .note { margin-top:14px; padding:17px 20px; background:var(--tint); color:#41575a; font-size:13px; line-height:1.8; }
+    .note strong { color:var(--ink); }
+    .no-results { display:none; margin-top:20px; color:var(--muted); font-size:13px; }
+    .no-results.show { display:block; }
+    .sources { border-top:1px solid var(--line); padding:27px 0 5px; color:var(--muted); font-size:12px; line-height:1.85; }
+    .sources h2 { color:var(--ink); font:700 15px "Noto Sans SC",sans-serif; }
+    .sources a:hover { color:var(--admin); }
+    [hidden] { display:none!important; }
+    @media (max-width:780px) { .wrap { width:min(100% - 32px,1240px); } .hero .wrap { padding-top:40px; padding-bottom:34px; } .hero-stats { margin-top:25px; } .stat { min-height:115px; padding:15px; } .stat strong { font-size:23px; } .topbar .wrap { flex-wrap:wrap; gap:5px 17px; padding-top:10px; padding-bottom:10px; } .topbar a { font-size:12px; } .search { width:100%; margin:5px 0 0; } .portal { scroll-margin-top:125px; } .portal-head { grid-template-columns:1fr auto; gap:6px; } .index { grid-column:1/-1; } .grid { grid-template-columns:1fr; } }
+    @media (max-width:500px) { .hero-stats { grid-template-columns:1fr; } .stat { min-height:0; padding:12px 16px; } .stat strong { margin:3px 0; } .portal-head { align-items:start; } .count { max-width:115px; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .item { transition:none; } }
+    @media print { :root { background:white; } .hero,.stat,.note { print-color-adjust:exact; -webkit-print-color-adjust:exact; } .hero .wrap { padding-top:25px; padding-bottom:25px; } .topbar { display:none; } .portal { margin-bottom:35px; } .item { break-inside:avoid; min-height:0; } .portal-head,.block-title { break-after:avoid; } main { padding-bottom:0; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="eyebrow">LINGTONG · PHASE 01 / DELIVERY SCOPE</div>
+      <h1>一期三端功能清单</h1>
+      <p class="intro">从需求输入到方案交付与项目成交：按使用端和实现职责，梳理客户端、管理后台及服务端各自需要建设的功能。</p>
+      <div class="hero-stats" aria-label="三端范围概览">
+        <div class="stat client"><span>01 / 客户端</span><strong>12 个页面</strong><small>另含 2 个资料弹窗 · 36 项编号功能</small></div>
+        <div class="stat admin"><span>02 / 管理后台</span><strong>22 个已列页面</strong><small>另含方案详情 5 个工作区 · 38 项编号功能</small></div>
+        <div class="stat server"><span>03 / 服务端</span><strong>17 个工作包</strong><small>W00～W16 · API / 数据 / Worker / 集成交付</small></div>
+      </div>
+    </div>
+  </header>
+  <nav class="topbar" aria-label="三端导航">
+    <div class="wrap"><a href="#client">01 客户端</a><a href="#admin">02 管理后台</a><a href="#server">03 服务端</a><a href="#sources">来源与口径</a><input id="search" class="search" type="search" placeholder="搜索页面、功能、编号或工作包" aria-label="搜索功能"></div>
+  </nav>
+  <main class="wrap">
+    <div class="context">
+      <p><strong>阅读口径：</strong>这是一期规划需求清单，不代表现有代码完成度。客户端和后台以实际列出的页面为单位；服务端不按“页面”计数，以工作包列出所需业务能力。页面编号仅用于追踪，不等于最终路由。</p>
+      <p><strong>数字核对：</strong>源页面文档开头写后台 23 页、38 项，后文写 25 页、40 项／两端 76 项；但实际表格仅列出 22 个后台页面，后台功能分组实际合计 38 项，因此本页采用<strong>客户端 36 + 后台 38 = 74 项</strong>，不补造缺失页面。接口总数属于另一统计口径，新增检索分析接口以相关详设为准。</p>
+    </div>
+
+    <section class="portal client" id="client" aria-labelledby="client-title">
+      <div class="portal-head"><span class="index">01 / CUSTOMER PORTAL</span><div><h2 id="client-title">客户端</h2><p>参展商自助选型、调整、取资料和提交申请；本人项目只读查询。</p></div><div class="count">CP-01～12<br>CD-01～02</div></div>
+      <div class="block-title"><h3>主要页面</h3><small>12 个 · 未登录访客可使用前 10 个页面</small></div>
+      <div class="grid">
+        <article class="item"><div class="item-head"><span class="code">CP-01</span><h4>登录页</h4></div><p>企业账户登录、官网注册跳转、登录后回原业务、身份失效提示。</p><footer>W01</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-02</span><h4>AI 智选首页</h4></div><p>尺寸、开口方向、行业／风格／预算等条件和自然语言输入；空条件随机选型，检索行为采集。</p><footer>W04</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-03</span><h4>匹配结果页</h4></div><p>展示并修正解析条件，呈现最多三套精确／参考方案、差异及无结果转人工入口。</p><footer>W04</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-04</span><h4>方案详情页</h4></div><p>三视角效果图、方案编号、授权 SKP 下载；主题、清单、图纸、素材及报价入口。</p><footer>W04</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-05</span><h4>品牌主题调整页</h4></div><p>原图与品牌参数、张数选择、积分／费用确认、进度、前后对比和最终效果选定。</p><footer>W07 · 复用 W05 / W06</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-06</span><h4>简化清单页</h4></div><p>六列无价清单、单位说明、八列空价 XLSX 下载及申请报价入口。</p><footer>W08</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-07</span><h4>AIGC 四面素材页</h4></div><p>选定效果摘要、单独发起生成、四方向进度和结果、失败／一致性提示及下载入口。</p><footer>W11 · 复用 W10</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-08</span><h4>报价申请页</h4></div><p>填写展会、城市、日期、需求范围、预算与联系方式，带入方案和效果后提交。</p><footer>W12</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-09</span><h4>人工需求申请页</h4></div><p>无匹配时保留原始描述与解析条件，填写联系方式，申请人工协助。</p><footer>W12</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-10</span><h4>申请成功／受理回执页</h4></div><p>展示申请号／项目号、受理结果及在线客服入口。</p><footer>W12 / W14</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-11</span><h4>我的项目列表页</h4></div><p>已登录提交人只读查看本人报价申请及人工需求项目、来源、方案和状态。</p><footer>W12</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CP-12</span><h4>我的项目详情页</h4></div><p>只读查看本人申请、选定方案／效果、资料与处理状态及可公开结果。</p><footer>W12</footer></article>
+      </div>
+      <div class="block-title"><h3>资料弹窗与公共交互</h3><small>弹窗独立追踪，不计入主页面</small></div>
+      <div class="grid compact">
+        <article class="item"><div class="item-head"><span class="code">CD-01</span><h4>报馆图素材弹窗</h4></div><p>视向／用途／范围、图片缩放、PDF 分页预览、单张及整套下载。</p><footer>W09</footer></article>
+        <article class="item"><div class="item-head"><span class="code">CD-02</span><h4>平面素材弹窗</h4></div><p>画面／位置／尺寸／来源、PNG 预览；标准与私有生成结果的单张、整套下载。</p><footer>W10</footer></article>
+      </div>
+      <div class="note"><strong>公共能力：</strong>账户摘要、积分余额、登录墙与回跳、SU token 登录／失效处理、费用与权限提示、客服浮窗、加载／空态／异常态、响应式布局、下载与浏览器回退恢复。本人项目不展示后台内部跟进或人工报价；伙伴类用户主要在 SU 操作。</div>
+    </section>
+
+    <section class="portal admin" id="admin" aria-labelledby="admin-title">
+      <div class="portal-head"><span class="index">02 / OPERATIONS CONSOLE</span><div><h2 id="admin-title">管理后台</h2><p>方案与资产维护、任务运营、项目跟进、人工报价及检索分析。</p></div><div class="count">22 个已列页面<br>5 个详情工作区</div></div>
+      <div class="block-title"><h3>主要页面</h3><small>保留原文 AP 编号；跳号不代表本清单漏列已定义页面</small></div>
+      <div class="grid">
+        <article class="item"><div class="item-head"><span class="code">AP-01</span><h4>后台登录页</h4></div><p>企业管理员登录、按外部协议接入验证码、权限校验与会话恢复。</p><footer>W01</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-02</span><h4>方案列表页</h4></div><p>按编号、空间条件、标签、核验及发布状态筛选分页，进入新建／编辑。</p><footer>W03</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-03</span><h4>方案详情／编辑页</h4></div><p>基础信息、结构打标、母版关系、资产汇总、模型／清单及审核发布；允许零资产草稿。</p><footer>W03 / W08 / W15</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-04</span><h4>方案批量导入页</h4></div><p>JSON／XLSX 导入，预览新增、已有编号和错误行，确认后写入草稿。</p><footer>W03</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-05</span><h4>匹配字典管理页</h4></div><p>开口、产品体系、行业、风格、预算和标签等受控选项维护。</p><footer>W03</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-06</span><h4>计量规则管理页</h4></div><p>个数、长度、面积的计量单位与换算规则维护。</p><footer>W08</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-07</span><h4>提示词模板管理页</h4></div><p>按行业 × 风格 × 用途维护模板与变量，查看和编辑。</p><footer>W06</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-08</span><h4>生成模型配置页</h4></div><p>已验证模型、用途、受限参数、启停及主备路由配置。</p><footer>W06</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-09</span><h4>生成任务列表页</h4></div><p>按账户、方案、任务类型及状态筛选；查看失败、费用与任务摘要。</p><footer>W06</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-10</span><h4>生成任务详情页</h4></div><p>尝试记录、结果、失败原因、积分结算与四方向质量明细。</p><footer>W06 · 含 W07 / W11 明细</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-11</span><h4>项目申请列表页</h4></div><p>报价申请与人工需求统一筛选：项目号、方案、客户、来源、处理人员和状态。</p><footer>W12</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-12</span><h4>项目详情页</h4></div><p>申请和资料快照、渠道来源、管理人员分配、跟进时间线、终态原因及人工需求补关联方案。</p><footer>W12</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-13</span><h4>人工报价编辑／修订页</h4></div><p>复制清单、填写单价与服务行、税／币种／条款、合计、历史修订及导出。</p><footer>W13</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-14</span><h4>已同步账户列表页</h4></div><p>查询已同步平台用户、用户类型、最近登录和同步时间。</p><footer>W02</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-15</span><h4>账户详情页</h4></div><p>账户摘要、用户类型标记和积分关联入口。</p><footer>W02 / W05</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-18</span><h4>积分流水页</h4></div><p>余额与流水、关联生成任务、未完成费用操作查询。</p><footer>W05</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-20</span><h4>方案检索记录页</h4></div><p>按时间、用户／指纹、关键词、筛选条件及命中情况组合检索；查看行为快照。</p><footer>W04 · /ai-selection/searches</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-21</span><h4>方案检索统计分析页</h4></div><p>热门词与偏好、零命中缺口、设备／用户检索频次及登录转化分析。</p><footer>W04 · /ai-selection/analytics</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-22</span><h4>效果图管理页</h4></div><p>跨方案筛选、选方案上传、预览、替换、删除、排序及比例检查。</p><footer>W15 · /assets/renderings</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-23</span><h4>蒙版图管理页</h4></div><p>跨方案上传关联、效果图配对、尺寸与叠加预览、对齐核验。</p><footer>W15 / W07 · /assets/masks</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-24</span><h4>报馆图素材管理页</h4></div><p>跨方案上传维护、视向与模型绑定及复核。</p><footer>W15 / W09 · /assets/venue-materials</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AP-25</span><h4>素材图管理页</h4></div><p>跨方案上传维护、清单画面映射、尺寸依据及复核。</p><footer>W15 / W10 · /assets/artworks</footer></article>
+      </div>
+      <div class="block-title"><h3>方案详情内工作区</h3><small>属于 AP-03，不另计主页面</small></div>
+      <div class="grid compact">
+        <article class="item"><div class="item-head"><span class="code">AT-01</span><h4>基础信息与打标</h4></div><p>编号、来源、结构参数、标签、适用条件及母版／变体关系。</p><footer>W03</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AT-02</span><h4>模型与资产汇总</h4></div><p>SKP 上传替换、六类资产数量／状态／预览及跳转独立资产页。</p><footer>W15 / W03</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AT-04</span><h4>简化清单</h4></div><p>源文件导入预览、条目和计量规则、分项核验与空价导出。</p><footer>W08</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AT-07</span><h4>完整性检查</h4></div><p>六类资产检查、缺项与核验失效原因。</p><footer>W03 · 汇总 W07～W10</footer></article>
+        <article class="item"><div class="item-head"><span class="code">AT-08</span><h4>审核与发布</h4></div><p>审核记录、发布、下架与阻断原因。</p><footer>W03</footer></article>
+      </div>
+      <div class="note"><strong>操作边界：</strong>项目分配、联系跟进、报价及状态处理均在后台；四类资产各有独立列表路由，上传／编辑可使用页内抽屉。生成任务与项目申请分别是 AI 运维和销售承接两条业务线。</div>
+    </section>
+
+    <section class="portal server" id="server" aria-labelledby="server-title">
+      <div class="portal-head"><span class="index">03 / API · DATA · WORKER</span><div><h2 id="server-title">服务端</h2><p>以工作包梳理数据、接口、鉴权、文件、生成任务与项目闭环。</p></div><div class="count">W00～W16<br>17 个工作包</div></div>
+      <div class="block-title"><h3>实现能力</h3><small>根据《一期业务模块开发与报价总集》服务端职责整理</small></div>
+      <div class="grid">
+        <article class="item"><div class="item-head"><span class="code">W00</span><h4>公共工程与接口契约</h4></div><p>统一响应／错误 Schema、ID／修订／幂等约定、数据库迁移与种子；复用数据库、存储、API、Worker、Outbox 和队列。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W01</span><h4>统一账户与平台会话</h4></div><p>可信校验企业身份，users／admins 分表同步，可失效平台会话；SU token 验证与用户同步。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W02</span><h4>用户类型与端入口</h4></div><p>保存 users 用户类型标记，在客户端与 SU 当前用户信息中返回；业务操作仍独立鉴权。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W03</span><h4>方案库与审核发布</h4></div><p>方案唯一编号、母版关系、字典、导入事务、就绪汇总、技术修订与发布／下架事务；零资产草稿可保存。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W04</span><h4>AI 智选与检索分析</h4></div><p>LLM 结构化解析及规则降级、硬条件和参考匹配、排序、空条件随机、详情与授权模型下载；检索流水与聚合统计。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W05</span><h4>统一积分协调</h4></div><p>对接唯一权威账本，稳定操作号，余额读取、原子预占／扣除／释放、未完成操作恢复与网页／SU 并发一致性。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W06</span><h4>生成任务公共服务</h4></div><p>供应商适配、任务与 Outbox、Worker 恢复、结果存储、缓存、模板／模型配置快照及运行指标。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W07</span><h4>品牌主题调整与蒙版</h4></div><p>输入与费用 offer 校验、原图／mask 快照、同用户缓存、蒙版转换和区域外保护、结果选定修订；接积分与生成任务。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W08</span><h4>简化清单导入与交付</h4></div><p>XLSM／XLSX 安全提取、十进制换算、原子替换、核验证据、变更下架、八列空价导出及项目清单快照。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W09</span><h4>报馆图素材维护与交付</h4></div><p>图纸集合与修订快照、视向覆盖、模型与导出规范绑定、变更失效、受控预览以及原件／ZIP 下载。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W10</span><h4>标准／SU 平面素材交付</h4></div><p>画面定义、标准／SU 集合与修订、模型／清单映射核验；标准及私有任务的读取、原件和 ZIP 交付。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W11</span><h4>AIGC 四面正交素材</h4></div><p>固定已选主题快照、共用品牌／模板／模型上下文、分方向尝试与结果、整套交付判定，按计费决策对接积分。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W12</span><h4>申请受理与项目承接</h4></div><p>同事务创建申请／项目／资料快照／归属／承接人及 Outbox；提交人本人只读隔离、后台授权、跟进状态机与通知。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W13</span><h4>人工报价留存与导出</h4></div><p>精确十进制金额、空价与零价区分、不可变报价修订、白名单文件导出及项目修订同步。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W14</span><h4>第三方在线客服接入</h4></div><p>校验身份与项目范围，生成白名单会话上下文及必要短期凭据，对接第三方客服平台。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W15</span><h4>方案资产独立管理</h4></div><p>方案与资产一对多、文件不可变版本、Silo 存储、上传登记／失败重试、跨方案查询、权限与历史引用保护。</p></article>
+        <article class="item"><div class="item-head"><span class="code">W16</span><h4>试点数据、总联调与上线</h4></div><p>导入核对试点方案资产，验证选型→资料→申请→跟进→报价及主题→四面链路；迁移、监控、备份恢复与交付材料。</p></article>
+      </div>
+      <div class="note"><strong>接口边界：</strong>客户端、后台与 SU 使用各自接口入口及权限校验，内部业务服务可复用。现有路由文档将接口清单描述为 85 个拟开发接口、另复用 3 个企业账户接口；后续补充的检索分析接口见相关详设，接口数量不用于折算页面或功能项。</div>
+    </section>
+    <p id="no-results" class="no-results" role="status">没有找到匹配项，请尝试其他关键词或编号。</p>
+    <footer class="sources" id="sources">
+      <h2>来源与范围说明</h2>
+      <p>依据 <a href="一期客户端与管理后台页面及功能清单.md">一期客户端与管理后台页面及功能清单</a>、<a href="一期业务模块开发与报价总集.md">一期业务模块开发与报价总集</a>、<a href="管理后台功能需求.md">管理后台功能需求</a>及<a href="服务端接口路由.md">服务端接口路由</a>整理。页面规划待原型确认；详细业务规则、条件项和待决问题以原始文档为准。</p>
+      <p>未计入：本地注册／找回密码、支付与充值、客户端跨客户项目管理、自建聊天工作台、网页 CAD／PS 编辑器等。页面验收需覆盖真实接口联调、权限、异常状态与业务闭环。</p>
+    </footer>
+  </main>
+  <script>
+    const search = document.querySelector('#search');
+    const items = [...document.querySelectorAll('.item')];
+    const empty = document.querySelector('#no-results');
+    search.addEventListener('input', () => {
+      const query = search.value.trim().toLocaleLowerCase();
+      let visible = 0;
+      for (const item of items) {
+        const matches = item.textContent.toLocaleLowerCase().includes(query);
+        item.hidden = !matches;
+        if (matches) visible++;
+      }
+      for (const section of document.querySelectorAll('.portal')) {
+        section.hidden = Boolean(query) && ![...section.querySelectorAll('.item')].some(item => !item.hidden);
+      }
+      empty.classList.toggle('show', visible === 0);
+    });
+  </script>
+</body>
+</html>

@@ -18,7 +18,7 @@ export const createFormOptions = (
     },
     {
       component: 'Select' as const,
-      fieldName: 'style',
+      fieldName: 'styleId',
       label: '风格',
       componentProps: {
         placeholder: '请选择风格',
@@ -64,13 +64,13 @@ export const createGridOptions = () => ({
     { field: 'name', title: '方案名称', minWidth: 180 },
     {
       field: 'dimensions',
-      title: '尺寸(长×宽×高 cm)',
+      title: '尺寸(长×宽×高 mm)',
       width: 180,
       slots: { default: 'dimensions' },
     },
-    { field: 'areaSqm', title: '面积(m²)', width: 100 },
-    { field: 'productLine', title: '产品体系', width: 120 },
-    { field: 'style', title: '风格', width: 100 },
+    { field: 'areaM2', title: '面积(m²)', width: 100 },
+    { field: 'productSystemId', title: '产品体系', width: 120, slots: { default: 'productSystem' } },
+    { field: 'styleId', title: '风格', width: 100, slots: { default: 'style' } },
     {
       field: 'publishStatus',
       title: '发布状态',
