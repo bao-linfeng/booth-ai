@@ -1,14 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
+import type { Config } from '../../../config.js';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../../infra/storage.js';
 import { requirementSchema, validateRequirement, type Requirement } from './domain.js';
 import { loadCandidates, loadCatalog } from './repository.js';
 import { matchSchemes } from './match.js';
 import { parseRequirement } from './parse.js';
+import { activeAiModels, type ActiveAiModel } from '../../../infra/ai-models.js';
+import { parseWithModels } from './llm.js';
+import { deliverableAvailability } from '../schemes/service.js';
 
-export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>) {
+export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>, config: Config) {
   const dependency = async <T>(operation: () => Promise<T>): Promise<T> => {
     try {
       return await operation();
@@ -38,7 +42,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
     selection.post<{ Body: { text: string; form: Requirement } }>('/requirements/parse', {
       schema: {
         tags: ['AI 智选'],
-        summary: '规则识别需求，未识别内容需澄清',
+        summary: '模型解析需求，失败时规则降级',
         body: {
           type: 'object',
           additionalProperties: false,
@@ -52,7 +56,8 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
     }, async request => {
       const catalog = await dependency(() => loadCatalog(pool));
       const form = validateRequirement(request.body.form, catalog);
-      return { code: 0, data: parseRequirement(request.body.text, form, catalog) };
+      const models: ActiveAiModel[] = await dependency(() => activeAiModels(pool, 'selection_parse', config.aiModelEncryptionKey));
+      return { code: 0, data: models.length ? await parseWithModels(request.body.text, form, catalog, models) : parseRequirement(request.body.text, form, catalog) };
     });
     
     selection.post<{ Body: { mode: 'random' | 'filtered'; inputContext: { textProvided: boolean }; requirement: Requirement } }>('/scheme-matches', {
@@ -105,6 +110,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       const [candidate] = await dependency(() => loadCandidates(pool, catalog, storage, request.params.code));
       
       if (!candidate) throw Object.assign(new Error('Scheme not visible'), { statusCode: 404 });
+      const availability = await dependency(() => deliverableAvailability(pool, candidate.code));
       
       return {
         code: 0,
@@ -113,14 +119,14 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
           images: candidate.images,
           specifications: candidate.specifications,
           applicabilityNotes: candidate.applicabilityNotes,
-          resources: { model: true, bom: true, renderings: true, masks: true, drawings: true, artworks: true },
+          resources: { model: availability.model, bom: true, renderings: candidate.images.length > 0, masks: candidate.images.length === 3, drawings: availability.drawing, artworks: availability.artwork },
           actions: {
             theme: 'unavailable',
-            bom: 'unavailable',
-            drawings: 'unavailable',
-            artworks: 'unavailable',
+            bom: 'available',
+            drawings: availability.drawing ? 'available' : 'unavailable',
+            artworks: availability.artwork ? 'available' : 'unavailable',
             quote: 'unavailable',
-            modelDownload: 'unavailable'
+            modelDownload: availability.model ? 'available' : 'unavailable'
           },
         }
       };

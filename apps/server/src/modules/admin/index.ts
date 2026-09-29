@@ -13,6 +13,8 @@ import { registerAdminAssetsRoutes } from './assets/index.js';
 import { registerAdminBomRoutes } from './bill-of-materials/index.js';
 import { registerAdminReviewsRoutes } from './reviews/index.js';
 import { registerAdminDictionariesRoutes } from './dictionaries/index.js';
+import { registerAdminAuditLogsRoutes } from './audit-logs/index.js';
+import { registerAdminAiModelRoutes } from './ai-models/index.js';
 
 export async function registerAdminModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
   await app.register(async admin => {
@@ -28,11 +30,13 @@ export async function registerAdminModule(app: FastifyInstance, config: Config, 
     await registerAdminAuthRoutes(admin, config, pool, redis);
     await registerAdminMeRoutes(admin, config, pool, redis);
     await registerAdminUserRoutes(admin, pool);
-    await registerAdminSchemesRoutes(admin, pool);
-    await registerAdminSchemeImportsRoutes(admin, pool);
-    await registerAdminAssetsRoutes(admin, pool, storage);
+    await registerAdminSchemesRoutes(admin, pool, redis);
+    await registerAdminSchemeImportsRoutes(admin, pool, redis);
+    await registerAdminAssetsRoutes(admin, pool, storage, redis);
     await registerAdminBomRoutes(admin, pool, storage, redis, config);
-    await registerAdminReviewsRoutes(admin, pool);
+    await registerAdminReviewsRoutes(admin, pool, redis);
     await registerAdminDictionariesRoutes(admin, pool);
+    await registerAdminAuditLogsRoutes(admin, pool);
+    await registerAdminAiModelRoutes(admin, pool, redis, config.aiModelEncryptionKey);
   }, { prefix: '/api/v1/admin' });
 }

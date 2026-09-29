@@ -1,12 +1,14 @@
 import type { FastifyInstance } from 'fastify';
+import type { Redis } from 'ioredis';
 import type pg from 'pg';
+import { getAdminIdFromRequest } from '../session.js';
 import { commitImport, previewImport, type CommitImportOptions } from './service.js';
 
 interface ImportParams {
   importId: string;
 }
 
-export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
+export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
   app.post('/scheme-imports', {
     schema: { tags: ['admin-scheme-imports'] },
   }, async (request, reply) => {
@@ -23,7 +25,7 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
       chunks.push(chunk);
     }
     const buffer = Buffer.concat(chunks);
-    const adminId: string | null = null;
+    const adminId = await getAdminIdFromRequest(request, redis);
     const result = await previewImport(pool, adminId, buffer, data.filename);
     return { code: 0, data: result };
   });
@@ -41,7 +43,7 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
       },
     },
   }, async request => {
-    const adminId: string | null = null;
+    const adminId = await getAdminIdFromRequest(request, redis);
     const params = request.params as ImportParams;
     return { code: 0, data: await commitImport(pool, adminId, params.importId, request.body as CommitImportOptions) };
   });

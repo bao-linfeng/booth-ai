@@ -1,5 +1,20 @@
 import { requestClient } from '#/api/request';
 
+export interface SchemeAssetCounts {
+  model: number;
+  rendering: number;
+  mask: number;
+  drawing: number;
+  artwork: number;
+}
+
+export interface SchemeLatestReview {
+  phase: 'asset_verification' | 'overall';
+  decision: 'pass' | 'reject';
+  notes: null | string;
+  createdAt: string;
+}
+
 export interface SchemeRecord {
   id: string;
   code: string;
@@ -27,6 +42,10 @@ export interface SchemeRecord {
   editRevision: number;
   createdAt: string;
   updatedAt: string;
+  // 运营信息（列表接口聚合返回）
+  assetCounts: null | SchemeAssetCounts;
+  latestReview: null | SchemeLatestReview;
+  lastUnpublishReason: null | string;
 }
 
 export interface SchemeListParams {
@@ -39,6 +58,12 @@ export interface SchemeListParams {
   productSystemId?: string;
   publishStatus?: string;
   verificationStatus?: string;
+  openingCount?: number;
+  budgetTierId?: string;
+  zoneIds?: string[];
+  featureIds?: string[];
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
 export interface SchemeListResult {

@@ -118,6 +118,18 @@ function open(code = '') {
   modalApi.open();
 }
 
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
+
+function beforeUpload(selected: File): boolean {
+  if (selected.size > MAX_FILE_SIZE) {
+    message.warning(`文件过大（${(selected.size / 1024 / 1024).toFixed(1)} MB），请上传 20MB 以内的 Excel 文件`);
+    return false;
+  }
+  file.value = selected;
+  resetPreview();
+  return false;
+}
+
 defineExpose({ open });
 </script>
 
@@ -157,13 +169,7 @@ defineExpose({ open });
         :file-list="
           file ? [{ uid: 'source', name: file.name, status: 'done' }] : []
         "
-        :before-upload="
-          (selected: File) => {
-            file = selected;
-            resetPreview();
-            return false;
-          }
-        "
+        :before-upload="beforeUpload"
         :max-count="1"
         accept=".xlsx,.xlsm"
         :disabled="!!preview || busy"

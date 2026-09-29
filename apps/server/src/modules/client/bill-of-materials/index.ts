@@ -1,7 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { getSession } from '../../../infra/session.js';
 import { bomError, getBom } from '../../admin/bill-of-materials/service.js';
 import { exportBomWorkbook } from '../../admin/bill-of-materials/workbook.js';
 
@@ -23,7 +21,7 @@ async function assertPublished(pool: pg.Pool, schemeCode: string): Promise<void>
 }
 
 async function noStore(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
-  reply.header('Cache-Control', 'private, no-store');
+  reply.header('Cache-Control', 'no-store');
 }
 
 async function assertCurrentPublishedBom(pool: pg.Pool, schemeCode: string, revision: number): Promise<void> {
@@ -37,24 +35,14 @@ async function assertCurrentPublishedBom(pool: pg.Pool, schemeCode: string, revi
   if (row.revision !== revision || row.status !== 'verified') throw bomError('BOM_REVISION_CHANGED', 409);
 }
 
-export async function registerClientBomRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  const requireClientSession = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    const token = /^Bearer\s+(.+)$/i.exec(request.headers.authorization ?? '')?.[1];
-    const session = token ? await getSession(redis, token, 'client') : null;
-    if (!session) {
-      reply.code(401).send({ error: { code: 'AUTH_REQUIRED', reason: 'AUTH_REQUIRED', message: 'Authentication required', requestId: request.id } });
-      return;
-    }
-  };
-
+export async function registerClientBomRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   app.get<{ Params: CodeParams }>('/schemes/:code/bill-of-materials', {
     onRequest: noStore,
-    preHandler: requireClientSession,
     schema: { tags: ['client-bill-of-materials'], params },
   }, async request => {
     const schemeCode = code(request);
-    const bom = await getBom(pool, schemeCode);
     await assertPublished(pool, schemeCode);
+    const bom = await getBom(pool, schemeCode);
     if (!bom || bom.status !== 'verified') throw bomError('BOM_NOT_AVAILABLE', 409);
 
     return {
@@ -79,14 +67,13 @@ export async function registerClientBomRoutes(app: FastifyInstance, pool: pg.Poo
 
   app.get<{ Params: CodeParams; Querystring: DownloadQuery }>('/schemes/:code/bill-of-materials/download', {
     onRequest: noStore,
-    preHandler: requireClientSession,
     schema: { tags: ['client-bill-of-materials'], params, querystring },
   }, async (request, reply) => {
     const schemeCode = code(request);
     const requested = Number(request.query.revision);
     if (!Number.isSafeInteger(requested) || requested <= 0) throw bomError('INVALID_INPUT', 400);
-    const bom = await getBom(pool, schemeCode);
     await assertPublished(pool, schemeCode);
+    const bom = await getBom(pool, schemeCode);
     if (!bom || bom.status !== 'verified') throw bomError('BOM_NOT_AVAILABLE', 409);
     if (bom.revision !== requested) throw bomError('BOM_REVISION_CHANGED', 409);
 

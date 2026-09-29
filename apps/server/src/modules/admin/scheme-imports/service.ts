@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import ExcelJS from 'exceljs';
 import type pg from 'pg';
 import { transaction } from '../../../infra/database.js';
@@ -76,6 +77,7 @@ export interface ImportPreviewRow {
   status: 'valid' | 'duplicate' | 'error';
   reason?: string;
   data?: ImportRow;
+  snapshotRevision?: number;
 }
 
 export interface PreviewImportResult {
@@ -214,7 +216,7 @@ const updateSql = `
     revision = revision + 1,
     verification_status = 'unverified',
     publish_status = CASE WHEN publish_status = 'published' THEN 'draft' ELSE publish_status END
-  WHERE code = $1
+  WHERE code = $1 AND revision = $19
   RETURNING id
 `;
 
@@ -352,6 +354,17 @@ export async function previewImport(pool: pg.Pool, adminId: string | null, buffe
     rows.push({ rowNumber, code: data.code, name: data.name, status: 'valid', data: parsedRows[index] });
   }
 
+  const duplicateCodes = rows.filter(row => row.status === 'duplicate').map(row => row.code);
+  if (duplicateCodes.length > 0) {
+    const revisions = await pool.query<{ code: string; revision: number }>(
+      'SELECT code, revision FROM schemes WHERE code = ANY($1::text[])', [duplicateCodes],
+    );
+    const revisionsByCode = new Map(revisions.rows.map(row => [row.code, row.revision]));
+    for (const row of rows) {
+      if (row.status === 'duplicate') row.snapshotRevision = revisionsByCode.get(row.code);
+    }
+  }
+
   const inserted = await pool.query<{ id: string }>(`
     INSERT INTO scheme_imports (source_filename, preview, summary, expires_at, created_by)
     VALUES ($1, $2, $3, now() + interval '1 hour', $4)
@@ -364,14 +377,21 @@ export async function previewImport(pool: pg.Pool, adminId: string | null, buffe
 
 export async function commitImport(pool: pg.Pool, adminId: string | null, importId: string, options: CommitImportOptions): Promise<CommitImportResult> {
   return transaction(pool, async client => {
-    const imported = await client.query<{ preview: unknown }>(`
-      SELECT preview
+    const requestHash = createHash('sha256').update(JSON.stringify([importId, options.duplicateStrategy, options.selectedRows ?? null])).digest('hex');
+    const imported = await client.query<{ preview: unknown; status: string; commit_request_hash: string | null; committed_result: CommitImportResult | null }>(`
+      SELECT preview, status, commit_request_hash, committed_result
       FROM scheme_imports
-      WHERE id = $1 AND status = 'pending' AND expires_at > now()
+      WHERE id = $1 AND expires_at > now()
       FOR UPDATE
     `, [importId]);
-    const preview = imported.rows[0]?.preview;
-    if (!preview) throw Object.assign(new Error('Import preview not found or has expired'), { statusCode: 400 });
+    const importRecord = imported.rows[0];
+    if (!importRecord) throw Object.assign(new Error('Import preview not found or has expired'), { statusCode: 400 });
+    if (importRecord.status === 'committed') {
+      if (importRecord.commit_request_hash === requestHash && importRecord.committed_result) return importRecord.committed_result;
+      throw Object.assign(new Error('Idempotency conflict: same importId with different options'), { statusCode: 409 });
+    }
+    if (importRecord.status !== 'pending') throw Object.assign(new Error('Import preview not found or has expired'), { statusCode: 400 });
+    const preview = importRecord.preview;
     if (!Array.isArray(preview)) throw Object.assign(new Error('Import preview is invalid'), { statusCode: 400 });
 
     const selectedRows = options.selectedRows && options.selectedRows.length > 0 ? new Set(options.selectedRows) : null;
@@ -397,15 +417,20 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
            result.created += 1;
            committedRows.push(row.data);
         } else {
+          if (row.snapshotRevision == null) {
+            result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: '预览数据缺少版本信息' });
+            await client.query('RELEASE SAVEPOINT row_save');
+            continue;
+          }
           const updateResult = await client.query(updateSql, [
             row.data.code, row.data.name, row.data.parentCode, row.data.widthMm, row.data.lengthMm,
             row.data.areaM2, row.data.heightMm, row.data.openingCount, row.data.productSystemId,
             row.data.styleId, row.data.industryIds ?? [], row.data.budgetTierId, row.data.zoneIds ?? [],
             row.data.featureIds ?? [], row.data.description, row.data.keywords,
-            row.data.notes, adminId,
+            row.data.notes, adminId, row.snapshotRevision,
           ]);
           if (updateResult.rowCount === 0) {
-            result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: '原方案已不存在，请重新导入' });
+            result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: '方案已被他人修改，请重新导入' });
           } else {
             result.updated += 1;
             committedRows.push(row.data);
@@ -418,7 +443,7 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
       }
     }
     result.dictionaryItemsCreated = await createGeneratedDictionaryItems(client, committedRows);
-    await client.query("UPDATE scheme_imports SET status = 'committed', committed_at = now() WHERE id = $1", [importId]);
+    await client.query("UPDATE scheme_imports SET status = 'committed', committed_at = now(), commit_request_hash = $2, committed_result = $3 WHERE id = $1", [importId, requestHash, JSON.stringify(result)]);
     return result;
   });
 }

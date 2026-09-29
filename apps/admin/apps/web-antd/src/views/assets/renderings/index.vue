@@ -4,13 +4,14 @@ import { onMounted, ref } from 'vue';
 import { Page } from '@vben/common-ui';
 import { debounce, formatDate } from '@vben/utils';
 
-import { Button, message, Modal } from 'ant-design-vue';
+import { Button, InputNumber, message, Modal } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
   deleteAssetApi,
   getAssetDownloadUrlApi,
   replaceAssetFileApi,
+  updateAssetApi,
 } from '#/api/core/assets';
 import { getSchemeListApi } from '#/api/core/schemes';
 
@@ -86,6 +87,22 @@ async function handleReplace(row: any) {
   input.click();
 }
 
+async function handleSortOrderChange(value: any, row: any) {
+  const num = typeof value === 'number' ? value : value ? Number(value) : null;
+  if (num === null || num === row.sortOrder || Number.isNaN(num)) return;
+  try {
+    await updateAssetApi(row.schemeCode, row.id, {
+      sortOrder: num,
+      expectedRevision: row.revision,
+    });
+    message.success('排序已更新');
+    gridApi.reload();
+  } catch {
+    message.error('排序更新失败，列表已刷新');
+    gridApi.reload();
+  }
+}
+
 function handleDelete(row: any) {
   Modal.confirm({
     title: '确认删除',
@@ -113,6 +130,15 @@ function handleDelete(row: any) {
       </template>
       <template #filename="{ row }">
         {{ row.currentVersion?.originalFilename || '-' }}
+      </template>
+      <template #sortOrder="{ row }">
+        <InputNumber
+          :value="row.sortOrder"
+          :min="0"
+          size="small"
+          class="w-20"
+          @change="(value) => handleSortOrderChange(value, row)"
+        />
       </template>
       <template #createdAt="{ row }">
         {{ formatDate(row.createdAt) }}

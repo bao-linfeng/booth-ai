@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { writeAuditLog } from '../../../infra/audit.js';
 import { validateSchemeDictionaryIds } from './dictionary-ids.js';
 
 export interface SchemeInput {
@@ -34,7 +35,13 @@ export interface ListSchemesOptions {
   productSystemId?: string;
   publishStatus?: string;
   verificationStatus?: string;
+  openingCount?: number;
+  budgetTierId?: string;
+  zoneIds?: string[];
+  featureIds?: string[];
   parentCode?: string;
+  sortBy?: 'updatedAt' | 'createdAt';
+  sortOrder?: 'asc' | 'desc';
 }
 
 export interface SchemeRecord {
@@ -126,7 +133,7 @@ function validateDimensions(input: SchemeInput): void {
 
 export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): Promise<{ data: SchemeRecord[]; total: number; page: number; pageSize: number }> {
   const conditions: string[] = [];
-  const values: string[] = [];
+  const values: (string | string[])[] = [];
   const add = (condition: string, value: string) => {
     values.push(value);
     conditions.push(condition.replace('?', `$${values.length}`));
@@ -138,11 +145,23 @@ export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): P
   if (options.productSystemId) add('product_system_id = ?::uuid', options.productSystemId);
   if (options.publishStatus) add('publish_status = ?', options.publishStatus);
   if (options.verificationStatus) add('verification_status = ?', options.verificationStatus);
+  if (options.openingCount !== undefined) add('opening_count = ?', String(options.openingCount));
+  if (options.budgetTierId) add('budget_tier_id = ?::uuid', options.budgetTierId);
+  if (options.zoneIds && options.zoneIds.length > 0) {
+    values.push(options.zoneIds);
+    conditions.push(`zone_ids && $${values.length}::uuid[]`);
+  }
+  if (options.featureIds && options.featureIds.length > 0) {
+    values.push(options.featureIds);
+    conditions.push(`feature_ids && $${values.length}::uuid[]`);
+  }
   if (options.parentCode) add('parent_code = ?', options.parentCode);
   const clause = conditions.length === 0 ? '' : ` WHERE ${conditions.join(' AND ')}`;
+  const sortColumn = options.sortBy === 'createdAt' ? 'created_at' : 'updated_at';
+  const sortDir = options.sortOrder === 'asc' ? 'ASC' : 'DESC';
   const offset = (options.page - 1) * options.pageSize;
   const [records, count] = await Promise.all([
-    pool.query<SchemeRow>(`SELECT ${schemeColumns} FROM schemes${clause} ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, options.pageSize, offset]),
+    pool.query<SchemeRow>(`SELECT ${schemeColumns} FROM schemes${clause} ORDER BY ${sortColumn} ${sortDir} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, options.pageSize, offset]),
     pool.query<{ total: string }>(`SELECT count(*)::text AS total FROM schemes${clause}`, values),
   ]);
   return { data: records.rows.map(toSchemeRecord), total: Number(count.rows[0]?.total ?? 0), page: options.page, pageSize: options.pageSize };
@@ -155,7 +174,7 @@ export async function getScheme(pool: pg.Pool, code: string): Promise<SchemeReco
   return toSchemeRecord(row);
 }
 
-export async function createScheme(pool: pg.Pool, adminId: string | null, input: SchemeInput): Promise<SchemeRecord> {
+export async function createScheme(pool: pg.Pool, adminId: string, input: SchemeInput): Promise<SchemeRecord> {
   if ('publishStatus' in input || 'verificationStatus' in input) throw requestError('Publication and verification require review', 400);
   const code = input.code?.trim();
   const name = input.name?.trim();
@@ -183,15 +202,29 @@ export async function createScheme(pool: pg.Pool, adminId: string | null, input:
   const result = await pool.query<SchemeRow>(`INSERT INTO schemes (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING ${schemeColumns}`, values);
   const row = result.rows[0];
   if (!row) throw requestError('Failed to create scheme', 500);
+  await writeAuditLog(pool, {
+    adminId,
+    action: 'scheme.create',
+    targetType: 'scheme',
+    targetId: row.code,
+    detail: { revision: row.editRevision },
+  });
   return toSchemeRecord(row);
 }
 
-export async function deleteScheme(pool: pg.Pool, code: string): Promise<void> {
+export async function deleteScheme(pool: pg.Pool, adminId: string, code: string): Promise<void> {
   const result = await pool.query('DELETE FROM schemes WHERE code = $1', [code]);
   if (!result.rowCount) throw requestError('Scheme not found', 404);
+  await writeAuditLog(pool, {
+    adminId,
+    action: 'scheme.delete',
+    targetType: 'scheme',
+    targetId: code,
+    detail: {},
+  });
 }
 
-export async function updateScheme(pool: pg.Pool, code: string, adminId: string | null, input: SchemeInput, expectedRevision: number): Promise<SchemeRecord> {
+export async function updateScheme(pool: pg.Pool, code: string, adminId: string, input: SchemeInput, expectedRevision: number): Promise<SchemeRecord> {
   if ('publishStatus' in input || 'verificationStatus' in input) throw requestError('Publication and verification require review', 400);
   if (hasInput(input, 'code')) throw requestError('Scheme code cannot be changed', 400);
   validateDimensions(input);
@@ -229,7 +262,16 @@ export async function updateScheme(pool: pg.Pool, code: string, adminId: string 
   values.push(code, expectedRevision);
   const result = await pool.query<SchemeRow>(`UPDATE schemes SET ${updates.join(', ')} WHERE code = $${values.length - 1} AND revision = $${values.length} RETURNING ${schemeColumns}`, values);
   const row = result.rows[0];
-  if (row) return toSchemeRecord(row);
+  if (row) {
+    await writeAuditLog(pool, {
+      adminId,
+      action: 'scheme.update',
+      targetType: 'scheme',
+      targetId: row.code,
+      detail: { revision: row.editRevision },
+    });
+    return toSchemeRecord(row);
+  }
   const exists = await pool.query('SELECT 1 FROM schemes WHERE code = $1', [code]);
   if (!exists.rowCount) throw requestError('Scheme not found', 404);
   throw requestError('Scheme revision conflict', 409);

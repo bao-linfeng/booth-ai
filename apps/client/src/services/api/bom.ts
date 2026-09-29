@@ -29,14 +29,7 @@ export async function getClientBomApi(schemeCode: string): Promise<ClientBomResp
 }
 
 export async function downloadClientBomApi(schemeCode: string, revision: number): Promise<Response> {
-  // ofetch 不支持 blob responseType；用 ofetch.native 发起带认证的原始请求
-  // token 注入与 apiFetch 共享同一 authStore，保持一致
-  const { useAuthStore } = await import('@/stores/auth');
-  const { default: pinia } = await import('@/plugins/pinia/setup');
-  const authStore = useAuthStore(pinia);
   const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
   const url = `${baseUrl}/api/v1/client/schemes/${encodeURIComponent(schemeCode)}/bill-of-materials/download?revision=${revision}`;
-  const headers = new Headers();
-  if (authStore.token) headers.set('Authorization', `Bearer ${authStore.token}`);
-  return fetch(url, { headers });
+  return fetch(url);
 }

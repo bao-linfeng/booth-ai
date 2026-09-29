@@ -129,7 +129,7 @@ export async function loadCandidates(pool: pg.Pool, catalog: Catalog, storage: P
     const masks = bound.filter(asset => asset.type === 'mask');
     
     if (images.length !== 3 || masks.length !== 3 || new Set(images.map(image => image.objectKey)).size !== 3 || new Set(images.map(image => image.order)).size !== 3) continue;
-    if (images.some(image => !image.width || !image.height || image.width * 9 !== image.height * 16 || !/^image\/(png|jpeg|webp)$/.test(image.mime) || masks.filter(mask => mask.relatedAssetId === image.id && mask.width === image.width && mask.height === image.height).length !== 1)) continue;
+    if (images.some(image => !image.width || !image.height || image.width * 9 !== image.height * 16 || !/^image\/(png|jpeg|webp)$/.test(image.mime) || masks.filter(mask => mask.relatedAssetId === image.id && mask.order === image.order && mask.width === image.width && mask.height === image.height).length !== 1)) continue;
     
     candidates.push({
       code: row.code,

@@ -154,7 +154,7 @@ export function parseRequirement(text: string, form: Requirement, catalog: Catal
     overrides,
     clarifications,
     unhandledText,
-    warnings: [{ code: 'RULES_ONLY', message: '当前使用规则识别，语言模型尚未配置；未识别内容需人工确认。' }],
+    warnings: [{ code: 'RULES_ONLY', message: '本次使用规则识别；未识别内容需人工确认。' }],
     rulesVersion
   };
 }

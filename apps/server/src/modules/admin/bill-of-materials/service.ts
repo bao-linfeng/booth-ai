@@ -147,7 +147,7 @@ export async function createOrReplaceBomFromImport(pool: pg.Pool, adminId: strin
       await client.query("UPDATE scheme_boms SET revision=revision+1,status='pending_verification',source_asset_id=NULL,verified_at=NULL,updated_by=$2,updated_at=now() WHERE id=$1",[bomId,adminId]);
     } else await client.query('INSERT INTO scheme_boms (id,scheme_id,created_by,updated_by) VALUES ($1,$2,$3,$3)',[bomId,scheme.id,adminId]);
     if (!row.sourceObjectKey || row.sourceByteSize === null) throw bomError('IMPORT_NOT_READY',409);
-    const source = await client.query<{ id:string }>("INSERT INTO scheme_assets (scheme_id,type,name,is_active,created_by,updated_by) VALUES ($1,'checklist',$2,false,$3,$3) RETURNING id::text AS id",[scheme.id,row.sourceFilename,adminId]);
+    const source = await client.query<{ id:string }>("INSERT INTO scheme_assets (scheme_id,type,name,is_active,created_by,updated_by) VALUES ($1,'checklist',$2,true,$3,$3) RETURNING id::text AS id",[scheme.id,row.sourceFilename,adminId]);
     const sourceId = source.rows[0]?.id;
     if (!sourceId) throw bomError('INTERNAL_ERROR',500);
     await client.query('INSERT INTO asset_versions (asset_id,object_key,original_filename,mime_type,byte_size,checksum,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7)',[sourceId,row.sourceObjectKey,row.sourceFilename,row.sourceFilename.toLowerCase().endsWith('.xlsm')?'application/vnd.ms-excel.sheet.macroEnabled.12':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',row.sourceByteSize,row.sourceHash,adminId]);

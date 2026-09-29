@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { writeAuditLog } from '../../../infra/audit.js';
 import { transaction } from '../../../infra/database.js';
 
 type DbClient = pg.Pool | pg.PoolClient;
@@ -151,7 +152,7 @@ async function readinessForScheme(client: DbClient, scheme: SchemeRow): Promise<
   if (images.length === 3 && (new Set(images.map(image => image.sortOrder)).size !== 3 ||
     new Set(images.map(image => image.objectKey)).size !== 3 ||
     images.some(image => !image.widthPx || !image.heightPx || image.widthPx * 9 !== image.heightPx * 16 || !/^image\/(png|jpeg|webp)$/.test(image.mimeType ?? '') ||
-      masks.filter(mask => mask.relatedAssetId === image.id && mask.widthPx === image.widthPx && mask.heightPx === image.heightPx && /^image\/(png|jpeg|webp)$/.test(mask.mimeType ?? '')).length !== 1))) blockers.push('效果图与蒙版未逐一配对或图片规格不符');
+      masks.filter(mask => mask.relatedAssetId === image.id && mask.sortOrder === image.sortOrder && mask.widthPx === image.widthPx && mask.heightPx === image.heightPx && /^image\/(png|jpeg|webp)$/.test(mask.mimeType ?? '')).length !== 1))) blockers.push('效果图与蒙版未逐一配对或图片规格不符');
   const lengthMm = scheme.lengthMm;
   const widthMm = scheme.widthMm;
   const heightMm = scheme.heightMm;
@@ -201,7 +202,7 @@ export async function getSchemeReadiness(pool: pg.Pool, code: string): Promise<R
   return readinessForScheme(pool, scheme);
 }
 
-export async function createReview(pool: pg.Pool, code: string, adminId: string | null, input: CreateReviewInput): Promise<ReviewRecord> {
+export async function createReview(pool: pg.Pool, code: string, adminId: string, input: CreateReviewInput): Promise<ReviewRecord> {
   return transaction(pool, async client => {
     const scheme = await findScheme(client, code, true);
     const previous = await client.query<ReviewRow>(`SELECT ${reviewColumns} FROM scheme_reviews WHERE request_key = $1`, [input.requestKey]);
@@ -219,14 +220,23 @@ export async function createReview(pool: pg.Pool, code: string, adminId: string 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (request_key) DO NOTHING RETURNING ${reviewColumns}`,
       [scheme.id, input.requestKey, input.schemeRevision, input.phase, input.decision, JSON.stringify(input.checks), input.notes ?? null, adminId],
     );
-    if (inserted.rows[0]) return toReviewRecord(inserted.rows[0]);
+    if (inserted.rows[0]) {
+      await writeAuditLog(client, {
+        adminId,
+        action: 'review.create',
+        targetType: 'scheme',
+        targetId: scheme.code,
+        detail: { phase: input.phase, decision: input.decision, schemeRevision: input.schemeRevision },
+      });
+      return toReviewRecord(inserted.rows[0]);
+    }
     const existing = await client.query<ReviewRow>(`SELECT ${reviewColumns} FROM scheme_reviews WHERE request_key = $1`, [input.requestKey]);
     if (!existing.rows[0]) throw requestError('Failed to create review', 500);
     return toReviewRecord(existing.rows[0]);
   });
 }
 
-export async function publishScheme(pool: pg.Pool, code: string, adminId: string | null): Promise<PublishedScheme> {
+export async function publishScheme(pool: pg.Pool, code: string, adminId: string): Promise<PublishedScheme> {
   return transaction(pool, async client => {
     const scheme = await findScheme(client, code, true);
     if (scheme.publishStatus === 'published') throw requestError('Scheme is already published', 409);
@@ -238,11 +248,18 @@ export async function publishScheme(pool: pg.Pool, code: string, adminId: string
     );
     const updated = result.rows[0];
     if (!updated) throw requestError('Scheme not found', 404);
+    await writeAuditLog(client, {
+      adminId,
+      action: 'scheme.publish',
+      targetType: 'scheme',
+      targetId: updated.code,
+      detail: { revision: updated.revision },
+    });
     return toPublishedScheme(updated);
   });
 }
 
-export async function unpublishScheme(pool: pg.Pool, code: string, adminId: string | null, reason?: string): Promise<PublishedScheme> {
+export async function unpublishScheme(pool: pg.Pool, code: string, adminId: string, reason?: string): Promise<PublishedScheme> {
   return transaction(pool, async client => {
     const scheme = await findScheme(client, code, true);
     if (scheme.publishStatus !== 'published') throw requestError('Scheme is not published', 400);
@@ -252,6 +269,13 @@ export async function unpublishScheme(pool: pg.Pool, code: string, adminId: stri
     );
     const updated = result.rows[0];
     if (!updated) throw requestError('Scheme is not published', 400);
+    await writeAuditLog(client, {
+      adminId,
+      action: 'scheme.unpublish',
+      targetType: 'scheme',
+      targetId: updated.code,
+      detail: { revision: updated.revision },
+    });
     return toPublishedScheme(updated);
   });
 }

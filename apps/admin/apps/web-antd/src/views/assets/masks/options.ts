@@ -34,6 +34,12 @@ export const createGridOptions = (assetType: AssetType) => ({
   toolbarConfig: { custom: true, refresh: true, zoom: true },
   columns: [
     { field: 'name', title: '资源名称', minWidth: 180 },
+    {
+      field: 'sortOrder',
+      title: '排序',
+      width: 100,
+      slots: { default: 'sortOrder' },
+    },
     { field: 'schemeCode', title: '方案编号', width: 140 },
     { field: 'schemeName', title: '所属方案', minWidth: 160 },
     {

@@ -21,6 +21,7 @@ if (-not (Test-Path -LiteralPath $envPath)) {
         "S3_ACCESS_KEY=booth$(New-RandomSecret)"
         "S3_SECRET_KEY=$(New-RandomSecret)"
         "SESSION_SECRET=$(New-RandomSecret)"
+        "AI_MODEL_ENCRYPTION_KEY=$(New-RandomSecret)"
         'EXTERNAL_API_URL=https://api.lingtong.net.cn'
     ) -join "`n"
     [System.IO.File]::WriteAllText($envPath, $content + "`n", [System.Text.UTF8Encoding]::new($false))
@@ -32,6 +33,9 @@ if (-not (Test-Path -LiteralPath $envPath)) {
     }
     if ($existing -notmatch '(?m)^EXTERNAL_API_URL=') {
         [System.IO.File]::AppendAllText($envPath, "EXTERNAL_API_URL=https://api.lingtong.net.cn`n", [System.Text.UTF8Encoding]::new($false))
+    }
+    if ($existing -notmatch '(?m)^AI_MODEL_ENCRYPTION_KEY=') {
+        [System.IO.File]::AppendAllText($envPath, "AI_MODEL_ENCRYPTION_KEY=$(New-RandomSecret)`n", [System.Text.UTF8Encoding]::new($false))
     }
     Write-Host 'Using existing .env; credentials were not changed.'
 }

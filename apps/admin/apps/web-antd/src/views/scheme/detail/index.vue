@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { SchemeAsset } from '#/api/core/assets';
+import type { BomRecord } from '#/api/core/bom';
 import type { ReadinessResult } from '#/api/core/reviews';
 import type {
   CreateSchemeInput,
@@ -34,6 +35,7 @@ import {
   listSchemeAssetsApi,
   uploadAssetApi,
 } from '#/api/core/assets';
+import { getBomApi } from '#/api/core/bom';
 import {
   createSchemeReviewApi,
   getSchemeReadinessApi,
@@ -59,6 +61,11 @@ const isCreate = computed(() => route.path === '/scheme/create');
 const currentCode = computed(() =>
   route.params.code ? decodeURIComponent(route.params.code as string) : '',
 );
+
+const publishButtonDisabled = computed(() => {
+  const data = originalData.value;
+  return data?.publishStatus === 'published' || data?.verificationStatus === 'verified';
+});
 
 const loading = ref(false);
 const saving = ref(false);
@@ -94,6 +101,9 @@ const originalData = ref<null | SchemeRecord>(null);
 
 const modelAssets = ref<SchemeAsset[]>([]);
 const modelUploading = ref(false);
+const checklistBom = ref<BomRecord | null>(null);
+const checklistLoading = ref(false);
+let checklistRequestSequence = 0;
 
 const assetCounts = reactive({
   rendering: 0,
@@ -207,6 +217,32 @@ async function fetchModelAssets() {
     modelAssets.value = await listSchemeAssetsApi(currentCode.value, 'model');
   } catch {
     modelAssets.value = [];
+  }
+}
+
+async function fetchChecklistBom() {
+  if (!currentCode.value) return;
+  const requestCode = currentCode.value;
+  const sequence = ++checklistRequestSequence;
+  checklistLoading.value = true;
+  try {
+    const result = await getBomApi(requestCode);
+    if (
+      sequence === checklistRequestSequence &&
+      requestCode === currentCode.value
+    ) {
+      checklistBom.value = result;
+    }
+  } catch (error: any) {
+    if (
+      sequence === checklistRequestSequence &&
+      requestCode === currentCode.value
+    ) {
+      checklistBom.value = null;
+      message.error(error?.message || '获取简化清单失败');
+    }
+  } finally {
+    if (sequence === checklistRequestSequence) checklistLoading.value = false;
   }
 }
 
@@ -431,7 +467,9 @@ const publishLoading = ref(false);
 
 watch(currentCode, () => {
   detailRequestSequence++;
+  checklistRequestSequence++;
   originalData.value = null;
+  checklistBom.value = null;
   if (currentCode.value) {
     fetchDetail();
     if (activeTab.value === 'publish') fetchReadiness();
@@ -439,6 +477,9 @@ watch(currentCode, () => {
 });
 
 watch(activeTab, (tab) => {
+  if (tab === 'checklist' && currentCode.value && !checklistBom.value) {
+    fetchChecklistBom();
+  }
   if (
     tab === 'publish' &&
     currentCode.value &&
@@ -519,9 +560,9 @@ onMounted(() => {
             整体审核
           </AButton>
           <AButton
-            v-if="originalData.publishStatus !== 'published'"
             type="primary"
             :loading="publishLoading"
+            :disabled="publishButtonDisabled"
             @click="handlePublish"
           >
             发布
@@ -768,7 +809,9 @@ onMounted(() => {
 
           <ATabPane v-if="!isCreate" key="model" tab="模型">
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <span class="text-muted-foreground text-sm">共 {{ modelAssets.length }} 个模型文件</span>
+              <span class="text-muted-foreground text-sm"
+                >共 {{ modelAssets.length }} 个模型文件</span
+              >
               <AButton
                 type="primary"
                 :loading="modelUploading"
@@ -870,21 +913,76 @@ onMounted(() => {
           </ATabPane>
 
           <ATabPane v-if="!isCreate" key="checklist" tab="简化清单">
-            <div class="py-4 flex flex-col items-start gap-4">
-              <p class="text-muted-foreground text-sm">
-                在清单管理中查看此方案的简化清单（导入、条目维护、核验、导出）。
-              </p>
-              <AButton
-                type="primary"
-                @click="
-                  router.push({
-                    path: '/bill-of-materials',
-                    query: { code: currentCode },
-                  })
-                "
+            <div v-loading="checklistLoading" class="space-y-4 py-4">
+              <div
+                class="border-border bg-muted/50 flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
               >
-                进入清单管理
-              </AButton>
+                <div>
+                  <div class="font-medium">已关联当前方案的简化清单</div>
+                  <div class="text-muted-foreground mt-1 text-sm">
+                    清单数据按方案编号
+                    {{
+                      currentCode
+                    }}
+                    关联，可在清单管理中继续导入、维护、核验和导出。
+                  </div>
+                </div>
+                <AButton
+                  type="primary"
+                  @click="
+                    router.push({
+                      path: '/bill-of-materials',
+                      query: { code: currentCode },
+                    })
+                  "
+                >
+                  进入清单管理
+                </AButton>
+              </div>
+
+              <div
+                v-if="checklistBom && checklistBom.status !== 'absent'"
+                class="grid grid-cols-1 gap-3 sm:grid-cols-3"
+              >
+                <div class="border-border rounded border p-3">
+                  <div class="text-muted-foreground text-xs">关联状态</div>
+                  <ATag
+                    class="mt-2"
+                    :color="
+                      checklistBom.status === 'verified'
+                        ? 'success'
+                        : checklistBom.status === 'rejected'
+                          ? 'error'
+                          : 'warning'
+                    "
+                  >
+                    {{
+                      checklistBom.status === 'verified'
+                        ? '已核验'
+                        : checklistBom.status === 'rejected'
+                          ? '核验不通过'
+                          : '待核验'
+                    }}
+                  </ATag>
+                </div>
+                <div class="border-border rounded border p-3">
+                  <div class="text-muted-foreground text-xs">当前修订</div>
+                  <div class="mt-2 font-semibold">
+                    {{ checklistBom.revision }}
+                  </div>
+                </div>
+                <div class="border-border rounded border p-3">
+                  <div class="text-muted-foreground text-xs">清单条目</div>
+                  <div class="mt-2 font-semibold">
+                    {{ checklistBom.items.length }} 条
+                  </div>
+                </div>
+              </div>
+
+              <AEmpty
+                v-else-if="!checklistLoading"
+                description="当前方案尚未关联简化清单"
+              />
             </div>
           </ATabPane>
 
@@ -1029,7 +1127,7 @@ onMounted(() => {
                   <AButton
                     type="primary"
                     :loading="publishLoading"
-                    :disabled="!readinessData.canPublish"
+                    :disabled="publishButtonDisabled || !readinessData.canPublish"
                     @click="handlePublish"
                   >
                     发布方案

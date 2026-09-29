@@ -7,6 +7,7 @@ export interface Config {
   redisUrl: string;
   corsOrigins: string[];
   sessionSecret: string;
+  aiModelEncryptionKey: string;
   sessionTtlSeconds: number;
   externalApiUrl: string;
   s3: { endpoint: string; publicEndpoint: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string };
@@ -35,6 +36,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const sessionSecret = required('SESSION_SECRET');
   if (Buffer.byteLength(sessionSecret, 'utf8') < 32) throw new Error('Invalid SESSION_SECRET');
   const sessionTtlSeconds = Number(env.SESSION_TTL_SECONDS ?? 86400);
+  const aiModelEncryptionKey = required('AI_MODEL_ENCRYPTION_KEY');
+  if (!/^[a-fA-F0-9]{64}$/.test(aiModelEncryptionKey)) throw new Error('Invalid AI_MODEL_ENCRYPTION_KEY');
   if (!Number.isInteger(sessionTtlSeconds) || sessionTtlSeconds < 1 || sessionTtlSeconds > 2592000) throw new Error('Invalid SESSION_TTL_SECONDS');
   const corsOrigins = (env.CORS_ORIGINS ?? '').split(',').map(v => v.trim()).filter(Boolean);
   for (const origin of corsOrigins) {
@@ -47,7 +50,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     nodeEnv: nodeEnv as Config['nodeEnv'], host: env.HOST ?? '0.0.0.0', port, logLevel,
     databaseUrl: url('DATABASE_URL', ['postgres:', 'postgresql:']),
     redisUrl: url('REDIS_URL', ['redis:', 'rediss:']), corsOrigins,
-    sessionSecret, sessionTtlSeconds, externalApiUrl: url('EXTERNAL_API_URL', ['http:', 'https:']),
+    sessionSecret, aiModelEncryptionKey, sessionTtlSeconds, externalApiUrl: url('EXTERNAL_API_URL', ['http:', 'https:']),
     s3: {
       endpoint: url('S3_ENDPOINT', ['http:', 'https:']),
       publicEndpoint: url('S3_PUBLIC_ENDPOINT', ['http:', 'https:']),

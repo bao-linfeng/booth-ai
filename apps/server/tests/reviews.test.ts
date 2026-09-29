@@ -22,6 +22,7 @@ const assets = [
 ].map(asset => ({ relatedAssetId: null, widthPx: null, heightPx: null, mimeType: 'application/octet-stream', ...asset,
   objectKey: asset.id, byteSize: '1024', updatedAt: assetTime }));
 const passedReview = { decision: 'pass', createdAt: new Date('2026-01-02T00:00:00Z') };
+const adminId = '00000000-0000-4000-8000-000000000001';
 
 type QueryResult = { rows: unknown[] };
 type QueryHandler = (sql: string, params?: unknown[]) => QueryResult;
@@ -69,6 +70,21 @@ test('readiness requires a valid opening count without directions', async () => 
   assert.equal(readiness.canPublish, false);
 });
 
+test('readiness requires masks to use the same sort order as their renderings', async () => {
+  const pool = poolFor(sql => {
+    if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
+    if (sql.includes('FROM scheme_assets')) return {
+      rows: assets.map(asset => asset.id === 'mask-1' ? { ...asset, sortOrder: 9 } : asset),
+    };
+    if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
+    if (sql.includes('FROM scheme_reviews')) return { rows: [passedReview] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  const readiness = await getSchemeReadiness(pool, 'S-1');
+  assert.ok(readiness.blockers.includes('效果图与蒙版未逐一配对或图片规格不符'));
+  assert.equal(readiness.canPublish, false);
+});
+
 test('review request keys replay the stored record, even after a revision change', async () => {
   const existing = {
     id: 'review-id', schemeId: scheme.id, requestKey: 'key', schemeRevision: 1,
@@ -80,7 +96,7 @@ test('review request keys replay the stored record, even after a revision change
     if (sql.includes('FROM scheme_reviews')) return { rows: [existing] };
     throw new Error(`Unexpected query: ${sql}`);
   });
-  const record = await createReview(pool, 'S-1', null, {
+  const record = await createReview(pool, 'S-1', adminId, {
     requestKey: 'key', schemeRevision: 1, phase: 'overall', decision: 'pass', checks: { checked: true },
   });
   assert.equal(record.id, 'review-id');
@@ -93,7 +109,7 @@ test('review rejects stale revisions before insertion', async () => {
     if (sql.includes('FROM scheme_reviews')) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
   });
-  await assert.rejects(createReview(pool, 'S-1', null, {
+  await assert.rejects(createReview(pool, 'S-1', adminId, {
     requestKey: 'new', schemeRevision: 1, phase: 'overall', decision: 'reject', checks: {},
   }), { statusCode: 409 });
 });
@@ -107,12 +123,14 @@ test('publish locks the scheme, rechecks readiness and commits', async () => {
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [passedReview] };
     if (sql.includes('UPDATE schemes')) return { rows: [{ ...scheme, publishStatus: 'published' }] };
+    if (sql.includes('INSERT INTO admin_audit_logs')) return { rows: [] };
     if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
   });
-  const published = await publishScheme(pool, 'S-1', null);
+  const published = await publishScheme(pool, 'S-1', adminId);
   assert.equal(published.publishStatus, 'published');
   assert.ok(queries.some(sql => sql.includes('FOR UPDATE')));
+  assert.ok(queries.some(sql => sql.includes('INSERT INTO admin_audit_logs')));
 });
 
 test('publish refuses assets changed after the overall review', async () => {
@@ -126,7 +144,7 @@ test('publish refuses assets changed after the overall review', async () => {
     if (['BEGIN', 'ROLLBACK'].includes(sql)) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
   });
-  await assert.rejects(publishScheme(pool, 'S-1', null), { statusCode: 400, message: '审核后资产发生变化' });
+  await assert.rejects(publishScheme(pool, 'S-1', adminId), { statusCode: 400, message: '审核后资产发生变化' });
 });
 
 test('passing an overall review requires complete assets and confirmed applicability', async () => {
@@ -137,7 +155,7 @@ test('passing an overall review requires complete assets and confirmed applicabi
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
     throw new Error(`Unexpected query: ${sql}`);
   });
-  await assert.rejects(createReview(pool, 'S-1', null, {
+  await assert.rejects(createReview(pool, 'S-1', adminId, {
     requestKey: 'overall-pass', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: { assetsComplete: true, bomVerified: true, renderingsAndMasks: true, drawingsComplete: true },
   }), { statusCode: 400, message: '适用条件未确认' });
 });
@@ -152,9 +170,10 @@ test('a complete draft can receive an overall pass before publication', async ()
       id: 'review-2', schemeId: scheme.id, requestKey: 'overall-new', schemeRevision: 2,
       phase: 'overall', decision: 'pass', checks: {}, notes: null, adminId: null, createdAt: passedReview.createdAt,
     }] };
+    if (sql.includes('INSERT INTO admin_audit_logs')) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
   });
-  const review = await createReview(pool, 'S-1', null, {
+  const review = await createReview(pool, 'S-1', adminId, {
     requestKey: 'overall-new', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: { assetsComplete: true, bomVerified: true, renderingsAndMasks: true, drawingsComplete: true },
   });
   assert.equal(review.decision, 'pass');
@@ -166,7 +185,7 @@ test('overall pass rejects unchecked evidence before writing a review', async ()
     if (sql.includes('FROM scheme_reviews')) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
   });
-  await assert.rejects(createReview(pool, 'S-1', null, {
+  await assert.rejects(createReview(pool, 'S-1', adminId, {
     requestKey: 'unchecked', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: { assetsComplete: true },
   }), { statusCode: 400, message: 'Overall review checks must all pass' });
 });
@@ -194,7 +213,7 @@ test('publish rejects an already published scheme with a conflict', async () => 
     if (['BEGIN', 'ROLLBACK'].includes(sql)) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
   });
-  await assert.rejects(publishScheme(pool, 'S-1', null), { statusCode: 409 });
+  await assert.rejects(publishScheme(pool, 'S-1', adminId), { statusCode: 409 });
 });
 
 test('unpublish rejects an unpublished scheme', async () => {
@@ -202,7 +221,7 @@ test('unpublish rejects an unpublished scheme', async () => {
     if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
     throw new Error(`Unexpected query: ${sql}`);
   });
-  await assert.rejects(unpublishScheme(pool, 'S-1', null, 'withdrawn'), {
+  await assert.rejects(unpublishScheme(pool, 'S-1', adminId, 'withdrawn'), {
     statusCode: 400, message: 'Scheme is not published',
   });
 });

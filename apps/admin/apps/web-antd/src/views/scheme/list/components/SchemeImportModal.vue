@@ -7,9 +7,11 @@ import type {
 import { h, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
+import { downloadFileFromBlob, downloadFileFromUrl } from '@vben/utils';
 
 import {
   Alert,
+  Button,
   Descriptions,
   DescriptionsItem,
   message,
@@ -116,10 +118,27 @@ const open = () => {
   });
 };
 
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+
 const beforeUpload = (file: File) => {
+  if (file.size > MAX_FILE_SIZE) {
+    message.warning(`文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），请上传 20MB 以内的 .xlsx 文件`);
+    return false;
+  }
   selectedFile.value = file;
   return false;
 };
+
+function exportFailedRows() {
+  if (!commitResult.value?.failed.length) return;
+  const header = '行号\t方案编号\t失败原因\n';
+  const rows = commitResult.value.failed
+    .map((r) => `${r.rowNumber}\t${r.code}\t${r.reason}`)
+    .join('\n');
+  const content = header + rows;
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/tab-separated-values;charset=utf-8' });
+  downloadFileFromBlob({ source: blob, fileName: '导入失败行.tsv' });
+}
 
 const previewColumns = [
   { title: '行号', dataIndex: 'rowNumber', width: 70 },
@@ -162,6 +181,16 @@ defineExpose({ open });
         description="请上传 .xlsx 格式的方案打标模板，第 1 行为表头，从第 2 行开始为数据行。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按有效方案自动补齐开口面数、展位长宽高和面积字典。"
         show-icon
       />
+      <div class="mb-3 flex justify-end">
+        <Button
+          type="link"
+          size="small"
+          @click="downloadFileFromUrl({ source: '/templates/scheme-import-template.xlsx' })"
+        >
+          <span class="icon-[ant-design--download-outlined] mr-1"></span>
+          下载标准导入模板
+        </Button>
+      </div>
       <Upload.Dragger
         :before-upload="beforeUpload"
         accept=".xlsx"
@@ -257,7 +286,13 @@ defineExpose({ open });
         row-key="rowNumber"
       >
         <template #title>
-          <span class="text-red-500 font-medium">失败明细</span>
+          <div class="flex items-center justify-between">
+            <span class="text-red-500 font-medium">失败明细</span>
+            <Button size="small" @click="exportFailedRows">
+              <span class="icon-[ant-design--download-outlined] mr-1"></span>
+              导出失败行
+            </Button>
+          </div>
         </template>
       </Table>
     </template>

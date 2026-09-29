@@ -188,6 +188,28 @@ async function ensureMaskRelatedAsset(pool: pg.Pool | pg.PoolClient, schemeId: s
   if (paired.rowCount) throw requestError('This rendering is already paired with another mask', 409);
 }
 
+async function resolveSortOrder(
+  client: pg.PoolClient,
+  schemeId: string,
+  type: AssetType,
+  relatedAssetId: string | null | undefined,
+  sortOrder: number | undefined,
+): Promise<number> {
+  if (sortOrder !== undefined) return sortOrder;
+  if (type === 'mask' && relatedAssetId) {
+    const related = await client.query<{ sortOrder: number }>(
+      'SELECT sort_order AS "sortOrder" FROM scheme_assets WHERE id = $1 AND scheme_id = $2',
+      [relatedAssetId, schemeId],
+    );
+    if (related.rows[0]) return related.rows[0].sortOrder;
+  }
+  const result = await client.query<{ sortOrder: number | null }>(
+    'SELECT MAX(sort_order)::integer AS "sortOrder" FROM scheme_assets WHERE scheme_id = $1 AND type = $2 AND is_active = true',
+    [schemeId, type],
+  );
+  return (result.rows[0]?.sortOrder ?? -1) + 1;
+}
+
 export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Promise<{ data: SchemeAsset[]; total: number; page: number; pageSize: number }> {
   const conditions = ['sa.is_active = true'];
   const values: unknown[] = [];
@@ -207,7 +229,7 @@ export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Pro
       JOIN schemes s ON s.id = sa.scheme_id
       ${latestVersionJoin}
       ${where}
-      ORDER BY sa.created_at DESC
+      ORDER BY s.code ASC, sa.sort_order ASC, sa.created_at ASC, sa.id ASC
       LIMIT $${values.length + 1} OFFSET $${values.length + 2}
     `, [...values, options.pageSize, offset]),
     pool.query<{ total: string }>(`SELECT count(*)::text AS total FROM scheme_assets sa JOIN schemes s ON s.id = sa.scheme_id ${where}`, values),
@@ -241,10 +263,11 @@ export async function createAsset(pool: pg.Pool, adminId: string | null, input: 
     if (!schemeRow) throw requestError('Scheme not found', 404);
     await ensureRelatedAsset(client, schemeRow.id, input.relatedAssetId);
     if (input.type === 'mask') await ensureMaskRelatedAsset(client, schemeRow.id, input.relatedAssetId);
+    const sortOrder = await resolveSortOrder(client, schemeRow.id, input.type, input.relatedAssetId, input.sortOrder);
     await client.query(`
       INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, related_asset_id, metadata, created_by, updated_by)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [assetId, schemeRow.id, input.type, input.name, input.sortOrder ?? 0, input.relatedAssetId ?? null, input.metadata ?? {}, adminId, adminId]);
+    `, [assetId, schemeRow.id, input.type, input.name, sortOrder, input.relatedAssetId ?? null, input.metadata ?? {}, adminId, adminId]);
     await invalidatePublishedScheme(client, schemeRow.id, adminId);
   });
   const asset = await findAsset(pool, input.schemeCode, assetId);
@@ -270,10 +293,11 @@ export async function createAssetWithVersion(
     }
 
     const assetId = randomUUID();
+    const sortOrder = await resolveSortOrder(client, schemeRow.id, input.type, input.relatedAssetId, input.sortOrder);
     await client.query(`
       INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, related_asset_id, metadata, created_by, updated_by)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [assetId, schemeRow.id, input.type, input.name, input.sortOrder ?? 0, input.relatedAssetId ?? null, input.metadata ?? {}, adminId, adminId]);
+    `, [assetId, schemeRow.id, input.type, input.name, sortOrder, input.relatedAssetId ?? null, input.metadata ?? {}, adminId, adminId]);
     await client.query(`
       INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, width_px, height_px, page_count, created_by)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -323,6 +347,50 @@ export async function updateAsset(pool: pg.Pool, adminId: string | null, schemeC
     const relatedAssetId = Object.hasOwn(input, 'relatedAssetId') ? input.relatedAssetId : asset.relatedAssetId;
     if (Object.hasOwn(input, 'relatedAssetId')) await ensureRelatedAsset(client, asset.schemeId, relatedAssetId);
     if (asset.type === 'mask') await ensureMaskRelatedAsset(client, asset.schemeId, relatedAssetId, assetId);
+    if (Object.hasOwn(input, 'sortOrder') && input.sortOrder !== undefined) {
+      if (asset.type === 'rendering' || (asset.type === 'mask' && relatedAssetId)) {
+        const pairedRenderingId = asset.type === 'rendering' ? asset.id : relatedAssetId;
+        const duplicateOrder = await client.query<{ id: string }>(`
+          SELECT id::text AS id FROM scheme_assets
+          WHERE scheme_id = $1 AND type = 'rendering' AND sort_order = $2
+            AND id <> $3 AND is_active = true
+          LIMIT 1
+        `, [asset.schemeId, input.sortOrder, pairedRenderingId]);
+        const displacedRenderingId = duplicateOrder.rows[0]?.id;
+        if (displacedRenderingId) {
+          await client.query(`
+            UPDATE scheme_assets
+            SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
+            WHERE id = $3 AND scheme_id = $4 AND is_active = true
+          `, [asset.sortOrder, adminId, displacedRenderingId, asset.schemeId]);
+          await client.query(`
+            UPDATE scheme_assets
+            SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
+            WHERE scheme_id = $3 AND type = 'mask' AND related_asset_id = $4 AND is_active = true
+          `, [asset.sortOrder, adminId, asset.schemeId, displacedRenderingId]);
+        }
+        if (asset.type === 'mask') {
+          await client.query(`
+            UPDATE scheme_assets
+            SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
+            WHERE id = $3 AND scheme_id = $4 AND is_active = true
+          `, [input.sortOrder, adminId, pairedRenderingId, asset.schemeId]);
+        }
+      }
+      if (asset.type === 'mask' && relatedAssetId) {
+        await client.query(`
+          UPDATE scheme_assets
+          SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
+          WHERE id = $3 AND scheme_id = $4 AND is_active = true
+        `, [input.sortOrder, adminId, relatedAssetId, asset.schemeId]);
+      } else if (asset.type === 'rendering') {
+        await client.query(`
+          UPDATE scheme_assets
+          SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
+          WHERE scheme_id = $3 AND type = 'mask' AND related_asset_id = $4 AND is_active = true
+        `, [input.sortOrder, adminId, asset.schemeId, asset.id]);
+      }
+    }
     const values: unknown[] = [];
     const updates: string[] = [];
     if (Object.hasOwn(input, 'name')) { values.push(input.name); updates.push(`name = $${values.length}`); }

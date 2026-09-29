@@ -23,16 +23,30 @@ import SchemeGallery from "@/features/selection/SchemeGallery.vue";
 import { previewItems } from "@/features/selection/preview";
 import type { SchemeDetail } from "@/features/selection/types";
 import { apiFetch } from "@/lib/api-client";
+import { getThemeModels, type ThemeModel } from "@/services/api/theme-models";
 import {
   getClientBomApi,
   downloadClientBomApi,
   type ClientBomResponse,
 } from "@/services/api/bom";
+import { getSchemeDeliverables, getSchemeDownload, type SchemeAssetType, type SchemeDeliverable } from "@/services/api/scheme-assets";
 
 const route = useRoute();
 const preview = computed(() => route.path.startsWith("/ai-selection/preview/"));
 const liveData = ref<SchemeDetail | null>(null);
 const errorState = ref(false);
+const themeModels = ref<ThemeModel[]>([]);
+const selectedThemeModel = ref<ThemeModel['provider'] | ''>('');
+const themeModelsError = ref(false);
+const selectedThemePrice = computed(() => themeModels.value.find(model => model.provider === selectedThemeModel.value)?.unitCredits);
+
+async function fetchThemeModels() {
+  themeModelsError.value = false;
+  try {
+    themeModels.value = await getThemeModels();
+    selectedThemeModel.value = themeModels.value[0]?.provider ?? '';
+  } catch { themeModelsError.value = true; }
+}
 
 const bomData = ref<ClientBomResponse | null>(null);
 const bomLoading = ref(false);
@@ -40,6 +54,78 @@ const bomDownloading = ref(false);
 const bomError = ref(false);
 const bomRevisionChanged = ref(false);
 const showBom = ref(false);
+const activeResource = ref<SchemeAssetType | null>(null);
+const resourceItems = ref<SchemeDeliverable[]>([]);
+const resourceLoading = ref(false);
+const resourceError = ref('');
+const downloadError = ref('');
+const downloadingAsset = ref<string | null>(null);
+const previewAsset = ref<{ assetId: string; url: string; mimeType: string } | null>(null);
+const previewLoading = ref<string | null>(null);
+
+async function toggleResource(type: SchemeAssetType) {
+  if (activeResource.value === type) {
+    activeResource.value = null;
+    return;
+  }
+  activeResource.value = type;
+  previewAsset.value = null;
+  resourceItems.value = [];
+  await fetchResource(type);
+}
+
+async function fetchResource(type: SchemeAssetType) {
+  if (!item.value?.code || preview.value) return;
+  const code = item.value.code;
+  resourceLoading.value = true;
+  resourceError.value = '';
+  try {
+    const result = await getSchemeDeliverables(code, type);
+    if (activeResource.value === type && item.value?.code === code) resourceItems.value = result.items;
+  } catch {
+    if (activeResource.value === type) resourceError.value = '资料加载失败，请重试';
+  } finally {
+    if (activeResource.value === type) resourceLoading.value = false;
+  }
+}
+
+async function downloadResource(type: SchemeAssetType | 'model', assetId?: string) {
+  if (!item.value?.code || downloadingAsset.value || preview.value) return;
+  downloadingAsset.value = assetId ?? 'model';
+  downloadError.value = '';
+  try {
+    const result = await getSchemeDownload(item.value.code, type, assetId);
+    const link = document.createElement('a');
+    link.href = result.downloadUrl;
+    link.download = result.filename;
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch {
+    downloadError.value = '下载链接获取失败，请重试';
+  } finally {
+    downloadingAsset.value = null;
+  }
+}
+
+async function showResourcePreview(type: SchemeAssetType, asset: SchemeDeliverable) {
+  if (!item.value?.code || previewLoading.value) return;
+  if (previewAsset.value?.assetId === asset.assetId) {
+    previewAsset.value = null;
+    return;
+  }
+  previewLoading.value = asset.assetId;
+  resourceError.value = '';
+  try {
+    const link = await getSchemeDownload(item.value.code, type, asset.assetId, true);
+    if (activeResource.value === type) previewAsset.value = { assetId: asset.assetId, url: link.downloadUrl, mimeType: link.mimeType };
+  } catch {
+    resourceError.value = '预览加载失败，请重试';
+  } finally {
+    previewLoading.value = null;
+  }
+}
 
 async function fetchBom() {
   if (!item.value?.code || bomLoading.value) return;
@@ -75,13 +161,6 @@ async function handleBomDownload() {
           bomRevisionChanged.value = true;
           return;
         }
-        if (err?.error?.code === 'AUTH_REQUIRED' || response.status === 401) {
-          // 401 跳登录——手动处理，因为绕开了 apiFetch 拦截器
-          const { useRouter } = await import('vue-router');
-          const router = useRouter();
-          await router.push('/auth/sign-in');
-          return;
-        }
       }
       throw new Error('下载失败');
     }
@@ -101,8 +180,7 @@ async function handleBomDownload() {
     // apiFetch 的 409 会 throw，检查 reason
     if (e?.data?.error?.reason === 'BOM_REVISION_CHANGED' || e?.response?.status === 409) {
       bomRevisionChanged.value = true;
-    } else if (e?.response?.status !== 401) {
-      // 401 已由 apiFetch 自动处理（跳转登录）
+    } else {
       alert('下载失败，请重试');
     }
   } finally {
@@ -111,6 +189,7 @@ async function handleBomDownload() {
 }
 
 function toggleBom() {
+  if (preview.value) return;
   showBom.value = !showBom.value;
   if (showBom.value && !bomData.value && !bomLoading.value) {
     fetchBom();
@@ -151,13 +230,13 @@ const item = computed(() => {
 });
 
 const resources = [
-  { label: "三视图", icon: Layers3 },
-  { label: "平面素材", icon: Image },
-  { label: "SKP 模型", icon: Box },
-];
+  { label: "三视图", icon: Layers3, type: 'drawings', available: 'drawings' },
+  { label: "平面素材", icon: Image, type: 'artworks', available: 'artworks' },
+] as const;
 
 onMounted(async () => {
   if (preview.value) return;
+  void fetchThemeModels();
   try {
     const res = await apiFetch<{ code: number; data: SchemeDetail }>(
       `/api/v1/client/schemes/${encodeURIComponent(route.params.code as string)}`,
@@ -262,9 +341,20 @@ onMounted(async () => {
                   >以品牌色与视觉素材探索不同主题。</CardDescription
                 ></CardHeader
               ><CardContent class="space-y-3"
-                ><Button disabled class="w-full">AI 换主题 · 待接入</Button>
-                <p class="text-center text-xs text-muted-foreground">
-                  需登录后使用
+                 ><div v-if="themeModels.length" class="space-y-2">
+                   <label for="image-model" class="block text-sm font-medium">选择图像模型</label>
+                   <select id="image-model" v-model="selectedThemeModel" class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                     <option v-for="model in themeModels" :key="model.provider" :value="model.provider">
+                       {{ model.provider === 'gemini' ? 'Gemini Nano Banana' : '通义万相' }} · {{ model.unitCredits }} 积分/张
+                     </option>
+                   </select>
+                   <p class="text-sm">当前预计：{{ selectedThemePrice }} 积分 / 张</p>
+                 </div>
+                 <p v-else-if="themeModelsError" class="text-xs text-destructive">模型费用加载失败，请重试。</p>
+                 <p v-else class="text-xs text-muted-foreground">当前暂无可用的图像模型。</p>
+                 <Button disabled class="w-full">AI 换主题 · 待接入积分结算</Button>
+                 <p class="text-center text-xs text-muted-foreground">
+                   需登录并确认积分消耗后使用
                 </p></CardContent
               ></Card
             >
@@ -277,6 +367,7 @@ onMounted(async () => {
                 <Button
                   class="w-full justify-start gap-2"
                   variant="outline"
+                  :disabled="preview"
                   @click="toggleBom"
                 >
                   <FileText class="size-4" />
@@ -393,18 +484,46 @@ onMounted(async () => {
                   </div>
                 </template>
 
-                <Button
-                  v-for="resource in resources"
-                  :key="resource.label"
-                  disabled
-                  variant="outline"
-                  class="w-full justify-start gap-2"
-                  ><component :is="resource.icon" class="size-4" />{{
-                    resource.label
-                  }}<span class="ml-auto text-xs">待接入</span></Button
-                >
+                <template v-for="resource in resources" :key="resource.type">
+                  <Button
+                    variant="outline"
+                    class="w-full justify-start gap-2"
+                    :disabled="preview || !item.resources[resource.available]"
+                    @click="toggleResource(resource.type)"
+                  ><component :is="resource.icon" class="size-4" />{{ resource.label }}
+                    <span class="ml-auto text-xs">{{ preview ? '示例' : !item.resources[resource.available] ? '暂无资料' : activeResource === resource.type ? '收起' : '查看' }}</span>
+                  </Button>
+                  <div v-if="activeResource === resource.type" class="space-y-2 rounded-lg border p-3 text-sm">
+                    <p v-if="resourceLoading" class="text-muted-foreground">加载中…</p>
+                    <template v-else>
+                      <p v-if="resourceError" class="text-destructive">{{ resourceError }}</p>
+                      <Button v-if="resourceError" size="sm" variant="outline" @click="fetchResource(resource.type)">重试</Button>
+                      <p v-else-if="!resourceItems.length" class="text-muted-foreground">暂无可用资料</p>
+                      <template v-else>
+                        <div v-for="asset in resourceItems" :key="asset.assetId" class="space-y-2 border-b py-2 last:border-0">
+                          <div class="flex items-center justify-between gap-2">
+                            <div class="min-w-0"><p class="truncate font-medium" :title="asset.name">{{ asset.name }}</p>
+                              <p class="truncate text-xs text-muted-foreground" :title="asset.originalFilename">{{ asset.originalFilename }}</p></div>
+                            <div class="flex shrink-0 gap-1">
+                              <Button v-if="asset.mimeType.startsWith('image/') || asset.mimeType === 'application/pdf'" size="sm" variant="outline" :disabled="!!previewLoading" @click="showResourcePreview(resource.type, asset)">{{ previewAsset?.assetId === asset.assetId ? '收起' : '预览' }}</Button>
+                              <Button size="sm" variant="outline" :disabled="!!downloadingAsset" @click="downloadResource(resource.type, asset.assetId)">下载</Button>
+                            </div>
+                          </div>
+                          <template v-if="previewAsset?.assetId === asset.assetId">
+                            <img v-if="previewAsset.mimeType.startsWith('image/')" :src="previewAsset.url" :alt="asset.name" class="w-full rounded-md border object-contain" />
+                            <iframe v-else-if="previewAsset.mimeType === 'application/pdf'" :src="previewAsset.url" :title="asset.name" class="h-96 w-full rounded-md border" />
+                          </template>
+                        </div>
+                      </template>
+                    </template>
+                  </div>
+                </template>
+                <Button variant="outline" class="w-full justify-start gap-2" :disabled="preview || !item.resources.model || !!downloadingAsset" @click="downloadResource('model')">
+                  <Box class="size-4" />SKP 模型<span class="ml-auto text-xs">{{ preview ? '示例' : item.resources.model ? '下载' : '暂无资料' }}</span>
+                </Button>
+                <p v-if="downloadError" class="text-xs text-destructive">{{ downloadError }}</p>
                 <p class="text-xs leading-relaxed text-muted-foreground">
-                  资料按账户权限获取，模型仅向授权合作伙伴开放。
+                  资料取自当前已发布方案，具体项目施工资料需另行确认。
                 </p></CardContent
               ></Card
             ><Button disabled variant="outline" class="w-full"

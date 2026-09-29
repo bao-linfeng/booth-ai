@@ -2,8 +2,8 @@
 import type { VxeTableGridOptions } from '#/adapter/vxe-table';
 import type { BomListEntry } from '#/api/core/bom';
 
-import { onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { formatDate } from '@vben/utils';
@@ -19,6 +19,10 @@ import BomWorkspaceModal from './index.vue';
 const importModalRef = ref<InstanceType<typeof BomImportModal>>();
 const workspaceModalRef = ref<InstanceType<typeof BomWorkspaceModal>>();
 const route = useRoute();
+const router = useRouter();
+const linkedSchemeCode = computed(() =>
+  typeof route.query.code === 'string' ? route.query.code : '',
+);
 const [Grid, gridApi] = useVbenVxeGrid<BomListEntry>({
   formOptions: {
     schema: [
@@ -26,7 +30,10 @@ const [Grid, gridApi] = useVbenVxeGrid<BomListEntry>({
         component: 'Input',
         fieldName: 'code',
         label: '方案编号',
-        componentProps: { placeholder: '搜索关联方案编号' },
+        componentProps: {
+          disabled: !!linkedSchemeCode.value,
+          placeholder: '搜索关联方案编号',
+        },
       },
     ],
   },
@@ -67,7 +74,8 @@ const [Grid, gridApi] = useVbenVxeGrid<BomListEntry>({
           formValues: { code?: string } = {},
         ) => {
           const result = await listBomsApi({
-            code: formValues.code,
+            code:
+              linkedSchemeCode.value || formValues.code?.trim() || undefined,
             page: page.currentPage,
             pageSize: page.pageSize,
           });
@@ -79,9 +87,23 @@ const [Grid, gridApi] = useVbenVxeGrid<BomListEntry>({
 });
 
 onMounted(() => {
-  const code = route.query.code;
-  if (typeof code === 'string' && code) {
-    workspaceModalRef.value?.open(code, 'detail');
+  if (linkedSchemeCode.value) {
+    gridApi.formApi.updateSchema([
+      { fieldName: 'code', componentProps: { disabled: true } },
+    ]);
+    void gridApi.formApi.setValues({ code: linkedSchemeCode.value });
+    workspaceModalRef.value?.open(linkedSchemeCode.value, 'detail');
+  }
+});
+
+watch(linkedSchemeCode, (code, previousCode) => {
+  if (code !== previousCode) {
+    gridApi.formApi.updateSchema([
+      { fieldName: 'code', componentProps: { disabled: !!code } },
+    ]);
+    void gridApi.formApi.setValues({ code: code || undefined });
+    if (code) workspaceModalRef.value?.open(code, 'detail');
+    void gridApi.reload();
   }
 });
 
@@ -111,12 +133,32 @@ function handleDelete(row: BomListEntry) {
 
 <template>
   <Page auto-content-height>
+    <div
+      v-if="linkedSchemeCode"
+      class="border-border bg-muted/50 mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3"
+    >
+      <div class="text-sm">
+        当前关联方案：<span class="font-medium">{{ linkedSchemeCode }}</span>
+      </div>
+      <Button
+        type="link"
+        size="small"
+        @click="
+          router.push(`/scheme/detail/${encodeURIComponent(linkedSchemeCode)}`)
+        "
+      >
+        返回方案详情
+      </Button>
+    </div>
     <Grid>
       <template #toolbar-actions>
         <div class="flex gap-2">
-          <Button type="primary" @click="importModalRef?.open()">
-导入方案清单
-</Button>
+          <Button
+            type="primary"
+            @click="importModalRef?.open(linkedSchemeCode)"
+          >
+            导入方案清单
+          </Button>
         </div>
       </template>
       <template #status="{ row }">
@@ -144,34 +186,34 @@ function handleDelete(row: BomListEntry) {
           type="link"
           size="small"
           @click="workspaceModalRef?.open(row.schemeCode, 'detail')"
-          >
-详情
-</Button>
+        >
+          详情
+        </Button>
         <Button
           type="link"
           size="small"
           :disabled="row.status === 'verified'"
           @click="workspaceModalRef?.open(row.schemeCode, 'edit')"
-          >
-编辑
-</Button>
+        >
+          编辑
+        </Button>
         <Button
           type="link"
           size="small"
           :disabled="row.status === 'verified'"
           @click="importModalRef?.open(row.schemeCode)"
-          >
-替换 Excel
-</Button>
+        >
+          替换 Excel
+        </Button>
         <Button
           type="link"
           size="small"
           danger
           :disabled="row.status === 'verified'"
           @click="handleDelete(row)"
-          >
-删除
-</Button>
+        >
+          删除
+        </Button>
       </template>
     </Grid>
 

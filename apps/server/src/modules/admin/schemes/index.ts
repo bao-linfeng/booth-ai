@@ -1,5 +1,7 @@
 import type { FastifyInstance } from 'fastify';
+import type { Redis } from 'ioredis';
 import type pg from 'pg';
+import { getAdminIdFromRequest } from '../session.js';
 import { createScheme, deleteScheme, getScheme, listSchemes, updateScheme, type ListSchemesOptions, type SchemeInput } from './service.js';
 
 interface SchemeQuery extends Partial<ListSchemesOptions> {}
@@ -80,7 +82,14 @@ const listQuerySchema = {
     code: { type: 'string', minLength: 1 }, name: { type: 'string', minLength: 1 }, styleId: { type: 'string', format: 'uuid' },
     industryId: { type: 'string', format: 'uuid' }, productSystemId: { type: 'string', format: 'uuid' },
     publishStatus: { type: 'string', enum: ['draft', 'published', 'unpublished'] },
-    verificationStatus: { type: 'string', enum: ['unverified', 'verified', 'failed'] }, parentCode: { type: 'string', minLength: 1 },
+    verificationStatus: { type: 'string', enum: ['unverified', 'verified', 'failed'] },
+    openingCount: { type: 'integer', minimum: 1, maximum: 4 },
+    budgetTierId: { type: 'string', format: 'uuid' },
+    zoneIds: { type: 'array', items: { type: 'string', format: 'uuid' }, uniqueItems: true },
+    featureIds: { type: 'array', items: { type: 'string', format: 'uuid' }, uniqueItems: true },
+    parentCode: { type: 'string', minLength: 1 },
+    sortBy: { type: 'string', enum: ['updatedAt', 'createdAt'] },
+    sortOrder: { type: 'string', enum: ['asc', 'desc'] },
   },
 };
 
@@ -103,13 +112,17 @@ function listOptions(query: SchemeQuery): ListSchemesOptions {
     ...(query.productSystemId ? { productSystemId: query.productSystemId } : {}),
     ...(query.publishStatus ? { publishStatus: query.publishStatus } : {}),
     ...(query.verificationStatus ? { verificationStatus: query.verificationStatus } : {}),
+    ...(query.openingCount !== undefined ? { openingCount: query.openingCount } : {}),
+    ...(query.budgetTierId ? { budgetTierId: query.budgetTierId } : {}),
+    ...(query.zoneIds && query.zoneIds.length > 0 ? { zoneIds: query.zoneIds } : {}),
+    ...(query.featureIds && query.featureIds.length > 0 ? { featureIds: query.featureIds } : {}),
     ...(query.parentCode ? { parentCode: query.parentCode } : {}),
+    ...(query.sortBy ? { sortBy: query.sortBy } : {}),
+    ...(query.sortOrder ? { sortOrder: query.sortOrder } : {}),
   };
 }
 
-export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
-  // TODO(P1): enforce admin session authentication and pass the authenticated admin id.
-  const adminId: string | null = null;
+export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
   app.get('/schemes/options', { schema: { tags: ['admin-schemes'] } }, async () => {
     const result = await pool.query<{ code: string; id: string; label: string; itemValue: string }>(`
       SELECT d.code, i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue" FROM dictionaries d
@@ -130,16 +143,16 @@ export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.
   app.post('/schemes', {
     schema: { tags: ['admin-schemes'], body: { type: 'object', required: ['code', 'name'], additionalProperties: false, properties: schemeProperties } },
   }, async request => {
-    return { code: 0, data: await createScheme(pool, adminId, request.body as SchemeInput) };
+    return { code: 0, data: await createScheme(pool, await getAdminIdFromRequest(request, redis), request.body as SchemeInput) };
   });
   app.put('/schemes/:code', {
     schema: { tags: ['admin-schemes'], params: codeParamsSchema, body: { type: 'object', required: ['editRevision'], additionalProperties: false, properties: updateProperties } },
   }, async request => {
     const { editRevision, ...input } = request.body as UpdateBody;
-    return { code: 0, data: await updateScheme(pool, decodedCode(request.params as CodeParams), adminId, input, editRevision) };
+    return { code: 0, data: await updateScheme(pool, decodedCode(request.params as CodeParams), await getAdminIdFromRequest(request, redis), input, editRevision) };
   });
   app.delete('/schemes/:code', { schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async (request) => {
-    await deleteScheme(pool, decodedCode(request.params as CodeParams));
+    await deleteScheme(pool, await getAdminIdFromRequest(request, redis), decodedCode(request.params as CodeParams));
     return { code: 0, data: null };
   });
 }

@@ -147,6 +147,11 @@ async function handleBomImport() {
   input.addEventListener('change', async () => {
     const file = input.files?.[0];
     if (!file || bomLocked.value) return;
+    const MAX_FILE_SIZE = 20 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      message.warning(`文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），请上传 20MB 以内的 Excel 文件`);
+      return;
+    }
     bomImporting.value = true;
     const requestCode = currentCode.value;
     try {
