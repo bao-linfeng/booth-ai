@@ -7,11 +7,14 @@ import { cn } from '@/lib/utils'
 import BoothIllustration from './BoothIllustration.vue'
 import type { SchemeImage } from './types'
 const props = withDefaults(defineProps<{ images: SchemeImage[]; code: string; preview?: boolean; variant?: number }>(), { preview: false, variant: 0 })
-const active = ref(0)
+const active = defineModel<number>('active', { default: 0 })
 const expanded = ref(false)
 const failed = ref(false)
-watch(() => props.code, () => { active.value = 0; failed.value = false })
-watch(active, () => { failed.value = false })
+function normalizeActive(value: number) {
+  return Number.isInteger(value) && value >= 0 && value < props.images.length ? value : 0
+}
+watch(() => [props.code, props.images], () => { active.value = normalizeActive(active.value); failed.value = false })
+watch(active, () => { active.value = normalizeActive(active.value); failed.value = false })
 </script>
 
 <template>

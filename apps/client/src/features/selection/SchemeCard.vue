@@ -8,12 +8,13 @@ import SchemeGallery from './SchemeGallery.vue'
 import type { MatchItem } from './types'
 
 defineProps<{ item: MatchItem; index: number; preview?: boolean }>()
+const active = defineModel<number>('active', { default: 0 })
 </script>
 
 <template>
   <Card class="overflow-hidden">
     <CardContent class="grid gap-5 p-4 xl:grid-cols-2 xl:p-5">
-      <SchemeGallery :images="item.images" :code="item.code" :preview="preview" :variant="index" />
+      <SchemeGallery v-model:active="active" :images="item.images" :code="item.code" :preview="preview" :variant="index" />
       <div class="flex flex-col gap-4">
         <div class="flex items-center justify-between">
           <Badge :variant="item.matchType === 'direct' ? 'default' : 'secondary'">

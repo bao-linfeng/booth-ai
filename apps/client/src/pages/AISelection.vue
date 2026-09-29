@@ -55,8 +55,249 @@ const attemptId = ref<string>(crypto.randomUUID())
 const parseId = ref<string>()
 const searchId = ref<string>()
 const catalogState = ref<'loading' | 'ready' | 'error'>('loading')
+const activeImageByCode = ref<Record<string, number>>({})
+const imagesExpiresAt = ref(0)
+const interruptedRequest = ref(false)
 let requestSequence = 0
 let catalogSequence = 0
+let stopPersistence: (() => void) | undefined
+let selectionCleared = false
+let imageRefreshTimer: ReturnType<typeof setInterval> | undefined
+let imageRefreshPending = false
+
+const selectionSessionKey = 'booth-ai:ai-selection'
+const selectionSessionVersion = 1
+type PersistedSelection = {
+  version: 1
+  requirement: Requirement
+  text: string
+  state: SelectionState
+  snapshot: string
+  parseResult: ParseResponse | null
+  parsedText: string | null
+  parsedRequirement: Requirement | null
+  liveMatchData: MatchResponse | null
+  attemptId: string
+  parseId: string | null
+  searchId: string | null
+  imagesExpiresAt: number
+  activeImageByCode: Record<string, number>
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && Number.isFinite(value))
+}
+
+function isRequirement(value: unknown): value is Requirement {
+  if (!isRecord(value)) return false
+  const nullableNumbers = ['lengthMm', 'widthMm', 'maxHeightMm', 'areaM2', 'openingCount']
+  const nullableStrings = ['productSystemId', 'budgetTierId']
+  return nullableNumbers.every(field => isNullableNumber(value[field])) &&
+    nullableStrings.every(field => value[field] === null || typeof value[field] === 'string') &&
+    ['styleIds', 'industryIds', 'zoneIds', 'featureIds', 'keywords', 'requiredZoneIds', 'requiredFeatureIds', 'excludedZoneIds', 'excludedFeatureIds'].every(field => isStringArray(value[field])) &&
+    isRecord(value.applicabilityAnswers) && Object.values(value.applicabilityAnswers).every(answer => typeof answer === 'boolean')
+}
+
+function isParseResponse(value: unknown): value is ParseResponse {
+  if (!isRecord(value) || !isRequirement(value.requirement)) return false
+  const fieldSources = value.fieldSources
+  const overrides = value.overrides
+  const clarifications = value.clarifications
+  const warnings = value.warnings
+  return (value.status === 'ready' || value.status === 'needs_clarification') &&
+    (value.parser === 'llm' || value.parser === 'rules' || value.parser === 'none') &&
+    typeof value.degraded === 'boolean' &&
+    isRecord(fieldSources) && Object.values(fieldSources).every(source => isRecord(source) && ['form', 'text', 'derived'].includes(String(source.source)) && (source.evidence === undefined || typeof source.evidence === 'string')) &&
+    Array.isArray(overrides) && overrides.every(item => isRecord(item) && typeof item.field === 'string' && typeof item.evidence === 'string') &&
+    Array.isArray(clarifications) && clarifications.every(item => isRecord(item) && typeof item.field === 'string' && typeof item.reason === 'string' && typeof item.question === 'string' && isStringArray(item.candidates)) &&
+    isStringArray(value.unhandledText) &&
+    Array.isArray(warnings) && warnings.every(item => isRecord(item) && typeof item.code === 'string' && typeof item.message === 'string')
+}
+
+function isMatchResponse(value: unknown): value is MatchResponse {
+  if (!isRecord(value) || !isRequirement(value.requirement) || !Array.isArray(value.items)) return false
+  const counts = value.counts
+  return (value.status === 'matched' || value.status === 'no_match' || value.status === 'needs_clarification') &&
+    (value.mode === 'filtered' || value.mode === 'random') &&
+    value.items.every(item => {
+      if (!isRecord(item) || typeof item.code !== 'string' || !['direct', 'reference', 'random'].includes(String(item.matchType))) return false
+      if (!Array.isArray(item.images) || !item.images.every(image => isRecord(image) && typeof image.assetId === 'string' && typeof image.url === 'string' && typeof image.thumbnailUrl === 'string' && typeof image.order === 'number' && typeof image.width === 'number' && typeof image.height === 'number')) return false
+      const specifications = item.specifications
+      return isRecord(specifications) && ['lengthMm', 'widthMm', 'heightMm', 'areaM2', 'openingCount'].every(field => typeof specifications[field] === 'number') &&
+        typeof specifications.productSystemId === 'string' && typeof specifications.productSystemLabel === 'string' &&
+        isStringArray(item.reasons) && isStringArray(item.pendingConfirmations) && isStringArray(item.preferenceMisses) &&
+        Array.isArray(item.differences) && item.differences.every(difference => isRecord(difference) &&
+          ['field', 'requested', 'actual', 'reason'].every(field => typeof difference[field] === 'string'))
+    }) &&
+    isRecord(counts) && ['direct', 'reference', 'random', 'total'].every(field => typeof counts[field] === 'number') &&
+    isStringArray(value.reasons) && isStringArray(value.suggestions) && isStringArray(value.missingFields)
+}
+
+function isSelectionState(value: unknown): value is SelectionState {
+  return ['idle', 'parsing', 'matching', 'needs_clarification', 'results', 'empty', 'error'].includes(String(value))
+}
+
+function isPersistedSelection(value: unknown): value is PersistedSelection {
+  if (!isRecord(value) || value.version !== selectionSessionVersion || !isRequirement(value.requirement) || !isSelectionState(value.state)) return false
+  if (typeof value.text !== 'string' || typeof value.snapshot !== 'string' || typeof value.attemptId !== 'string') return false
+  if (value.parseResult !== null && !isParseResponse(value.parseResult)) return false
+  if (value.parsedText !== null && typeof value.parsedText !== 'string') return false
+  if (value.parsedRequirement !== null && !isRequirement(value.parsedRequirement)) return false
+  if (value.liveMatchData !== null && !isMatchResponse(value.liveMatchData)) return false
+  if (value.state === 'results' && (value.liveMatchData === null || value.liveMatchData.status !== 'matched')) return false
+  if (value.state === 'empty' && (value.liveMatchData === null || value.liveMatchData.status !== 'no_match')) return false
+  if (value.parseId !== null && typeof value.parseId !== 'string') return false
+  if (value.searchId !== null && typeof value.searchId !== 'string') return false
+  if (typeof value.imagesExpiresAt !== 'number' || !Number.isFinite(value.imagesExpiresAt)) return false
+  return isRecord(value.activeImageByCode) && Object.values(value.activeImageByCode).every(index => typeof index === 'number' && Number.isInteger(index) && index >= 0)
+}
+
+function safeReadSelection(): PersistedSelection | null {
+  try {
+    const raw = sessionStorage.getItem(selectionSessionKey)
+    if (!raw) return null
+    const value: unknown = JSON.parse(raw)
+    if (!isPersistedSelection(value)) {
+      sessionStorage.removeItem(selectionSessionKey)
+      return null
+    }
+    return value
+  } catch {
+    try { sessionStorage.removeItem(selectionSessionKey) } catch { return null }
+    return null
+  }
+}
+
+function safeWriteSelection(value: PersistedSelection) {
+  try { sessionStorage.setItem(selectionSessionKey, JSON.stringify(value)) } catch { return }
+}
+
+function safeRemoveSelection() {
+  try { sessionStorage.removeItem(selectionSessionKey) } catch { return }
+}
+
+function restoredState(value: SelectionState): SelectionState {
+  return value === 'parsing' || value === 'matching' ? 'idle' : value
+}
+
+function buildSelectionSession(): PersistedSelection {
+  return {
+    version: selectionSessionVersion,
+    requirement: requirement.value,
+    text: text.value,
+    state: state.value,
+    snapshot: snapshot.value,
+    parseResult: parseResult.value,
+    parsedText: parsedText.value,
+    parsedRequirement: parsedRequirement.value,
+    liveMatchData: liveMatchData.value,
+    attemptId: attemptId.value,
+    parseId: parseId.value ?? null,
+    searchId: searchId.value ?? null,
+    imagesExpiresAt: imagesExpiresAt.value,
+    activeImageByCode: activeImageByCode.value,
+  }
+}
+
+function restoreSelection(value: PersistedSelection) {
+  interruptedRequest.value = value.state === 'parsing' || value.state === 'matching'
+  requirement.value = value.requirement
+  text.value = value.text
+  state.value = restoredState(value.state)
+  snapshot.value = value.snapshot
+  parseResult.value = value.parseResult
+  parsedText.value = value.parsedText
+  parsedRequirement.value = value.parsedRequirement
+  liveMatchData.value = value.liveMatchData
+  liveItems.value = value.liveMatchData?.items ?? []
+  liveClarifications.value = value.parseResult?.clarifications ?? []
+  attemptId.value = value.attemptId
+  parseId.value = value.parseId ?? undefined
+  searchId.value = value.searchId ?? undefined
+  imagesExpiresAt.value = value.imagesExpiresAt
+  activeImageByCode.value = Object.fromEntries(liveItems.value.map(item => {
+    const active = value.activeImageByCode[item.code]
+    return [item.code, typeof active === 'number' && active < item.images.length ? active : 0]
+  }))
+}
+
+function startPersistence() {
+  stopPersistence?.()
+  if (isPreview.value) return
+  stopPersistence = watch(buildSelectionSession, value => {
+    selectionCleared = false
+    safeWriteSelection(value)
+  }, { deep: true, flush: 'post' })
+}
+
+function clearSelectionMemory() {
+  requestSequence++
+  attemptId.value = crypto.randomUUID()
+  parseId.value = undefined
+  searchId.value = undefined
+  requirement.value = emptyRequirement()
+  text.value = ''
+  parsedText.value = null
+  parsedRequirement.value = null
+  parseResult.value = null
+  liveClarifications.value = []
+  liveItems.value = []
+  liveMatchData.value = null
+  imagesExpiresAt.value = 0
+  activeImageByCode.value = {}
+  manualSchemeCode.value = undefined
+  interruptedRequest.value = false
+  state.value = 'idle'
+  snapshot.value = ''
+}
+
+function reset() {
+  stopPersistence?.()
+  clearSelectionMemory()
+  if (!isPreview.value) {
+    selectionCleared = true
+    safeRemoveSelection()
+  }
+  startPersistence()
+}
+
+async function refreshExpiredImages() {
+  if (imageRefreshPending || !liveItems.value.length || imagesExpiresAt.value > Date.now() + 30_000) return
+  imageRefreshPending = true
+  const sequence = requestSequence
+  const currentItems = liveItems.value
+  let allRefreshed = true
+  try {
+    const refreshed = await Promise.all(currentItems.map(async item => {
+      try {
+        const response = await apiFetch<{ code: number; data: { images: MatchItem['images'] } }>(`/api/v1/client/schemes/${encodeURIComponent(item.code)}`)
+        if (response.code !== 0 || !Array.isArray(response.data.images) ||
+          !item.images.every(image => response.data.images.some(fresh => fresh.assetId === image.assetId))) {
+          allRefreshed = false
+          return item
+        }
+        return { ...item, images: item.images.map(image => response.data.images.find(fresh => fresh.assetId === image.assetId)!) }
+      } catch {
+        allRefreshed = false
+        return item
+      }
+    }))
+    if (sequence !== requestSequence || isPreview.value || liveItems.value !== currentItems) return
+    liveItems.value = refreshed
+    if (liveMatchData.value) liveMatchData.value = { ...liveMatchData.value, items: refreshed }
+    if (allRefreshed) imagesExpiresAt.value = Date.now() + 270_000
+  } finally {
+    imageRefreshPending = false
+  }
+}
 
 const emptyCatalog: Catalog = { dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] }, boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [] }
 const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value ?? emptyCatalog))
@@ -192,7 +433,6 @@ const chips = computed(() => {
   ].filter(Boolean)
 })
 
-function reset() { requestSequence++; attemptId.value = crypto.randomUUID(); parseId.value = undefined; searchId.value = undefined; requirement.value = emptyRequirement(); text.value = ''; parsedText.value = null; parsedRequirement.value = null; parseResult.value = null; liveClarifications.value = []; state.value = 'idle'; snapshot.value = '' }
 function clearText() {
   text.value = ''
   parsedText.value = null
@@ -252,6 +492,7 @@ async function parseText(sequence: number) {
 
 async function reparseText() {
   if (busy.value || !text.value.trim() || catalogState.value !== 'ready') return
+  interruptedRequest.value = false
   const sequence = ++requestSequence
   if (await parseText(sequence)) await doMatch('filtered', true, sequence)
 }
@@ -261,7 +502,7 @@ function choosePreview(value: string) {
   if (value === 'results' || value === 'needs_clarification') {
     requirement.value = { ...emptyRequirement(), lengthMm: 6000, widthMm: 3000, areaM2: 18, maxHeightMm: 4500, openingCount: 2, styleIds: ['modern-minimal'], productSystemId: 'fs62' }
     text.value = '长6米，宽3米，两面开口，现代简约风格，需要洽谈区。'
-  } else if (value === 'random' || value === 'idle') reset()
+  } else if (value === 'random' || value === 'idle') clearSelectionMemory()
   state.value = value === 'random' ? 'results' : value as SelectionState
   snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
 }
@@ -284,6 +525,7 @@ async function loadCatalog() {
 }
 
 async function doMatch(mode: 'random' | 'filtered', textProvided: boolean, sequence: number) {
+  interruptedRequest.value = false
   state.value = 'matching'
   try {
     const res = await apiFetch<{ code: number; data: MatchResponse }>('/api/v1/client/scheme-matches', {
@@ -292,10 +534,12 @@ async function doMatch(mode: 'random' | 'filtered', textProvided: boolean, seque
     })
     if (sequence !== requestSequence) return
     if (res.code === 0) {
-        liveMatchData.value = res.data
-        liveItems.value = res.data.items
-        attemptId.value = res.data.attemptId ?? attemptId.value
-        searchId.value = res.data.searchId
+      liveMatchData.value = res.data
+      liveItems.value = res.data.items
+      imagesExpiresAt.value = Date.now() + 270_000
+      activeImageByCode.value = {}
+      attemptId.value = res.data.attemptId ?? attemptId.value
+      searchId.value = res.data.searchId
       state.value = res.data.status === 'matched' ? 'results' : res.data.status === 'no_match' ? 'empty' : 'needs_clarification'
       snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
     } else {
@@ -315,6 +559,7 @@ async function submit() {
     return
   }
   const sequence = ++requestSequence
+  interruptedRequest.value = false
   const textProvided = !!text.value.trim()
   if (textProvided && !parsedRequirement.value) {
     if (!await parseText(sequence)) return
@@ -338,15 +583,48 @@ function confirm() {
   }
 }
 
-watch(isPreview, (newVal) => { 
+if (!isPreview.value) {
+  const saved = safeReadSelection()
+  if (saved) {
+    restoreSelection(saved)
+    void refreshExpiredImages()
+  }
+  selectionCleared = !saved
+  startPersistence()
+}
+
+watch(isPreview, (newVal) => {
   catalogSequence++
-  reset()
-  if (!newVal) loadCatalog()
+  if (newVal && !selectionCleared) safeWriteSelection(buildSelectionSession())
+  stopPersistence?.()
+  clearSelectionMemory()
+  if (!newVal) {
+    const saved = safeReadSelection()
+    if (saved) {
+      restoreSelection(saved)
+      void refreshExpiredImages()
+    }
+    selectionCleared = !saved
+    startPersistence()
+    void loadCatalog()
+  }
 })
 
-onUnmounted(() => { requestSequence++; catalogSequence++ })
+function refreshImagesWhenVisible() {
+  if (!document.hidden && !isPreview.value) void refreshExpiredImages()
+}
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', refreshImagesWhenVisible)
+  if (imageRefreshTimer) clearInterval(imageRefreshTimer)
+  if (!isPreview.value && !selectionCleared) safeWriteSelection(buildSelectionSession())
+  requestSequence++
+  catalogSequence++
+})
 
 onMounted(() => {
+  document.addEventListener('visibilitychange', refreshImagesWhenVisible)
+  imageRefreshTimer = setInterval(refreshImagesWhenVisible, 60_000)
   if (!isPreview.value) loadCatalog()
 })
 </script>
@@ -359,6 +637,7 @@ onMounted(() => {
         <p class="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck class="size-4 text-primary" />免费匹配 · 无需登录 · 不扣积分</p>
       </section>
       <Card v-if="!isPreview && catalogState !== 'ready'" :role="catalogState === 'error' ? 'alert' : 'status'"><CardContent class="flex items-center justify-between gap-4 p-5 text-sm"><span>{{ catalogState === 'loading' ? '正在加载选型条件…' : '选型条件加载失败，请重试。' }}</span><Button v-if="catalogState === 'error'" variant="outline" @click="loadCatalog">重新加载</Button></CardContent></Card>
+      <Card v-if="interruptedRequest && !isPreview" role="status"><CardContent class="p-5 text-sm">上次请求因页面离开而中断，输入已恢复。可重新点击“AI 智选”；如需重新识别文字，请点击“重新解析文字”。</CardContent></Card>
       <Card v-if="isPreview" class="border-dashed"><CardHeader class="pb-3"><CardTitle class="text-sm">UI 静态预览</CardTitle><CardDescription>示例编号与空间示意仅用于界面评审，不代表真实匹配。</CardDescription></CardHeader><CardContent class="flex flex-wrap gap-2"><Button v-for="option in previewStates" :key="option.id" size="sm" :variant="previewMode === option.id ? 'default' : 'outline'" :aria-pressed="previewMode === option.id" @click="choosePreview(option.id)">{{ option.label }}</Button></CardContent></Card>
       <Button variant="outline" class="w-full justify-between lg:hidden" :aria-expanded="mobileConditions" aria-controls="selection-conditions" @click="mobileConditions = !mobileConditions"><span class="flex items-center gap-2"><SlidersHorizontal class="size-4" />展位条件与偏好</span><Badge variant="secondary">{{ chips.length ? `${chips.length} 项` : '选填' }}</Badge></Button>
       <div class="grid items-start gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -402,7 +681,7 @@ onMounted(() => {
           
           <Card v-if="state === 'idle'" class="overflow-hidden"><CardContent class="grid items-center gap-3 p-0 xl:grid-cols-2"><div class="space-y-5 p-6"><Badge variant="outline">从想法到空间</Badge><h2 class="text-2xl font-semibold leading-relaxed">让参展想法，<br />有一个具体的空间</h2><p class="text-sm leading-relaxed text-muted-foreground">填写展位尺寸，或用一句话描述需求。先筛选结构，再匹配偏好。</p><ol class="flex flex-wrap gap-4 text-xs text-muted-foreground"><li>01 描述需求</li><li>02 匹配方案</li><li>03 查看详情</li></ol></div><BoothIllustration class="w-full" /></CardContent><CardFooter class="flex-wrap justify-between gap-2 border-t pt-4 text-xs text-muted-foreground"><span>最多 3 套方案 · 每套 3 个视角</span><span>条件不全时明确标注待确认项</span></CardFooter></Card>
           <Card v-else-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? '正在识别您的需求' : '正在查找适合的方案' }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? '加载状态预览，可使用顶部工具栏切换。' : '正在调用接口匹配方案，请稍后。' }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>
-          <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '先发现一些灵感' : '为您找到的空间方案' }}</h2><Badge variant="secondary">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '随机推荐 · 适用条件待确认' : (isPreview ? '1 套直接采用 · 2 套参考' : `${liveMatchData?.counts.direct ?? 0} 套直接采用 · ${liveMatchData?.counts.reference ?? 0} 套参考`) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" /><p class="text-xs leading-relaxed text-muted-foreground">“可直接采用”指已提供结构条件与审核方案一致，不替代具体项目的报馆及施工确认。</p></section>
+           <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '先发现一些灵感' : '为您找到的空间方案' }}</h2><Badge variant="secondary">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '随机推荐 · 适用条件待确认' : (isPreview ? '1 套直接采用 · 2 套参考' : `${liveMatchData?.counts.direct ?? 0} 套直接采用 · ${liveMatchData?.counts.reference ?? 0} 套参考`) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" /><p class="text-xs leading-relaxed text-muted-foreground">“可直接采用”指已提供结构条件与审核方案一致，不替代具体项目的报馆及施工确认。</p></section>
           <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? '当前组合暂时没有合适的方案' : isPreview ? '服务暂时不可用' : '请求失败' }}</h2><p class="max-w-md text-sm leading-relaxed text-muted-foreground">{{ state === 'empty' ? (liveMatchData?.reasons?.[0] || '您的需求已保留。可主动修改条件，或交给专业顾问。') : isPreview ? '输入已保留，系统异常不等于无匹配。当前可通过静态预览查看各界面状态。' : '接口调用失败，请检查网络或重试。' }}</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="mobileConditions = true; state = 'idle'">修改条件</Button><Button v-else-if="isPreview || state === 'error'" @click="submit">重试</Button><Button v-if="state === 'error' && !isPreview" as-child><RouterLink to="/ai-selection/preview">查看 UI 静态预览</RouterLink></Button><Button variant="outline" @click="manualOpen = true">转人工</Button></div></CardContent></Card>
           <Card><CardContent class="flex flex-wrap items-center gap-4 p-5"><MessageCircle class="size-6 text-primary" /><div class="flex-1 space-y-1"><h3 class="text-sm font-medium">特别的想法，交给专业的人</h3><p class="text-xs text-muted-foreground">尺寸特殊、需求复杂？让顾问一起梳理。</p></div><Button variant="outline" @click="manualOpen = true">转人工沟通<ArrowUpRight class="ml-2 size-4" /></Button></CardContent></Card>
         </div>
