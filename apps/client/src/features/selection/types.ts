@@ -33,6 +33,8 @@ export interface Catalog {
   zones: Option[]
   features: Option[]
   applicabilityQuestions: { id: string; label: string; helpText: string }[]
+  rulesVersion?: string
+  dictionaryVersion?: string
 }
 
 export interface SchemeImage { assetId: string; url: string; thumbnailUrl: string; order: number; width: number; height: number }
@@ -59,6 +61,9 @@ export interface MatchResponse {
   reasons: string[]
   suggestions: string[]
   missingFields: string[]
+  attemptId?: string
+  searchId?: string
+  visitorId?: string
 }
 export interface ParseResponse {
   status: 'ready' | 'needs_clarification'
@@ -70,6 +75,11 @@ export interface ParseResponse {
   clarifications: { field: string; reason: string; question: string; candidates: string[] }[]
   unhandledText: string[]
   warnings: { code: string; message: string }[]
+  rulesVersion?: string
+  dictionaryVersion?: string
+  attemptId?: string
+  parseId?: string
+  visitorId?: string
 }
 export interface SchemeDetail {
   code: string

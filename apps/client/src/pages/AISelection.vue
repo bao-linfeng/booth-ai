@@ -10,7 +10,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
 import RequirementForm from '@/features/selection/RequirementForm.vue'
 import SchemeCard from '@/features/selection/SchemeCard.vue'
@@ -20,6 +22,7 @@ import { previewCatalog, previewItems, previewStates } from '@/features/selectio
 import { apiFetch } from '@/lib/api-client'
 
 const route = useRoute()
+const authStore = useAuthStore()
 const isPreview = computed(() => route.path.startsWith('/ai-selection/preview'))
 const requirement = ref(emptyRequirement())
 const text = ref('')
@@ -27,6 +30,16 @@ const state = ref<SelectionState>('idle')
 const previewMode = ref('idle')
 const mobileConditions = ref(false)
 const manualOpen = ref(false)
+const manualName = ref('')
+const manualContact = ref('')
+const manualDescription = ref('')
+const manualSchemeCode = ref<string>()
+const manualStatus = ref<'idle' | 'submitting' | 'success' | 'error'>('idle')
+const manualReference = ref('')
+let manualRequestKey = ''
+let manualPayloadSnapshot = ''
+let suppressManualStatusReset = false
+const manualError = ref('')
 const snapshot = ref('')
 const stale = computed(() => !!snapshot.value && snapshot.value !== JSON.stringify({ requirement: requirement.value, text: text.value }))
 const busy = computed(() => state.value === 'parsing' || state.value === 'matching')
@@ -38,6 +51,9 @@ const liveClarifications = ref<ParseResponse['clarifications']>([])
 const parseResult = ref<ParseResponse | null>(null)
 const parsedText = ref<string | null>(null)
 const parsedRequirement = ref<Requirement | null>(null)
+const attemptId = ref<string>(crypto.randomUUID())
+const parseId = ref<string>()
+const searchId = ref<string>()
 const catalogState = ref<'loading' | 'ready' | 'error'>('loading')
 let requestSequence = 0
 let catalogSequence = 0
@@ -70,6 +86,96 @@ const items = computed(() => isPreview.value
   ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: ['尺寸、开口面数、限高和适用条件待确认'] } : item)
   : liveItems.value
 )
+const selectedManualScheme = computed(() => items.value.find(item => item.code === manualSchemeCode.value))
+const manualQuestions = computed(() => [...new Set([
+  ...unresolvedClarifications.value.map(item => item.question),
+  ...(parseResult.value?.unhandledText.map(item => `未识别：${item}`) ?? []),
+  ...(!stale.value && liveMatchData.value?.status === 'no_match' ? liveMatchData.value.reasons : []),
+])].slice(0, 30))
+const manualOriginalText = computed(() => [text.value.trim(), manualDescription.value.trim()].filter(Boolean).join('\n'))
+const contactValid = computed(() => /^(?:1[3-9]\d{9}|\+[1-9]\d{7,14}|[^\s@]+@[^\s@]+\.[^\s@]+)$/.test(manualContact.value.trim()))
+const canSubmitManual = computed(() => !isPreview.value && !!manualName.value.trim() && contactValid.value && manualStatus.value !== 'submitting' &&
+  manualOriginalText.value.length <= 1000)
+
+function cloneRequirement(value: Requirement): Requirement {
+  return JSON.parse(JSON.stringify(value)) as Requirement
+}
+
+function clearManualForm() {
+  manualName.value = ''
+  manualContact.value = ''
+  manualDescription.value = ''
+  manualSchemeCode.value = undefined
+  manualRequestKey = ''
+  manualPayloadSnapshot = ''
+  manualError.value = ''
+}
+
+function initializeManualForm() {
+  const user = authStore.currentUser
+  manualName.value = user?.nickname || user?.username || ''
+  manualContact.value = user?.mobile || user?.email || ''
+}
+
+async function submitManual() {
+  if (!canSubmitManual.value) return
+  const scheme = stale.value ? undefined : selectedManualScheme.value
+  const payload = {
+    contactName: manualName.value.trim(), contactDetail: manualContact.value.trim(), originalText: manualOriginalText.value,
+    requirement: cloneRequirement(requirement.value), unresolvedQuestions: manualQuestions.value,
+    ...(scheme ? { schemeContext: { code: scheme.code, differences: scheme.differences, pendingConfirmations: scheme.pendingConfirmations } } : {}),
+  }
+  const snapshot = JSON.stringify(payload)
+  if (snapshot !== manualPayloadSnapshot) {
+    manualRequestKey = crypto.randomUUID()
+    manualPayloadSnapshot = snapshot
+  }
+  manualStatus.value = 'submitting'
+  manualError.value = ''
+  try {
+    const response = await apiFetch<{ code: number; data: { id: string } }>('/api/v1/client/manual-requests', {
+      method: 'POST', body: { requestKey: manualRequestKey, ...payload },
+    })
+    if (response.code !== 0) throw new Error('Manual request failed')
+    manualReference.value = response.data.id
+    suppressManualStatusReset = true
+    clearManualForm()
+    manualStatus.value = 'success'
+  } catch (error) {
+    manualStatus.value = 'error'
+    const status = (error as { status?: number }).status
+    manualError.value = status === 409 ? '本次提交标识已被其他内容使用，请重新提交。' :
+      status === 429 ? '提交过于频繁，请稍后重试。' :
+      status === 400 ? '需求或联系方式有误，请核对后重试。' :
+      status === 401 || status === 403 ? '登录状态已失效，请刷新页面后重试。' : '提交未确认，请重试。'
+    if (status === 409) manualPayloadSnapshot = ''
+  }
+}
+
+watch([requirement, text, manualName, manualContact, manualSchemeCode, manualDescription], () => {
+  if (suppressManualStatusReset) {
+    suppressManualStatusReset = false
+    return
+  }
+  if (manualStatus.value === 'success') {
+    manualStatus.value = 'idle'
+    manualRequestKey = ''
+    manualPayloadSnapshot = ''
+  }
+}, { deep: true })
+
+watch(manualOpen, (open) => {
+  if (open) {
+    manualStatus.value = 'idle'
+    manualReference.value = ''
+    clearManualForm()
+    initializeManualForm()
+  } else {
+    manualStatus.value = 'idle'
+    manualReference.value = ''
+    clearManualForm()
+  }
+})
 
 const chips = computed(() => {
   const r = requirement.value
@@ -86,7 +192,7 @@ const chips = computed(() => {
   ].filter(Boolean)
 })
 
-function reset() { requestSequence++; requirement.value = emptyRequirement(); text.value = ''; parsedText.value = null; parsedRequirement.value = null; parseResult.value = null; liveClarifications.value = []; state.value = 'idle'; snapshot.value = '' }
+function reset() { requestSequence++; attemptId.value = crypto.randomUUID(); parseId.value = undefined; searchId.value = undefined; requirement.value = emptyRequirement(); text.value = ''; parsedText.value = null; parsedRequirement.value = null; parseResult.value = null; liveClarifications.value = []; state.value = 'idle'; snapshot.value = '' }
 function clearText() {
   text.value = ''
   parsedText.value = null
@@ -119,14 +225,16 @@ async function parseText(sequence: number) {
   state.value = 'parsing'
   try {
     const res = await apiFetch<{ code: number; data: ParseResponse }>('/api/v1/client/requirements/parse', {
-      method: 'POST', body: { text: text.value, form: requirement.value }
+      method: 'POST', body: { attemptId: attemptId.value, text: text.value, form: requirement.value }
     })
     if (sequence !== requestSequence) return false
     if (res.code !== 0) throw new Error('Parse unavailable')
     requirement.value = res.data.requirement
     parsedText.value = text.value
-    parsedRequirement.value = structuredClone(res.data.requirement)
+    parsedRequirement.value = cloneRequirement(res.data.requirement)
     parseResult.value = res.data
+    attemptId.value = res.data.attemptId ?? attemptId.value
+    parseId.value = res.data.parseId
     liveClarifications.value = res.data.clarifications
     if (res.data.status === 'needs_clarification') {
       state.value = 'needs_clarification'
@@ -180,12 +288,14 @@ async function doMatch(mode: 'random' | 'filtered', textProvided: boolean, seque
   try {
     const res = await apiFetch<{ code: number; data: MatchResponse }>('/api/v1/client/scheme-matches', {
       method: 'POST',
-      body: { mode, requirement: requirement.value, inputContext: { textProvided } }
+      body: { attemptId: attemptId.value, ...(parseId.value ? { parseId: parseId.value } : {}), mode, requirement: requirement.value, inputContext: { textProvided, text: text.value, degradedParse: parseResult.value?.degraded ?? false } }
     })
     if (sequence !== requestSequence) return
     if (res.code === 0) {
-      liveMatchData.value = res.data
-      liveItems.value = res.data.items
+        liveMatchData.value = res.data
+        liveItems.value = res.data.items
+        attemptId.value = res.data.attemptId ?? attemptId.value
+        searchId.value = res.data.searchId
       state.value = res.data.status === 'matched' ? 'results' : res.data.status === 'no_match' ? 'empty' : 'needs_clarification'
       snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
     } else {
@@ -298,6 +408,15 @@ onMounted(() => {
         </div>
       </div>
     </main>
-    <Dialog v-model:open="manualOpen"><DialogContent class="max-h-[90dvh] overflow-y-auto"><DialogTitle>把需求交给专业顾问</DialogTitle><DialogDescription>交接界面预览；接口尚未接入，不会发送或保存联系方式。</DialogDescription><Card><CardContent class="space-y-2 p-4 text-sm"><strong>需求摘要</strong><p>{{ text || '暂无文字描述' }}</p><p class="text-xs text-muted-foreground">{{ chips.join(' · ') || '尚未填写结构条件' }}</p></CardContent></Card><div class="space-y-2"><Label for="manual-name">联系人</Label><Input id="manual-name" placeholder="您的称呼" autocomplete="name" /></div><div class="space-y-2"><Label for="manual-contact">联系方式</Label><Input id="manual-contact" placeholder="手机号或邮箱" autocomplete="tel" /></div><Button disabled>提交入口待接入</Button></DialogContent></Dialog>
+    <Dialog v-model:open="manualOpen"><DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg"><DialogTitle>把需求交给专业顾问</DialogTitle><DialogDescription>留下联系方式，顾问可根据当前条件和待确认问题跟进。无需登录。</DialogDescription>
+      <div v-if="manualStatus === 'success'" role="status" class="space-y-4 rounded-lg border bg-muted/30 p-5"><ShieldCheck class="size-7 text-primary" /><p class="font-medium">需求已提交，我们会尽快与您联系。</p><p class="break-all text-xs text-muted-foreground">需求编号：{{ manualReference }}</p><Button class="w-full" @click="manualOpen = false">完成</Button></div>
+      <template v-else><form class="space-y-4" @submit.prevent="submitManual"><Card><CardContent class="space-y-2 p-4 text-sm"><strong>需求摘要</strong><p class="break-words">{{ text || '暂无文字描述' }}</p><p class="text-xs text-muted-foreground">{{ chips.join(' · ') || '尚未填写结构条件' }}</p><p v-if="manualQuestions.length" class="text-xs text-muted-foreground">待确认：{{ manualQuestions.join('；') }}</p></CardContent></Card>
+        <div v-if="items.length && !stale" class="space-y-2"><Label for="manual-scheme">关联当前方案（选填）</Label><Select v-model="manualSchemeCode"><SelectTrigger id="manual-scheme" aria-label="关联当前方案"><SelectValue placeholder="不关联方案" /></SelectTrigger><SelectContent><SelectItem v-for="item in items" :key="item.code" :value="item.code">{{ item.code }} · {{ item.matchType === 'direct' ? '可直接采用' : '参考方案' }}</SelectItem></SelectContent></Select><p v-if="selectedManualScheme" class="text-xs text-muted-foreground">将一并提交此方案的匹配差异与待确认事项。</p></div>
+        <div class="space-y-2"><Label for="manual-description">补充需求（选填）</Label><Textarea id="manual-description" v-model="manualDescription" maxlength="1000" placeholder="还有哪些需求希望顾问了解？" :disabled="manualStatus === 'submitting'" /><p v-if="manualOriginalText.length > 1000" class="text-xs text-destructive">需求描述合计不能超过 1000 字</p></div>
+        <div class="space-y-2"><Label for="manual-name">联系人</Label><Input id="manual-name" v-model="manualName" maxlength="100" placeholder="您的称呼" autocomplete="name" required :disabled="manualStatus === 'submitting'" /></div>
+        <div class="space-y-2"><Label for="manual-contact">联系方式</Label><Input id="manual-contact" v-model="manualContact" maxlength="254" placeholder="手机号或邮箱" autocomplete="on" required :disabled="manualStatus === 'submitting'" /><p v-if="manualContact && !contactValid" class="text-xs text-destructive">请输入有效的手机号或邮箱地址</p></div>
+        <p v-if="manualStatus === 'error'" role="alert" class="text-sm text-destructive">{{ manualError }}</p><p v-if="isPreview" class="text-xs text-muted-foreground">静态预览不提交真实需求。</p>
+        <Button type="submit" class="w-full" :disabled="!canSubmitManual"><LoaderCircle v-if="manualStatus === 'submitting'" class="mr-2 size-4 animate-spin" />{{ manualStatus === 'submitting' ? '正在提交…' : manualStatus === 'error' ? '重试提交' : '提交给顾问' }}</Button>
+      </form></template></DialogContent></Dialog>
   </SelectionShell>
 </template>

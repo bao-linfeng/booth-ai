@@ -4,6 +4,7 @@ import type pg from 'pg';
 import type { Config } from '../../../config.js';
 import { fetchExternalUserDetail, loginExternal, type ExternalUserDetail } from '../../../infra/external-auth.js';
 import { createSession, destroySession, encryptJwt } from '../../../infra/session.js';
+import { getProvidedVisitorId, linkVisitorToUser } from '../../selection-analytics/service.js';
 
 export interface CurrentUser {
   id: string;
@@ -107,6 +108,8 @@ export async function registerClientAuthRoutes(app: FastifyInstance, config: Con
     if (detail.externalUserId !== login.externalUserId) throw errorWithStatus('External user identity mismatch', 502);
     if (!detail.enabled) throw errorWithStatus('Account is disabled', 403);
     const localId = await syncClientUser(pool, detail, true);
+    const visitorId = getProvidedVisitorId(request);
+    if (visitorId) await linkVisitorToUser(pool, visitorId, localId);
     const expiresAt = jwtExpiresAt(login.externalJwt, config.sessionTtlSeconds);
     const accessToken = await createSession(redis, {
       site: 'client', localId, externalUserId: detail.externalUserId, username: detail.username,

@@ -15,6 +15,8 @@ import { registerAdminReviewsRoutes } from './reviews/index.js';
 import { registerAdminDictionariesRoutes } from './dictionaries/index.js';
 import { registerAdminAuditLogsRoutes } from './audit-logs/index.js';
 import { registerAdminAiModelRoutes } from './ai-models/index.js';
+import { registerAdminManualRequestRoutes } from './manual-requests/index.js';
+import { registerAdminSchemeSearchesRoutes } from './scheme-searches/index.js';
 
 export async function registerAdminModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
   await app.register(async admin => {
@@ -37,6 +39,8 @@ export async function registerAdminModule(app: FastifyInstance, config: Config, 
     await registerAdminReviewsRoutes(admin, pool, redis);
     await registerAdminDictionariesRoutes(admin, pool);
     await registerAdminAuditLogsRoutes(admin, pool);
+    await registerAdminManualRequestRoutes(admin, pool, redis);
+    await registerAdminSchemeSearchesRoutes(admin, pool);
     await registerAdminAiModelRoutes(admin, pool, redis, config.aiModelEncryptionKey);
   }, { prefix: '/api/v1/admin' });
 }

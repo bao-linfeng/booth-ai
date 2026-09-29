@@ -11,6 +11,7 @@ import { parseRequirement } from './parse.js';
 import { activeAiModels, type ActiveAiModel } from '../../../infra/ai-models.js';
 import { parseWithModels } from './llm.js';
 import { deliverableAvailability } from '../schemes/service.js';
+import { ensureAttempt, getOptionalClientUserId, getVisitorId, recordParse, recordSearch } from '../../selection-analytics/service.js';
 
 export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>, config: Config) {
   const dependency = async <T>(operation: () => Promise<T>): Promise<T> => {
@@ -39,52 +40,81 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       return { code: 0, data: await dependency(() => loadCatalog(pool)) };
     });
     
-    selection.post<{ Body: { text: string; form: Requirement } }>('/requirements/parse', {
+    selection.post<{ Body: { attemptId?: string; text: string; form: Requirement } }>('/requirements/parse', {
       schema: {
         tags: ['AI 智选'],
         summary: '模型解析需求，失败时规则降级',
         body: {
           type: 'object',
           additionalProperties: false,
-          required: ['text', 'form'],
-          properties: {
+           required: ['text', 'form'],
+           properties: {
+             attemptId: { type: 'string', format: 'uuid' },
             text: { type: 'string', minLength: 1, maxLength: 1000, pattern: '\\S' },
             form: requirementSchema
           }
         }
       }
     }, async request => {
+      const startedAt = performance.now();
+      const visitorId = getVisitorId(request);
+      const userId = await getOptionalClientUserId(pool, redis, request);
+      const attemptId = await ensureAttempt(pool, request.body.attemptId, { visitorId, userId });
       const catalog = await dependency(() => loadCatalog(pool));
       const form = validateRequirement(request.body.form, catalog);
       const models: ActiveAiModel[] = await dependency(() => activeAiModels(pool, 'selection_parse', config.aiModelEncryptionKey));
-      return { code: 0, data: models.length ? await parseWithModels(request.body.text, form, catalog, models) : parseRequirement(request.body.text, form, catalog) };
+      const parsed = models.length ? await parseWithModels(request.body.text, form, catalog, models) : parseRequirement(request.body.text, form, catalog);
+      const data = {
+        ...parsed,
+        parser: parsed.parser as 'llm' | 'rules' | 'none',
+        dictionaryVersion: catalog.dictionaryVersion,
+      };
+      const parseId = await recordParse(pool, {
+        attemptId, identity: { visitorId, userId }, inputText: request.body.text, formRequirement: form,
+        result: data, durationMs: performance.now() - startedAt,
+      });
+      request.log.info({ attemptId, parseId, degraded: data.degraded }, 'selection parse recorded');
+      return { code: 0, data: { ...data, attemptId, parseId, visitorId } };
     });
-    
-    selection.post<{ Body: { mode: 'random' | 'filtered'; inputContext: { textProvided: boolean }; requirement: Requirement } }>('/scheme-matches', {
+
+    selection.post<{ Body: { attemptId?: string; parseId?: string; mode: 'random' | 'filtered'; inputContext: { textProvided: boolean; text?: string; degradedParse?: boolean }; requirement: Requirement } }>('/scheme-matches', {
       schema: {
         tags: ['AI 智选'],
         summary: '匹配已审核公开方案',
         body: {
           type: 'object',
           additionalProperties: false,
-          required: ['mode', 'inputContext', 'requirement'],
-          properties: {
+           required: ['mode', 'inputContext', 'requirement'],
+           properties: {
+             attemptId: { type: 'string', format: 'uuid' },
+             parseId: { type: 'string', format: 'uuid' },
             mode: { type: 'string', enum: ['random', 'filtered'] },
             requirement: requirementSchema,
             inputContext: {
               type: 'object',
               additionalProperties: false,
               required: ['textProvided'],
-              properties: { textProvided: { type: 'boolean' } }
+              properties: { textProvided: { type: 'boolean' }, text: { type: 'string', maxLength: 1000 }, degradedParse: { type: 'boolean' } }
             }
           }
         }
       }
     }, async request => {
+      const startedAt = performance.now();
+      const visitorId = getVisitorId(request);
+      const userId = await getOptionalClientUserId(pool, redis, request);
+      const attemptId = await ensureAttempt(pool, request.body.attemptId, { visitorId, userId });
       const catalog = await dependency(() => loadCatalog(pool));
       const requirement = validateRequirement(request.body.requirement, catalog);
       const candidates = await dependency(() => loadCandidates(pool, catalog, storage));
       const result = matchSchemes(candidates, requirement, request.body.mode, request.body.inputContext.textProvided);
+      const data = {
+        ...result,
+        status: result.status as 'matched' | 'no_match' | 'needs_clarification',
+        dictionaryVersion: catalog.dictionaryVersion,
+        attemptId,
+        visitorId,
+      };
       
       request.log.info({
         rulesVersion: result.rulesVersion,
@@ -92,7 +122,13 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
         counts: result.counts
       }, 'selection completed');
       
-      return { code: 0, data: result };
+      const searchId = await recordSearch(pool, {
+        attemptId, parseId: request.body.parseId ?? null, identity: { visitorId, userId }, mode: request.body.mode,
+        inputText: request.body.inputContext.text ?? '', result: data, degradedParse: request.body.inputContext.degradedParse ?? false,
+        durationMs: performance.now() - startedAt,
+      });
+      request.log.info({ attemptId, searchId }, 'selection search recorded');
+      return { code: 0, data: { ...data, searchId } };
     });
     
     selection.get<{ Params: { code: string } }>('/schemes/:code', {

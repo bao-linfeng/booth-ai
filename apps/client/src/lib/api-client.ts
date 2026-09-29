@@ -4,6 +4,19 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 const LINGTONG_API_URL = import.meta.env.VITE_LINGTONG_API_URL ?? 'https://api.lingtong.net.cn'
 const API_TIMEOUT = 10000
 
+function visitorId() {
+  const key = 'booth-ai:visitor-id'
+  const existing = localStorage.getItem(key)
+  if (existing) return existing
+  const created = `v_${crypto.randomUUID().replaceAll('-', '')}`
+  localStorage.setItem(key, created)
+  return created
+}
+
+export function getVisitorId() {
+  return visitorId()
+}
+
 async function handleUnauthorized() {
   const [{ default: router }, { useAuthStore }, { default: pinia }] = await Promise.all([
     import('@/router'),
@@ -36,6 +49,9 @@ export const apiFetch = ofetch.create({
 
   onRequest: async ({ options }) => {
     await injectBearerToken(options)
+    const headers = new Headers(options.headers as HeadersInit | undefined)
+    headers.set('x-visitor-id', visitorId())
+    options.headers = headers
   },
 
   onResponseError: async ({ response }) => {

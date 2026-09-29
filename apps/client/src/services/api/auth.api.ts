@@ -1,4 +1,4 @@
-import { apiFetch } from '@/lib/api-client'
+import { apiFetch, getVisitorId } from '@/lib/api-client'
 import type { IResponse } from '@/services/types/response.type'
 import type { LoginResult } from '@/services/types/user.type'
 
@@ -11,6 +11,7 @@ export async function loginApi(params: LoginParams) {
   return apiFetch<IResponse<LoginResult>>('/api/v1/client/auth/login', {
     method: 'POST',
     body: params,
+    headers: { 'x-visitor-id': getVisitorId() },
   })
 }
 
