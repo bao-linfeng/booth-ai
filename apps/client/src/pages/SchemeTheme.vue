@@ -18,10 +18,14 @@ import { getThemeOffer, createThemeJob, type ThemeOffer, type ThemeJobInput } fr
 import { getThemeModels, type ThemeModel } from '@/services/api/theme-models'
 import type { SchemeDetail, SchemeImage } from '@/features/selection/types'
 import { useAuthStore } from '@/stores/auth'
+import { useCredits } from '@/composables/useCredits'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+
+const { balance, loading: loadingCredits, fetchBalance } = useCredits()
+const isLoggedIn = computed(() => authStore.isLoggedIn)
 
 const schemeCode = route.params.code as string
 const isPreview = computed(() => route.path.startsWith('/ai-selection/preview/'))
@@ -51,6 +55,9 @@ const loadingOffer = ref(false)
 const confirmDialogOpen = ref(false)
 const creatingJob = ref(false)
 
+const catalogIndustries = ref<{id: string; label: string}[]>([])
+const catalogStyles = ref<{id: string; label: string}[]>([])
+
 // Init
 onMounted(async () => {
   if (isPreview.value) {
@@ -60,10 +67,20 @@ onMounted(async () => {
   }
 
   try {
-    const [schemeRes, modelsRes] = await Promise.all([
+    if (!isPreview.value && isLoggedIn.value) {
+      fetchBalance()
+    }
+
+    const [schemeRes, modelsRes, catalogRes] = await Promise.all([
       apiFetch<{ code: number; data: SchemeDetail }>(`/api/v1/client/schemes/${encodeURIComponent(schemeCode)}`),
-      getThemeModels().catch(() => [])
+      getThemeModels().catch(() => []),
+      apiFetch<{ code: number; data: { industries: {id: string; label: string}[], styles: {id: string; label: string}[] } }>('/api/v1/client/catalog/options').catch(() => null)
     ])
+
+    if (catalogRes?.code === 0 && catalogRes.data) {
+      catalogIndustries.value = catalogRes.data.industries || []
+      catalogStyles.value = catalogRes.data.styles || []
+    }
 
     if (schemeRes.code === 0) {
       schemeData.value = schemeRes.data
@@ -128,24 +145,9 @@ watch(selectedAssetId, () => {
   fetchOffer()
 })
 
-const uniqueIndustries = computed(() => {
-  if (!themeOffer.value) return []
-  const ids = themeOffer.value.supportedCombinations.map(c => c.industryId)
-  return Array.from(new Set(ids))
-})
+const uniqueIndustries = computed(() => catalogIndustries.value)
 
-const availableStyles = computed(() => {
-  if (!themeOffer.value || !industryId.value) return []
-  return themeOffer.value.supportedCombinations
-    .filter(c => c.industryId === industryId.value)
-    .map(c => c.styleId)
-})
-
-watch(industryId, (newVal) => {
-  if (!availableStyles.value.includes(styleId.value) && availableStyles.value.length > 0) {
-    styleId.value = availableStyles.value[0]
-  }
-})
+const availableStyles = computed(() => catalogStyles.value)
 
 function addColor() {
   if (themeOffer.value && brandColors.value.length < themeOffer.value.limits.maxBrandColors) {
@@ -171,8 +173,6 @@ const blockedReasonText = computed(() => {
   if (reasons.includes('MODEL_UNAVAILABLE')) return '模型暂时不可用'
   return '当前视角暂不可生成'
 })
-
-const isLoggedIn = computed(() => authStore.isLoggedIn)
 
 async function handleGetQuote() {
   if (isPreview.value) return
@@ -290,7 +290,11 @@ async function handleConfirm() {
               <CardTitle class="text-sm font-medium text-muted-foreground">积分余额</CardTitle>
             </CardHeader>
             <CardContent>
-              <p class="text-2xl font-bold tracking-tight">待对接</p>
+              <div v-if="loadingCredits" class="py-1">
+                <Skeleton class="h-8 w-24" />
+              </div>
+              <p v-else-if="balance !== null" class="text-2xl font-bold tracking-tight">{{ balance }} 积分</p>
+              <p v-else class="text-2xl font-bold tracking-tight">--</p>
             </CardContent>
           </Card>
 
@@ -313,19 +317,19 @@ async function handleConfirm() {
                     <SelectValue placeholder="选择行业" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem v-for="id in uniqueIndustries" :key="id" :value="id">{{ id }}</SelectItem>
+                    <SelectItem v-for="opt in uniqueIndustries" :key="opt.id" :value="opt.id">{{ opt.label }}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div class="space-y-2">
                 <label class="text-sm font-medium">风格</label>
-                <Select v-model="styleId" :disabled="loadingOffer || !industryId || isPreview">
+                <Select v-model="styleId" :disabled="loadingOffer || isPreview">
                   <SelectTrigger>
                     <SelectValue placeholder="选择风格" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem v-for="id in availableStyles" :key="id" :value="id">{{ id }}</SelectItem>
+                    <SelectItem v-for="opt in availableStyles" :key="opt.id" :value="opt.id">{{ opt.label }}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

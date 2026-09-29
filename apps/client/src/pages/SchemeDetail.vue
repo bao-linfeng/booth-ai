@@ -364,7 +364,7 @@ onMounted(async () => {
                  <Button v-else disabled class="w-full">
                    AI 换主题 · 暂不可用
                  </Button>
-                 <p class="text-center text-xs text-muted-foreground">
+                 <p v-if="item.actions?.theme === 'unavailable'" class="text-center text-xs text-muted-foreground">
                    需登录并确认积分消耗后使用
                 </p></CardContent
               ></Card

@@ -21,6 +21,6 @@ export async function registerClientModule(app: FastifyInstance, config: Config,
     await registerClientManualRequestRoutes(client, pool, redis);
     await registerClientBomRoutes(client, pool);
     await registerClientSchemeAssetRoutes(client, pool, storage);
-    await registerThemeModelRoutes(client, pool);
+    await registerThemeModelRoutes(client, pool, redis);
   }, { prefix: '/api/v1/client' });
 }
