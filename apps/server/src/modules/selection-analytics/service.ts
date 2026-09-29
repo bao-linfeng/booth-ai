@@ -3,7 +3,7 @@ import type { FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import { getSession } from '../../infra/session.js';
-import type { MatchItem, Requirement } from '../client/selection/domain.js';
+import type { MatchDiagnostics, MatchItem, Requirement } from '../client/selection/domain.js';
 
 const visitorPattern = /^[a-zA-Z0-9_-]{16,128}$/;
 
@@ -43,6 +43,7 @@ export interface SearchRecordInput {
     requirement: Requirement;
     counts: { direct: number; reference: number; random: number; total: number };
     reasons: string[];
+    diagnostics: MatchDiagnostics;
     items: MatchItem[];
     rulesVersion: string;
     dictionaryVersion: string;
@@ -129,16 +130,16 @@ export async function recordSearch(pool: pg.Pool, input: SearchRecordInput): Pro
   const result = await pool.query<{ id: string }>(`
     INSERT INTO selection_searches(
       attempt_id,parse_id,visitor_id,user_id,mode,status,input_text,final_requirement,
-      direct_count,reference_count,random_count,result_count,zero_match_reasons,demand_terms,
-      result_snapshot,rules_version,dictionary_version,degraded_parse,duration_ms
-    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       direct_count,reference_count,random_count,result_count,zero_match_reasons,demand_terms,
+       result_snapshot,rules_version,dictionary_version,degraded_parse,duration_ms,match_diagnostics
+     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
     RETURNING id`, [
       input.attemptId, input.parseId, input.identity.visitorId, input.identity.userId, input.mode,
        input.result.status, input.inputText, input.result.requirement, input.result.counts.direct,
        input.result.counts.reference, input.result.counts.random, input.result.counts.total,
        input.result.status === 'no_match' ? input.result.reasons : [], extractDemandTerms(input.inputText, input.result.requirement),
        JSON.stringify(snapshotItems(input.result.items)), input.result.rulesVersion, input.result.dictionaryVersion,
-      input.degradedParse, Math.max(0, Math.round(input.durationMs)),
+       input.degradedParse, Math.max(0, Math.round(input.durationMs)), JSON.stringify(input.result.diagnostics),
     ]);
   const id = result.rows[0]?.id;
   if (!id) throw new Error('Selection search was not created');
@@ -207,7 +208,7 @@ export async function getSearch(pool: pg.Pool, id: string) {
   const result = await pool.query(`SELECT s.id,s.attempt_id AS "attemptId",s.parse_id AS "parseId",s.visitor_id AS "visitorId",
     (s.user_id IS NOT NULL) AS "loggedIn",s.mode,s.status,s.input_text AS "inputText",s.final_requirement AS "finalRequirement",
     s.direct_count AS "directCount",s.reference_count AS "referenceCount",s.random_count AS "randomCount",s.result_count AS "resultCount",
-    s.zero_match_reasons AS "zeroMatchReasons",s.demand_terms AS "demandTerms",s.result_snapshot AS "resultSnapshot",
+     s.zero_match_reasons AS "zeroMatchReasons",s.match_diagnostics AS "matchDiagnostics",s.demand_terms AS "demandTerms",s.result_snapshot AS "resultSnapshot",
     s.rules_version AS "rulesVersion",s.dictionary_version AS "dictionaryVersion",s.degraded_parse AS "degradedParse",
     s.duration_ms AS "durationMs",s.created_at AS "createdAt",p.parser,p.degraded AS "parseDegraded",p.field_sources AS "fieldSources",
     p.overrides,p.clarifications,p.unhandled_text AS "unhandledText",p.warnings,p.created_at AS "parsedAt"

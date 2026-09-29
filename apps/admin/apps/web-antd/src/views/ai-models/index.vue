@@ -45,11 +45,11 @@ onMounted(load);
       <Card v-for="purpose in ['selection_parse', 'theme'] as const" :key="purpose" :title="purpose === 'theme' ? 'AI 换主题 · 图像模型' : 'AI 智选 · 解析模型'" :loading="loading">
         <div v-for="row in models.filter(item => item.purpose === purpose)" :key="row.provider" class="mb-4 rounded-lg border p-4 last:mb-0">
           <div class="mb-4 flex flex-wrap items-center gap-2">
-            <strong>{{ row.provider === 'qwen' ? '通义千问' : row.provider === 'deepseek' ? 'DeepSeek' : row.provider === 'gemini' ? 'Gemini Nano Banana' : '通义万相' }}</strong>
+            <strong>{{ row.provider === 'qwen' ? '通义千问' : row.provider === 'deepseek' ? 'DeepSeek' : row.provider === 'gemini' ? 'Gemini Nano Banana' : row.provider === 'openai' ? 'GPT Image (OpenAI)' : '通义万相' }}</strong>
             <Tag>{{ row.model }}</Tag>
             <Tag :color="row.credentialConfigured ? 'success' : 'warning'">{{ row.credentialConfigured ? '凭据已配置' : '缺少凭据' }}</Tag>
           </div>
-          <div class="mb-4 flex flex-wrap items-center gap-3">
+          <div class="mb-4 flex flex-wrap items-end gap-3">
             <label class="w-full max-w-md">API Key（留空则保留已有密钥）
               <Input.Password v-model:value="keyDrafts[row.provider]" autocomplete="new-password" placeholder="输入新密钥，保存后生效" class="mt-1" />
             </label>

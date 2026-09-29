@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type pg from 'pg';
 
-export type AiProvider = 'qwen' | 'deepseek' | 'gemini' | 'wanx';
+export type AiProvider = 'qwen' | 'deepseek' | 'gemini' | 'wanx' | 'openai';
 export type AiPurpose = 'selection_parse' | 'theme';
 
 export const modelDefinitions = {
@@ -9,6 +9,7 @@ export const modelDefinitions = {
   deepseek: { purpose: 'selection_parse', model: 'deepseek-v4-flash' },
   gemini: { purpose: 'theme', model: 'gemini-2.5-flash-image' },
   wanx: { purpose: 'theme', model: 'wanx2.1-imageedit' },
+  openai: { purpose: 'theme', model: 'gpt-image-2.5-sunburst' },
 } as const;
 
 export interface AiModelConfig {

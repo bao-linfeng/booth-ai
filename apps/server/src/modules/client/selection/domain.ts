@@ -1,4 +1,19 @@
-export const rulesVersion = 'selection-2026-09-28';
+export const rulesVersion = 'selection-2026-09-29';
+
+export interface MatchDiagnostics {
+  reviewedPublished: number;
+  ready: number;
+  exclusions: {
+    unverifiedChecklist: number;
+    incompleteAssets: number;
+    invalidData: number;
+    productSystem: number;
+    height: number;
+    applicability: number;
+    tags: number;
+    dimensions: number;
+  };
+}
 
 export interface Requirement {
   lengthMm: number | null;

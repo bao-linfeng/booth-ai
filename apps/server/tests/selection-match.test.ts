@@ -55,3 +55,51 @@ test('hard tag requirements never rely on unconfirmed labels', () => {
   const result = matchSchemes([unconfirmed], requirement, 'filtered', false);
   assert.equal(result.counts.total, 0);
 });
+
+test('overlapping exclusions are counted independently and sorted by actual prevalence', () => {
+  const requirement = { ...emptyRequirement(), productSystemId: 'fs62', maxHeightMm: 3000 };
+  const candidates = [
+    candidate,
+    { ...candidate, code: 'BOOTH-2', specifications: { ...candidate.specifications, productSystemId: 'other' } },
+    { ...candidate, code: 'BOOTH-3', specifications: { ...candidate.specifications, productSystemId: 'other', heightMm: 2500 } },
+  ];
+  const result = matchSchemes(candidates, requirement, 'filtered', false);
+  assert.equal(result.status, 'no_match');
+  assert.equal(result.diagnostics.exclusions.height, 2);
+  assert.equal(result.diagnostics.exclusions.productSystem, 2);
+  assert.equal(result.diagnostics.ready, 3);
+  assert.match(result.reasons[1] ?? '', /产品体系不符：2 套/);
+  assert.match(result.reasons[2] ?? '', /超过场馆限高：2 套/);
+});
+
+test('a combined empty result does not claim any single condition eliminated all schemes', () => {
+  const requirement = { ...emptyRequirement(), productSystemId: 'fs62', maxHeightMm: 3000 };
+  const candidates = [candidate, { ...candidate, code: 'BOOTH-2', specifications: { ...candidate.specifications, productSystemId: 'other', heightMm: 2500 } }];
+  const result = matchSchemes(candidates, requirement, 'filtered', false);
+  assert.deepEqual([result.diagnostics.exclusions.productSystem, result.diagnostics.exclusions.height], [1, 1]);
+  assert.ok(result.reasons[0]?.includes('条件组合'));
+  assert.ok(result.reasons.every(reason => !reason.includes('均超过')));
+});
+
+test('pre-pool exclusions are retained alongside filtered candidate failures', () => {
+  const requirement = { ...emptyRequirement(), maxHeightMm: 3000 };
+  const result = matchSchemes([candidate], requirement, 'filtered', false, {
+    reviewedPublished: 5, ready: 1,
+    exclusions: { unverifiedChecklist: 3, incompleteAssets: 2, invalidData: 0, productSystem: 0, height: 0, applicability: 0, tags: 0, dimensions: 0 }
+  });
+  assert.equal(result.diagnostics.exclusions.height, 1);
+  assert.match(result.reasons[1] ?? '', /清单未核验：3 套/);
+  assert.match(result.reasons[2] ?? '', /资产不完整：2 套/);
+  assert.match(result.reasons[3] ?? '', /超过场馆限高：1 套/);
+});
+
+test('failed applicability and dimension checks remain visible even when another hard condition also fails', () => {
+  const requirement = { ...emptyRequirement(), maxHeightMm: 3000, lengthMm: 9000, applicabilityAnswers: { indoor: true } };
+  const conditional = { ...candidate, applicabilityRules: [{ id: 'indoor', expectedValue: false }] };
+  const result = matchSchemes([conditional], requirement, 'filtered', false);
+  assert.equal(result.status, 'no_match');
+  assert.equal(result.diagnostics.exclusions.height, 1);
+  assert.equal(result.diagnostics.exclusions.applicability, 1);
+  assert.equal(result.diagnostics.exclusions.dimensions, 1);
+  assert.ok(result.reasons.some(reason => reason.includes('适用条件不符：1 套')));
+});

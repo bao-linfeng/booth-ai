@@ -47,6 +47,11 @@ export interface SchemeSearchListResult {
 export interface SchemeSearchDetail extends SchemeSearchRecord {
   finalRequirement: Record<string, unknown>;
   zeroMatchReasons: string[];
+  matchDiagnostics: null | {
+    reviewedPublished: number;
+    ready: number;
+    exclusions: Record<'unverifiedChecklist' | 'incompleteAssets' | 'invalidData' | 'productSystem' | 'height' | 'applicability' | 'tags' | 'dimensions', number>;
+  };
   demandTerms: string[];
   resultSnapshot: Record<string, unknown>[];
   rulesVersion: string;

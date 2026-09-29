@@ -1,7 +1,7 @@
 import { apiFetch } from '@/lib/api-client';
 
 export interface ThemeModel {
-  provider: 'gemini' | 'wanx';
+  provider: 'gemini' | 'wanx' | 'openai';
   model: string;
   unitCredits: number;
   revision: number;

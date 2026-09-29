@@ -5,7 +5,7 @@ import type { Config } from '../../../config.js';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../../infra/storage.js';
 import { requirementSchema, validateRequirement, type Requirement } from './domain.js';
-import { loadCandidates, loadCatalog } from './repository.js';
+import { loadCandidatePool, loadCatalog } from './repository.js';
 import { matchSchemes } from './match.js';
 import { parseRequirement } from './parse.js';
 import { activeAiModels, type ActiveAiModel } from '../../../infra/ai-models.js';
@@ -106,8 +106,8 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       const attemptId = await ensureAttempt(pool, request.body.attemptId, { visitorId, userId });
       const catalog = await dependency(() => loadCatalog(pool));
       const requirement = validateRequirement(request.body.requirement, catalog);
-      const candidates = await dependency(() => loadCandidates(pool, catalog, storage));
-      const result = matchSchemes(candidates, requirement, request.body.mode, request.body.inputContext.textProvided);
+       const { candidates, diagnostics } = await dependency(() => loadCandidatePool(pool, catalog, storage));
+       const result = matchSchemes(candidates, requirement, request.body.mode, request.body.inputContext.textProvided, diagnostics);
       const data = {
         ...result,
         status: result.status as 'matched' | 'no_match' | 'needs_clarification',
@@ -119,7 +119,8 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       request.log.info({
         rulesVersion: result.rulesVersion,
         candidateCount: candidates.length,
-        counts: result.counts
+         counts: result.counts,
+         diagnostics: result.diagnostics
       }, 'selection completed');
       
       const searchId = await recordSearch(pool, {
@@ -143,7 +144,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       }
     }, async request => {
       const catalog = await dependency(() => loadCatalog(pool));
-      const [candidate] = await dependency(() => loadCandidates(pool, catalog, storage, request.params.code));
+       const { candidates: [candidate] } = await dependency(() => loadCandidatePool(pool, catalog, storage, request.params.code));
       
       if (!candidate) throw Object.assign(new Error('Scheme not visible'), { statusCode: 404 });
       const availability = await dependency(() => deliverableAvailability(pool, candidate.code));
@@ -157,7 +158,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
           applicabilityNotes: candidate.applicabilityNotes,
           resources: { model: availability.model, bom: true, renderings: candidate.images.length > 0, masks: candidate.images.length === 3, drawings: availability.drawing, artworks: availability.artwork },
           actions: {
-            theme: 'unavailable',
+            theme: 'available',
             bom: 'available',
             drawings: availability.drawing ? 'available' : 'unavailable',
             artworks: availability.artwork ? 'available' : 'unavailable',

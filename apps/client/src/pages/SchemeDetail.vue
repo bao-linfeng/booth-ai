@@ -217,7 +217,7 @@ const item = computed(() => {
         artworks: true,
       },
       actions: {
-        theme: "unavailable",
+        theme: "available",
         bom: "unavailable",
         drawings: "unavailable",
         artworks: "unavailable",
@@ -345,14 +345,25 @@ onMounted(async () => {
                    <label for="image-model" class="block text-sm font-medium">选择图像模型</label>
                    <select id="image-model" v-model="selectedThemeModel" class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
                      <option v-for="model in themeModels" :key="model.provider" :value="model.provider">
-                       {{ model.provider === 'gemini' ? 'Gemini Nano Banana' : '通义万相' }} · {{ model.unitCredits }} 积分/张
+                       {{ model.provider === 'gemini' ? 'Gemini Nano Banana' : model.provider === 'openai' ? 'GPT Image (OpenAI)' : '通义万相' }} · {{ model.unitCredits }} 积分/张
                      </option>
                    </select>
                    <p class="text-sm">当前预计：{{ selectedThemePrice }} 积分 / 张</p>
                  </div>
                  <p v-else-if="themeModelsError" class="text-xs text-destructive">模型费用加载失败，请重试。</p>
                  <p v-else class="text-xs text-muted-foreground">当前暂无可用的图像模型。</p>
-                 <Button disabled class="w-full">AI 换主题 · 待接入积分结算</Button>
+                 <Button
+                   v-if="item.actions?.theme !== 'unavailable'"
+                   as-child
+                   class="w-full"
+                 >
+                   <RouterLink :to="preview ? `/ai-selection/preview/schemes/${item.code}/theme` : `/schemes/${item.code}/theme`">
+                     <Palette class="mr-2 size-4" />AI 换主题
+                   </RouterLink>
+                 </Button>
+                 <Button v-else disabled class="w-full">
+                   AI 换主题 · 暂不可用
+                 </Button>
                  <p class="text-center text-xs text-muted-foreground">
                    需登录并确认积分消耗后使用
                 </p></CardContent

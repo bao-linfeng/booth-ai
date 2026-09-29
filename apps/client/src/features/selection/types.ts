@@ -58,6 +58,10 @@ export interface MatchResponse {
   requirement: Requirement
   items: MatchItem[]
   counts: { direct: number; reference: number; random: number; total: number }
+  diagnostics: {
+    reviewedPublished: number; ready: number
+    exclusions: { unverifiedChecklist: number; incompleteAssets: number; invalidData: number; productSystem: number; height: number; applicability: number; tags: number; dimensions: number }
+  }
   reasons: string[]
   suggestions: string[]
   missingFields: string[]

@@ -17,6 +17,10 @@ import { getUserListApi } from '#/api/core/user-manage';
 const detailOpen = ref(false);
 const detail = ref<SchemeSearchDetail>();
 const detailLoading = ref(false);
+const diagnosticLabels: Record<string, string> = {
+  unverifiedChecklist: '清单未核验', incompleteAssets: '资产不完整', invalidData: '基础数据或审核信息不完整',
+  productSystem: '体系不符', height: '超过限高', applicability: '适用条件不符', tags: '功能条件不符', dimensions: '尺寸超出参考范围',
+};
 const optionLabels = ref<Record<string, string>>({});
 const filterOptions = ref({ users: [] as { label: string; value: string }[], schemes: [] as { label: string; value: string }[], visitors: [] as { label: string; value: string }[] });
 
@@ -256,6 +260,14 @@ function requirementOptionLabel(value: unknown): string {
         <DescriptionsItem label="解析">{{ detail.parser || '—' }}{{ detail.parseDegraded ? '（降级）' : '' }}</DescriptionsItem>
         <DescriptionsItem label="需求词">{{ detail.demandTerms.join('、') || '—' }}</DescriptionsItem>
         <DescriptionsItem label="零命中原因">{{ detail.zeroMatchReasons.join('；') || '—' }}</DescriptionsItem>
+        <DescriptionsItem label="匹配诊断">
+          <div v-if="detail.matchDiagnostics" class="space-y-1">
+            <div>已发布且审核有效 {{ detail.matchDiagnostics.reviewedPublished }} 套；可用 {{ detail.matchDiagnostics.ready }} 套</div>
+            <div v-for="(count, key) in detail.matchDiagnostics.exclusions" :key="key">{{ diagnosticLabels[key] }}：{{ count }} 套</div>
+            <div class="text-gray-500">各原因独立计数，可能重叠；条件筛选仅统计可用方案。</div>
+          </div>
+          <span v-else>—</span>
+        </DescriptionsItem>
         <DescriptionsItem label="返回方案快照"><pre class="whitespace-pre-wrap break-words">{{ JSON.stringify(detail.resultSnapshot, null, 2) }}</pre></DescriptionsItem>
       </Descriptions>
     </Drawer>

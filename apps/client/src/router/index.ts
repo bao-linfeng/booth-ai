@@ -27,6 +27,24 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '方案详情' },
   },
   {
+    path: '/schemes/:code/theme',
+    name: 'SchemeTheme',
+    component: () => import('@/pages/SchemeTheme.vue'),
+    meta: { title: 'AI 换主题' },
+  },
+  {
+    path: '/ai-selection/preview/schemes/:code/theme',
+    name: 'SchemeThemePreview',
+    component: () => import('@/pages/SchemeTheme.vue'),
+    meta: { title: 'AI 换主题 · 静态预览' },
+  },
+  {
+    path: '/theme-jobs/:jobId',
+    name: 'ThemeJob',
+    component: () => import('@/pages/ThemeJob.vue'),
+    meta: { title: 'AI 换主题结果' },
+  },
+  {
     path: '/',
     name: 'Home',
     component: () => import('@/pages/Home.vue'),
@@ -144,6 +162,12 @@ export const routes: RouteRecordRaw[] = [
     beforeEnter: () => {
       window.location.href = '/'
     }
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('@/pages/Profile.vue'),
+    meta: { title: '个人中心' }
   },
   {
     path: '/auth/sign-in',

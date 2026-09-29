@@ -1,10 +1,15 @@
 import { randomInt } from 'node:crypto';
-import { isEmpty, invalid, rulesVersion, type Candidate, type MatchItem, type Requirement } from './domain.js';
+import { isEmpty, invalid, rulesVersion, type Candidate, type MatchDiagnostics, type MatchItem, type Requirement } from './domain.js';
 
 const intersects = (left: string[], right: string[]) => left.some(value => right.includes(value));
 
-export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean) {
+export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean, poolDiagnostics?: MatchDiagnostics) {
   if (mode === 'random' && (textProvided || !isEmpty(requirement))) invalid('Random requires empty input');
+
+  const diagnostics: MatchDiagnostics = poolDiagnostics ? structuredClone(poolDiagnostics) : {
+    reviewedPublished: candidates.length, ready: candidates.length,
+    exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, applicability: 0, tags: 0, dimensions: 0 }
+  };
   
   const missingFields = [
     !requirement.lengthMm && '展位长',
@@ -16,7 +21,7 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
   const base = { mode, requirement, missingFields, rulesVersion };
   
   if (mode === 'filtered' && isEmpty(requirement)) {
-    return { ...base, status: 'needs_clarification', items: [], counts: { direct: 0, reference: 0, random: 0, total: 0 }, reasons: ['请至少提供一项可识别的条件'], suggestions: [] };
+    return { ...base, status: 'needs_clarification', items: [], counts: { direct: 0, reference: 0, random: 0, total: 0 }, diagnostics, reasons: ['请至少提供一项可识别的条件'], suggestions: [] };
   }
   
   const toItem = (candidate: Candidate, matchType: MatchItem['matchType']): MatchItem => ({
@@ -48,13 +53,25 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
     for (const candidate of candidates) {
       const s = candidate.specifications;
       
-      // 前置硬条件
-      if (requirement.productSystemId && requirement.productSystemId !== s.productSystemId) continue;
-      if (requirement.maxHeightMm && s.heightMm > requirement.maxHeightMm) continue;
-      if (candidate.applicabilityRules.some(rule => requirement.applicabilityAnswers[rule.id] !== undefined && requirement.applicabilityAnswers[rule.id] !== rule.expectedValue)) continue;
-      if ((requirement.requiredZoneIds.length || requirement.requiredFeatureIds.length || requirement.excludedZoneIds.length || requirement.excludedFeatureIds.length) && !candidate.labelsConfirmed) continue;
-      if (requirement.requiredZoneIds.some(id => !candidate.zoneIds.includes(id)) || requirement.requiredFeatureIds.some(id => !candidate.featureIds.includes(id))) continue;
-      if (intersects(requirement.excludedZoneIds, candidate.zoneIds) || intersects(requirement.excludedFeatureIds, candidate.featureIds)) continue;
+      const systemMiss = !!requirement.productSystemId && requirement.productSystemId !== s.productSystemId;
+      const heightMiss = !!requirement.maxHeightMm && s.heightMm > requirement.maxHeightMm;
+      const applicabilityMiss = candidate.applicabilityRules.some(rule => requirement.applicabilityAnswers[rule.id] !== undefined && requirement.applicabilityAnswers[rule.id] !== rule.expectedValue);
+      const tagsMiss = ((requirement.requiredZoneIds.length || requirement.requiredFeatureIds.length || requirement.excludedZoneIds.length || requirement.excludedFeatureIds.length) && !candidate.labelsConfirmed)
+        || requirement.requiredZoneIds.some(id => !candidate.zoneIds.includes(id)) || requirement.requiredFeatureIds.some(id => !candidate.featureIds.includes(id))
+        || intersects(requirement.excludedZoneIds, candidate.zoneIds) || intersects(requirement.excludedFeatureIds, candidate.featureIds);
+      const deviations = [
+        requirement.areaM2 && Math.abs(s.areaM2 - requirement.areaM2) / requirement.areaM2,
+        requirement.lengthMm && Math.abs(s.lengthMm - requirement.lengthMm) / requirement.lengthMm,
+        requirement.widthMm && Math.abs(s.widthMm - requirement.widthMm) / requirement.widthMm,
+      ].filter((value): value is number => typeof value === 'number');
+      const deviation = Math.max(0, ...deviations);
+      const dimensionMiss = deviation > 0.3 + Number.EPSILON;
+      if (systemMiss) diagnostics.exclusions.productSystem++;
+      if (heightMiss) diagnostics.exclusions.height++;
+      if (applicabilityMiss) diagnostics.exclusions.applicability++;
+      if (tagsMiss) diagnostics.exclusions.tags++;
+      if (dimensionMiss) diagnostics.exclusions.dimensions++;
+      if (systemMiss || heightMiss || applicabilityMiss || tagsMiss || dimensionMiss) continue;
       
       const item = toItem(candidate, 'reference');
       item.pendingConfirmations = missingFields.map(field => `需补充${field}`);
@@ -63,15 +80,6 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
           item.pendingConfirmations.push(`需确认适用条件：${rule.id}`);
         }
       }
-      
-      const deviations = [
-        requirement.areaM2 && Math.abs(s.areaM2 - requirement.areaM2) / requirement.areaM2,
-        requirement.lengthMm && Math.abs(s.lengthMm - requirement.lengthMm) / requirement.lengthMm,
-        requirement.widthMm && Math.abs(s.widthMm - requirement.widthMm) / requirement.widthMm,
-      ].filter((value): value is number => typeof value === 'number');
-      const deviation = Math.max(0, ...deviations);
-      
-      if (deviation > 0.3 + Number.EPSILON) continue;
       
       for (const [field, label] of [['lengthMm', '长'], ['widthMm', '宽']] as const) {
         if (requirement[field] && requirement[field] !== s[field]) {
@@ -131,17 +139,38 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
     random: items.filter(item => item.matchType === 'random').length,
     total: items.length
   };
+
+  const labels: Record<keyof MatchDiagnostics['exclusions'], string> = {
+    unverifiedChecklist: '清单未核验', incompleteAssets: '资产不完整', invalidData: '基础数据或审核信息不完整',
+    productSystem: '产品体系不符', height: '超过场馆限高', applicability: '适用条件不符',
+    tags: '必选或禁用功能条件不符', dimensions: '尺寸超出参考范围'
+  };
+  const orderedExclusions = (Object.keys(labels) as (keyof MatchDiagnostics['exclusions'])[])
+    .filter(key => diagnostics.exclusions[key] > 0)
+    .sort((a, b) => diagnostics.exclusions[b] - diagnostics.exclusions[a] || Object.keys(labels).indexOf(a) - Object.keys(labels).indexOf(b));
+  const noMatchReasons = !diagnostics.reviewedPublished
+    ? ['当前暂无已发布且审核有效的方案']
+    : [
+        mode === 'random' ? '当前暂无可随机推荐的方案（各排除原因可重叠）' : '当前条件组合暂无可采用或参考的方案（各排除原因可重叠）',
+        ...orderedExclusions.map(key => `${labels[key]}：${diagnostics.exclusions[key]} 套${['unverifiedChecklist', 'incompleteAssets', 'invalidData'].includes(key) ? '已发布方案' : '可用方案'}`)
+      ];
   
   return {
     ...base,
     status: items.length ? 'matched' : 'no_match',
     items,
     counts,
+    diagnostics,
     reasons: !items.length
-      ? [candidates.length ? '当前条件组合暂无可直接采用或范围内的参考方案' : '当前暂无满足公开审核及资产要求的方案']
+      ? noMatchReasons
       : !counts.direct && mode === 'filtered'
       ? ['未找到可直接采用方案，以下仅供参考']
       : [],
-    suggestions: !items.length ? ['请核对已填写条件，或联系专业顾问'] : []
+    suggestions: !items.length ? [
+      ...(diagnostics.exclusions.dimensions ? ['可尝试调整展位长宽或面积，再重新查询'] : []),
+      ...(diagnostics.exclusions.productSystem ? ['可检查所选产品体系，修改后重新查询'] : []),
+      ...(diagnostics.exclusions.tags ? ['可检查必选或禁用的功能条件，修改后重新查询'] : []),
+      '也可联系专业顾问确认可用方案'
+    ] : []
   };
 }

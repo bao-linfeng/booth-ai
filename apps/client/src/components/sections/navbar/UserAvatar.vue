@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, LogOut, ChevronsUpDown } from 'lucide-vue-next'
+import { User, LogOut, ChevronsUpDown, Coins } from 'lucide-vue-next'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -15,10 +15,16 @@ import {
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
 import { useAuth } from '@/composables/use-auth'
+import { useCredits } from '@/composables/useCredits'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const { logout } = useAuth()
+const { balance, fetchBalance } = useCredits()
+
+onMounted(() => {
+  fetchBalance()
+})
 
 const LINGTONG_BASE = import.meta.env.VITE_LINGTONG_API_URL ?? 'https://api.lingtong.net.cn'
 const avatarUrl = computed(() => {
@@ -39,8 +45,11 @@ const avatarFallback = computed(() => authStore.displayName.charAt(0) || '?')
           <AvatarFallback class="bg-primary text-primary-foreground">{{ avatarFallback }}</AvatarFallback>
         </Avatar>
         <div class="hidden flex-col items-start md:flex">
-          <span class="text-sm font-medium leading-none">{{ authStore.displayName }}</span>
-          <span class="text-xs text-muted-foreground mt-1">{{ authStore.currentUser?.username }}</span>
+          <span class="text-sm font-medium leading-none">{{ authStore.currentUser?.username }}</span>
+          <span class="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+            <Coins class="w-3 h-3 text-yellow-500 inline" />
+            {{ balance !== null ? `${balance} 积分` : '--' }}
+          </span>
         </div>
         <ChevronsUpDown class="h-4 w-4 text-muted-foreground ml-auto hidden md:block" />
       </Button>

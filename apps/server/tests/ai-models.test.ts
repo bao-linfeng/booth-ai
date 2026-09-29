@@ -18,15 +18,20 @@ test('model credentials are authenticated and never exposed by config listing', 
   const pool = { query: async () => ({ rows: [
     { ...initial(), enabled: true, unitCredits: 10, credentialCiphertext: ciphertext },
     { ...initial(), provider: 'wanx', enabled: true, unitCredits: 5 },
+    { ...initial(), provider: 'openai', enabled: true, unitCredits: 20,
+      credentialCiphertext: encryptCredential(providerKey, 'openai', encryptionKey) },
   ] }) } as unknown as pg.Pool;
   const models = await listAiModels(pool);
   assert.equal(JSON.stringify(models).includes(providerKey), false);
   assert.equal(JSON.stringify(models).includes('credentialCiphertext'), false);
   assert.equal(models[0]?.credentialConfigured, true);
   assert.equal(models[1]?.credentialConfigured, false);
+  assert.equal(models[2]?.model, 'gpt-image-2.5-sunburst');
+  assert.equal(models[2]?.credentialConfigured, true);
   const active = await activeAiModels(pool, 'theme', encryptionKey);
-  assert.deepEqual(active.map(model => model.provider), ['gemini']);
+  assert.deepEqual(active.map(model => model.provider), ['gemini', 'openai']);
   assert.equal(active[0]?.apiKey, providerKey);
+  assert.equal(active[1]?.apiKey, providerKey);
 });
 
 test('saving, keeping, and clearing a key are atomic and audited without secret content', async () => {

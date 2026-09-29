@@ -10,11 +10,13 @@ import { registerClientBomRoutes } from './bill-of-materials/index.js';
 import { registerThemeModelRoutes } from './theme-jobs/index.js';
 import { registerClientSchemeAssetRoutes } from './schemes/index.js';
 import { registerClientManualRequestRoutes } from './manual-requests/index.js';
+import { registerClientCreditRoutes } from './credits/index.js';
 
 export async function registerClientModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
   await app.register(async client => {
     await registerClientAuthRoutes(client, config, pool, redis);
     await registerClientMeRoutes(client, config, pool, redis);
+    await registerClientCreditRoutes(client, pool, redis);
     await registerSelectionRoutes(client, pool, redis, storage, config);
     await registerClientManualRequestRoutes(client, pool, redis);
     await registerClientBomRoutes(client, pool);
