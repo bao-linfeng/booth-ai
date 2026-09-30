@@ -29,7 +29,15 @@ async function setup(query: Query) {
   const redis = {
     get: async (key: string) => key === sessionKey
       ? JSON.stringify({ site: 'client', localId: userId, expiresAt: Math.floor(Date.now() / 1000) + 60 })
-      : key === 'theme-offer:offer-1' ? JSON.stringify({ unitCredits: 10, pricingRevision: 1 }) : null,
+      : key === 'theme-offer:offer-1' ? JSON.stringify({
+        unitCredits: 10,
+        pricingRevision: 1,
+        schemeCode: 'S-1',
+        sourceAssetId: 'source',
+        industryId: 'industry',
+        styleId: 'style',
+        requestedCount: 1,
+      }) : null,
   } as unknown as Redis;
   const storage = {
     signDownload: async (key: string) => `https://assets.example/${key}`,
@@ -59,6 +67,9 @@ test('theme job details include ordered results with nullable fields normalized'
 
 test('creating a theme job writes the outbox entry in the same transaction', async t => {
   const { app, statements } = await setup(sql => {
+    if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
+    if (sql.includes('availableBalance')) return { rows: [{ availableBalance: 100 }] };
+    if (sql.includes('credit_reservations')) return { rows: [] };
     if (sql.includes('FROM theme_jobs')) return { rows: [] };
     if (sql.includes('INSERT INTO theme_jobs')) return { rows: [{ id: jobId }] };
     if (sql.includes('INSERT INTO theme_job_outbox')) return { rows: [] };

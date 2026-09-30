@@ -3,6 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type pg from 'pg';
+import sharp from 'sharp';
 import type { Config } from '../../config.js';
 import { activeAiModels, type ActiveAiModel } from '../../infra/ai-models.js';
 import { transaction } from '../../infra/database.js';
@@ -12,6 +13,16 @@ import type { createStorage } from '../../infra/storage.js';
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
 type ThemeInput = { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
 type ThemeJob = { requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string };
+type UploadedResult = {
+  resultId: string;
+  assetId: string;
+  objectKey: string;
+  checksum: string;
+  byteSize: number;
+  mimeType: string;
+  ordinal: number;
+  previewUrl: string;
+};
 
 async function fetchSourceImageUrls(database: pg.Pool, sourceAssetId: string, config: ThemeConfig): Promise<{ internal: string; public: string }> {
   const result = await database.query<{ objectKey: string }>(
@@ -56,13 +67,62 @@ async function generatedImage(url: string): Promise<{ bytes: Buffer; mimeType: s
   return { bytes: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get('content-type')?.split(';')[0] ?? 'image/png' };
 }
 
-async function generateWithOpenAI(model: ActiveAiModel, sourceImageUrl: string, prompt: string, count: number): Promise<string[]> {
+async function fetchMaskBuffer(database: pg.Pool, sourceAssetId: string, config: ThemeConfig): Promise<Buffer | null> {
+  const result = await database.query<{ objectKey: string }>(
+    `SELECT v.object_key AS "objectKey"
+     FROM scheme_assets a
+     JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
+     WHERE a.related_asset_id = $1 AND a.type = 'mask' AND a.is_active = true
+     LIMIT 1`,
+    [sourceAssetId]
+  );
+  const key = result.rows[0]?.objectKey;
+  if (!key) return null;
+
+  const options = {
+    region: config.s3.region, forcePathStyle: true,
+    credentials: { accessKeyId: config.s3.accessKeyId, secretAccessKey: config.s3.secretAccessKey },
+  };
+  const internalClient = new S3Client({ ...options, endpoint: config.s3.endpoint });
+  try {
+    const command = new GetObjectCommand({ Bucket: config.s3.bucket, Key: key });
+    const signedUrl = await getSignedUrl(internalClient, command, { expiresIn: 900 });
+    const resp = await fetch(signedUrl);
+    if (!resp.ok) return null;
+    const bytes = Buffer.from(await resp.arrayBuffer());
+    const converted = await sharp(bytes)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const { data, info } = converted;
+    for (let i = 0; i < info.width * info.height; i++) {
+      const r = data[i * 4]!;
+      const g = data[i * 4 + 1]!;
+      const b = data[i * 4 + 2]!;
+      const isMagenta = r > 200 && g < 60 && b > 200;
+      data[i * 4 + 3] = isMagenta ? 0 : 255;
+    }
+    return await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
+      .png()
+      .toBuffer();
+  } catch {
+    return null;
+  } finally {
+    internalClient.destroy();
+  }
+}
+
+async function generateWithOpenAI(model: ActiveAiModel, sourceImageUrl: string, prompt: string, count: number, maskBuffer?: Buffer): Promise<string[]> {
   const image = await sourceImage(sourceImageUrl);
   const form = new FormData();
   form.set('model', model.model);
   form.set('image', new Blob([image.bytes], { type: image.mimeType }), 'source.png');
   form.set('prompt', prompt);
   form.set('n', String(count));
+  if (maskBuffer) {
+    const maskBytes = new Uint8Array(maskBuffer);
+    form.set('mask', new Blob([maskBytes], { type: 'image/png' }), 'mask.png');
+  }
   form.set('size', '1792x1024');
   const response = await fetch('https://api.openai.com/v1/images/edits', {
     method: 'POST', headers: { Authorization: `Bearer ${model.apiKey}` }, body: form,
@@ -83,8 +143,8 @@ async function generateWithGemini(model: ActiveAiModel, sourceImageUrl: string, 
   const base64 = Buffer.from(image.bytes).toString('base64');
   const urls: string[] = [];
   for (let i = 0; i < count; i++) {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${encodeURIComponent(model.apiKey)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.model)}:generateContent`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': model.apiKey },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: image.mimeType, data: base64 } }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }),
     });
     if (!response.ok) {
@@ -144,7 +204,7 @@ export async function processThemeJob(
   if (!job) throw new Error(`Theme job ${jobId} not found`);
   const started = await database.query(
     `UPDATE theme_jobs SET status = 'running', phase = 'provider_submitting', updated_at = now()
-     WHERE id = $1 AND status IN ('pending', 'queued', 'running') RETURNING id`, [jobId]
+     WHERE id = $1 AND status IN ('pending', 'queued', 'running', 'settling') RETURNING id`, [jobId]
   );
   if (started.rowCount === 0) return;
   await publish(jobId, { status: 'running', phase: 'provider_submitting' });
@@ -158,6 +218,7 @@ export async function processThemeJob(
     const industryLabel = labels.rows.find(row => row.id === job.input.industryId)?.label;
     const styleLabel = labels.rows.find(row => row.id === job.input.styleId)?.label;
     if (!industryLabel || !styleLabel) throw new Error('Theme dictionary labels not found');
+    const maskBuffer = await fetchMaskBuffer(database, job.sourceAssetId, config).catch(() => null);
     const template = await getActivePromptTemplate(database, 'theme', job.input.industryId, job.input.styleId);
     const prompt = template ? template.body.replace(/{{(brandColors|brandKeywords|industryLabel|styleLabel)}}/g, (_match, variable: string) => ({
       brandColors: job.input.brandColors?.join(', ') ?? '无', brandKeywords: job.input.brandKeywords ?? '无',
@@ -172,7 +233,7 @@ export async function processThemeJob(
           const remaining = job.requestedCount - urls.length;
           let generated: string[];
           switch (model.provider) {
-            case 'openai': generated = await generateWithOpenAI(model, imageUrls.internal, prompt, remaining); break;
+            case 'openai': generated = await generateWithOpenAI(model, imageUrls.internal, prompt, remaining, maskBuffer ?? undefined); break;
             case 'gemini': generated = await generateWithGemini(model, imageUrls.internal, prompt, remaining); break;
             case 'wanx': generated = await generateWithWanx(model, imageUrls.public, prompt, remaining); break;
             default: continue;
@@ -190,47 +251,138 @@ export async function processThemeJob(
     console.error(`Theme job ${jobId} failed before settlement`, error);
   }
 
-  const persistedResults: { resultId: string; previewUrl: string }[] = [];
-  await publish(jobId, { status: 'settling', phase: 'credit_settling' });
-  await transaction(database, async client => {
-    await client.query(`UPDATE theme_jobs SET status = 'settling', phase = 'credit_settling', updated_at = now() WHERE id = $1`, [jobId]);
-    for (const [index, url] of urls.entries()) {
-      const resultId = randomUUID();
-      const assetId = randomUUID();
-      const image = await generatedImage(url);
-      const objectKey = `theme-results/${jobId}/${assetId}.png`;
-      const checksum = createHash('sha256').update(image.bytes).digest('hex');
-      await assetStorage.putBuffer(objectKey, image.bytes, image.mimeType);
-      await client.query(
-        `INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, metadata)
-         SELECT $1, s.id, 'artwork', $2, $3, $4
-         FROM schemes s WHERE s.code = $5`,
-        [assetId, `AI 换主题结果 ${index + 1}`, index, JSON.stringify({ themeJobId: jobId }), job.schemeCode]
-      );
-      await client.query(
-        `INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
-        [randomUUID(), assetId, objectKey, `${assetId}.png`, image.mimeType, image.bytes.byteLength, checksum]
-      );
-      await client.query(
-        `INSERT INTO theme_job_results (id, job_id, ordinal, asset_id, preview_url)
-         VALUES ($1, $2, $3, $4, NULL)`, [resultId, jobId, index + 1, assetId]
-      );
-      persistedResults.push({ resultId, previewUrl: await assetStorage.signDownload(objectKey, 900) });
-    }
-    const usableCount = urls.length;
-    if (usableCount > 0) {
-      if (job.unitCredits === null) throw new Error('Theme job has no unit credit price');
-      await client.query(
-        `INSERT INTO credit_transactions (user_id, kind, amount, note) VALUES ($1, 'theme_consume', $2, $3)`,
-        [job.userId, -(usableCount * job.unitCredits), `theme_job:${jobId}`]
-      );
-    }
-    await client.query(
-      `UPDATE theme_jobs SET status = $1, phase = NULL, usable_count = $2, updated_at = now() WHERE id = $3`,
-      [usableCount === 0 ? 'failed' : usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded', usableCount, jobId]
+  if (urls.length > 0) {
+    await transaction(database, async client => {
+      for (const [index, url] of urls.entries()) {
+        await client.query(
+          `INSERT INTO theme_job_generated_urls (job_id, ordinal, url) VALUES ($1, $2, $3) ON CONFLICT (job_id, ordinal) DO NOTHING`,
+          [jobId, index + 1, url]
+        );
+      }
+    });
+  }
+
+  const persistedUrlsResult = await database.query<{ ordinal: number; url: string }>(
+    `SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal`,
+    [jobId]
+  );
+  const settleUrls = persistedUrlsResult.rows.length > 0
+    ? persistedUrlsResult.rows.map(r => r.url)
+    : urls;
+
+  if (settleUrls.length === 0) {
+    await database.query(
+      `UPDATE credit_reservations SET status = 'released', updated_at = now()
+       WHERE theme_job_id = $1 AND status = 'reserved'`,
+      [jobId],
     );
+    await database.query(
+      `UPDATE theme_jobs SET status = 'failed', phase = NULL, usable_count = 0, updated_at = now()
+       WHERE id = $1 AND status NOT IN ('succeeded', 'partially_succeeded')`,
+      [jobId],
+    );
+    await publish(jobId, { status: 'failed', results: [] });
+    return;
+  }
+
+  const alreadySettled = await database.query<{ status: string }>(
+    `SELECT status FROM theme_jobs WHERE id = $1`,
+    [jobId],
+  );
+  if (alreadySettled.rows[0]?.status === 'succeeded' || alreadySettled.rows[0]?.status === 'partially_succeeded') return;
+
+  const uploadedResults: UploadedResult[] = [];
+  for (const [index, url] of settleUrls.entries()) {
+    const resultId = randomUUID();
+    const assetId = randomUUID();
+    const image = await generatedImage(url);
+    const objectKey = `theme-results/${jobId}/${assetId}.png`;
+    const checksum = createHash('sha256').update(image.bytes).digest('hex');
+    await assetStorage.putBuffer(objectKey, image.bytes, image.mimeType);
+    uploadedResults.push({
+      resultId,
+      assetId,
+      objectKey,
+      checksum,
+      byteSize: image.bytes.byteLength,
+      mimeType: image.mimeType,
+      ordinal: index + 1,
+      previewUrl: await assetStorage.signDownload(objectKey, 900),
+    });
+  }
+
+  await publish(jobId, { status: 'settling', phase: 'credit_settling' });
+  try {
+    await transaction(database, async client => {
+      const currentJob = await client.query<{ status: string }>(
+        `SELECT status FROM theme_jobs WHERE id = $1 FOR UPDATE`,
+        [jobId],
+      );
+      const currentStatus = currentJob.rows[0]?.status;
+      if (currentStatus === 'succeeded' || currentStatus === 'partially_succeeded') return;
+
+      await client.query(
+        `UPDATE theme_jobs SET status = 'settling', phase = 'credit_settling', updated_at = now() WHERE id = $1`,
+        [jobId],
+      );
+      for (const result of uploadedResults) {
+        await client.query(
+          `INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, metadata)
+           SELECT $1, s.id, 'artwork', $2, $3, $4
+           FROM schemes s WHERE s.code = $5
+           ON CONFLICT DO NOTHING`,
+          [result.assetId, `AI 换主题结果 ${result.ordinal}`, result.ordinal - 1, JSON.stringify({ themeJobId: jobId }), job.schemeCode],
+        );
+        await client.query(
+          `INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+           ON CONFLICT DO NOTHING`,
+          [randomUUID(), result.assetId, result.objectKey, `${result.assetId}.png`, result.mimeType, result.byteSize, result.checksum],
+        );
+        await client.query(
+          `INSERT INTO theme_job_results (id, job_id, ordinal, asset_id, preview_url)
+            VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (job_id, ordinal) DO NOTHING`,
+          [result.resultId, jobId, result.ordinal, result.assetId, result.previewUrl],
+        );
+      }
+      const usableCount = uploadedResults.length;
+      if (usableCount > 0) {
+        if (job.unitCredits === null) throw new Error('Theme job has no unit credit price');
+        const existingCharge = await client.query(
+          `SELECT id FROM credit_transactions WHERE theme_job_id = $1`,
+          [jobId],
+        );
+        if (!existingCharge.rows[0]) {
+          await client.query(
+            `INSERT INTO credit_transactions (user_id, kind, amount, note, theme_job_id)
+             VALUES ($1, 'theme_consume', $2, $3, $4)`,
+            [job.userId, -(usableCount * job.unitCredits), `theme_job:${jobId}`, jobId],
+          );
+        }
+      }
+      await client.query(
+        `UPDATE credit_reservations SET status = $1, updated_at = now()
+         WHERE theme_job_id = $2 AND status = 'reserved'`,
+        [usableCount > 0 ? 'settled' : 'released', jobId],
+      );
+      await client.query(
+        `UPDATE theme_jobs SET status = $1, phase = NULL, usable_count = $2, updated_at = now() WHERE id = $3`,
+        [usableCount === 0 ? 'failed' : usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded', usableCount, jobId]
+      );
+    });
+  } catch (settleError) {
+    console.error(`Theme job ${jobId} settlement failed`, settleError);
+    await database.query(
+      `UPDATE credit_reservations SET status = 'released', updated_at = now()
+       WHERE theme_job_id = $1 AND status = 'reserved'`,
+      [jobId]
+    ).catch(() => {});
+    throw settleError;
+  }
+  const usableCount = uploadedResults.length;
+  await publish(jobId, {
+    status: usableCount === 0 ? 'failed' : usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded',
+    results: uploadedResults.map(result => ({ resultId: result.resultId, previewUrl: result.previewUrl })),
   });
-  const usableCount = persistedResults.length;
-  await publish(jobId, { status: usableCount === 0 ? 'failed' : usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded', results: persistedResults });
 }

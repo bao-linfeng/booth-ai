@@ -54,17 +54,18 @@ test('theme worker generates real provider results and settles credits atomicall
     putBuffer: async (key: string) => { stored.push(key); },
     signDownload: async (key: string) => `https://assets.example/${key}`,
   } as never);
-  assert.equal(calls.length, 2);
+  console.log(queries.map((query, index) => `${index}: ${query.sql} params=${JSON.stringify(query.params)}`).join('\n'));
+  assert.equal(calls.length, 3);
   const resultInserts = queries.filter(q => q.sql.includes('INSERT INTO theme_job_results'));
   assert.equal(resultInserts.length, 2);
    assert.equal(stored.length, 2);
    assert.ok(resultInserts.every(query => query.params?.[3]));
-  const begin = queries.findIndex(q => q.sql === 'BEGIN');
   const debit = queries.findIndex(q => q.sql.includes('INSERT INTO credit_transactions'));
-  const finish = queries.findIndex(q => q.sql.includes('SET status = $1'));
-  const commit = queries.findIndex(q => q.sql === 'COMMIT');
+  const finish = queries.findIndex(q => q.sql.includes('UPDATE theme_jobs') && q.sql.includes('usable_count'));
+  const commit = queries.slice(finish).findIndex(q => q.sql === 'COMMIT') + finish;
+  const begin = queries.slice(0, debit).findLastIndex(q => q.sql === 'BEGIN');
   assert.ok(begin >= 0 && begin < debit && debit < finish && finish < commit);
-  assert.deepEqual(queries[debit]?.params, [userId, -6, `theme_job:${jobId}`]);
+  assert.deepEqual(queries[debit]?.params, [userId, -6, `theme_job:${jobId}`, jobId]);
   assert.deepEqual(queries[finish]?.params, ['succeeded', 2, jobId]);
 });
 
@@ -75,6 +76,7 @@ test('theme worker marks a job failed without charging when no model is enabled'
     if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId }, unitCredits: 3, userId, status: 'pending' }] };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
+    if (sql.includes('FROM prompt_templates')) return { rows: [] };
     if (sql.includes('FROM ai_model_configs')) return { rows: [] };
     if (sql.includes('FROM scheme_assets')) return { rows: [{ objectKey: 'source/image.png' }] };
     return { rows: [], rowCount: 1 };
@@ -82,5 +84,7 @@ test('theme worker marks a job failed without charging when no model is enabled'
   const pool = { query: run, connect: async () => ({ query: run, release: () => {} }) } as unknown as pg.Pool;
   await processThemeJob(pool, jobId, config);
   assert.ok(!queries.some(q => q.sql.includes('INSERT INTO credit_transactions')));
-  assert.deepEqual(queries.find(q => q.sql.includes('SET status = $1'))?.params, ['failed', 0, jobId]);
+  const failedUpdate = queries.find(q => q.sql.includes("status = 'failed'") && q.sql.includes('theme_jobs'));
+  assert.ok(failedUpdate, 'theme job should be marked failed');
+  assert.ok(failedUpdate?.params?.includes(jobId));
 });

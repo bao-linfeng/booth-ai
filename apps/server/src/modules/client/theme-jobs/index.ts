@@ -221,8 +221,28 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       reply.status(409);
       return { error: { code: 'REQUEST_ERROR', reason: 'OFFER_EXPIRED', message: 'Offer expired or not found', requestId: request.id } };
     }
-    const offerData = JSON.parse(offerRaw) as { unitCredits: number; pricingRevision: number };
+    const offerData = JSON.parse(offerRaw) as {
+      unitCredits: number;
+      pricingRevision: number;
+      schemeCode: string;
+      sourceAssetId: string;
+      industryId: string;
+      styleId: string;
+      requestedCount: number;
+    };
     const unitCredits = offerData.unitCredits;
+
+    // Verify offer matches submitted parameters
+    if (
+      offerData.schemeCode !== schemeCode ||
+      offerData.sourceAssetId !== sourceAssetId ||
+      offerData.industryId !== input.industryId ||
+      offerData.styleId !== input.styleId ||
+      offerData.requestedCount !== requestedCount
+    ) {
+      reply.status(409);
+      return { error: { code: 'REQUEST_ERROR', reason: 'OFFER_MISMATCH', message: 'Submitted parameters do not match the offer', requestId: request.id } };
+    }
 
     // Check idempotency: same user + requestKey
     const existing = await pool.query<{ id: string; status: string }>(
@@ -246,6 +266,26 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
 
     // Create the job and its outbox record atomically.
     const jobId = await transaction(pool, async client => {
+      // Lock user row to serialize concurrent credit reservations
+      await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+
+      // Check available balance (total credits minus already reserved)
+      const balanceResult = await client.query<{ availableBalance: number }>(
+        `SELECT (COALESCE(SUM(ct.amount), 0) - COALESCE(
+           (SELECT SUM(cr.reserved_amount) FROM credit_reservations cr WHERE cr.user_id = $1 AND cr.status = 'reserved'),
+           0
+         ))::integer AS "availableBalance"
+         FROM credit_transactions ct WHERE ct.user_id = $1`,
+        [userId]
+      );
+      const availableBalance = balanceResult.rows[0]?.availableBalance ?? 0;
+      const requiredCredits = unitCredits * requestedCount;
+      if (availableBalance < requiredCredits) {
+        const err = new Error('Insufficient credits for this request');
+        (err as NodeJS.ErrnoException & { statusCode: number }).statusCode = 402;
+        throw err;
+      }
+
       const result = await client.query<{ id: string }>(
         `INSERT INTO theme_jobs
            (user_id, scheme_code, source_asset_id, offer_id, request_key, input, requested_count, cache_mode, status, unit_credits)
@@ -260,6 +300,12 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
         `INSERT INTO theme_job_outbox (job_id) VALUES ($1) ON CONFLICT DO NOTHING`,
         [jobId]
       );
+
+      await client.query(
+        `INSERT INTO credit_reservations (user_id, theme_job_id, reserved_amount) VALUES ($1, $2, $3)`,
+        [userId, jobId, requiredCredits]
+      );
+
       return jobId;
     });
 
