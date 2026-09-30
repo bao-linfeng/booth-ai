@@ -233,6 +233,9 @@ const failureReason = computed(() => {
                   <template v-else>生成完毕</template>
                 </p>
                 <div class="flex gap-3">
+                  <Button v-if="selectedResultId" as-child>
+                    <RouterLink :to="{ path: `/schemes/${encodeURIComponent(jobData.schemeCode)}/quote`, query: { themeJobId: jobId } }">使用选定效果申请报价</RouterLink>
+                  </Button>
                   <Button variant="outline" as-child>
                     <RouterLink :to="`/schemes/${jobData.schemeCode}`">继续使用原方案</RouterLink>
                   </Button>

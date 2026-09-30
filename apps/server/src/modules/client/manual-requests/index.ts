@@ -1,51 +1,24 @@
-import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
-import { getSession } from '../../../infra/session.js';
 import { requirementSchema } from '../selection/domain.js';
-import { createManualRequest, type ManualRequestInput } from './service.js';
-
-const text = { type: 'string', minLength: 1, maxLength: 500, pattern: '\\S' };
-const difference = { type: 'object', additionalProperties: false, required: ['field', 'requested', 'actual', 'reason'], properties: {
-  field: text, requested: text, actual: text, reason: text,
-} };
+import { quoteSchema, text } from '../quote-requests/schema.js';
+import { requireProjectUser } from '../quote-requests/index.js';
+import { createManualProject } from '../../projects/service.js';
+import { projectError, type ManualInput } from '../../projects/domain.js';
 
 export async function registerClientManualRequestRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.post<{ Body: ManualRequestInput }>('/manual-requests', { schema: {
-    tags: ['client-manual-requests'], summary: '提交人工需求（允许匿名）',
-    body: { type: 'object', additionalProperties: false,
-      required: ['requestKey', 'contactName', 'contactDetail', 'originalText', 'requirement', 'unresolvedQuestions'],
-      properties: {
-        requestKey: { type: 'string', minLength: 8, maxLength: 128, pattern: '^[a-zA-Z0-9_-]+$' },
-        contactName: { ...text, maxLength: 100 },
-        contactDetail: { ...text, maxLength: 254 },
-        originalText: { type: 'string', maxLength: 1000 },
-        requirement: requirementSchema,
-        unresolvedQuestions: { type: 'array', maxItems: 30, items: { ...text, maxLength: 1000 } },
-        schemeContext: { type: 'object', additionalProperties: false, required: ['code', 'differences', 'pendingConfirmations'], properties: {
-          code: { ...text, maxLength: 200 },
-          differences: { type: 'array', maxItems: 30, items: difference },
-          pendingConfirmations: { type: 'array', maxItems: 30, items: text },
-        } },
-      },
-    },
-  } }, async (request, reply) => {
-    reply.header('Cache-Control', 'no-store');
-    const rateKey = `manual-request:rate:${createHash('sha256').update(request.ip).digest('hex')}:${Math.floor(Date.now() / 60000)}`;
-    const count = await redis.eval('local n = redis.call("INCR", KEYS[1]); if n == 1 then redis.call("EXPIRE", KEYS[1], 60) end; return n', 1, rateKey);
-    if (Number(count) > 10) {
-      reply.header('Retry-After', '60');
-      throw Object.assign(new Error('Rate limited'), { statusCode: 429 });
-    }
-    const authorization = request.headers.authorization;
-    const token = authorization ? /^Bearer\s+(.+)$/i.exec(authorization)?.[1] : undefined;
-    const session = token ? await getSession(redis, token, 'client') : null;
-    if (authorization && !session) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
-    if (session) {
-      const user = (await pool.query<{ enabled: boolean }>('SELECT enabled FROM users WHERE id=$1', [session.localId])).rows[0];
-      if (!user?.enabled) throw Object.assign(new Error('Account disabled'), { statusCode: 403 });
-    }
-    return { code: 0, data: await createManualRequest(pool, request.body, session?.localId ?? null) };
-  });
+  const excluded=new Set(['schemeCode','schemeRevision','bomRevision','drawingRevision','artworkRevision','themeSelection','requirementContext']);
+  const properties={...Object.fromEntries(Object.entries(quoteSchema.properties).filter(([key])=>!excluded.has(key))),
+    originalDescription:text(5000,1),parsedRequirements:requirementSchema,confirmedRequirements:requirementSchema,
+    unresolvedQuestions:{type:'array',maxItems:30,items:text(1000,1)}};
+  app.post<{Body:ManualInput}>('/manual-requests',{schema:{tags:['client-manual-requests'],body:{type:'object',additionalProperties:false,
+    required:[...quoteSchema.required.filter(key=>!excluded.has(key)),'originalDescription','confirmedRequirements'],properties}}},async(request,reply)=>{
+      reply.header('Cache-Control','private, no-store');
+      const userId=await requireProjectUser(request.headers.authorization,pool,redis);
+      const count=await redis.eval('local n=redis.call("INCR",KEYS[1]); if n==1 then redis.call("EXPIRE",KEYS[1],60) end; return n',1,`manual-rate:${userId}:${Math.floor(Date.now()/60000)}`);
+      if(Number(count)>10){reply.header('Retry-After','60');throw projectError('RATE_LIMITED',429);}
+      const result=await createManualProject(pool,userId,request.body);
+      return reply.code(result.replayed?200:201).send({code:0,data:result.receipt});
+    });
 }

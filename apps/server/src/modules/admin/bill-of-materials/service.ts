@@ -96,7 +96,7 @@ async function saveItems(client: pg.PoolClient, bom: Pick<BomRecord, 'id' | 'ite
     await client.query(`INSERT INTO scheme_bom_items (id,bom_id,ordinal,product_name,product_model,specification_mm,source_quantity,source_unit,quantity,measurement_kind,erp_code,source_sheet,source_row,diff_note,unit_price,total_price,total_weight_kg) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,args);
   }
 }
-export async function getBom(pool: pg.Pool, schemeCode: string): Promise<BomRecord | null> { const scheme = await schemeByCode(pool,schemeCode); return findBom(pool,scheme.id); }
+export async function getBom(pool: DbClient, schemeCode: string): Promise<BomRecord | null> { const scheme = await schemeByCode(pool,schemeCode); return findBom(pool,scheme.id); }
 export async function listBoms(pool: pg.Pool, options: { code?: string; page: number; pageSize: number }): Promise<{ data: Array<{ schemeCode: string; schemeName: string; revision: number; status: BomStatus; itemCount: number; updatedAt: string }>; total: number }> {
   const filter = options.code ? 'WHERE s.code ILIKE $1' : '';
   const args = options.code ? [`%${options.code}%`] : [];

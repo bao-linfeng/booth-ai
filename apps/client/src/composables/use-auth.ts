@@ -1,11 +1,12 @@
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { loginApi, logoutApi } from '@/services/api/auth.api'
 import { fetchCurrentUser } from '@/services/api/user.api'
 
 export function useAuth() {
   const router = useRouter()
+  const route = useRoute()
   const authStore = useAuthStore()
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -20,7 +21,8 @@ export function useAuth() {
         return
       }
       authStore.setLoginResult(res.data.accessToken, res.data.user)
-      await router.push('/')
+      const redirect = route.query.redirect
+      await router.push(typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/')
     } catch {
       error.value = '登录失败，请检查用户名和密码'
     } finally {

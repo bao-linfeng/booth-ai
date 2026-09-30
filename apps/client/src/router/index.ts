@@ -2,6 +2,15 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 
 export const routes: RouteRecordRaw[] = [
+  { path: '/my-projects', name: 'MyProjects', component: () => import('@/pages/MyProjects.vue'), meta: { title: '我的项目' } },
+  { path: '/my-projects/:projectId', name: 'MyProjectDetail', component: () => import('@/pages/MyProjects.vue'), meta: { title: '项目详情' } },
+  { path: '/manual-request', name: 'ManualRequest', component: () => import('@/pages/ManualRequest.vue'), meta: { title: '人工需求申请' } },
+  {
+    path: '/schemes/:code/quote',
+    name: 'QuoteRequest',
+    component: () => import('@/pages/QuoteRequest.vue'),
+    meta: { title: '申请报价' },
+  },
   {
     path: '/ai-selection',
     name: 'AISelection',

@@ -537,9 +537,9 @@ onMounted(async () => {
                   资料取自当前已发布方案，具体项目施工资料需另行确认。
                 </p></CardContent
               ></Card
-            ><Button disabled variant="outline" class="w-full"
-              >申请报价 · 待接入</Button
-            >
+            ><Button v-if="!preview" as-child class="w-full">
+              <RouterLink :to="{ path: `/schemes/${encodeURIComponent(item.code)}/quote`, query: { entryPoint: showBom ? 'bill_of_materials' : 'scheme_detail', ...(bomData ? { bomRevision: String(bomData.revision) } : {}) } }">申请报价</RouterLink>
+            </Button><Button v-else disabled variant="outline" class="w-full">示例方案不可申请报价</Button>
             <p class="text-xs leading-relaxed text-muted-foreground">
               参考方案的差异需经专业确认后，才能进入项目施工交付。
             </p>

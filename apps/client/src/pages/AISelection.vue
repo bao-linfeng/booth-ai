@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight, Sparkles, ShieldCheck, SlidersHorizontal, MessageCircle, Search, LoaderCircle, CircleAlert, ArrowUpRight, Check, Coins } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
@@ -10,7 +10,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
@@ -22,6 +21,7 @@ import { previewCatalog, previewItems, previewStates } from '@/features/selectio
 import { apiFetch } from '@/lib/api-client'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 import { useCredits } from '@/composables/useCredits'
 
@@ -52,13 +52,6 @@ const manualOpen = ref(false)
 const manualName = ref('')
 const manualContact = ref('')
 const manualDescription = ref('')
-const manualSchemeCode = ref<string>()
-const manualStatus = ref<'idle' | 'submitting' | 'success' | 'error'>('idle')
-const manualReference = ref('')
-let manualRequestKey = ''
-let manualPayloadSnapshot = ''
-let suppressManualStatusReset = false
-const manualError = ref('')
 const snapshot = ref('')
 const stale = computed(() => !!snapshot.value && snapshot.value !== JSON.stringify({ requirement: requirement.value, text: text.value }))
 const busy = computed(() => state.value === 'parsing' || state.value === 'matching')
@@ -276,7 +269,6 @@ function clearSelectionMemory() {
   liveMatchData.value = null
   imagesExpiresAt.value = 0
   activeImageByCode.value = {}
-  manualSchemeCode.value = undefined
   interruptedRequest.value = false
   state.value = 'idle'
   snapshot.value = ''
@@ -350,7 +342,6 @@ const items = computed(() => isPreview.value
   ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: ['尺寸、开口面数、限高和适用条件待确认'] } : item)
   : liveItems.value
 )
-const selectedManualScheme = computed(() => items.value.find(item => item.code === manualSchemeCode.value))
 const manualQuestions = computed(() => [...new Set([
   ...unresolvedClarifications.value.map(item => item.question),
   ...(parseResult.value?.unhandledText.map(item => `未识别：${item}`) ?? []),
@@ -358,8 +349,7 @@ const manualQuestions = computed(() => [...new Set([
 ])].slice(0, 30))
 const manualOriginalText = computed(() => [text.value.trim(), manualDescription.value.trim()].filter(Boolean).join('\n'))
 const contactValid = computed(() => /^(?:1[3-9]\d{9}|\+[1-9]\d{7,14}|[^\s@]+@[^\s@]+\.[^\s@]+)$/.test(manualContact.value.trim()))
-const canSubmitManual = computed(() => !isPreview.value && !!manualName.value.trim() && contactValid.value && manualStatus.value !== 'submitting' &&
-  manualOriginalText.value.length <= 1000)
+const canSubmitManual = computed(() => !isPreview.value && !!manualOriginalText.value.trim() && !!manualName.value.trim() && contactValid.value && manualOriginalText.value.length <= 1000)
 
 function cloneRequirement(value: Requirement): Requirement {
   return JSON.parse(JSON.stringify(value)) as Requirement
@@ -369,10 +359,6 @@ function clearManualForm() {
   manualName.value = ''
   manualContact.value = ''
   manualDescription.value = ''
-  manualSchemeCode.value = undefined
-  manualRequestKey = ''
-  manualPayloadSnapshot = ''
-  manualError.value = ''
 }
 
 function initializeManualForm() {
@@ -383,60 +369,22 @@ function initializeManualForm() {
 
 async function submitManual() {
   if (!canSubmitManual.value) return
-  const scheme = stale.value ? undefined : selectedManualScheme.value
-  const payload = {
-    contactName: manualName.value.trim(), contactDetail: manualContact.value.trim(), originalText: manualOriginalText.value,
-    requirement: cloneRequirement(requirement.value), unresolvedQuestions: manualQuestions.value,
-    ...(scheme ? { schemeContext: { code: scheme.code, differences: scheme.differences, pendingConfirmations: scheme.pendingConfirmations } } : {}),
-  }
-  const snapshot = JSON.stringify(payload)
-  if (snapshot !== manualPayloadSnapshot) {
-    manualRequestKey = crypto.randomUUID()
-    manualPayloadSnapshot = snapshot
-  }
-  manualStatus.value = 'submitting'
-  manualError.value = ''
-  try {
-    const response = await apiFetch<{ code: number; data: { id: string } }>('/api/v1/client/manual-requests', {
-      method: 'POST', body: { requestKey: manualRequestKey, ...payload },
-    })
-    if (response.code !== 0) throw new Error('Manual request failed')
-    manualReference.value = response.data.id
-    suppressManualStatusReset = true
-    clearManualForm()
-    manualStatus.value = 'success'
-  } catch (error) {
-    manualStatus.value = 'error'
-    const status = (error as { status?: number }).status
-    manualError.value = status === 409 ? '本次提交标识已被其他内容使用，请重新提交。' :
-      status === 429 ? '提交过于频繁，请稍后重试。' :
-      status === 400 ? '需求或联系方式有误，请核对后重试。' :
-      status === 401 || status === 403 ? '登录状态已失效，请刷新页面后重试。' : '提交未确认，请重试。'
-    if (status === 409) manualPayloadSnapshot = ''
-  }
+  sessionStorage.setItem('booth:manual-context',JSON.stringify({originalDescription:manualOriginalText.value,confirmedRequirements:cloneRequirement(requirement.value),unresolvedQuestions:manualQuestions.value}))
+  const contact = manualContact.value.trim()
+  const existing = sessionStorage.getItem('booth:manual-draft')
+  let draft: { pendingManual?: unknown; receipt?: unknown } | null = null
+  try { draft = existing ? JSON.parse(existing) as { pendingManual?: unknown; receipt?: unknown } : null } catch { sessionStorage.removeItem('booth:manual-draft') }
+  if (!draft?.pendingManual && !draft?.receipt) sessionStorage.setItem('booth:manual-draft',JSON.stringify({owner:authStore.currentUser?.id ?? null,pending:null,pendingManual:null,
+    form:{contactName:manualName.value.trim(),...(contact.includes('@')?{email:contact}:{phone:contact})}}))
+  manualOpen.value=false
+  await router.push('/manual-request')
 }
-
-watch([requirement, text, manualName, manualContact, manualSchemeCode, manualDescription], () => {
-  if (suppressManualStatusReset) {
-    suppressManualStatusReset = false
-    return
-  }
-  if (manualStatus.value === 'success') {
-    manualStatus.value = 'idle'
-    manualRequestKey = ''
-    manualPayloadSnapshot = ''
-  }
-}, { deep: true })
 
 watch(manualOpen, (open) => {
   if (open) {
-    manualStatus.value = 'idle'
-    manualReference.value = ''
     clearManualForm()
     initializeManualForm()
   } else {
-    manualStatus.value = 'idle'
-    manualReference.value = ''
     clearManualForm()
   }
 })
@@ -738,16 +686,14 @@ onMounted(() => {
         </div>
       </div>
     </main>
-    <Dialog v-model:open="manualOpen"><DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg"><DialogTitle>把需求交给专业顾问</DialogTitle><DialogDescription>留下联系方式，顾问可根据当前条件和待确认问题跟进。无需登录。</DialogDescription>
-      <div v-if="manualStatus === 'success'" role="status" class="space-y-4 rounded-lg border bg-muted/30 p-5"><ShieldCheck class="size-7 text-primary" /><p class="font-medium">需求已提交，我们会尽快与您联系。</p><p class="break-all text-xs text-muted-foreground">需求编号：{{ manualReference }}</p><Button class="w-full" @click="manualOpen = false">完成</Button></div>
-      <template v-else><form class="space-y-4" @submit.prevent="submitManual"><Card><CardContent class="space-y-2 p-4 text-sm"><strong>需求摘要</strong><p class="break-words">{{ text || '暂无文字描述' }}</p><p class="text-xs text-muted-foreground">{{ chips.join(' · ') || '尚未填写结构条件' }}</p><p v-if="manualQuestions.length" class="text-xs text-muted-foreground">待确认：{{ manualQuestions.join('；') }}</p></CardContent></Card>
-        <div v-if="items.length && !stale" class="space-y-2"><Label for="manual-scheme">关联当前方案（选填）</Label><Select v-model="manualSchemeCode"><SelectTrigger id="manual-scheme" aria-label="关联当前方案"><SelectValue placeholder="不关联方案" /></SelectTrigger><SelectContent><SelectItem v-for="item in items" :key="item.code" :value="item.code">{{ item.code }} · {{ item.matchType === 'direct' ? '可直接采用' : '参考方案' }}</SelectItem></SelectContent></Select><p v-if="selectedManualScheme" class="text-xs text-muted-foreground">将一并提交此方案的匹配差异与待确认事项。</p></div>
-        <div class="space-y-2"><Label for="manual-description">补充需求（选填）</Label><Textarea id="manual-description" v-model="manualDescription" maxlength="1000" placeholder="还有哪些需求希望顾问了解？" :disabled="manualStatus === 'submitting'" /><p v-if="manualOriginalText.length > 1000" class="text-xs text-destructive">需求描述合计不能超过 1000 字</p></div>
-        <div class="space-y-2"><Label for="manual-name">联系人</Label><Input id="manual-name" v-model="manualName" maxlength="100" placeholder="您的称呼" autocomplete="name" required :disabled="manualStatus === 'submitting'" /></div>
-        <div class="space-y-2"><Label for="manual-contact">联系方式</Label><Input id="manual-contact" v-model="manualContact" maxlength="254" placeholder="手机号或邮箱" autocomplete="on" required :disabled="manualStatus === 'submitting'" /><p v-if="manualContact && !contactValid" class="text-xs text-destructive">请输入有效的手机号或邮箱地址</p></div>
-        <p v-if="manualStatus === 'error'" role="alert" class="text-sm text-destructive">{{ manualError }}</p><p v-if="isPreview" class="text-xs text-muted-foreground">静态预览不提交真实需求。</p>
-        <Button type="submit" class="w-full" :disabled="!canSubmitManual"><LoaderCircle v-if="manualStatus === 'submitting'" class="mr-2 size-4 animate-spin" />{{ manualStatus === 'submitting' ? '正在提交…' : manualStatus === 'error' ? '重试提交' : '提交给顾问' }}</Button>
-      </form></template></DialogContent></Dialog>
+    <Dialog v-model:open="manualOpen"><DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg"><DialogTitle>把需求交给专业顾问</DialogTitle><DialogDescription>确认原始需求后，继续填写展会、预算及联系方式，登录提交后建立人工项目。</DialogDescription>
+      <form class="space-y-4" @submit.prevent="submitManual"><Card><CardContent class="space-y-2 p-4 text-sm"><strong>需求摘要</strong><p class="break-words">{{ text || '暂无文字描述' }}</p><p class="text-xs text-muted-foreground">{{ chips.join(' · ') || '尚未填写结构条件' }}</p><p v-if="manualQuestions.length" class="text-xs text-muted-foreground">待确认：{{ manualQuestions.join('；') }}</p></CardContent></Card>
+        <div class="space-y-2"><Label for="manual-description">补充需求{{ text.trim() ? '（选填）' : '（必填）' }}</Label><Textarea id="manual-description" v-model="manualDescription" maxlength="1000" placeholder="还有哪些需求希望顾问了解？" /><p v-if="manualOriginalText.length > 1000" class="text-xs text-destructive">需求描述合计不能超过 1000 字</p></div>
+        <div class="space-y-2"><Label for="manual-name">联系人</Label><Input id="manual-name" v-model="manualName" maxlength="100" placeholder="您的称呼" autocomplete="name" required /></div>
+        <div class="space-y-2"><Label for="manual-contact">联系方式</Label><Input id="manual-contact" v-model="manualContact" maxlength="254" placeholder="手机号或邮箱" autocomplete="on" required /><p v-if="manualContact && !contactValid" class="text-xs text-destructive">请输入有效的手机号或邮箱地址</p></div>
+        <p v-if="isPreview" class="text-xs text-muted-foreground">静态预览不提交真实需求。</p>
+        <Button type="submit" class="w-full" :disabled="!canSubmitManual">继续填写完整申请</Button>
+      </form></DialogContent></Dialog>
   </SelectionShell>
 </template>
 

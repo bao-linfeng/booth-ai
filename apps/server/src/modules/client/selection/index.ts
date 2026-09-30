@@ -162,7 +162,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
             bom: 'available',
             drawings: availability.drawing ? 'available' : 'unavailable',
             artworks: availability.artwork ? 'available' : 'unavailable',
-            quote: 'unavailable',
+            quote: 'available',
             modelDownload: availability.model ? 'available' : 'unavailable'
           },
         }

@@ -28,7 +28,7 @@ async function handleUnauthorized() {
   if (!authStore.token) return
 
   authStore.clearAuth()
-  await router.push({ path: '/auth/sign-in' })
+  await router.push({ path: '/auth/sign-in', query: { redirect: router.currentRoute.value.fullPath } })
 }
 
 async function injectBearerToken(options: Parameters<typeof ofetch>[1]) {

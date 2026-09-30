@@ -26,7 +26,7 @@ export async function listDeliverables(pool: pg.Pool, code: string, type: Delive
       v.original_filename AS "originalFilename", v.mime_type AS "mimeType",
       v.byte_size::float8 AS "byteSize", v.object_key AS "objectKey"
     FROM schemes s
-    JOIN scheme_assets a ON a.scheme_id = s.id AND a.is_active = true AND a.type = $2
+    JOIN scheme_assets a ON a.scheme_id = s.id AND a.is_active = true AND a.type = $2 AND NOT (a.metadata ? 'themeJobId')
     JOIN LATERAL (
       SELECT object_key, original_filename, mime_type, byte_size
       FROM asset_versions WHERE asset_id = a.id
@@ -46,7 +46,7 @@ export async function assertPublished(pool: pg.Pool, code: string): Promise<void
 export async function deliverableAvailability(pool: pg.Pool, code: string): Promise<Record<DeliverableType, boolean>> {
   const result = await pool.query<{ type: DeliverableType }>(`
     SELECT DISTINCT a.type FROM schemes s
-    JOIN scheme_assets a ON a.scheme_id = s.id AND a.is_active = true
+    JOIN scheme_assets a ON a.scheme_id = s.id AND a.is_active = true AND NOT (a.metadata ? 'themeJobId')
     WHERE s.code = $1 AND s.publish_status = 'published' AND a.type IN ('model', 'drawing', 'artwork')
       AND (SELECT v.byte_size FROM asset_versions v WHERE v.asset_id = a.id
            ORDER BY v.created_at DESC, v.id DESC LIMIT 1) > 0
