@@ -1,12 +1,14 @@
 import { writeFile, rm } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Worker } from 'bullmq';
+import { Worker, Queue } from 'bullmq';
 import { loadConfig } from './config.js';
 import { createDatabase } from './infra/database.js';
 import { createRedis, waitForRedis } from './infra/redis.js';
-import { createQueue, QUEUE_NAME, TASK_NAME } from './infra/queue.js';
+import { createQueue, QUEUE_NAME, TASK_NAME, THEME_QUEUE_NAME, THEME_TASK_NAME } from './infra/queue.js';
 import { processEchoTask } from './modules/tasks/service.js';
 import { dispatchOutbox } from './modules/tasks/outbox.js';
+import { processThemeJob } from './modules/tasks/theme-worker.js';
+import { dispatchThemeOutbox } from './modules/tasks/theme-outbox.js';
 
 const heartbeatPath = '/tmp/worker-ready';
 async function main() {
@@ -17,7 +19,14 @@ async function main() {
   // Producer must fail promptly, otherwise an outage could hold a DB transaction forever.
   const producerRedis = createRedis(config, 'request');
   await Promise.all([waitForRedis(consumerRedis), waitForRedis(producerRedis)]);
+
   const queue = createQueue(producerRedis);
+  const themeQueue = new Queue(THEME_QUEUE_NAME, {
+    connection: producerRedis,
+    defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 2000 }, removeOnComplete: { age: 86400, count: 1000 }, removeOnFail: { age: 604800, count: 1000 } },
+  });
+  themeQueue.on('error', () => console.error('Theme queue connection error'));
+
   const worker = new Worker(QUEUE_NAME, async job => {
     if (job.name !== TASK_NAME || typeof job.data.taskId !== 'string' || job.data.taskId !== job.id) throw new Error('Invalid foundation job');
     return processEchoTask(database, job.data.taskId);
@@ -28,13 +37,30 @@ async function main() {
     void database.query(`UPDATE foundation_tasks SET status = 'failed', error_code = 'PROCESSING_FAILED', updated_at = now() WHERE id = $1 AND status <> 'succeeded'`, [job.id])
       .catch(() => console.error('Unable to persist failed task status'));
   });
+
+  const themeWorker = new Worker(THEME_QUEUE_NAME, async job => {
+    if (job.name !== THEME_TASK_NAME || typeof job.data.jobId !== 'string') throw new Error('Invalid theme job');
+    return processThemeJob(database, job.data.jobId, config);
+  }, { connection: consumerRedis, concurrency: 2 });
+  themeWorker.on('error', () => console.error('Theme worker connection error'));
+  themeWorker.on('failed', (job) => {
+    if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
+    void database.query(
+      `UPDATE theme_jobs SET status = 'failed', phase = NULL, updated_at = now() WHERE id = $1 AND status NOT IN ('succeeded', 'partially_succeeded', 'failed')`,
+      [job.data.jobId]
+    ).catch(() => console.error('Unable to persist failed theme job status'));
+  });
+
   await worker.waitUntilReady();
+  await themeWorker.waitUntilReady();
+
   let stopping = false;
   const controller = new AbortController();
   const loop = (async () => {
     while (!stopping) {
       try {
         await dispatchOutbox(database, queue);
+        await dispatchThemeOutbox(database, themeQueue);
         if (consumerRedis.status !== 'ready' || producerRedis.status !== 'ready' || !worker.isRunning()) throw new Error('Worker unavailable');
         await writeFile(heartbeatPath, String(Date.now()));
       } catch {
@@ -52,7 +78,9 @@ async function main() {
     await loop;
     await rm(heartbeatPath, { force: true });
     await worker.close();
+    await themeWorker.close();
     await queue.close();
+    await themeQueue.close();
     consumerRedis.disconnect();
     producerRedis.disconnect();
     await database.end();
@@ -60,6 +88,6 @@ async function main() {
   };
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
-  console.info('Worker ready; foundation queue and outbox dispatcher running');
+  console.info('Worker ready; foundation queue, theme queue, and outbox dispatchers running');
 }
 main().catch(() => { console.error('Worker startup failed; check configuration and dependency health'); process.exit(1); });

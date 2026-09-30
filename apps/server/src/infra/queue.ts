@@ -3,6 +3,8 @@ import type { Redis } from 'ioredis';
 
 export const QUEUE_NAME = 'booth-foundation';
 export const TASK_NAME = 'system.echo';
+export const THEME_QUEUE_NAME = 'booth-theme';
+export const THEME_TASK_NAME = 'theme.generate';
 export function createQueue(connection: Redis) {
   const queue = new Queue(QUEUE_NAME, {
     connection,
