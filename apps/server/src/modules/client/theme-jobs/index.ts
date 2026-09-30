@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { listAiModels } from '../../../infra/ai-models.js';
 import { transaction } from '../../../infra/database.js';
 import { getSession } from '../../../infra/session.js';
+import type { createStorage } from '../../../infra/storage.js';
 
 const OFFER_TTL_SECONDS = 300; // 5 minutes
 
@@ -28,7 +29,42 @@ async function loadDictionaryOptions(pool: pg.Pool): Promise<{ industries: { id:
   };
 }
 
-export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis) {
+export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>) {
+  app.post<{ Params: { jobId: string } }>('/theme-jobs/:jobId/events-ticket', async request => {
+    const userId = await requireClientSession(request.headers.authorization, redis);
+    const owned = await pool.query('SELECT 1 FROM theme_jobs WHERE id = $1 AND user_id = $2', [request.params.jobId, userId]);
+    if (!owned.rows[0]) throw Object.assign(new Error('Theme job not found'), { statusCode: 404 });
+    const ticket = randomUUID();
+    await redis.set(`theme-events-ticket:${ticket}`, JSON.stringify({ jobId: request.params.jobId, userId }), 'EX', 300);
+    return { code: 0, data: { ticket } };
+  });
+
+  app.get<{ Params: { jobId: string }; Querystring: { ticket?: string } }>('/theme-jobs/:jobId/events', async (request, reply) => {
+    const ticket = request.query.ticket;
+    const raw = ticket ? await redis.get(`theme-events-ticket:${ticket}`) : null;
+    const ticketData = raw ? JSON.parse(raw) as { jobId: string; userId: string } : null;
+    if (!ticketData || ticketData.jobId !== request.params.jobId) {
+      reply.status(401);
+      return { error: { code: 'REQUEST_ERROR', message: 'Invalid events ticket', requestId: request.id } };
+    }
+    await redis.del(`theme-events-ticket:${ticket}`);
+    reply.hijack();
+    const response = reply.raw;
+    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' });
+    response.write(': connected\n\n');
+    const subscriber = redis.duplicate();
+    const channel = `theme-job:${request.params.jobId}`;
+    const onMessage = (_channel: string, message: string) => response.write(`event: update\ndata: ${message}\n\n`);
+    subscriber.on('message', onMessage);
+    const cleanup = async () => {
+      subscriber.off('message', onMessage);
+      await subscriber.unsubscribe(channel);
+      subscriber.disconnect();
+    };
+    request.raw.on('close', () => { void cleanup(); });
+    await subscriber.subscribe(channel);
+  });
+
   app.get('/theme-models', { schema: { tags: ['AI 换主题'], summary: '可选择的图像模型及每张图积分' } }, async () => {
     const models = (await listAiModels(pool)).filter(model => model.purpose === 'theme' && model.enabled &&
       model.credentialConfigured && model.unitCredits !== null);
@@ -257,12 +293,14 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
     const { jobId } = request.params;
 
     const result = await pool.query<{
-      id: string; schemeCode: string; sourceAssetId: string; status: string; phase: string | null;
+      id: string; schemeCode: string; sourceAssetId: string; sourceObjectKey: string | null; status: string; phase: string | null;
       requestedCount: number; usableCount: number; selectedResultId: string | null;
       selectionRevision: number; unitCredits: number | null; input: unknown;
       createdAt: string; updatedAt: string;
     }>(
-      `SELECT id, scheme_code AS "schemeCode", source_asset_id AS "sourceAssetId", status, phase,
+       `SELECT id, scheme_code AS "schemeCode", source_asset_id AS "sourceAssetId",
+               (SELECT av.object_key FROM asset_versions av WHERE av.asset_id = source_asset_id ORDER BY av.created_at DESC, av.id DESC LIMIT 1) AS "sourceObjectKey",
+               status, phase,
               requested_count AS "requestedCount", usable_count AS "usableCount",
               selected_result_id AS "selectedResultId", selection_revision AS "selectionRevision",
               unit_credits AS "unitCredits", input, created_at AS "createdAt", updated_at AS "updatedAt"
@@ -274,23 +312,28 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
     if (!job) throw Object.assign(new Error('Theme job not found'), { statusCode: 404 });
 
     const resultsQ = await pool.query<{
-      id: string; ordinal: number; assetId: string; previewUrl: string | null; width: number | null; height: number | null;
-    }>(
-      `SELECT id, ordinal, asset_id AS "assetId", preview_url AS "previewUrl", width, height
-       FROM theme_job_results WHERE job_id = $1 ORDER BY ordinal`,
-      [jobId]
-    );
-    const results = resultsQ.rows.map(r => ({
+      id: string; ordinal: number; width: number | null; height: number | null; objectKey: string;
+      }>(
+       `SELECT tjr.id, tjr.ordinal, tjr.width, tjr.height, av.object_key AS "objectKey"
+        FROM theme_job_results tjr
+        JOIN scheme_assets sa ON sa.id = tjr.asset_id
+        JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = sa.id ORDER BY created_at DESC, id DESC LIMIT 1) av ON true
+        WHERE tjr.job_id = $1 ORDER BY tjr.ordinal`,
+       [jobId]
+     );
+    const results = await Promise.all(resultsQ.rows.map(async r => ({
       resultId: r.id,
-      previewUrl: r.previewUrl ?? '',
+      previewUrl: await storage.signDownload(r.objectKey, 900),
       width: r.width ?? 0,
       height: r.height ?? 0,
-    }));
+    })));
 
     const unitCredits = job.unitCredits ?? 0;
     const isTerminal = ['succeeded', 'partially_succeeded', 'failed'].includes(job.status);
 
-    return {
+     const originalPreviewUrl = job.sourceObjectKey ? await storage.signDownload(job.sourceObjectKey, 900) : null;
+
+     return {
       code: 0,
       data: {
         jobId: job.id,
@@ -299,7 +342,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
         phase: job.phase,
         requestedCount: job.requestedCount,
         usableCount: job.usableCount,
-        original: { assetId: job.sourceAssetId, previewUrl: null },
+         original: { assetId: job.sourceAssetId, previewUrl: originalPreviewUrl },
         results,
         selection: { resultId: job.selectedResultId, revision: job.selectionRevision },
         credits: {

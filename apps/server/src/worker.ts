@@ -4,6 +4,7 @@ import { Worker, Queue } from 'bullmq';
 import { loadConfig } from './config.js';
 import { createDatabase } from './infra/database.js';
 import { createRedis, waitForRedis } from './infra/redis.js';
+import { createStorage } from './infra/storage.js';
 import { createQueue, QUEUE_NAME, TASK_NAME, THEME_QUEUE_NAME, THEME_TASK_NAME } from './infra/queue.js';
 import { processEchoTask } from './modules/tasks/service.js';
 import { dispatchOutbox } from './modules/tasks/outbox.js';
@@ -18,6 +19,7 @@ async function main() {
   const consumerRedis = createRedis(config, 'worker');
   // Producer must fail promptly, otherwise an outage could hold a DB transaction forever.
   const producerRedis = createRedis(config, 'request');
+  const storage = createStorage(config);
   await Promise.all([waitForRedis(consumerRedis), waitForRedis(producerRedis)]);
 
   const queue = createQueue(producerRedis);
@@ -40,7 +42,9 @@ async function main() {
 
   const themeWorker = new Worker(THEME_QUEUE_NAME, async job => {
     if (job.name !== THEME_TASK_NAME || typeof job.data.jobId !== 'string') throw new Error('Invalid theme job');
-    return processThemeJob(database, job.data.jobId, config);
+     return processThemeJob(database, job.data.jobId, config, storage, async (jobId, event) => {
+       await producerRedis.publish(`theme-job:${jobId}`, JSON.stringify(event));
+     });
   }, { connection: consumerRedis, concurrency: 2 });
   themeWorker.on('error', () => console.error('Theme worker connection error'));
   themeWorker.on('failed', (job) => {
@@ -84,6 +88,7 @@ async function main() {
     consumerRedis.disconnect();
     producerRedis.disconnect();
     await database.end();
+    storage.close();
     clearTimeout(deadline);
   };
   process.once('SIGTERM', shutdown);

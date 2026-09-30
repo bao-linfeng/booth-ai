@@ -1,12 +1,12 @@
 import { requestClient } from '#/api/request';
 
-export type TemplatePurpose = 'theme' | 'artwork';
+export type TemplatePurpose = 'artwork' | 'theme';
 
 export interface PromptTemplate {
   id: string;
   purpose: TemplatePurpose;
-  industryId: string | null;
-  styleId: string | null;
+  industryId: null | string;
+  styleId: null | string;
   body: string;
   variables: string[];
   enabled: boolean;
@@ -24,8 +24,8 @@ export interface ListTemplatesQuery {
 
 export interface CreateTemplateInput {
   purpose: TemplatePurpose;
-  industryId?: string | null;
-  styleId?: string | null;
+  industryId?: null | string;
+  styleId?: null | string;
   body: string;
   variables?: string[];
 }
@@ -43,17 +43,29 @@ export interface PageResult<T> {
 }
 
 export function listPromptTemplatesApi(query: ListTemplatesQuery = {}) {
-  return requestClient.get<PageResult<PromptTemplate>>('/v1/admin/prompt-templates', { params: query });
+  return requestClient.get<PageResult<PromptTemplate>>(
+    '/v1/admin/prompt-templates',
+    { params: query },
+  );
 }
 
 export function createPromptTemplateApi(input: CreateTemplateInput) {
-  return requestClient.post<PromptTemplate>('/v1/admin/prompt-templates', input);
+  return requestClient.post<PromptTemplate>(
+    '/v1/admin/prompt-templates',
+    input,
+  );
 }
 
 export function getPromptTemplateApi(id: string) {
   return requestClient.get<PromptTemplate>(`/v1/admin/prompt-templates/${id}`);
 }
 
-export function updatePromptTemplateApi(id: string, input: UpdateTemplateInput) {
-  return requestClient.request<PromptTemplate>(`/v1/admin/prompt-templates/${encodeURIComponent(id)}`, { method: 'PATCH', data: input });
+export function updatePromptTemplateApi(
+  id: string,
+  input: UpdateTemplateInput,
+) {
+  return requestClient.request<PromptTemplate>(
+    `/v1/admin/prompt-templates/${encodeURIComponent(id)}`,
+    { method: 'PATCH', data: input },
+  );
 }

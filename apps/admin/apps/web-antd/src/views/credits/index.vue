@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import type {
+  CreditKind,
+  CreditListParams,
+  CreditTransaction,
+} from '#/api/core/credits';
+import type { UserRecord } from '#/api/core/user-manage';
+
 import { ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -8,9 +15,7 @@ import { Button, Tag } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { getCreditTransactionsApi } from '#/api/core/credits';
-import type { CreditKind, CreditListParams, CreditTransaction } from '#/api/core/credits';
 import { getUserListApi } from '#/api/core/user-manage';
-import type { UserRecord } from '#/api/core/user-manage';
 
 import RechargeModal from './components/RechargeModal.vue';
 
@@ -74,7 +79,9 @@ const [Grid, gridApi] = useVbenVxeGrid({
           loading: userFetching,
           placeholder: '搜索用户名',
           onSearch: (val: string) => debouncedFetchUsers(val),
-          onFocus: () => { if (userOptions.value.length === 0) fetchUsers(); },
+          onFocus: () => {
+            if (userOptions.value.length === 0) fetchUsers();
+          },
         },
       },
       {
@@ -94,10 +101,26 @@ const [Grid, gridApi] = useVbenVxeGrid({
     showOverflow: 'tooltip',
     toolbarConfig: { refresh: true },
     columns: [
-      { field: 'createdAt', title: '创建时间', width: 170, slots: { default: 'createdAt' } },
-      { field: 'username', title: '用户名', minWidth: 140, slots: { default: 'username' } },
+      {
+        field: 'createdAt',
+        title: '创建时间',
+        width: 170,
+        slots: { default: 'createdAt' },
+      },
+      {
+        field: 'username',
+        title: '用户名',
+        minWidth: 140,
+        slots: { default: 'username' },
+      },
       { field: 'kind', title: '类型', width: 120, slots: { default: 'kind' } },
-      { field: 'amount', title: '变动数量', width: 120, slots: { default: 'amount' }, align: 'right' },
+      {
+        field: 'amount',
+        title: '变动数量',
+        width: 120,
+        slots: { default: 'amount' },
+        align: 'right',
+      },
       { field: 'note', title: '备注', minWidth: 200 },
       { field: 'operatorId', title: '操作人', minWidth: 200 },
     ],
@@ -143,14 +166,21 @@ function handleReload() {
       </template>
 
       <template #username="{ row }">
-        <span>{{ (row as CreditTransaction).nickname || (row as CreditTransaction).username || (row as CreditTransaction).userId }}</span>
+        <span>{{
+          (row as CreditTransaction).nickname ||
+          (row as CreditTransaction).username ||
+          (row as CreditTransaction).userId
+        }}</span>
       </template>
       <template #createdAt="{ row }">
         {{ formatDateTime((row as CreditTransaction).createdAt) }}
       </template>
       <template #kind="{ row }">
         <Tag :color="kindColors[(row as CreditTransaction).kind]">
-          {{ kindLabels[(row as CreditTransaction).kind] || (row as CreditTransaction).kind }}
+          {{
+            kindLabels[(row as CreditTransaction).kind] ||
+            (row as CreditTransaction).kind
+          }}
         </Tag>
       </template>
       <template #amount="{ row }">
@@ -160,7 +190,8 @@ function handleReload() {
             (row as CreditTransaction).amount < 0 ? 'text-red-500' : '',
           ]"
         >
-          {{ (row as CreditTransaction).amount > 0 ? '+' : '' }}{{ (row as CreditTransaction).amount }}
+          {{ (row as CreditTransaction).amount > 0 ? '+' : ''
+          }}{{ (row as CreditTransaction).amount }}
         </span>
       </template>
     </Grid>

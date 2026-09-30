@@ -64,7 +64,10 @@ const currentCode = computed(() =>
 
 const publishButtonDisabled = computed(() => {
   const data = originalData.value;
-  return data?.publishStatus === 'published' || data?.verificationStatus === 'verified';
+  return (
+    data?.publishStatus === 'published' ||
+    data?.verificationStatus === 'verified'
+  );
 });
 
 const loading = ref(false);
@@ -809,9 +812,7 @@ onMounted(() => {
 
           <ATabPane v-if="!isCreate" key="model" tab="模型">
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <span class="text-muted-foreground text-sm"
-                >共 {{ modelAssets.length }} 个模型文件</span
-              >
+              <span class="text-muted-foreground text-sm">共 {{ modelAssets.length }} 个模型文件</span>
               <AButton
                 type="primary"
                 :loading="modelUploading"
@@ -921,9 +922,7 @@ onMounted(() => {
                   <div class="font-medium">已关联当前方案的简化清单</div>
                   <div class="text-muted-foreground mt-1 text-sm">
                     清单数据按方案编号
-                    {{
-                      currentCode
-                    }}
+                    {{ currentCode }}
                     关联，可在清单管理中继续导入、维护、核验和导出。
                   </div>
                 </div>
@@ -1127,7 +1126,9 @@ onMounted(() => {
                   <AButton
                     type="primary"
                     :loading="publishLoading"
-                    :disabled="publishButtonDisabled || !readinessData.canPublish"
+                    :disabled="
+                      publishButtonDisabled || !readinessData.canPublish
+                    "
                     @click="handlePublish"
                   >
                     发布方案

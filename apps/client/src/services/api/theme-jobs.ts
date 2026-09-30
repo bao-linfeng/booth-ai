@@ -99,6 +99,23 @@ export async function getThemeJob(jobId: string): Promise<ThemeJob> {
   return res.data
 }
 
+export async function createThemeJobEventsTicket(jobId: string): Promise<string> {
+  const res = await apiFetch<{ code: number; data: { ticket: string } }>(
+    `/api/v1/client/theme-jobs/${encodeURIComponent(jobId)}/events-ticket`,
+    { method: 'POST' }
+  )
+  return res.data.ticket
+}
+
+export function openThemeJobEvents(jobId: string, ticket: string, onUpdate: () => void, onError: () => void): EventSource {
+  const events = new EventSource(
+    `/api/v1/client/theme-jobs/${encodeURIComponent(jobId)}/events?ticket=${encodeURIComponent(ticket)}`
+  )
+  events.addEventListener('update', onUpdate)
+  events.onerror = onError
+  return events
+}
+
 export async function saveThemeSelection(
   jobId: string,
   resultId: string,

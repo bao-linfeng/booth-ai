@@ -149,7 +149,9 @@ async function handleBomImport() {
     if (!file || bomLocked.value) return;
     const MAX_FILE_SIZE = 20 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
-      message.warning(`文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），请上传 20MB 以内的 Excel 文件`);
+      message.warning(
+        `文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），请上传 20MB 以内的 Excel 文件`,
+      );
       return;
     }
     bomImporting.value = true;
@@ -638,18 +640,18 @@ defineExpose({ open });
                 type="link"
                 size="small"
                 @click="openProductDetail(record.id)"
-                >
-详情
-</AButton>
+              >
+                详情
+              </AButton>
               <AButton
                 v-if="mode === 'edit'"
                 type="link"
                 size="small"
                 :disabled="bomLocked"
                 @click="startItemEdit(record.id)"
-                >
-编辑
-</AButton>
+              >
+                编辑
+              </AButton>
               <AButton
                 v-if="mode === 'edit'"
                 type="link"
@@ -657,9 +659,9 @@ defineExpose({ open });
                 danger
                 :disabled="bomLocked"
                 @click="handleItemDelete(record.id)"
-                >
-删除
-</AButton>
+              >
+                删除
+              </AButton>
             </template>
           </template>
         </ATable>
@@ -684,23 +686,23 @@ defineExpose({ open });
     <AForm v-if="itemDraft" layout="vertical">
       <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
         <AFormItem label="产品名称" required>
-<AInput v-model:value="itemDraft.productName" />
-</AFormItem>
+          <AInput v-model:value="itemDraft.productName" />
+        </AFormItem>
         <AFormItem label="产品型号">
-<AInput
+          <AInput
             :value="itemDraft.productModel ?? undefined"
             @update:value="itemDraft.productModel = $event"
-        />
-</AFormItem>
+          />
+        </AFormItem>
         <AFormItem label="尺寸规格(mm)">
-<AInput
+          <AInput
             :value="itemDraft.specificationMm ?? undefined"
             @update:value="itemDraft.specificationMm = $event"
-        />
-</AFormItem>
+          />
+        </AFormItem>
         <AFormItem label="原数量" required>
-<AInput v-model:value="itemDraft.sourceQuantity" />
-</AFormItem>
+          <AInput v-model:value="itemDraft.sourceQuantity" />
+        </AFormItem>
         <AFormItem label="计量类型" required>
           <ASelect
             :value="itemDraft.measurementKind"
@@ -710,39 +712,39 @@ defineExpose({ open });
               v-for="kind in measurementKinds"
               :key="kind.id"
               :value="kind.itemValue"
-              >
-{{ kind.itemLabel }}
-</ASelectOption>
+            >
+              {{ kind.itemLabel }}
+            </ASelectOption>
           </ASelect>
         </AFormItem>
         <AFormItem label="ERP编码">
-<AInput
+          <AInput
             :value="itemDraft.erpCode ?? undefined"
             @update:value="itemDraft.erpCode = $event"
-        />
-</AFormItem>
+          />
+        </AFormItem>
         <AFormItem label="单价/¥">
-<AInput
+          <AInput
             :value="itemDraft.unitPrice ?? undefined"
             @update:value="itemDraft.unitPrice = $event || null"
-        />
-</AFormItem>
+          />
+        </AFormItem>
         <AFormItem label="总价/¥">
-<AInput
+          <AInput
             :value="itemDraft.totalPrice ?? undefined"
             @update:value="itemDraft.totalPrice = $event || null"
-        />
-</AFormItem>
+          />
+        </AFormItem>
         <AFormItem label="重量合计/kg">
-<AInput
+          <AInput
             :value="itemDraft.totalWeightKg ?? undefined"
             @update:value="itemDraft.totalWeightKg = $event || null"
-        />
-</AFormItem>
+          />
+        </AFormItem>
       </div>
       <AFormItem label="变更原因" required>
-<AInput v-model:value="bomChangeReason" placeholder="填写变更原因" />
-</AFormItem>
+        <AInput v-model:value="bomChangeReason" placeholder="填写变更原因" />
+      </AFormItem>
     </AForm>
   </AModal>
 

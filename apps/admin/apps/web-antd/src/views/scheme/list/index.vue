@@ -207,11 +207,20 @@ onMounted(() => {
       </template>
 
       <template #assetCounts="{ row }">
-        <div v-if="row.assetCounts" class="flex flex-wrap gap-x-2 gap-y-1 text-xs">
+        <div
+          v-if="row.assetCounts"
+          class="flex flex-wrap gap-x-2 gap-y-1 text-xs"
+        >
           <Tooltip title="模型">
             <span class="inline-flex items-center gap-0.5">
               <span class="text-gray-400">模</span>
-              <span :class="row.assetCounts.model > 0 ? 'text-blue-600 font-medium' : 'text-gray-300'">
+              <span
+                :class="
+                  row.assetCounts.model > 0
+                    ? 'text-blue-600 font-medium'
+                    : 'text-gray-300'
+                "
+              >
                 {{ row.assetCounts.model }}
               </span>
             </span>
@@ -219,7 +228,13 @@ onMounted(() => {
           <Tooltip title="效果图">
             <span class="inline-flex items-center gap-0.5">
               <span class="text-gray-400">效</span>
-              <span :class="row.assetCounts.rendering > 0 ? 'text-blue-600 font-medium' : 'text-gray-300'">
+              <span
+                :class="
+                  row.assetCounts.rendering > 0
+                    ? 'text-blue-600 font-medium'
+                    : 'text-gray-300'
+                "
+              >
                 {{ row.assetCounts.rendering }}
               </span>
             </span>
@@ -227,7 +242,13 @@ onMounted(() => {
           <Tooltip title="蒙版">
             <span class="inline-flex items-center gap-0.5">
               <span class="text-gray-400">蒙</span>
-              <span :class="row.assetCounts.mask > 0 ? 'text-blue-600 font-medium' : 'text-gray-300'">
+              <span
+                :class="
+                  row.assetCounts.mask > 0
+                    ? 'text-blue-600 font-medium'
+                    : 'text-gray-300'
+                "
+              >
                 {{ row.assetCounts.mask }}
               </span>
             </span>
@@ -235,7 +256,13 @@ onMounted(() => {
           <Tooltip title="图纸">
             <span class="inline-flex items-center gap-0.5">
               <span class="text-gray-400">纸</span>
-              <span :class="row.assetCounts.drawing > 0 ? 'text-blue-600 font-medium' : 'text-gray-300'">
+              <span
+                :class="
+                  row.assetCounts.drawing > 0
+                    ? 'text-blue-600 font-medium'
+                    : 'text-gray-300'
+                "
+              >
                 {{ row.assetCounts.drawing }}
               </span>
             </span>
@@ -243,7 +270,13 @@ onMounted(() => {
           <Tooltip title="平面素材">
             <span class="inline-flex items-center gap-0.5">
               <span class="text-gray-400">平</span>
-              <span :class="row.assetCounts.artwork > 0 ? 'text-blue-600 font-medium' : 'text-gray-300'">
+              <span
+                :class="
+                  row.assetCounts.artwork > 0
+                    ? 'text-blue-600 font-medium'
+                    : 'text-gray-300'
+                "
+              >
                 {{ row.assetCounts.artwork }}
               </span>
             </span>
@@ -264,7 +297,10 @@ onMounted(() => {
                 : '整体审核'
             }}·{{ row.latestReview.decision === 'pass' ? '通过' : '驳回' }}
           </Tag>
-          <Tooltip v-if="row.latestReview.notes" :title="row.latestReview.notes">
+          <Tooltip
+            v-if="row.latestReview.notes"
+            :title="row.latestReview.notes"
+          >
             <span class="max-w-[100px] truncate text-xs text-gray-400">
               {{ row.latestReview.notes }}
             </span>
@@ -274,8 +310,13 @@ onMounted(() => {
       </template>
 
       <template #lastUnpublishReason="{ row }">
-        <Tooltip v-if="row.lastUnpublishReason" :title="row.lastUnpublishReason">
-          <span class="max-w-[140px] truncate text-xs text-orange-500 cursor-default">
+        <Tooltip
+          v-if="row.lastUnpublishReason"
+          :title="row.lastUnpublishReason"
+        >
+          <span
+            class="max-w-[140px] truncate text-xs text-orange-500 cursor-default"
+          >
             {{ row.lastUnpublishReason }}
           </span>
         </Tooltip>
@@ -285,32 +326,32 @@ onMounted(() => {
       <template #action="{ row }">
         <Tooltip title="详情">
           <Button type="link" size="small" @click="handleDetail(row.code)">
-            <span class="icon-[lucide--eye]" />
+            <span class="icon-[lucide--eye]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="编辑">
           <Button type="link" size="small" @click="handleEdit(row)">
-            <span class="icon-[lucide--pencil]" />
+            <span class="icon-[lucide--pencil]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="就绪检查">
           <Button type="link" size="small" @click="handleReadiness(row.code)">
-            <span class="icon-[lucide--circle-check]" />
+            <span class="icon-[lucide--circle-check]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="审核">
           <Button type="link" size="small" @click="handleReview(row.code)">
-            <span class="icon-[lucide--clipboard-check]" />
+            <span class="icon-[lucide--clipboard-check]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="资产管理">
           <Button type="link" size="small" @click="handleAssets(row.code)">
-            <span class="icon-[lucide--folder-open]" />
+            <span class="icon-[lucide--folder-open]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="删除">
           <Button type="link" size="small" danger @click="handleDelete(row)">
-            <span class="icon-[lucide--trash-2]" />
+            <span class="icon-[lucide--trash-2]"></span>
           </Button>
         </Tooltip>
       </template>

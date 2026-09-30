@@ -122,7 +122,9 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 function beforeUpload(selected: File): boolean {
   if (selected.size > MAX_FILE_SIZE) {
-    message.warning(`文件过大（${(selected.size / 1024 / 1024).toFixed(1)} MB），请上传 20MB 以内的 Excel 文件`);
+    message.warning(
+      `文件过大（${(selected.size / 1024 / 1024).toFixed(1)} MB），请上传 20MB 以内的 Excel 文件`,
+    );
     return false;
   }
   file.value = selected;
@@ -189,8 +191,8 @@ defineExpose({ open });
           :message="`${preview.sourceFileName} · ${preview.items.length} 行 · 方案 ${preview.schemeCode} · 修订 ${preview.baseRevision}`"
         />
         <Button v-if="!preview.canCommit" @click="resetPreview">
-重新选择文件
-</Button>
+          重新选择文件
+        </Button>
         <div
           v-for="(error, index) in preview.errors"
           :key="`error-${index}`"

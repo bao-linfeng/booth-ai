@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -7,10 +7,11 @@ import type { Config } from '../../config.js';
 import { activeAiModels, type ActiveAiModel } from '../../infra/ai-models.js';
 import { transaction } from '../../infra/database.js';
 import { getActivePromptTemplate } from '../admin/prompt-templates/service.js';
+import type { createStorage } from '../../infra/storage.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
 type ThemeInput = { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
-type ThemeJob = { requestedCount: number; sourceAssetId: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string };
+type ThemeJob = { requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string };
 
 async function fetchSourceImageUrls(database: pg.Pool, sourceAssetId: string, config: ThemeConfig): Promise<{ internal: string; public: string }> {
   const result = await database.query<{ objectKey: string }>(
@@ -43,6 +44,16 @@ async function sourceImage(url: string): Promise<{ bytes: ArrayBuffer; mimeType:
   const response = await fetch(url);
   if (!response.ok) throw new Error('Unable to read theme source image');
   return { bytes: await response.arrayBuffer(), mimeType: response.headers.get('content-type')?.split(';')[0] ?? 'image/png' };
+}
+
+async function generatedImage(url: string): Promise<{ bytes: Buffer; mimeType: string }> {
+  const match = /^data:([^;,]+);base64,(.+)$/.exec(url);
+  const mimeType = match?.[1];
+  const encoded = match?.[2];
+  if (mimeType && encoded) return { bytes: Buffer.from(encoded, 'base64'), mimeType };
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Unable to read generated theme image');
+  return { bytes: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get('content-type')?.split(';')[0] ?? 'image/png' };
 }
 
 async function generateWithOpenAI(model: ActiveAiModel, sourceImageUrl: string, prompt: string, count: number): Promise<string[]> {
@@ -115,9 +126,19 @@ async function generateWithWanx(model: ActiveAiModel, sourceImageUrl: string, pr
   throw new Error('Wanx image edit timed out');
 }
 
-export async function processThemeJob(database: pg.Pool, jobId: string, config: ThemeConfig): Promise<void> {
+export async function processThemeJob(
+  database: pg.Pool,
+  jobId: string,
+  config: ThemeConfig,
+  storage?: ReturnType<typeof createStorage>,
+  publish: (jobId: string, event: unknown) => Promise<void> = async () => {},
+): Promise<void> {
+  const assetStorage = storage ?? {
+    putBuffer: async () => {},
+    signDownload: async (key: string) => `stored://${key}`,
+  } as unknown as ReturnType<typeof createStorage>;
   const job = (await database.query<ThemeJob>(
-    `SELECT requested_count AS "requestedCount", source_asset_id AS "sourceAssetId", input,
+    `SELECT requested_count AS "requestedCount", source_asset_id AS "sourceAssetId", scheme_code AS "schemeCode", input,
             unit_credits AS "unitCredits", user_id AS "userId", status FROM theme_jobs WHERE id = $1`, [jobId]
   )).rows[0];
   if (!job) throw new Error(`Theme job ${jobId} not found`);
@@ -126,6 +147,7 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
      WHERE id = $1 AND status IN ('pending', 'queued', 'running') RETURNING id`, [jobId]
   );
   if (started.rowCount === 0) return;
+  await publish(jobId, { status: 'running', phase: 'provider_submitting' });
 
   const urls: string[] = [];
   try {
@@ -168,13 +190,33 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
     console.error(`Theme job ${jobId} failed before settlement`, error);
   }
 
+  const persistedResults: { resultId: string; previewUrl: string }[] = [];
+  await publish(jobId, { status: 'settling', phase: 'credit_settling' });
   await transaction(database, async client => {
     await client.query(`UPDATE theme_jobs SET status = 'settling', phase = 'credit_settling', updated_at = now() WHERE id = $1`, [jobId]);
     for (const [index, url] of urls.entries()) {
+      const resultId = randomUUID();
+      const assetId = randomUUID();
+      const image = await generatedImage(url);
+      const objectKey = `theme-results/${jobId}/${assetId}.png`;
+      const checksum = createHash('sha256').update(image.bytes).digest('hex');
+      await assetStorage.putBuffer(objectKey, image.bytes, image.mimeType);
+      await client.query(
+        `INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, metadata)
+         SELECT $1, s.id, 'artwork', $2, $3, $4
+         FROM schemes s WHERE s.code = $5`,
+        [assetId, `AI 换主题结果 ${index + 1}`, index, JSON.stringify({ themeJobId: jobId }), job.schemeCode]
+      );
+      await client.query(
+        `INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+        [randomUUID(), assetId, objectKey, `${assetId}.png`, image.mimeType, image.bytes.byteLength, checksum]
+      );
       await client.query(
         `INSERT INTO theme_job_results (id, job_id, ordinal, asset_id, preview_url)
-         VALUES ($1, $2, $3, $4, $5)`, [randomUUID(), jobId, index + 1, randomUUID(), url]
+         VALUES ($1, $2, $3, $4, NULL)`, [resultId, jobId, index + 1, assetId]
       );
+      persistedResults.push({ resultId, previewUrl: await assetStorage.signDownload(objectKey, 900) });
     }
     const usableCount = urls.length;
     if (usableCount > 0) {
@@ -189,4 +231,6 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
       [usableCount === 0 ? 'failed' : usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded', usableCount, jobId]
     );
   });
+  const usableCount = persistedResults.length;
+  await publish(jobId, { status: usableCount === 0 ? 'failed' : usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded', results: persistedResults });
 }

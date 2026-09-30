@@ -14,6 +14,7 @@ function mapToUserInfo(user: AdminCurrentUser): UserInfo {
     roles: user.roles,
     desc: '',
     token: '',
+    email: user.email ?? '',
   };
 }
 

@@ -8,7 +8,7 @@ export interface SchemeSearchRecord {
   loggedIn: boolean;
   username: null | string;
   mode: 'filtered' | 'random';
-  status: 'matched' | 'no_match' | 'needs_clarification';
+  status: 'matched' | 'needs_clarification' | 'no_match';
   inputText: string;
   directCount: number;
   referenceCount: number;
@@ -50,13 +50,23 @@ export interface SchemeSearchDetail extends SchemeSearchRecord {
   matchDiagnostics: null | {
     reviewedPublished: number;
     ready: number;
-    exclusions: Record<'unverifiedChecklist' | 'incompleteAssets' | 'invalidData' | 'productSystem' | 'height' | 'applicability' | 'tags' | 'dimensions', number>;
+    exclusions: Record<
+      | 'applicability'
+      | 'dimensions'
+      | 'height'
+      | 'incompleteAssets'
+      | 'invalidData'
+      | 'productSystem'
+      | 'tags'
+      | 'unverifiedChecklist',
+      number
+    >;
   };
   demandTerms: string[];
   resultSnapshot: Record<string, unknown>[];
   rulesVersion: string;
   dictionaryVersion: string;
-  parser?: 'llm' | 'rules' | 'none';
+  parser?: 'llm' | 'none' | 'rules';
   parseDegraded?: boolean;
   fieldSources?: Record<string, unknown>;
   overrides?: Record<string, unknown>[];
@@ -82,23 +92,50 @@ export interface SchemeSearchStatistics {
     degradedParseRate: number;
     conversionRate: number;
   };
-  trend: { date: string; searches: number; matched: number; noMatch: number; loggedIn: number; direct: number; reference: number; random: number }[];
+  trend: {
+    date: string;
+    searches: number;
+    matched: number;
+    noMatch: number;
+    loggedIn: number;
+    direct: number;
+    reference: number;
+    random: number;
+  }[];
   popularTerms: { date: string; term: string; count: number }[];
-  conversion: { anonymousVisitors: number; convertedVisitors: number; rate: number };
+  conversion: {
+    anonymousVisitors: number;
+    convertedVisitors: number;
+    rate: number;
+  };
 }
 
 export async function getSchemeSearchListApi(params?: SchemeSearchListParams) {
-  return requestClient.get<SchemeSearchListResult>('/v1/admin/scheme-searches', { params });
+  return requestClient.get<SchemeSearchListResult>(
+    '/v1/admin/scheme-searches',
+    { params },
+  );
 }
 
 export async function getSchemeSearchDetailApi(id: string) {
-  return requestClient.get<SchemeSearchDetail>(`/v1/admin/scheme-searches/${id}`);
+  return requestClient.get<SchemeSearchDetail>(
+    `/v1/admin/scheme-searches/${id}`,
+  );
 }
 
 export async function getSchemeSearchVisitorsApi() {
-  return requestClient.get<SchemeSearchVisitorOption[]>('/v1/admin/scheme-searches/visitors');
+  return requestClient.get<SchemeSearchVisitorOption[]>(
+    '/v1/admin/scheme-searches/visitors',
+  );
 }
 
-export async function getSchemeSearchStatisticsApi(params?: Pick<SchemeSearchListParams, 'from' | 'to'> & { granularity?: 'date' | 'hour' }) {
-  return requestClient.get<SchemeSearchStatistics>('/v1/admin/scheme-searches/statistics', { params });
+export async function getSchemeSearchStatisticsApi(
+  params?: Pick<SchemeSearchListParams, 'from' | 'to'> & {
+    granularity?: 'date' | 'hour';
+  },
+) {
+  return requestClient.get<SchemeSearchStatistics>(
+    '/v1/admin/scheme-searches/statistics',
+    { params },
+  );
 }

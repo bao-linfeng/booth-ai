@@ -1,19 +1,38 @@
 <script setup lang="ts">
+import type { ManualRequest, ManualStatus } from '#/api/core/manual-requests';
+
 import { computed, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { formatDateTime } from '@vben/utils';
 
-import { Button, Descriptions, DescriptionsItem, message, Modal, Tag } from 'ant-design-vue';
+import {
+  Button,
+  Descriptions,
+  DescriptionsItem,
+  message,
+  Modal,
+  Tag,
+} from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { followUpManualRequestApi, getManualRequestApi, listManualRequestsApi } from '#/api/core/manual-requests';
+import {
+  followUpManualRequestApi,
+  getManualRequestApi,
+  listManualRequestsApi,
+} from '#/api/core/manual-requests';
 import { getSchemeOptionsApi } from '#/api/core/schemes';
-import type { ManualRequest, ManualStatus } from '#/api/core/manual-requests';
 
-const statusLabels: Record<ManualStatus, string> = { pending: '待处理', following_up: '跟进中', completed: '已完成' };
-const statuses = Object.entries(statusLabels).map(([value, label]) => ({ value, label }));
+const statusLabels: Record<ManualStatus, string> = {
+  pending: '待处理',
+  following_up: '跟进中',
+  completed: '已完成',
+};
+const statuses = Object.entries(statusLabels).map(([value, label]) => ({
+  value,
+  label,
+}));
 const detail = ref<ManualRequest>();
 const viewOpen = ref(false);
 const followUpOpen = ref(false);
@@ -45,8 +64,19 @@ const requirementFields = computed(() => {
 
   return Object.entries(requirementLabels).flatMap(([key, label]) => {
     const value = requirement[key];
-    if (value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length)) return [];
-    if (typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length) return [];
+    if (
+      value === null ||
+      value === undefined ||
+      value === '' ||
+      (Array.isArray(value) && value.length === 0)
+    )
+      return [];
+    if (
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      Object.keys(value).length === 0
+    )
+      return [];
     return [{ key, label, value: formatRequirementValue(key, value) }];
   });
 });
@@ -74,15 +104,20 @@ function optionLabel(value: unknown) {
 
 function formatRequirementValue(key: string, value: unknown) {
   if (typeof value === 'number') {
-    if (['lengthMm', 'widthMm', 'maxHeightMm'].includes(key)) return `${value / 1000} m`;
+    if (['lengthMm', 'maxHeightMm', 'widthMm'].includes(key))
+      return `${value / 1000} m`;
     if (key === 'areaM2') return `${value} ㎡`;
     if (key === 'openingCount') return `${value} 面`;
   }
   if (Array.isArray(value)) return value.map(optionLabel);
   if (typeof value === 'object' && value !== null) {
-    return Object.entries(value).map(([question, answer]) => `${optionLabel(question)}：${answer ? '是' : '否'}`);
+    return Object.entries(value).map(
+      ([question, answer]) =>
+        `${optionLabel(question)}：${answer ? '是' : '否'}`,
+    );
   }
-  if (['productSystemId', 'budgetTierId'].includes(key)) return optionLabel(value);
+  if (['budgetTierId', 'productSystemId'].includes(key))
+    return optionLabel(value);
   return String(value);
 }
 
@@ -113,27 +148,72 @@ const [FollowUpForm, followUpFormApi] = useVbenForm({
 });
 
 const [Grid, gridApi] = useVbenVxeGrid({
-  formOptions: { schema: [{ component: 'Select', fieldName: 'status', label: '跟进状态', componentProps: { options: statuses, allowClear: true } }] },
+  formOptions: {
+    schema: [
+      {
+        component: 'Select',
+        fieldName: 'status',
+        label: '跟进状态',
+        componentProps: { options: statuses, allowClear: true },
+      },
+    ],
+  },
   gridOptions: {
-    height: 'auto', showOverflow: 'tooltip', toolbarConfig: { refresh: true },
+    height: 'auto',
+    showOverflow: 'tooltip',
+    toolbarConfig: { refresh: true },
     columns: [
       { field: 'contactName', title: '联系人', minWidth: 110 },
       { field: 'contactDetail', title: '联系方式', minWidth: 190 },
       { field: 'originalText', title: '原始需求', minWidth: 240 },
-      { field: 'schemeContext', title: '方案编号', minWidth: 140, slots: { default: 'scheme' } },
-      { field: 'status', title: '跟进状态', width: 110, slots: { default: 'status' } },
-      { field: 'createdAt', title: '提交时间', minWidth: 170, slots: { default: 'createdAt' } },
-      { field: 'action', title: '操作', width: 140, fixed: 'right', slots: { default: 'action' } },
+      {
+        field: 'schemeContext',
+        title: '方案编号',
+        minWidth: 140,
+        slots: { default: 'scheme' },
+      },
+      {
+        field: 'status',
+        title: '跟进状态',
+        width: 110,
+        slots: { default: 'status' },
+      },
+      {
+        field: 'createdAt',
+        title: '提交时间',
+        minWidth: 170,
+        slots: { default: 'createdAt' },
+      },
+      {
+        field: 'action',
+        title: '操作',
+        width: 140,
+        fixed: 'right',
+        slots: { default: 'action' },
+      },
     ],
     pagerConfig: { total: 0, currentPage: 1, pageSize: 20, enabled: true },
-    proxyConfig: { enabled: true, autoLoad: true, ajax: { query: async ({ page }: { page: { currentPage: number; pageSize: number } }, formValues: { status?: ManualStatus } = {}) => {
-      const result = await listManualRequestsApi({ page: page.currentPage, pageSize: page.pageSize, ...(formValues.status ? { status: formValues.status } : {}) });
-      return { items: result.data, total: result.total };
-    } } },
+    proxyConfig: {
+      enabled: true,
+      autoLoad: true,
+      ajax: {
+        query: async (
+          { page }: { page: { currentPage: number; pageSize: number } },
+          formValues: { status?: ManualStatus } = {},
+        ) => {
+          const result = await listManualRequestsApi({
+            page: page.currentPage,
+            pageSize: page.pageSize,
+            ...(formValues.status ? { status: formValues.status } : {}),
+          });
+          return { items: result.data, total: result.total };
+        },
+      },
+    },
   },
 });
 
-async function openRequest(row: ManualRequest, mode: 'view' | 'follow-up') {
+async function openRequest(row: ManualRequest, mode: 'follow-up' | 'view') {
   viewOpen.value = mode === 'view';
   followUpOpen.value = mode === 'follow-up';
   loading.value = true;
@@ -143,7 +223,10 @@ async function openRequest(row: ManualRequest, mode: 'view' | 'follow-up') {
     if (!viewOpen.value && !followUpOpen.value) return;
     detail.value = record;
     followUpFormApi.resetForm();
-    followUpFormApi.setValues({ status: record.status, followUpNote: record.followUpNote });
+    followUpFormApi.setValues({
+      status: record.status,
+      followUpNote: record.followUpNote,
+    });
   } catch {
     viewOpen.value = false;
     followUpOpen.value = false;
@@ -177,26 +260,74 @@ onMounted(() => {
 <template>
   <Page auto-content-height title="人工需求">
     <Grid>
-      <template #scheme="{ row }">{{ (row as ManualRequest).schemeContext?.code || '—' }}</template>
-      <template #status="{ row }"><Tag :color="(row as ManualRequest).status === 'completed' ? 'success' : (row as ManualRequest).status === 'following_up' ? 'processing' : 'default'">{{ statusLabels[(row as ManualRequest).status] }}</Tag></template>
-      <template #createdAt="{ row }">{{ formatDateTime((row as ManualRequest).createdAt) }}</template>
+      <template #scheme="{ row }">
+        {{ (row as ManualRequest).schemeContext?.code || '—' }}
+      </template>
+      <template #status="{ row }">
+        <Tag
+          :color="
+            (row as ManualRequest).status === 'completed'
+              ? 'success'
+              : (row as ManualRequest).status === 'following_up'
+                ? 'processing'
+                : 'default'
+          "
+        >
+          {{ statusLabels[(row as ManualRequest).status] }}
+        </Tag>
+      </template>
+      <template #createdAt="{ row }">
+        {{ formatDateTime((row as ManualRequest).createdAt) }}
+      </template>
       <template #action="{ row }">
-        <Button type="link" @click="openRequest(row as ManualRequest, 'view')">查看</Button>
-        <Button type="link" @click="openRequest(row as ManualRequest, 'follow-up')">跟进</Button>
+        <Button type="link" @click="openRequest(row as ManualRequest, 'view')">
+          查看
+        </Button>
+        <Button
+          type="link"
+          @click="openRequest(row as ManualRequest, 'follow-up')"
+        >
+          跟进
+        </Button>
       </template>
     </Grid>
-    <Modal v-model:open="viewOpen" title="人工需求详情" :width="720" :footer="null">
+    <Modal
+      v-model:open="viewOpen"
+      title="人工需求详情"
+      :width="720"
+      :footer="null"
+    >
       <div v-if="loading" class="py-6">正在加载需求…</div>
       <div v-else-if="detail">
         <Descriptions bordered :column="1" size="small">
-          <DescriptionsItem label="联系人">{{ detail.contactName }}</DescriptionsItem>
-          <DescriptionsItem label="联系方式">{{ detail.contactDetail }}</DescriptionsItem>
-          <DescriptionsItem label="来源">{{ detail.userId ? '登录用户' : '匿名访客' }}</DescriptionsItem>
-          <DescriptionsItem label="提交时间">{{ formatDateTime(detail.createdAt) }}</DescriptionsItem>
-          <DescriptionsItem label="原始文字"><span class="whitespace-pre-wrap break-words">{{ detail.originalText || '—' }}</span></DescriptionsItem>
+          <DescriptionsItem label="联系人">
+            {{ detail.contactName }}
+          </DescriptionsItem>
+          <DescriptionsItem label="联系方式">
+            {{ detail.contactDetail }}
+          </DescriptionsItem>
+          <DescriptionsItem label="来源">
+            {{ detail.userId ? '登录用户' : '匿名访客' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="提交时间">
+            {{ formatDateTime(detail.createdAt) }}
+          </DescriptionsItem>
+          <DescriptionsItem label="原始文字">
+            <span class="whitespace-pre-wrap break-words">{{
+              detail.originalText || '—'
+            }}</span>
+          </DescriptionsItem>
           <DescriptionsItem label="最终条件" :span="1">
-            <Descriptions v-if="requirementFields.length" :column="1" size="small">
-              <DescriptionsItem v-for="field in requirementFields" :key="field.key" :label="field.label">
+            <Descriptions
+              v-if="requirementFields.length"
+              :column="1"
+              size="small"
+            >
+              <DescriptionsItem
+                v-for="field in requirementFields"
+                :key="field.key"
+                :label="field.label"
+              >
                 <template v-if="Array.isArray(field.value)">
                   <Tag v-for="item in field.value" :key="item">{{ item }}</Tag>
                 </template>
@@ -205,24 +336,70 @@ onMounted(() => {
             </Descriptions>
             <span v-else>未填写结构条件</span>
           </DescriptionsItem>
-          <DescriptionsItem label="未解决问题"><p v-for="question in detail.unresolvedQuestions" :key="question" class="mb-1">{{ question }}</p><span v-if="!detail.unresolvedQuestions.length">—</span></DescriptionsItem>
-          <DescriptionsItem label="方案编号">{{ detail.schemeContext?.code || '—' }}</DescriptionsItem>
-          <DescriptionsItem label="匹配差异"><div v-for="(difference, index) in detail.schemeContext?.differences ?? []" :key="index" class="mb-2">{{ difference.field }}：{{ difference.requested }} → {{ difference.actual }}<br />{{ difference.reason }}</div><span v-if="!detail.schemeContext?.differences.length">—</span></DescriptionsItem>
-          <DescriptionsItem label="方案待确认"><p v-for="item in detail.schemeContext?.pendingConfirmations ?? []" :key="item">{{ item }}</p><span v-if="!detail.schemeContext?.pendingConfirmations.length">—</span></DescriptionsItem>
+          <DescriptionsItem label="未解决问题">
+            <p
+              v-for="question in detail.unresolvedQuestions"
+              :key="question"
+              class="mb-1"
+            >
+              {{ question }}
+            </p>
+            <span v-if="!detail.unresolvedQuestions.length">—</span>
+          </DescriptionsItem>
+          <DescriptionsItem label="方案编号">
+            {{ detail.schemeContext?.code || '—' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="匹配差异">
+            <div
+              v-for="(difference, index) in detail.schemeContext?.differences ??
+              []"
+              :key="index"
+              class="mb-2"
+            >
+              {{ difference.field }}：{{ difference.requested }} →
+              {{ difference.actual }}<br />{{ difference.reason }}
+            </div>
+            <span v-if="!detail.schemeContext?.differences.length">—</span>
+          </DescriptionsItem>
+          <DescriptionsItem label="方案待确认">
+            <p
+              v-for="item in detail.schemeContext?.pendingConfirmations ?? []"
+              :key="item"
+            >
+              {{ item }}
+            </p>
+            <span v-if="!detail.schemeContext?.pendingConfirmations.length">—</span>
+          </DescriptionsItem>
         </Descriptions>
       </div>
     </Modal>
-    <Modal v-model:open="followUpOpen" title="人工需求跟进" :width="520" :confirm-loading="saving" :ok-button-props="{ disabled: !detail || loading }" @ok="save">
+    <Modal
+      v-model:open="followUpOpen"
+      title="人工需求跟进"
+      :width="520"
+      :confirm-loading="saving"
+      :ok-button-props="{ disabled: !detail || loading }"
+      @ok="save"
+    >
       <div v-if="loading" class="py-6">正在加载需求…</div>
       <div v-else-if="detail" class="space-y-4">
         <Descriptions bordered :column="1" size="small">
-          <DescriptionsItem label="联系人">{{ detail.contactName }}</DescriptionsItem>
-          <DescriptionsItem label="原始需求"><span class="whitespace-pre-wrap break-words">{{ detail.originalText || '—' }}</span></DescriptionsItem>
+          <DescriptionsItem label="联系人">
+            {{ detail.contactName }}
+          </DescriptionsItem>
+          <DescriptionsItem label="原始需求">
+            <span class="whitespace-pre-wrap break-words">{{
+              detail.originalText || '—'
+            }}</span>
+          </DescriptionsItem>
         </Descriptions>
         <div class="mt-6">
           <FollowUpForm />
         </div>
-        <p v-if="detail.followedBy" class="text-xs text-gray-500">最近跟进人：{{ detail.followedBy }} · {{ formatDateTime(detail.updatedAt) }}</p>
+        <p v-if="detail.followedBy" class="text-xs text-gray-500">
+          最近跟进人：{{ detail.followedBy }} ·
+          {{ formatDateTime(detail.updatedAt) }}
+        </p>
       </div>
     </Modal>
   </Page>

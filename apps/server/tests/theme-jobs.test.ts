@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { registerThemeModelRoutes } from '../src/modules/client/theme-jobs/index.js';
+import type { createStorage } from '../src/infra/storage.js';
 
 const jobId = '00000000-0000-4000-8000-000000000001';
 const resultId = '00000000-0000-4000-8000-000000000002';
@@ -30,8 +31,11 @@ async function setup(query: Query) {
       ? JSON.stringify({ site: 'client', localId: userId, expiresAt: Math.floor(Date.now() / 1000) + 60 })
       : key === 'theme-offer:offer-1' ? JSON.stringify({ unitCredits: 10, pricingRevision: 1 }) : null,
   } as unknown as Redis;
+  const storage = {
+    signDownload: async (key: string) => `https://assets.example/${key}`,
+  } as unknown as ReturnType<typeof createStorage>;
   const app = Fastify();
-  await registerThemeModelRoutes(app, pool, redis);
+  await registerThemeModelRoutes(app, pool, redis, storage);
   await app.ready();
   return { app, statements };
 }
@@ -39,18 +43,18 @@ async function setup(query: Query) {
 test('theme job details include ordered results with nullable fields normalized', async t => {
   const { app } = await setup(sql => {
     if (sql.includes('FROM theme_jobs')) return { rows: [{
-      id: jobId, schemeCode: 'S-1', sourceAssetId: 'source', status: 'succeeded', phase: null,
+       id: jobId, schemeCode: 'S-1', sourceAssetId: 'source', sourceObjectKey: 'source/image.png', status: 'succeeded', phase: null,
       requestedCount: 1, usableCount: 1, selectedResultId: null, selectionRevision: 0,
       unitCredits: 10, createdAt: '2026-01-01', updatedAt: '2026-01-01',
     }] };
-    if (sql.includes('FROM theme_job_results')) return { rows: [{ id: resultId, ordinal: 0, previewUrl: null, width: null, height: 720 }] };
+     if (sql.includes('FROM theme_job_results')) return { rows: [{ id: resultId, ordinal: 0, objectKey: 'generated/image.png', width: null, height: 720 }] };
     throw new Error(`Unexpected query: ${sql}`);
   });
   t.after(() => app.close());
   const response = await app.inject({ method: 'GET', url: `/theme-jobs/${jobId}`, headers: { authorization: `Bearer ${token}` } });
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.json().data.results, [{ resultId, previewUrl: '', width: 0, height: 720 }]);
-  assert.deepEqual(response.json().data.original, { assetId: 'source', previewUrl: null });
+   assert.deepEqual(response.json().data.results, [{ resultId, previewUrl: 'https://assets.example/generated/image.png', width: 0, height: 720 }]);
+   assert.deepEqual(response.json().data.original, { assetId: 'source', previewUrl: 'https://assets.example/source/image.png' });
 });
 
 test('creating a theme job writes the outbox entry in the same transaction', async t => {

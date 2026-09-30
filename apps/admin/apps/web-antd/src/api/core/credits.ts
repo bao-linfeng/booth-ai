@@ -1,16 +1,16 @@
 import { requestClient } from '#/api/request';
 
-export type CreditKind = 'sign_in' | 'recharge' | 'theme_consume';
+export type CreditKind = 'recharge' | 'sign_in' | 'theme_consume';
 
 export interface CreditTransaction {
   id: string;
   userId: string;
-  username: string | null;
-  nickname: string | null;
+  username: null | string;
+  nickname: null | string;
   kind: CreditKind;
   amount: number;
-  note: string | null;
-  operatorId: string | null;
+  note: null | string;
+  operatorId: null | string;
   createdAt: string;
 }
 
@@ -38,7 +38,9 @@ export interface CreditBalanceResult {
   balance: number;
 }
 
-export async function getCreditTransactionsApi(params: CreditListParams): Promise<CreditListResult> {
+export async function getCreditTransactionsApi(
+  params: CreditListParams,
+): Promise<CreditListResult> {
   return requestClient.get('/v1/admin/credits', { params });
 }
 
@@ -46,6 +48,8 @@ export async function rechargeCreditApi(body: RechargeParams): Promise<void> {
   return requestClient.post('/v1/admin/credits/recharge', body);
 }
 
-export async function getUserCreditBalanceApi(userId: string): Promise<CreditBalanceResult> {
+export async function getUserCreditBalanceApi(
+  userId: string,
+): Promise<CreditBalanceResult> {
   return requestClient.get(`/v1/admin/credits/users/${userId}/balance`);
 }

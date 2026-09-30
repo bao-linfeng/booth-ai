@@ -122,7 +122,9 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
 const beforeUpload = (file: File) => {
   if (file.size > MAX_FILE_SIZE) {
-    message.warning(`文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），请上传 20MB 以内的 .xlsx 文件`);
+    message.warning(
+      `文件过大（${(file.size / 1024 / 1024).toFixed(1)} MB），请上传 20MB 以内的 .xlsx 文件`,
+    );
     return false;
   }
   selectedFile.value = file;
@@ -136,7 +138,9 @@ function exportFailedRows() {
     .map((r) => `${r.rowNumber}\t${r.code}\t${r.reason}`)
     .join('\n');
   const content = header + rows;
-  const blob = new Blob(['\uFEFF' + content], { type: 'text/tab-separated-values;charset=utf-8' });
+  const blob = new Blob([`\uFEFF${content}`], {
+    type: 'text/tab-separated-values;charset=utf-8',
+  });
   downloadFileFromBlob({ source: blob, fileName: '导入失败行.tsv' });
 }
 
@@ -185,7 +189,11 @@ defineExpose({ open });
         <Button
           type="link"
           size="small"
-          @click="downloadFileFromUrl({ source: '/templates/scheme-import-template.xlsx' })"
+          @click="
+            downloadFileFromUrl({
+              source: '/templates/scheme-import-template.xlsx',
+            })
+          "
         >
           <span class="icon-[ant-design--download-outlined] mr-1"></span>
           下载标准导入模板

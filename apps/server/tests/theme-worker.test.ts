@@ -19,7 +19,7 @@ test('theme worker generates real provider results and settles credits atomicall
   const queries: { sql: string; params?: unknown[] }[] = [];
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
-    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 2, sourceAssetId: randomUUID(), input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status: 'pending' }] };
+    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 2, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status: 'pending' }] };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
     if (sql.includes('FROM prompt_templates')) {
@@ -49,13 +49,16 @@ test('theme worker generates real provider results and settles credits atomicall
   };
   t.after(() => { globalThis.fetch = oldFetch; });
 
-  await processThemeJob(pool, jobId, config);
+  const stored: string[] = [];
+  await processThemeJob(pool, jobId, config, {
+    putBuffer: async (key: string) => { stored.push(key); },
+    signDownload: async (key: string) => `https://assets.example/${key}`,
+  } as never);
   assert.equal(calls.length, 2);
   const resultInserts = queries.filter(q => q.sql.includes('INSERT INTO theme_job_results'));
   assert.equal(resultInserts.length, 2);
-  assert.deepEqual(resultInserts.map(query => query.params?.[4]), [
-    'data:image/png;base64,one', 'data:image/png;base64,two',
-  ]);
+   assert.equal(stored.length, 2);
+   assert.ok(resultInserts.every(query => query.params?.[3]));
   const begin = queries.findIndex(q => q.sql === 'BEGIN');
   const debit = queries.findIndex(q => q.sql.includes('INSERT INTO credit_transactions'));
   const finish = queries.findIndex(q => q.sql.includes('SET status = $1'));
@@ -69,7 +72,7 @@ test('theme worker marks a job failed without charging when no model is enabled'
   const queries: { sql: string; params?: unknown[] }[] = [];
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
-    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), input: { industryId, styleId }, unitCredits: 3, userId, status: 'pending' }] };
+    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId }, unitCredits: 3, userId, status: 'pending' }] };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
     if (sql.includes('FROM ai_model_configs')) return { rows: [] };

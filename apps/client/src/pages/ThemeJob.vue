@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
-import { getThemeJob, saveThemeSelection, type ThemeJob } from '@/services/api/theme-jobs'
+import { createThemeJobEventsTicket, getThemeJob, openThemeJobEvents, saveThemeSelection, type ThemeJob } from '@/services/api/theme-jobs'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,27 +16,18 @@ const jobId = route.params.jobId as string
 const jobData = ref<ThemeJob | null>(null)
 const loading = ref(true)
 const error = ref(false)
-const polling = ref(false)
 const savingSelection = ref(false)
 
-let pollTimer: ReturnType<typeof setTimeout> | null = null
-let isPageVisible = true
-
-const handleVisibilityChange = () => {
-  isPageVisible = document.visibilityState === 'visible'
-  if (isPageVisible && jobData.value && isPending.value && !polling.value) {
-    poll()
-  }
-}
+let events: EventSource | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(() => {
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-  fetchJob(true)
+  void fetchJob(true)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('visibilitychange', handleVisibilityChange)
-  if (pollTimer) clearTimeout(pollTimer)
+  events?.close()
+  if (reconnectTimer) clearTimeout(reconnectTimer)
 })
 
 async function fetchJob(initial = false) {
@@ -44,9 +35,7 @@ async function fetchJob(initial = false) {
   try {
     const res = await getThemeJob(jobId)
     jobData.value = res
-    if (isPending.value) {
-      schedulePoll()
-    }
+    if (isPending.value) void connectEvents()
   } catch (e) {
     console.error('Failed to load job', e)
     if (initial) error.value = true
@@ -55,27 +44,19 @@ async function fetchJob(initial = false) {
   }
 }
 
-async function poll() {
-  if (!isPageVisible || !isPending.value) return
-  polling.value = true
+async function connectEvents() {
+  events?.close()
+  if (!isPending.value) return
   try {
-    const res = await getThemeJob(jobId)
-    jobData.value = res
-    if (isPending.value) {
-      schedulePoll()
-    }
+    const ticket = await createThemeJobEventsTicket(jobId)
+    events = openThemeJobEvents(jobId, ticket, () => { void fetchJob() }, () => {
+      events?.close()
+      reconnectTimer = setTimeout(() => { void fetchJob() }, 3000)
+    })
   } catch (e) {
-    console.error('Poll failed', e)
-    schedulePoll(5000) // retry on error
-  } finally {
-    polling.value = false
+    console.error('Failed to connect theme job events', e)
+    reconnectTimer = setTimeout(() => { void fetchJob() }, 3000)
   }
-}
-
-function schedulePoll(overrideMs?: number) {
-  if (pollTimer) clearTimeout(pollTimer)
-  const ms = overrideMs || jobData.value?.pollAfterMs || 2000
-  pollTimer = setTimeout(poll, ms)
 }
 
 const isPending = computed(() => {

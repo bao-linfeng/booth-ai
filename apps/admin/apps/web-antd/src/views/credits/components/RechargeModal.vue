@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { RechargeParams } from '#/api/core/credits';
+import type { UserRecord } from '#/api/core/user-manage';
+
 import { ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
@@ -8,9 +11,7 @@ import { message } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import { rechargeCreditApi } from '#/api/core/credits';
-import type { RechargeParams } from '#/api/core/credits';
 import { getUserListApi } from '#/api/core/user-manage';
-import type { UserRecord } from '#/api/core/user-manage';
 
 const emit = defineEmits(['reload']);
 
@@ -65,7 +66,7 @@ const [RechargeForm, formApi] = useVbenForm({
       fieldName: 'userId',
       label: '用户',
       rules: 'required',
-      componentProps: { 
+      componentProps: {
         allowClear: true,
         showSearch: true,
         filterOption: false,
@@ -73,8 +74,10 @@ const [RechargeForm, formApi] = useVbenForm({
         options: userOptions,
         loading: userFetching,
         onSearch: (val: string) => debouncedFetchUsers(val),
-        onFocus: () => { if (userOptions.value.length === 0) fetchUsers(); },
-        class: 'w-full'
+        onFocus: () => {
+          if (userOptions.value.length === 0) fetchUsers();
+        },
+        class: 'w-full',
       },
     },
     {
@@ -84,7 +87,7 @@ const [RechargeForm, formApi] = useVbenForm({
       rules: 'required',
       componentProps: {
         min: 1,
-        max: 2147483647,
+        max: 2_147_483_647,
         precision: 0,
         placeholder: '请输入正整数',
         class: 'w-full',
