@@ -61,6 +61,12 @@ export const apiFetch = ofetch.create({
   },
 })
 
+/** 灵通外部公开 API 客户端（无鉴权，用于国家/城市字典等公开接口） */
+export const lingtongPublicFetch = ofetch.create({
+  baseURL: LINGTONG_API_URL,
+  timeout: API_TIMEOUT,
+})
+
 /** 灵通外部 API 客户端（登录、用户详情等） */
 export const lingtongFetch = ofetch.create({
   baseURL: LINGTONG_API_URL,

@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="灵通 AI 展台方案平台一期功能缺口汇总：明确缺失、部分实现、验收交付与建议实施顺序。">
+  <title>一期功能缺口汇总 · 灵通 AI 展台方案平台</title>
+  <style>
+    :root {
+      --paper: #faf9f6;
+      --surface: #fff;
+      --ink: #222b27;
+      --muted: #6e7771;
+      --line: #e2e5df;
+      --accent: #315d48;
+      --accent-soft: #edf3ee;
+      --pending: #8e5734;
+      --pending-soft: #f8eee5;
+      --partial: #6b653f;
+      --partial-soft: #f3f1e5;
+      --body: "Source Han Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+      --display: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "SimSun", serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 32px; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.85 var(--body); }
+    a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 4px; }
+    a:hover { color: var(--ink); }
+    button { font: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+    .page { max-width: 1120px; margin: 0 auto; padding: 0 48px; }
+    .masthead { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 0; border-bottom: 1px solid var(--line); }
+    .brand { font-size: 13px; font-weight: 700; letter-spacing: .08em; }
+    .brand span { margin-left: 12px; font-size: 11px; font-weight: 400; color: var(--muted); letter-spacing: .1em; }
+    .print { border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--muted); padding: 5px 13px; cursor: pointer; font-size: 12px; }
+    .print:hover { border-color: var(--accent); color: var(--accent); }
+    .hero { padding: 62px 0 40px; }
+    .eyebrow { margin: 0 0 16px; font-size: 11px; letter-spacing: .16em; font-weight: 700; color: var(--accent); }
+    h1 { margin: 0; font: 500 clamp(32px, 5vw, 48px)/1.25 var(--display); letter-spacing: -.025em; }
+    .subtitle { margin: 16px 0 0; color: var(--muted); font-size: 16px; }
+    .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 26px; color: var(--muted); font-size: 12px; }
+    .meta strong { color: var(--ink); font-weight: 500; }
+    .summary { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 36px; border-top: 2px solid var(--accent); background: var(--surface); padding: 28px 30px; }
+    .summary h2 { margin: 0 0 12px; font-size: 18px; font-weight: 600; }
+    .summary p { margin: 0; font-size: 14px; }
+    .summary-list { margin: 0; padding: 0; list-style: none; }
+    .summary-list li { display: grid; grid-template-columns: 80px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+    .summary-list li:first-child { padding-top: 0; }
+    .summary-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+    .summary-list strong { font-weight: 600; }
+    .scope { margin: 16px 0 0; color: var(--muted); font-size: 12px; }
+    .nav { display: flex; flex-wrap: wrap; gap: 12px 26px; padding: 28px 0; margin-top: 18px; border-bottom: 1px solid var(--line); }
+    .nav a { color: var(--muted); font-size: 12px; text-decoration: none; }
+    .nav a:hover { color: var(--accent); }
+    .nav b { margin-right: 6px; font-weight: 500; color: var(--accent); }
+    section { margin-top: 54px; scroll-margin-top: 24px; }
+    .section-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px; }
+    .section-number { color: var(--accent); font: 400 22px/1 Georgia, serif; }
+    h2 { margin: 0; font-size: 23px; font-weight: 600; line-height: 1.5; }
+    .section-intro { margin: -7px 0 22px 40px; color: var(--muted); font-size: 13px; }
+    .table-wrap { overflow-x: auto; border-top: 1px solid var(--ink); background: var(--surface); }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; text-align: left; }
+    th { color: var(--muted); font-size: 11px; letter-spacing: .03em; font-weight: 500; background: #f3f4ef; }
+    th, td { padding: 15px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    td:first-child { font-weight: 600; }
+    .gap-table { min-width: 740px; }
+    .gap-table th:first-child { width: 22%; }
+    .gap-table th:nth-child(2) { width: 13%; }
+    .gap-table th:nth-child(3) { width: 29%; }
+    .req { color: var(--muted); font: 11px/1.8 Consolas, "SFMono-Regular", monospace; white-space: nowrap; }
+    .status { display: inline-block; font-size: 10px; font-weight: 500; line-height: 1.5; padding: 3px 7px; border-radius: 3px; vertical-align: middle; }
+    .pending { color: var(--pending); background: var(--pending-soft); }
+    .partial { color: var(--partial); background: var(--partial-soft); }
+    .verify { color: var(--accent); background: var(--accent-soft); }
+    .evidence { margin: 18px 0 0; padding: 14px 18px; border-left: 2px solid var(--line); font-size: 11px; color: var(--muted); }
+    .evidence strong { color: var(--ink); font-weight: 500; }
+    code { font-family: Consolas, "SFMono-Regular", monospace; font-size: .92em; overflow-wrap: anywhere; }
+    .evidence ul { padding-left: 18px; margin: 5px 0 0; }
+    .findings { border-top: 1px solid var(--ink); }
+    .finding { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 16px; padding: 25px 0; border-bottom: 1px solid var(--line); }
+    .finding-number { padding-top: 2px; color: var(--muted); font: 400 21px/1.5 Georgia, serif; }
+    .finding-title { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.7; }
+    .finding p { margin: 10px 0 0; font-size: 13px; }
+    .finding ul, .finding ol { margin: 10px 0 0; padding-left: 20px; font-size: 13px; }
+    .finding li { margin: 5px 0; }
+    .finding .source { margin-top: 13px; color: var(--muted); font-size: 11px; line-height: 1.8; }
+    .finding .requirement { margin-top: 6px; color: var(--muted); font-size: 11px; }
+    .evidence-table { min-width: 560px; }
+    .evidence-table th:first-child { width: 26%; }
+    .note { margin-top: 20px; padding: 18px 22px; background: var(--accent-soft); font-size: 13px; }
+    .note p { margin: 0; }
+    .note p + p { margin-top: 10px; }
+    .implemented { display: grid; grid-template-columns: 1fr 1fr; gap: 0 36px; padding: 0; list-style: none; border-top: 1px solid var(--ink); }
+    .implemented li { padding: 14px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .implemented li::before { content: "✓"; color: var(--accent); padding-right: 10px; }
+    .decisions { margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .decision { border-left: 2px solid var(--accent); padding: 2px 0 2px 18px; }
+    .decision p { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+    .roadmap { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--ink); }
+    .roadmap li { display: grid; grid-template-columns: 54px 190px 1fr; align-items: baseline; gap: 16px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+    .roadmap .step { font: 400 20px/1.6 Georgia, serif; color: var(--accent); }
+    .roadmap h3 { font-size: 14px; }
+    .roadmap p { margin: 0; color: var(--muted); font-size: 13px; }
+    .conclusion { margin: 34px 0 0; padding: 25px 0; border-top: 2px solid var(--accent); border-bottom: 1px solid var(--line); font: 500 20px/1.9 var(--display); }
+    .references { padding-left: 20px; font-size: 12px; color: var(--muted); }
+    .references li { margin: 8px 0; }
+    footer { margin-top: 46px; padding: 22px 0 32px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 16px; font-size: 10px; color: var(--muted); letter-spacing: .04em; }
+    @media (max-width: 760px) {
+      .page { padding: 0 22px; }
+      .brand span { display: none; }
+      .hero { padding-top: 40px; }
+      .subtitle { font-size: 14px; }
+      .meta { gap: 8px 20px; }
+      .summary { grid-template-columns: 1fr; gap: 22px; padding: 22px; }
+      section { margin-top: 38px; }
+      h2 { font-size: 20px; }
+      .section-intro { margin-left: 0; }
+      .finding { grid-template-columns: 26px 1fr; gap: 12px; }
+      .implemented, .decisions { grid-template-columns: 1fr; }
+      .roadmap li { grid-template-columns: 32px 1fr; gap: 6px 12px; }
+      .roadmap p { grid-column: 2; }
+      footer { flex-direction: column; gap: 4px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    @page { size: A4; margin: 16mm 14mm; }
+    @media print {
+      body { background: #fff; font-size: 10pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { max-width: none; padding: 0; }
+      .print, .nav { display: none; }
+      .masthead { padding: 0 0 12px; }
+      .hero { padding: 26px 0 20px; }
+      h1 { font-size: 30pt; }
+      .summary { padding: 18px 20px; gap: 20px; }
+      section { margin-top: 28px; }
+      h2 { font-size: 16pt; }
+      h3 { font-size: 11pt; }
+      .table-wrap { overflow: visible; }
+      .gap-table, .evidence-table { min-width: 0; }
+      table { font-size: 8pt; }
+      th, td { padding: 9px 8px; }
+      thead { display: table-header-group; }
+      tr, .finding, .decision, .roadmap li, .note { break-inside: avoid; }
+      .section-head, h3 { break-after: avoid; }
+      .finding { padding: 16px 0; }
+      .finding p, .finding ul, .finding ol, .implemented li, .roadmap p { font-size: 9pt; }
+      .source, .evidence { font-size: 8pt; }
+      a { color: inherit; text-decoration: none; }
+      .conclusion { font-size: 14pt; }
+      footer { margin-top: 24px; padding-bottom: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="masthead">
+      <div class="brand">灵通 AI 展台方案平台<span>LINGTONG · PHASE ONE</span></div>
+      <button class="print" type="button" id="print-report">打印 / 保存 PDF</button>
+    </header>
+
+    <main>
+      <div class="hero">
+        <p class="eyebrow">PROJECT REVIEW / 2026.09.30</p>
+        <h1>一期功能缺口汇总</h1>
+        <p class="subtitle">以需求为基准，以当前代码为依据，梳理距离完整交付还缺什么。</p>
+        <div class="meta">
+          <span>核对日期 <strong>2026 年 9 月 30 日</strong></span>
+          <span>范围 <strong>客户端 · 管理后台 · 服务端 · SU 对接</strong></span>
+          <span>基准 <strong>一期需求书 / 开发需求规格说明书 v1.0</strong></span>
+        </div>
+      </div>
+
+      <div class="summary">
+        <div>
+          <h2>主要业务框架已有，关键交付链路仍待闭合。</h2>
+          <p>AI 智选、方案资产管理、清单导出、报价项目、主题生成和积分账本已有代码基础。剩余工作的重心，是统一账户与 SU 接入、可控换主题、配套平面素材交付，以及真人客服承接。</p>
+        </div>
+        <ul class="summary-list">
+          <li><strong>明确缺失</strong><span>SU 对接、用户类型识别、第三方客服</span></li>
+          <li><strong>部分实现</strong><span>登录墙、蒙版、缓存、素材交付、权限</span></li>
+          <li><strong>待验收</strong><span>真实资产、模型效果、性能、恢复与试点</span></li>
+        </ul>
+      </div>
+      <p class="scope">核对口径：基于当前工作区源码，包含尚未提交的修改；本次未运行应用、未调用外部服务、未核查运行数据库中的实际资产。代码已有不等于正式验收通过，资料缺少证据不等于已确认未完成。</p>
+
+      <nav class="nav" aria-label="报告目录">
+        <a href="#missing"><b>01</b>待补齐功能</a>
+        <a href="#partial"><b>02</b>部分实现</a>
+        <a href="#acceptance"><b>03</b>验收与交付</a>
+        <a href="#existing"><b>04</b>已有基础与口径</a>
+        <a href="#roadmap"><b>05</b>建议顺序</a>
+      </nav>
+
+      <section id="missing" aria-labelledby="missing-title">
+        <div class="section-head"><span class="section-number">01</span><h2 id="missing-title">明确缺失或尚未完成的功能</h2></div>
+        <p class="section-intro">以下条目存在明确的源码缺口，或已有入口但尚未打通使用链路。</p>
+        <div class="table-wrap">
+          <table class="gap-table">
+            <thead><tr><th scope="col">功能</th><th scope="col">对应需求</th><th scope="col">当前情况</th><th scope="col">待完成内容</th></tr></thead>
+            <tbody>
+              <tr><td>01 · 换主题登录墙</td><td><span class="req">K-03</span></td><td>后端生成接口要求登录，但页面“登录以继续”按钮被禁用，没有绑定跳转。</td><td>引导登录，保留方案编号；登录成功返回原方案生成页。</td></tr>
+              <tr><td>02 · SU 静默登录与统一额度</td><td><span class="req">G-02<br>K-04 / K-05</span></td><td>SU 身份与用户信息模块仍为注释占位。</td><td>验证插件 token，同步到同一用户记录，建立网页会话，共用积分账本。</td></tr>
+              <tr><td>03 · SU 资料导出对接</td><td><span class="req">D-03<br>E-01 / E-02</span></td><td>SU 导出接收和后台 SU 导出模块尚未实现。</td><td>接收修改后的模型、报馆图和平面素材；关联交付对象，复核后提供资料。</td></tr>
+              <tr><td>04 · 用户类型与入口提示</td><td><span class="req">G-03</span></td><td>账户仅区分 client/admin，未表达参展商、经销商、搭建商、设计师类型。</td><td>确定类型来源，保存、同步和展示类型，提示客户端或 SU 入口。</td></tr>
+              <tr><td>05 · 正式在线客服</td><td><span class="req">F-06</span></td><td>客服模块仅为注释；客户端未发现第三方 SDK 接入。</td><td>接入 SDK 和真实坐席，传递方案及客户上下文，验证海外收发与翻译。</td></tr>
+              <tr><td>06 · 主题结果缓存复用</td><td><span class="req">B-03</span></td><td>接受 cacheMode，但 cacheHit 始终为 false；请求幂等不等同结果缓存。</td><td>按原图、主题参数、模型和模板识别可复用结果，减少重复调用与收费。</td></tr>
+              <tr><td>07 · 资料下载全部</td><td><span class="req">D-04 / E-06</span></td><td>已有逐张预览、下载，没有“下载全部”入口和批量交付接口。</td><td>批量交付报馆图、平面素材，保留原文件名并处理缺件、失败。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <aside class="evidence" aria-label="关键代码依据">
+          <strong>关键代码依据</strong>
+          <ul>
+            <li>登录按钮：<code>apps/client/src/pages/SchemeTheme.vue:302–305</code></li>
+            <li>SU 占位：<code>apps/server/src/modules/su/index.ts</code>、<code>su/auth/index.ts</code>、<code>su/exports/index.ts</code></li>
+            <li>用户字段：<code>apps/server/src/modules/client/auth/index.ts:9–26</code></li>
+            <li>客服占位：<code>apps/server/src/modules/client/customer-service/index.ts</code></li>
+            <li>缓存状态：<code>apps/server/src/modules/client/theme-jobs/index.ts:140–164</code></li>
+            <li>资料下载：<code>apps/client/src/pages/SchemeDetail.vue:504–537</code></li>
+          </ul>
+        </aside>
+      </section>
+
+      <section id="partial" aria-labelledby="partial-title">
+        <div class="section-head"><span class="section-number">02</span><h2 id="partial-title">已有实现，尚未达到完整需求</h2></div>
+        <p class="section-intro">重点是补齐规则与端到端关联，避免将“有页面、有接口”视为完整交付。</p>
+        <div class="findings">
+          <article class="finding">
+            <div class="finding-number">08</div>
+            <div>
+              <div class="finding-title"><h3>图生图尚未完整落实“只改蒙版区域”</h3><span class="status partial">部分实现</span></div>
+              <p class="requirement">对应需求：B-01 / B-02 / B-03</p>
+              <p>已实现蒙版上传、效果图配对、同分辨率检查和品红区域转换，但生成侧没有统一落实蒙版限制。</p>
+              <ul>
+                <li>OpenAI 分支传入转换后的蒙版；Gemini 和万相分支未传蒙版，主要依赖提示词保持结构。</li>
+                <li>万相调用使用 <code>description_edit</code>，未实现需求中的 <code>mask_color=[[255,0,255]]</code> 路径。</li>
+                <li>生成能力接口只检查模型，不检查所选原图的蒙版与模板是否就绪。</li>
+              </ul>
+              <p class="source">依据：<code>apps/server/src/modules/tasks/theme-worker.ts:115–170、221–238</code>；<code>client/theme-jobs/index.ts:112–125</code>。</p>
+            </div>
+          </article>
+          <article class="finding">
+            <div class="finding-number">09</div>
+            <div>
+              <div class="finding-title"><h3>行业 × 风格模板缺少完整的能力约束</h3><span class="status partial">部分实现</span></div>
+              <p class="requirement">对应需求：B-04</p>
+              <p>已有模板管理、查询与品牌关键词注入，但有效模板组合与可生成能力尚未严格关联，注入后的提示词长度也未按供应商要求校验。</p>
+              <ul>
+                <li>当前将全部行业和风格的笛卡尔积作为“支持组合”；没有模板时使用通用提示词。</li>
+                <li>未落实需求稿中的万相 ≤75 字限制。</li>
+                <li>模板覆盖率与各组合实际效果，需要通过真实配置和样本验证。</li>
+              </ul>
+              <p class="source">依据：<code>client/theme-jobs/index.ts:120–125</code>；<code>tasks/theme-worker.ts:222–227</code>；<code>admin/prompt-templates/index.ts:13</code>（均位于 <code>apps/server/src/modules/</code>）。</p>
+            </div>
+          </article>
+          <article class="finding">
+            <div class="finding-number">10</div>
+            <div>
+              <div class="finding-title"><h3>AIGC 平面素材尚未形成完整交付链路</h3><span class="status pending">核心缺口</span></div>
+              <p class="requirement">对应需求：E-01 / E-03 / E-05</p>
+              <p>已有平面素材任务接口和 Worker，但距离“选定主题 → 四面素材 → 下载与项目交付”还有明显差距。</p>
+              <ol>
+                <li><strong>客户端入口：</strong>尚未发现生成入口和结果页，现有页面只查看、下载方案库素材。</li>
+                <li><strong>主题关联：</strong>任务未明确绑定已选定主题结果，效果图与墙面素材内容一致性没有完整保证。</li>
+                <li><strong>四方向成套生成：</strong>当前按单个 artworkKey 处理，缺少成套任务、方向完整性检查和跨方向一致性控制。</li>
+                <li><strong>项目交付：</strong>主题报价项目的素材状态为 pending，未看到后续绑定生成素材并更新状态的接口。</li>
+                <li><strong>后台运营：</strong>生成任务查询选择 artwork 时直接返回空列表。</li>
+                <li><strong>收费闭环：</strong>平面素材任务未像主题任务一样做余额检查与积分预占；收费口径确认后需补齐。</li>
+                <li><strong>输出格式：</strong>结果使用 PNG 后缀，但未统一转码、验证高清标准，文件后缀不能替代格式验收。</li>
+              </ol>
+              <p class="source">依据：<code>apps/server/src/modules/client/artwork-jobs/index.ts</code>；<code>tasks/artwork-worker.ts</code>；<code>projects/snapshot.ts:67</code>；<code>admin/generation-jobs/service.ts:51</code>。</p>
+            </div>
+          </article>
+          <article class="finding">
+            <div class="finding-number">11</div>
+            <div>
+              <div class="finding-title"><h3>资料完整性核验仍偏重“有没有文件”</h3><span class="status partial">部分实现</span></div>
+              <p class="requirement">对应需求：D-01 / D-02 / E-04 / H-02</p>
+              <p>六类资产和效果图、蒙版配对已有检查，但需要补齐交付内容的业务核验。</p>
+              <ul>
+                <li><strong>三视图：</strong>支持 viewCodes 元数据，但发布检查仅要求存在 drawing，没有检查规范要求的视向覆盖。</li>
+                <li><strong>用途与适用范围：</strong>后台可填写，客户端资料接口未返回对应字段，页面仅有通用提示。</li>
+                <li><strong>素材与清单：</strong>已有 artworkKey，但未看到清单画面项与素材逐项映射、缺失与重复校验。</li>
+                <li><strong>格式与尺寸：</strong>部分尺寸证据字段已有支持，发布检查尚未强制验证高清 PNG 等要求。</li>
+              </ul>
+              <p class="source">依据：<code>apps/server/src/modules/admin/reviews/service.ts:142–155</code>；<code>admin/assets/index.ts:78–106</code>；<code>client/schemes/service.ts:23–38</code>。</p>
+            </div>
+          </article>
+          <article class="finding">
+            <div class="finding-number">12</div>
+            <div>
+              <div class="finding-title"><h3>模板适用条件目前只能支持简化场景</h3><span class="status partial">部分实现</span></div>
+              <p class="requirement">对应需求：A-04 / H-03</p>
+              <p>匹配引擎已有适用条件判断，但选型字典中的 applicabilityQuestions 固定为空；发布检查会拒绝包含非空适用规则的方案。需要用户回答特殊适用问题的方案，尚无法完整上线使用。</p>
+              <p class="source">依据：<code>apps/server/src/modules/client/selection/repository.ts:72</code>；<code>admin/reviews/service.ts:174–177</code>。</p>
+            </div>
+          </article>
+          <article class="finding">
+            <div class="finding-number">13</div>
+            <div>
+              <div class="finding-title"><h3>四层组织、资料授权与权限分级仍需补齐</h3><span class="status partial">部分实现</span></div>
+              <p class="requirement">对应需求：H-01 / H-02 / I-05</p>
+              <ul>
+                <li><strong>四层组织：</strong>已有 parentCode、功能标签与 visualTheme，未看到品牌资料层的明确关联与维护能力。需明确最小数据关系，不扩成自由拼装系统。</li>
+                <li><strong>后台权限：</strong>已有管理员校验与本人项目隔离，但大部分后台业务统一检查 ROLE_ADMIN，未按维护、审核、发布等权限分别控制。</li>
+                <li><strong>资料授权：</strong>已发布方案的模型、图纸、素材下载接口没有用户鉴权。若沿用授权下载要求，需冻结各类资料开放规则并落实。</li>
+                <li><strong>审计入口：</strong>已有查询 API，未发现对应后台查询页面。</li>
+              </ul>
+              <p class="source">依据：<code>apps/server/src/modules/admin/schemes/service.ts:5–26</code>；<code>admin/index.ts:26–33</code>；<code>client/schemes/index.ts</code>；<code>admin/audit-logs/index.ts</code>。</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="acceptance" aria-labelledby="acceptance-title">
+        <div class="section-head"><span class="section-number">03</span><h2 id="acceptance-title">验收与正式交付证据</h2></div>
+        <p class="section-intro">以下事项应补充证明或实测记录；本次静态核对不能断言外部业务工作尚未完成。</p>
+        <div class="table-wrap">
+          <table class="evidence-table">
+            <thead><tr><th scope="col">待核查事项</th><th scope="col">需要补充的证据或交付物</th></tr></thead>
+            <tbody>
+              <tr><td>10 套完整试点方案</td><td>实际入库清单、六类资产、模型与清单核对记录、素材授权确认、审核发布记录。打标表与文件名不能替代真实资产。</td></tr>
+              <tr><td>双模型真实可用性</td><td>同批样本的主备生成结果、蒙版效果、结构保持、失败情况、真实成本与并发限制。</td></tr>
+              <tr><td>性能达标</td><td>真实匹配 ≤5 秒、单图生成 ≤30 秒的测量记录。当前万相轮询最多约120秒并有重试，代码不能证明达标。</td></tr>
+              <tr><td>真实商业闭环</td><td>浏览器端选型 → 登录 → 换主题 → 资料 → 报价 → 后台跟进的完整验收，含手机端和异常场景。</td></tr>
+              <tr><td>备份与恢复</td><td>数据库与对象资产备份、恢复步骤及演练记录。持久化卷已有，仓库未发现备份恢复脚本或演练资料。</td></tr>
+              <tr><td>商业价值基线</td><td>有效询价与成交、实际成本、人工工时、返工和不满意原因。已有检索统计、项目状态与跟进可作为基础。</td></tr>
+              <tr><td>操作手册与 SOP</td><td>客户、内部、专业用户三类操作材料，以及蒙版制作、人工报价、设计审核工作流程。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note"><p>商业观察先复用现有日志、项目记录和试点统计表即可，不需要为此新增完整 BI 或工时管理系统。现有冒烟脚本主要验证基础设施与 echo 任务链路，不能替代真实业务闭环验收。</p></div>
+      </section>
+
+      <section id="existing" aria-labelledby="existing-title">
+        <div class="section-head"><span class="section-number">04</span><h2 id="existing-title">已有基础与需求口径</h2></div>
+        <p class="section-intro">这些能力已有实现基础，不应重新统计为“全部缺失”；仍需按业务场景验收。</p>
+        <ul class="implemented">
+          <li>参数选型、规则解析、LLM 解析与失败降级</li>
+          <li>随机推荐、直接 / 参考匹配、无匹配原因</li>
+          <li>人工需求申请与客户端本人项目查询</li>
+          <li>方案创建、导入与四类独立资产管理</li>
+          <li>方案审核发布与资产变更后的发布失效</li>
+          <li>清单导入、计量换算、人工核验、空价导出</li>
+          <li>报价申请、项目快照、后台分配与跟进</li>
+          <li>人工报价编辑与报价单导出</li>
+          <li>官网注册跳转、外部登录、本地账户同步</li>
+          <li>主题任务、前后对比、最终结果选择</li>
+          <li>主题积分预占、按结果结算与失败释放逻辑</li>
+          <li>检索记录查询和后台趋势统计</li>
+        </ul>
+        <div class="decisions">
+          <article class="decision">
+            <h3>清单差异属于已确认变更</h3>
+            <p>最新《清单样表实施口径》明确：客户文件采用含重量的八列表头，价格两列真正为空，不含价格公式；旧稿的“序号占一列”和“数量 × 单价公式”不再适用。这些差异不应列为漏做。</p>
+          </article>
+          <article class="decision">
+            <h3>不足三套的补齐规则需统一</h3>
+            <p>规格书“随机补齐”与需求书“不放宽条件硬给结果”存在冲突。当前只返回合格结果、最多三套；应确认最终口径，不宜直接统计为缺失功能。</p>
+          </article>
+        </div>
+        <div class="note"><p><strong>一期排除项：</strong>自由组件组合、从零生成结构、网页结构编辑器、自动报价、自动下单、订阅套餐与支付充值、小程序、完整版本管理、自动生成可直接印刷文件。微信登录也不是本次需求缺口。</p></div>
+      </section>
+
+      <section id="roadmap" aria-labelledby="roadmap-title">
+        <div class="section-head"><span class="section-number">05</span><h2 id="roadmap-title">建议补齐顺序</h2></div>
+        <p class="section-intro">按业务依赖推进；以下为实施顺序建议，不是需求书原始优先级或剩余工时估算。</p>
+        <ol class="roadmap">
+          <li><span class="step">01</span><h3>打通使用入口</h3><p>换主题登录与回跳、用户类型识别、SU token 接入和统一额度。</p></li>
+          <li><span class="step">02</span><h3>保证主题生成可控</h3><p>蒙版限制、模板能力检查、生成错误提示、结果缓存复用。</p></li>
+          <li><span class="step">03</span><h3>完成素材交付</h3><p>选定主题 → 四面素材 → 核验 → 下载 → 项目关联，并补齐 SU 导出。</p></li>
+          <li><span class="step">04</span><h3>补齐沟通与授权</h3><p>真人在线客服、批量下载、资料开放规则、后台权限分级。</p></li>
+          <li><span class="step">05</span><h3>完成上线验收</h3><p>10 套完整资产、真实模型与性能验证、备份恢复、客户试点、操作手册与 SOP。</p></li>
+        </ol>
+        <p class="conclusion">最大的剩余工作，是让“统一账户 → 可控换主题 → 对应平面素材 → 专业资料交付 → 真人客服承接”形成可验证的端到端闭环。</p>
+      </section>
+
+      <section aria-labelledby="references-title">
+        <div class="section-head"><span class="section-number">—</span><h2 id="references-title">核对来源</h2></div>
+        <ul class="references">
+          <li><a href="灵通_AI_展台方案平台_第一期需求书_v1.0.md">灵通 AI 展台方案平台 · 第一期需求书 v1.0</a></li>
+          <li><a href="灵通_AI_展台方案平台_开发需求规格说明书_v1.0.md">灵通 AI 展台方案平台 · 开发需求规格说明书 v1.0</a></li>
+          <li><a href="一期功能拆分/清单样表实施口径.md">清单样表实施口径 · 后续确认规则</a></li>
+          <li><a href="一期功能拆分/README.md">一期功能拆分 · 范围与待确认口径</a></li>
+          <li>当前源码：<code>apps/client/src/</code>、<code>apps/admin/apps/web-antd/src/</code>、<code>apps/server/src/</code> 及数据库迁移；部署配置：<code>infra/compose.dev.yaml</code>。</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer><span>灵通展览展示集团 · LINGTONG EXHIBITION DISPLAY GROUP</span><span>一期功能缺口汇总 / 源码静态核对 / 2026.09.30</span></footer>
+  </div>
+  <script>
+    document.getElementById('print-report').addEventListener('click', function () {
+      window.print();
+    });
+  </script>
+</body>
+</html>

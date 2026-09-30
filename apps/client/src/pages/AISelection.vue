@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight, Sparkles, ShieldCheck, SlidersHorizontal, MessageCircle, Search, LoaderCircle, CircleAlert, ArrowUpRight, Check, Coins } from 'lucide-vue-next'
@@ -676,7 +676,7 @@ onMounted(() => {
                 </div>
               </div>
             </template>
-             <p class="text-xs text-muted-foreground">{{ !isPreview && liveClarifications.some(item => item.field === 'text') ? '仍有未识别的文字，请修改描述后重新解析，或转人工确认。' : '请先核对并修正表单条件；只有点击“重新解析文字”才会再次识别。' }}</p><Button :disabled="!isPreview && !canConfirm" @click="confirm">确认已修正条件，继续匹配<ArrowRight class="ml-2 size-4" /></Button><Button v-if="!isPreview && liveClarifications.some(item => item.field === 'text')" variant="outline" @click="manualOpen = true">转人工确认</Button></CardContent></Card>
+             <p class="text-xs text-muted-foreground">{{ !isPreview && liveClarifications.some(item => item.field === 'text') ? '仍有未识别的文字，请修改描述后重新解析，或转人工确认。' : '请先核对并修正表单条件；只有点击“重新解析文字”才会再次识别。' }}</p><div class="flex flex-wrap gap-2"><Button :disabled="!isPreview && !canConfirm" @click="confirm">确认已修正条件，继续匹配<ArrowRight class="ml-2 size-4" /></Button><Button v-if="!isPreview && liveClarifications.some(item => item.field === 'text')" variant="outline" @click="manualOpen = true">转人工确认</Button></div></CardContent></Card>
           
           <Card v-if="state === 'idle'" class="overflow-hidden"><CardContent class="grid items-center gap-3 p-0 xl:grid-cols-2"><div class="space-y-5 p-6"><Badge variant="outline">从想法到空间</Badge><h2 class="text-2xl font-semibold leading-relaxed">让参展想法，<br />有一个具体的空间</h2><p class="text-sm leading-relaxed text-muted-foreground">填写展位尺寸，或用一句话描述需求。先筛选结构，再匹配偏好。</p><ol class="flex flex-wrap gap-4 text-xs text-muted-foreground"><li>01 描述需求</li><li>02 匹配方案</li><li>03 查看详情</li></ol></div><BoothIllustration class="w-full" /></CardContent><CardFooter class="flex-wrap justify-between gap-2 border-t pt-4 text-xs text-muted-foreground"><span>最多 3 套方案 · 每套 3 个视角</span><span>条件不全时明确标注待确认项</span></CardFooter></Card>
           <Card v-else-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? '正在识别您的需求' : '正在查找适合的方案' }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? '加载状态预览，可使用顶部工具栏切换。' : '正在调用接口匹配方案，请稍后。' }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>

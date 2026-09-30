@@ -5,7 +5,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       icon: 'lucide:users',
       order: 10,
-      title: '用户管理',
+      title: '用户运营',
     },
     name: 'UserManagement',
     path: '/user',
@@ -26,6 +26,15 @@ const routes: RouteRecordRaw[] = [
         meta: {
           icon: 'lucide:shield-user',
           title: '管理员列表',
+        },
+      },
+      {
+        name: 'CreditList',
+        path: '/credits/list',
+        component: () => import('#/views/credits/index.vue'),
+        meta: {
+          icon: 'lucide:coins',
+          title: '积分流水',
         },
       },
     ],

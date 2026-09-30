@@ -11,6 +11,7 @@ import {
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Card,
   CardHeader,
@@ -342,12 +343,17 @@ onMounted(async () => {
                 ></CardHeader
               ><CardContent class="space-y-3"
                  ><div v-if="themeModels.length" class="space-y-2">
-                   <label for="image-model" class="block text-sm font-medium">选择图像模型</label>
-                   <select id="image-model" v-model="selectedThemeModel" class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                     <option v-for="model in themeModels" :key="model.provider" :value="model.provider">
-                       {{ model.provider === 'gemini' ? 'Gemini Nano Banana' : model.provider === 'openai' ? 'GPT Image (OpenAI)' : '通义万相' }} · {{ model.unitCredits }} 积分/张
-                     </option>
-                   </select>
+                   <label class="block text-sm font-medium">选择图像模型</label>
+                   <Select :model-value="selectedThemeModel" @update:model-value="selectedThemeModel = $event as any">
+                     <SelectTrigger class="w-full">
+                       <SelectValue placeholder="选择图像模型" />
+                     </SelectTrigger>
+                     <SelectContent>
+                       <SelectItem v-for="model in themeModels" :key="model.provider" :value="model.provider">
+                         {{ model.provider === 'gemini' ? 'Gemini Nano Banana' : model.provider === 'openai' ? 'GPT Image (OpenAI)' : '通义万相' }} · {{ model.unitCredits }} 积分/张
+                       </SelectItem>
+                     </SelectContent>
+                   </Select>
                    <p class="text-sm">当前预计：{{ selectedThemePrice }} 积分 / 张</p>
                  </div>
                  <p v-else-if="themeModelsError" class="text-xs text-destructive">模型费用加载失败，请重试。</p>

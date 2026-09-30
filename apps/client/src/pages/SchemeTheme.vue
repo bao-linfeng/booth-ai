@@ -250,15 +250,16 @@ async function handleConfirm() {
                 <div v-if="images.length === 0" class="col-span-3 aspect-video bg-muted rounded-md flex items-center justify-center">
                   <BoothIllustration class="w-24 h-24 opacity-50" />
                 </div>
-                <button
+                <Button
                   v-for="img in images"
                   :key="img.assetId"
-                  class="relative aspect-video overflow-hidden rounded-md border-2 transition-colors"
+                  variant="ghost"
+                  class="relative aspect-video overflow-hidden rounded-md border-2 transition-colors p-0 h-auto w-full"
                   :class="selectedAssetId === img.assetId ? 'border-primary' : 'border-transparent hover:border-primary/50'"
                   @click="selectedAssetId = img.assetId"
                 >
                   <img :src="img.thumbnailUrl || img.url" class="object-cover w-full h-full" alt="效果图预览" />
-                </button>
+                </Button>
               </div>
 
               <div class="mt-6 aspect-video overflow-hidden rounded-lg border bg-muted flex items-center justify-center relative">
@@ -349,14 +350,16 @@ async function handleConfirm() {
                     </div>
                     <Input :model-value="color" @update:model-value="(val) => updateColor(index, val as string)" class="w-24 h-8 text-xs font-mono uppercase" />
                   </div>
-                  <button 
+                  <Button
                     v-if="brandColors.length < (themeOffer?.limits?.maxBrandColors || 3)"
-                    class="size-8 rounded-md border border-dashed flex items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                    variant="outline"
+                    size="icon"
+                    class="size-8 rounded-md border-dashed text-muted-foreground hover:border-primary hover:text-primary"
                     @click="addColor"
                     :disabled="isPreview"
                   >
                     <Plus class="size-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
 

@@ -206,14 +206,15 @@ const failureReason = computed(() => {
               <div class="flex items-center justify-between">
                 <h3 class="font-medium flex items-center gap-2 text-primary"><CheckCircle2 class="size-4" /> AI 换主题结果</h3>
                 <div class="flex gap-1" v-if="jobData.results.length > 1">
-                  <button 
+                  <Button
                     v-for="(res, i) in jobData.results" :key="res.resultId"
-                    class="size-6 rounded-md text-xs font-medium border flex items-center justify-center transition-colors"
-                    :class="activeResultIndex === i ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-muted'"
+                    size="icon"
+                    :variant="activeResultIndex === i ? 'default' : 'outline'"
+                    class="size-6 rounded-md text-xs font-medium"
                     @click="activeResultIndex = i"
                   >
                     {{ i + 1 }}
-                  </button>
+                  </Button>
                 </div>
               </div>
               
