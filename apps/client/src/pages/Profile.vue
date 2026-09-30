@@ -7,6 +7,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import CreditSignIn from '@/components/ui/CreditSignIn.vue'
+import SelectionShell from '@/features/selection/SelectionShell.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -39,25 +40,9 @@ const formatExternalId = (id?: string) => {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto px-4 py-8 space-y-6">
-    <Card class="flex items-center p-6 gap-6 shadow-sm border-border">
-      <Avatar class="h-20 w-20">
-        <AvatarImage :src="avatarUrl" :alt="authStore.displayName" />
-        <AvatarFallback class="bg-primary text-primary-foreground text-2xl">
-          {{ avatarFallback }}
-        </AvatarFallback>
-      </Avatar>
-      <div class="flex-1 space-y-1">
-        <h2 class="text-xl font-bold tracking-tight">{{ user?.username }}</h2>
-        <p v-if="user?.nickname" class="text-sm text-muted-foreground">{{ user.nickname }}</p>
-        <p v-if="user?.email || user?.mobile" class="text-sm text-muted-foreground">
-          {{ user.email || user.mobile }}
-        </p>
-      </div>
-      <Button variant="outline" size="sm" @click="handleEdit">编辑资料</Button>
-    </Card>
-
-    <CreditSignIn />
+  <SelectionShell>
+    <div class="max-w-2xl mx-auto px-4 py-8 space-y-6">
+    <CreditSignIn class="w-full" />
 
     <Card class="shadow-sm border-border">
       <CardHeader>
@@ -108,4 +93,5 @@ const formatExternalId = (id?: string) => {
       </CardContent>
     </Card>
   </div>
+  </SelectionShell>
 </template>

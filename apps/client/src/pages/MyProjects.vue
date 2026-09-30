@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card,CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getMyProject,getMyProjects,statusLabels,type MyProjectDetail,type ProjectPage } from '@/services/api/projects'
@@ -34,8 +35,8 @@ watch(()=>route.params.projectId,()=>{detail.value=undefined;list.value=undefine
     <form v-if="!route.params.projectId" class="grid items-end gap-4 rounded-xl border p-5 sm:grid-cols-2 lg:grid-cols-5" @submit.prevent="load(1)">
       <div class="space-y-2"><Label for="project-number">项目编号</Label><Input id="project-number" v-model="filters.projectNo" maxlength="200" /></div>
       <div class="space-y-2"><Label for="exhibition-filter">展会名称</Label><Input id="exhibition-filter" v-model="filters.exhibitionName" maxlength="200" /></div>
-      <div class="space-y-2"><Label for="status-filter">状态</Label><select id="status-filter" v-model="filters.status" class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">全部状态</option><option v-for="(label,status) in statusLabels" :key="status" :value="status">{{ label }}</option></select></div>
-      <div class="space-y-2"><Label for="source-filter">来源</Label><select id="source-filter" v-model="filters.sourceType" class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">全部来源</option><option value="quote_request">报价申请</option><option value="manual_request">人工需求</option></select></div>
+      <div class="space-y-2"><Label>状态</Label><Select :model-value="filters.status || '__all'" @update:model-value="filters.status = $event === '__all' ? '' : $event"><SelectTrigger aria-label="状态"><SelectValue placeholder="全部状态" /></SelectTrigger><SelectContent><SelectItem value="__all">全部状态</SelectItem><SelectItem v-for="(label,status) in statusLabels" :key="status" :value="status">{{ label }}</SelectItem></SelectContent></Select></div>
+      <div class="space-y-2"><Label>来源</Label><Select :model-value="filters.sourceType || '__all'" @update:model-value="filters.sourceType = $event === '__all' ? '' : $event"><SelectTrigger aria-label="来源"><SelectValue placeholder="全部来源" /></SelectTrigger><SelectContent><SelectItem value="__all">全部来源</SelectItem><SelectItem value="quote_request">报价申请</SelectItem><SelectItem value="manual_request">人工需求</SelectItem></SelectContent></Select></div>
       <Button :disabled="loading" type="submit">查询项目</Button>
     </form>
     <div v-if="loading" role="status" class="flex items-center gap-3 p-6"><Loader2 class="size-5 animate-spin" />正在读取项目…</div>

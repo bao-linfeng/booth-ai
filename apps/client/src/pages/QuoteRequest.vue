@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getQuoteContext, submitQuote, submitManualRequest, type ManualRequest, type QuoteContext, type QuoteRequest, type ProjectReceipt } from '@/services/api/projects'
@@ -184,27 +186,27 @@ async function submitManual() {
       <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <form class="space-y-5" @submit.prevent="submit">
           <fieldset :disabled="frozen" class="space-y-5">
-            <Card v-if="manual"><CardHeader><CardTitle class="text-lg">需求描述</CardTitle></CardHeader><CardContent class="space-y-3"><textarea v-model="originalDescription" required maxlength="5000" class="min-h-32 w-full rounded-md border border-input bg-background p-3 text-sm" aria-label="原始需求描述" placeholder="描述展位尺寸、功能、风格和需要确认的问题" /><p v-for="question in unresolvedQuestions" :key="question" class="text-xs text-muted-foreground">待确认：{{ question }}</p><p class="text-xs text-muted-foreground">本次申请不指定方案；沟通确认后由管理人员关联并固定资料。</p></CardContent></Card>
+            <Card v-if="manual"><CardHeader><CardTitle class="text-lg">需求描述</CardTitle></CardHeader><CardContent class="space-y-3"><Textarea v-model="originalDescription" required maxlength="5000" class="min-h-32" aria-label="原始需求描述" placeholder="描述展位尺寸、功能、风格和需要确认的问题" /><p v-for="question in unresolvedQuestions" :key="question" class="text-xs text-muted-foreground">待确认：{{ question }}</p><p class="text-xs text-muted-foreground">本次申请不指定方案；沟通确认后由管理人员关联并固定资料。</p></CardContent></Card>
             <Card><CardHeader><CardTitle class="text-lg">01 / 展会信息</CardTitle></CardHeader><CardContent class="grid gap-4 sm:grid-cols-2">
               <div class="space-y-2 sm:col-span-2"><Label for="exhibition">展会名称 *</Label><Input id="exhibition" v-model="form.exhibitionName" required maxlength="200" /></div>
               <div class="space-y-2"><Label for="country">国家代码 *</Label><Input id="country" v-model="form.countryCode" required pattern="[A-Za-z]{2}" maxlength="2" placeholder="CN / US" /></div>
               <div class="space-y-2"><Label for="city">城市 *</Label><Input id="city" v-model="form.city" required maxlength="100" /></div>
-              <div class="space-y-2"><Label for="start">开展日期 *</Label><Input id="start" v-model="form.startDate" type="date" required /></div>
-              <div class="space-y-2"><Label for="end">结束日期 *</Label><Input id="end" v-model="form.endDate" type="date" :min="form.startDate" required /></div>
+              <div class="space-y-2"><Label for="start">开展日期 *</Label><div class="relative"><Input id="start" v-model="form.startDate" type="date" required class="pr-8" /></div></div>
+              <div class="space-y-2"><Label for="end">结束日期 *</Label><div class="relative"><Input id="end" v-model="form.endDate" type="date" :min="form.startDate" required class="pr-8" /></div></div>
             </CardContent></Card>
             <Card><CardHeader><CardTitle class="text-lg">02 / 需求与材料预算</CardTitle></CardHeader><CardContent class="space-y-4">
               <div class="flex flex-wrap gap-4"><label v-for="scope in scopes" :key="scope.code" class="flex items-center gap-2 text-sm"><input v-model="form.scopeCodes" type="checkbox" :value="scope.code" class="accent-primary" />{{ scope.label }}</label></div>
-              <div class="space-y-2"><Label for="scope">范围说明{{ form.scopeCodes.includes('other') ? ' *' : '' }}</Label><textarea id="scope" v-model="form.scopeNotes" :required="form.scopeCodes.includes('other')" maxlength="2000" class="min-h-20 w-full rounded-md border border-input bg-background p-3 text-sm" /></div>
-              <div class="grid gap-4 sm:grid-cols-[120px_1fr]"><div class="space-y-2"><Label for="currency">币种 *</Label><select id="currency" v-model="form.currency" class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option v-for="currency in ['CNY','USD','EUR','GBP','HKD','JPY','KRW','KWD']" :key="currency">{{ currency }}</option></select></div><div class="space-y-2"><Label for="budget">材料购买预算 *</Label><Input id="budget" v-model="form.amount" required inputmode="decimal" pattern="(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,6})?" placeholder="如 30000" /></div></div>
+              <div class="space-y-2"><Label for="scope">范围说明{{ form.scopeCodes.includes('other') ? ' *' : '' }}</Label><Textarea id="scope" v-model="form.scopeNotes" :required="form.scopeCodes.includes('other')" maxlength="2000" /></div>
+              <div class="grid gap-4 sm:grid-cols-[120px_1fr]"><div class="space-y-2"><Label for="currency">币种 *</Label><Select :model-value="form.currency" @update:model-value="form.currency = $event"><SelectTrigger id="currency"><SelectValue placeholder="选择币种" /></SelectTrigger><SelectContent><SelectItem v-for="currency in ['CNY','USD','EUR','GBP','HKD','JPY','KRW','KWD']" :key="currency" :value="currency">{{ currency }}</SelectItem></SelectContent></Select></div><div class="space-y-2"><Label for="budget">材料购买预算 *</Label><Input id="budget" v-model="form.amount" required inputmode="decimal" pattern="(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,6})?" placeholder="如 30000" /></div></div>
               <p class="text-xs text-muted-foreground">预算仅用于需求沟通，不等于报价；运输、搭建及税费由人工另行确认。</p>
             </CardContent></Card>
             <Card><CardHeader><CardTitle class="text-lg">03 / 联系方式</CardTitle></CardHeader><CardContent class="grid gap-4 sm:grid-cols-2">
-              <div class="space-y-2"><Label for="customer-type">客户类型 *</Label><select id="customer-type" v-model="form.customerType" class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="individual">个人</option><option value="company">企业</option></select></div>
+              <div class="space-y-2"><Label for="customer-type">客户类型 *</Label><Select :model-value="form.customerType" @update:model-value="form.customerType = $event as 'company' | 'individual'"><SelectTrigger id="customer-type"><SelectValue placeholder="选择类型" /></SelectTrigger><SelectContent><SelectItem value="individual">个人</SelectItem><SelectItem value="company">企业</SelectItem></SelectContent></Select></div>
               <div class="space-y-2"><Label for="company">企业名称{{ form.customerType === 'company' ? ' *' : '' }}</Label><Input id="company" v-model="form.company" :required="form.customerType === 'company'" maxlength="200" /></div>
               <div class="space-y-2 sm:col-span-2"><Label for="contact">联系人 *</Label><Input id="contact" v-model="form.contactName" required maxlength="100" autocomplete="name" /></div>
               <div class="space-y-2"><Label for="email">邮箱（与电话至少一项）</Label><Input id="email" v-model="form.email" type="email" maxlength="254" autocomplete="email" /></div>
               <div class="space-y-2"><Label for="phone">电话（支持国际区号）</Label><Input id="phone" v-model="form.phone" type="tel" maxlength="30" autocomplete="tel" /></div>
-              <div class="space-y-2 sm:col-span-2"><Label for="notes">补充说明</Label><textarea id="notes" v-model="form.notes" maxlength="2000" class="min-h-20 w-full rounded-md border border-input bg-background p-3 text-sm" /></div>
+              <div class="space-y-2 sm:col-span-2"><Label for="notes">补充说明</Label><Textarea id="notes" v-model="form.notes" maxlength="2000" /></div>
             </CardContent></Card>
           </fieldset>
           <p v-if="error" role="alert" class="rounded-md border border-destructive/30 p-4 text-sm text-destructive">{{ error }}</p>
@@ -222,3 +224,14 @@ async function submitManual() {
     </template>
   </main></SelectionShell>
 </template>
+
+<style scoped>
+:deep(input[type="date"]::-webkit-calendar-picker-indicator) {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  opacity: 0.6;
+}
+</style>

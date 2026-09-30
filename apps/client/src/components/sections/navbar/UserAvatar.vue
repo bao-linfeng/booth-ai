@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { User, LogOut, ChevronsUpDown, Coins } from 'lucide-vue-next'
+import { User, LogOut, ChevronsUpDown, Coins, FolderOpen } from 'lucide-vue-next'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -72,6 +72,10 @@ const avatarFallback = computed(() => authStore.displayName.charAt(0) || '?')
         <DropdownMenuItem @click="router.push('/profile')" class="cursor-pointer">
           <User class="mr-2 h-4 w-4" />
           <span>个人中心</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem @click="router.push('/my-projects')" class="cursor-pointer">
+          <FolderOpen class="mr-2 h-4 w-4" />
+          <span>我的项目</span>
         </DropdownMenuItem>
       </DropdownMenuGroup>
       <DropdownMenuSeparator />

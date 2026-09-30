@@ -1,5 +1,5 @@
 <template>
-  <Card class="relative overflow-hidden w-full max-w-sm">
+  <Card class="relative overflow-hidden w-full">
     <div class="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none" />
     
     <CardHeader class="pb-2">
