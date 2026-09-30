@@ -6,14 +6,11 @@ import type pg from 'pg';
 import type { Config } from '../../config.js';
 import { activeAiModels, type ActiveAiModel } from '../../infra/ai-models.js';
 import { transaction } from '../../infra/database.js';
+import { getActivePromptTemplate } from '../admin/prompt-templates/service.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
 type ThemeInput = { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
 type ThemeJob = { requestedCount: number; sourceAssetId: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string };
-
-function buildPrompt(industryLabel: string, styleLabel: string, input: ThemeInput): string {
-  return `请根据以下要求对展台展位图进行AI换主题处理：\n行业：${industryLabel}，风格：${styleLabel}，品牌色：${input.brandColors?.join('、') ?? '无'}，关键词：${input.brandKeywords ?? '无'}\n保持展台结构不变，仅替换主题风格、色彩和装饰元素。`;
-}
 
 async function fetchSourceImageUrls(database: pg.Pool, sourceAssetId: string, config: ThemeConfig): Promise<{ internal: string; public: string }> {
   const result = await database.query<{ objectKey: string }>(
@@ -56,13 +53,18 @@ async function generateWithOpenAI(model: ActiveAiModel, sourceImageUrl: string, 
   form.set('prompt', prompt);
   form.set('n', String(count));
   form.set('size', '1792x1024');
-  form.set('response_format', 'url');
   const response = await fetch('https://api.openai.com/v1/images/edits', {
     method: 'POST', headers: { Authorization: `Bearer ${model.apiKey}` }, body: form,
   });
-  if (!response.ok) throw new Error(`OpenAI image edit failed (${response.status})`);
-  const body = await response.json() as { data?: { url?: string }[] };
-  return body.data?.flatMap(item => item.url ? [item.url] : []) ?? [];
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 500);
+    throw new Error(`OpenAI image edit failed (${response.status}): ${detail}`);
+  }
+  const body = await response.json() as { data?: { b64_json?: string; url?: string }[] };
+  return body.data?.flatMap(item => {
+    if (item.b64_json) return [`data:image/png;base64,${item.b64_json}`];
+    return item.url ? [item.url] : [];
+  }) ?? [];
 }
 
 async function generateWithGemini(model: ActiveAiModel, sourceImageUrl: string, prompt: string, count: number): Promise<string[]> {
@@ -134,7 +136,12 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
     const industryLabel = labels.rows.find(row => row.id === job.input.industryId)?.label;
     const styleLabel = labels.rows.find(row => row.id === job.input.styleId)?.label;
     if (!industryLabel || !styleLabel) throw new Error('Theme dictionary labels not found');
-    const prompt = buildPrompt(industryLabel, styleLabel, job.input);
+    const template = await getActivePromptTemplate(database, 'theme', job.input.industryId, job.input.styleId);
+    const prompt = template ? template.body.replace(/{{(brandColors|brandKeywords|industryLabel|styleLabel)}}/g, (_match, variable: string) => ({
+      brandColors: job.input.brandColors?.join(', ') ?? '无', brandKeywords: job.input.brandKeywords ?? '无',
+      industryLabel, styleLabel,
+    })[variable] ?? '') :
+      `请根据以下要求对展台展位图进行AI换主题处理：\n行业：${industryLabel}，风格：${styleLabel}，品牌色：${job.input.brandColors?.join('、') ?? '无'}，关键词：${job.input.brandKeywords ?? '无'}\n保持展台结构不变，仅替换主题风格、色彩和装饰元素。`;
     const models = await activeAiModels(database, 'theme', config.aiModelEncryptionKey);
     const imageUrls = await fetchSourceImageUrls(database, job.sourceAssetId, config);
     for (const model of models) {
@@ -151,14 +158,14 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
           urls.push(...generated.slice(0, remaining).filter(Boolean));
           if (generated.length === 0) throw new Error('Image provider returned no images');
           if (urls.length === job.requestedCount) break;
-        } catch {
-          // Try this provider again, then fall back to the next configured model.
+        } catch (error) {
+          console.error(`Theme job ${jobId} provider ${model.provider} attempt ${attempt + 1} failed`, error);
         }
       }
       if (urls.length === job.requestedCount) break;
     }
-  } catch {
-    // An invalid source or unavailable models leaves the job with no usable results.
+  } catch (error) {
+    console.error(`Theme job ${jobId} failed before settlement`, error);
   }
 
   await transaction(database, async client => {

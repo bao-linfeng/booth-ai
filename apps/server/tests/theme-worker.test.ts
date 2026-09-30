@@ -19,9 +19,15 @@ test('theme worker generates real provider results and settles credits atomicall
   const queries: { sql: string; params?: unknown[] }[] = [];
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
-    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 2, sourceAssetId: randomUUID(), input: { industryId, styleId }, unitCredits: 3, userId, status: 'pending' }] };
+    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 2, sourceAssetId: randomUUID(), input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status: 'pending' }] };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
+    if (sql.includes('FROM prompt_templates')) {
+      assert.deepEqual(params, ['theme', industryId, styleId]);
+      return { rows: [{ id: randomUUID(), purpose: 'theme', industryId, styleId,
+        body: '{{industryLabel}}/{{styleLabel}}/{{brandColors}}/{{brandKeywords}}', variables: [], enabled: true, revision: 1,
+        createdAt: new Date(), updatedAt: new Date() }] };
+    }
     if (sql.includes('FROM ai_model_configs')) return { rows: [{ purpose: 'theme', provider: 'openai', enabled: true, priority: 1, unitCredits: 3, revision: 1, credentialCiphertext: encryptCredential('api-key', 'openai', encryptionKey) }] };
     if (sql.includes('FROM scheme_assets')) return { rows: [{ objectKey: 'source/image.png' }] };
     return { rows: [], rowCount: 1 };
@@ -37,14 +43,19 @@ test('theme worker generates real provider results and settles credits atomicall
     assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer api-key');
     const body = init?.body as FormData;
     assert.equal(body.get('n'), '2');
-    assert.match(String(body.get('prompt')), /行业：科技，风格：现代/);
-    return Response.json({ data: [{ url: 'https://example.com/one.png' }, { url: 'https://example.com/two.png' }] });
+    assert.equal(body.get('prompt'), '科技/现代/红, 蓝/展会');
+    assert.equal(body.has('response_format'), false);
+    return Response.json({ data: [{ b64_json: 'one' }, { b64_json: 'two' }] });
   };
   t.after(() => { globalThis.fetch = oldFetch; });
 
   await processThemeJob(pool, jobId, config);
   assert.equal(calls.length, 2);
-  assert.equal(queries.filter(q => q.sql.includes('INSERT INTO theme_job_results')).length, 2);
+  const resultInserts = queries.filter(q => q.sql.includes('INSERT INTO theme_job_results'));
+  assert.equal(resultInserts.length, 2);
+  assert.deepEqual(resultInserts.map(query => query.params?.[4]), [
+    'data:image/png;base64,one', 'data:image/png;base64,two',
+  ]);
   const begin = queries.findIndex(q => q.sql === 'BEGIN');
   const debit = queries.findIndex(q => q.sql.includes('INSERT INTO credit_transactions'));
   const finish = queries.findIndex(q => q.sql.includes('SET status = $1'));
