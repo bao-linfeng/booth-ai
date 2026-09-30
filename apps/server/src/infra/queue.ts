@@ -5,6 +5,8 @@ export const QUEUE_NAME = 'booth-foundation';
 export const TASK_NAME = 'system.echo';
 export const THEME_QUEUE_NAME = 'booth-theme';
 export const THEME_TASK_NAME = 'theme.generate';
+export const ARTWORK_QUEUE_NAME = 'booth-artwork';
+export const ARTWORK_TASK_NAME = 'artwork.generate';
 export function createQueue(connection: Redis) {
   const queue = new Queue(QUEUE_NAME, {
     connection,

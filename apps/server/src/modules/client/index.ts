@@ -9,6 +9,7 @@ import { registerSelectionRoutes } from './selection/index.js';
 import { registerClientBomRoutes } from './bill-of-materials/index.js';
 import { registerThemeModelRoutes } from './theme-jobs/index.js';
 import { registerClientSchemeAssetRoutes } from './schemes/index.js';
+import { registerArtworkJobRoutes } from './artwork-jobs/index.js';
 import { registerClientManualRequestRoutes } from './manual-requests/index.js';
 import { registerClientCreditRoutes } from './credits/index.js';
 import { registerQuoteRequestRoutes } from './quote-requests/index.js';
@@ -25,6 +26,7 @@ export async function registerClientModule(app: FastifyInstance, config: Config,
     await registerClientManualRequestRoutes(client, pool, redis);
     await registerClientBomRoutes(client, pool);
     await registerClientSchemeAssetRoutes(client, pool, storage);
-     await registerThemeModelRoutes(client, pool, redis, storage);
+    await registerThemeModelRoutes(client, pool, redis, storage);
+    await registerArtworkJobRoutes(client, pool, redis, storage);
   }, { prefix: '/api/v1/client' });
 }

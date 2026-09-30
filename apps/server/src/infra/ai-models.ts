@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type pg from 'pg';
 
 export type AiProvider = 'qwen' | 'deepseek' | 'gemini' | 'wanx' | 'openai';
-export type AiPurpose = 'selection_parse' | 'theme';
+export type AiPurpose = 'selection_parse' | 'theme' | 'artwork';
 
 export const modelDefinitions = {
   qwen: { purpose: 'selection_parse', model: 'qwen-plus' },
