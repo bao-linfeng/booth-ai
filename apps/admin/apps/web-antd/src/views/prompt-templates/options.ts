@@ -25,6 +25,12 @@ export const createFormOptions = (
       component: 'Select' as const,
       fieldName: 'industryId',
       label: '行业',
+      dependencies: {
+        triggerFields: ['purpose'],
+        show(values) {
+          return values.purpose !== 'filter';
+        },
+      },
       componentProps: {
         placeholder: '请选择',
         allowClear: true,
@@ -35,6 +41,12 @@ export const createFormOptions = (
       component: 'Select' as const,
       fieldName: 'styleId',
       label: '风格',
+      dependencies: {
+        triggerFields: ['purpose'],
+        show(values) {
+          return values.purpose !== 'filter';
+        },
+      },
       componentProps: {
         placeholder: '请选择',
         allowClear: true,
