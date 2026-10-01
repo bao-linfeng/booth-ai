@@ -1,8 +1,9 @@
 import type pg from 'pg';
+import { assertPrompt, type PromptPurpose } from '../../prompts/template.js';
 
 export interface PromptTemplate {
   id: string;
-  purpose: 'theme' | 'artwork';
+  purpose: PromptPurpose;
   industryId: string | null;
   styleId: string | null;
   body: string;
@@ -14,16 +15,14 @@ export interface PromptTemplate {
 }
 
 export interface CreateTemplateInput {
-  purpose: 'theme' | 'artwork';
+  purpose: PromptPurpose;
   industryId?: string | null;
   styleId?: string | null;
   body: string;
-  variables?: string[];
 }
 
 export interface UpdateTemplateInput {
   body?: string;
-  variables?: string[];
   enabled?: boolean;
   expectedRevision: number;
 }
@@ -39,7 +38,7 @@ function toTemplate(row: TemplateRow): PromptTemplate {
     createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
 }
 
-export async function listPromptTemplates(pool: pg.Pool, filters: { purpose?: string; enabled?: boolean; page: number; pageSize: number }): Promise<{ items: PromptTemplate[]; total: number }> {
+export async function listPromptTemplates(pool: pg.Pool, filters: { purpose?: string; industryId?: string; styleId?: string; enabled?: boolean; page: number; pageSize: number }): Promise<{ items: PromptTemplate[]; total: number }> {
   const where: string[] = [];
   const values: unknown[] = [];
   if (filters.purpose !== undefined) {
@@ -49,6 +48,12 @@ export async function listPromptTemplates(pool: pg.Pool, filters: { purpose?: st
   if (filters.enabled !== undefined) {
     values.push(filters.enabled);
     where.push(`enabled = $${values.length}`);
+  }
+  for (const [column, value] of [['industry_id', filters.industryId], ['style_id', filters.styleId]] as const) {
+    if (value) {
+      values.push(value);
+      where.push(`${column} = $${values.length}`);
+    }
   }
   const condition = where.length ? ` WHERE ${where.join(' AND ')}` : '';
   const total = await pool.query<{ total: string }>(`SELECT count(*) AS total FROM prompt_templates${condition}`, values);
@@ -60,10 +65,12 @@ export async function listPromptTemplates(pool: pg.Pool, filters: { purpose?: st
 }
 
 export async function createPromptTemplate(pool: pg.Pool, input: CreateTemplateInput, adminId: string): Promise<PromptTemplate> {
+  const variables = assertPrompt(input.purpose, input.body);
+  await validateTemplateScope(pool, input);
   const result = await pool.query<TemplateRow>(
     `INSERT INTO prompt_templates (purpose, industry_id, style_id, body, variables, created_by, updated_by)
      VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING ${columns}`,
-    [input.purpose, input.industryId ?? null, input.styleId ?? null, input.body, input.variables ?? [], adminId]
+    [input.purpose, input.industryId ?? null, input.styleId ?? null, input.body.trim(), variables, adminId]
   );
   return toTemplate(result.rows[0]!);
 }
@@ -74,18 +81,23 @@ export async function getPromptTemplate(pool: pg.Pool, id: string): Promise<Prom
 }
 
 export async function updatePromptTemplate(pool: pg.Pool, id: string, input: UpdateTemplateInput, adminId: string): Promise<PromptTemplate> {
+  const current = await getPromptTemplate(pool, id);
+  if (!current) throw Object.assign(new Error('Prompt template not found'), { statusCode: 404 });
+  if (current.revision !== input.expectedRevision) throw Object.assign(new Error('Prompt template revision conflict'), { statusCode: 409, reason: 'PROMPT_REVISION_CONFLICT' });
+  const variables = input.body !== undefined || input.enabled === true ? assertPrompt(current.purpose, input.body ?? current.body) : null;
+  if (input.enabled === true) await validateTemplateScope(pool, current);
   try {
     const result = await pool.query<TemplateRow>(
       `UPDATE prompt_templates SET body = COALESCE($1, body), variables = COALESCE($2, variables),
        enabled = COALESCE($3, enabled), revision = revision + 1, updated_by = $4, updated_at = now()
        WHERE id = $5 AND revision = $6 RETURNING ${columns}`,
-      [input.body ?? null, input.variables ?? null, input.enabled ?? null, adminId, id, input.expectedRevision]
+      [input.body?.trim() ?? null, variables, input.enabled ?? null, adminId, id, input.expectedRevision]
     );
     if (result.rows[0]) return toTemplate(result.rows[0]);
   } catch (error) {
     if ((error as { code?: string; constraint?: string }).code === '23505' &&
       (error as { constraint?: string }).constraint === 'prompt_templates_active_unique') {
-      throw Object.assign(new Error('An active template already exists for this combination'), { statusCode: 409 });
+      throw Object.assign(new Error('An active template already exists for this combination'), { statusCode: 409, reason: 'PROMPT_ACTIVE_CONFLICT' });
     }
     throw error;
   }
@@ -93,7 +105,7 @@ export async function updatePromptTemplate(pool: pg.Pool, id: string, input: Upd
   throw Object.assign(new Error('Prompt template revision conflict'), { statusCode: 409 });
 }
 
-export async function getActivePromptTemplate(pool: pg.Pool, purpose: 'theme' | 'artwork', industryId?: string | null, styleId?: string | null): Promise<PromptTemplate | null> {
+export async function getActivePromptTemplate(pool: pg.Pool, purpose: PromptPurpose, industryId?: string | null, styleId?: string | null): Promise<PromptTemplate | null> {
   const result = await pool.query<TemplateRow>(
     `SELECT ${columns} FROM prompt_templates
      WHERE purpose = $1 AND enabled = true
@@ -104,4 +116,16 @@ export async function getActivePromptTemplate(pool: pg.Pool, purpose: 'theme' | 
     [purpose, industryId ?? null, styleId ?? null]
   );
   return result.rows[0] ? toTemplate(result.rows[0]) : null;
+}
+
+async function validateTemplateScope(pool: pg.Pool, input: Pick<CreateTemplateInput, 'purpose' | 'industryId' | 'styleId'>) {
+  if (input.purpose === 'filter' && (input.industryId || input.styleId)) {
+    throw Object.assign(new Error('Selection templates must be global'), { statusCode: 400, reason: 'INVALID_PROMPT_SCOPE' });
+  }
+  for (const [code, id] of [['industry', input.industryId], ['style', input.styleId]] as const) {
+    if (!id) continue;
+    const result = await pool.query(`SELECT i.id FROM dictionary_items i JOIN dictionaries d ON d.id=i.dictionary_id
+      WHERE i.id=$1 AND d.code=$2 AND i.enabled AND d.enabled`, [id, code]);
+    if (!result.rows[0]) throw Object.assign(new Error('Invalid prompt dictionary scope'), { statusCode: 400, reason: 'INVALID_PROMPT_SCOPE' });
+  }
 }

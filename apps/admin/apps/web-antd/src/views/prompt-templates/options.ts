@@ -1,11 +1,16 @@
+import type { VbenFormProps } from '#/adapter/form';
 import type { VxeGridProps } from '#/adapter/vxe-table';
+import type {
+  ListTemplatesQuery,
+  PromptTemplate,
+} from '#/api/core/prompt-templates';
 
 import { listPromptTemplatesApi } from '#/api/core/prompt-templates';
 
 export const createFormOptions = (
   industryOptions: { label: string; value: string }[] = [],
   styleOptions: { label: string; value: string }[] = [],
-) => ({
+): VbenFormProps => ({
   schema: [
     {
       component: 'Select' as const,
@@ -15,9 +20,9 @@ export const createFormOptions = (
         placeholder: '请选择',
         allowClear: true,
         options: [
-          { label: 'AI智选', value: 'filter' },
-          { label: '换主题', value: 'theme' },
-          { label: '四面图', value: 'artwork' },
+          { label: 'AI 智选 · 需求解析', value: 'filter' },
+          { label: 'AI 换主题', value: 'theme' },
+          { label: 'AI 四向图', value: 'artwork' },
         ],
       },
     },
@@ -69,7 +74,7 @@ export const createFormOptions = (
   ],
 });
 
-export const createGridOptions = (): VxeGridProps => ({
+export const createGridOptions = (): VxeGridProps<PromptTemplate> => ({
   showOverflow: 'tooltip' as const,
   height: 'auto',
   toolbarConfig: { custom: true, refresh: true, zoom: true },
@@ -77,18 +82,18 @@ export const createGridOptions = (): VxeGridProps => ({
     {
       field: 'purpose',
       title: '用途',
-      width: 100,
+      width: 160,
       slots: { default: 'purpose' },
     },
     {
       field: 'industryId',
-      title: '行业 ID',
+      title: '适用行业',
       minWidth: 120,
       slots: { default: 'industryId' },
     },
     {
       field: 'styleId',
-      title: '风格 ID',
+      title: '适用风格',
       minWidth: 120,
       slots: { default: 'styleId' },
     },
@@ -119,11 +124,23 @@ export const createGridOptions = (): VxeGridProps => ({
     enabled: true,
     autoLoad: true,
     ajax: {
-      query: async ({ page }: any, formValues: any = {}) => {
+      query: async ({ page }, formValues: ListTemplatesQuery = {}) => {
         const res = await listPromptTemplatesApi({
           page: page.currentPage,
           pageSize: page.pageSize,
-          ...formValues,
+          purpose: formValues.purpose || undefined,
+          enabled:
+            typeof formValues.enabled === 'boolean'
+              ? formValues.enabled
+              : undefined,
+          industryId:
+            formValues.purpose === 'filter'
+              ? undefined
+              : formValues.industryId || undefined,
+          styleId:
+            formValues.purpose === 'filter'
+              ? undefined
+              : formValues.styleId || undefined,
         });
         return { items: res.items, total: res.total };
       },

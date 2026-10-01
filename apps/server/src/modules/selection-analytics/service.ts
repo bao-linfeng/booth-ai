@@ -30,6 +30,7 @@ export interface ParseRecordInput {
     dictionaryVersion: string;
   };
   durationMs: number;
+  promptSnapshot?: { source: string; templateId: string | null; revision: number | null; defaultVersion: number; messages: { role: string; content: string }[] } | null;
 }
 
 export interface SearchRecordInput {
@@ -94,14 +95,14 @@ export async function recordParse(pool: pg.Pool, input: ParseRecordInput): Promi
   const result = await pool.query<{ id: string }>(`
     INSERT INTO selection_parses(
       attempt_id,visitor_id,user_id,input_text,form_requirement,final_requirement,parser,degraded,
-      field_sources,overrides,clarifications,unhandled_text,warnings,rules_version,dictionary_version,duration_ms
-    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      field_sources,overrides,clarifications,unhandled_text,warnings,rules_version,dictionary_version,duration_ms,prompt_snapshot
+    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
     RETURNING id`, [
       input.attemptId, input.identity.visitorId, input.identity.userId, input.inputText,
       JSON.stringify(input.formRequirement), JSON.stringify(input.result.requirement), input.result.parser, input.result.degraded,
       JSON.stringify(input.result.fieldSources), JSON.stringify(input.result.overrides), JSON.stringify(input.result.clarifications),
       input.result.unhandledText, JSON.stringify(input.result.warnings), input.result.rulesVersion,
-      input.result.dictionaryVersion, Math.max(0, Math.round(input.durationMs)),
+      input.result.dictionaryVersion, Math.max(0, Math.round(input.durationMs)), JSON.stringify(input.promptSnapshot ?? null),
     ]);
   const id = result.rows[0]?.id;
   if (!id) throw new Error('Selection parse was not created');
@@ -273,7 +274,7 @@ export async function getSearch(pool: pg.Pool, id: string) {
      s.zero_match_reasons AS "zeroMatchReasons",s.match_diagnostics AS "matchDiagnostics",s.demand_terms AS "demandTerms",s.result_snapshot AS "resultSnapshot",
     s.rules_version AS "rulesVersion",s.dictionary_version AS "dictionaryVersion",s.degraded_parse AS "degradedParse",
     s.duration_ms AS "durationMs",s.created_at AS "createdAt",p.parser,p.degraded AS "parseDegraded",p.field_sources AS "fieldSources",
-    p.overrides,p.clarifications,p.unhandled_text AS "unhandledText",p.warnings,p.created_at AS "parsedAt"
+    p.overrides,p.clarifications,p.unhandled_text AS "unhandledText",p.warnings,p.created_at AS "parsedAt",p.prompt_snapshot AS "promptSnapshot"
     FROM selection_searches s LEFT JOIN selection_parses p ON p.id=s.parse_id WHERE s.id=$1`, [id]);
   const row = result.rows[0];
   if (!row) throw Object.assign(new Error('Search not found'), { statusCode: 404 });

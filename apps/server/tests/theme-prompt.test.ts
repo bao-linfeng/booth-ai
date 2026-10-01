@@ -14,6 +14,8 @@ test('theme prompt carries explicit requirements and ordered colors with structu
   assert.match(prompt, /“不出现\/不要”等限制逐项落实/);
   assert.match(prompt, /相机角度、透视、构图/);
   assert.match(prompt, /提供蒙版时仅编辑蒙版允许的区域/);
+  assert.match(prompt, /【业务视觉指令】/);
+  assert.match(prompt, /【编辑边界与优先级】/);
   assert.doesNotMatch(prompt, /industry-id|style-id|模板补充/);
 });
 
@@ -22,8 +24,8 @@ test('missing optional requirements have explicit fallbacks for omitted and empt
   assert.equal(prompt, buildThemePrompt({ industryId: 'i', styleId: 's', brandColors: [], brandKeywords: '  ' }, '医疗', '现代'));
   assert.equal(JSON.parse(prompt.split('\n')[2]!).品牌色, '未指定');
   assert.equal(JSON.parse(prompt.split('\n')[2]!).品牌关键词及补充要求, '未填写');
-  assert.match(prompt, /未指定品牌色：优先执行补充要求中的配色/);
-  assert.doesNotMatch(prompt, /undefined|null|第一个为主色/);
+  assert.match(prompt, /如未指定品牌色，优先执行补充要求中的配色/);
+  assert.doesNotMatch(prompt, /undefined|null/);
 });
 
 test('templates cannot omit the user brief and variable-like user text is not expanded recursively', () => {
@@ -37,4 +39,10 @@ test('templates cannot omit the user brief and variable-like user text is not ex
   assert.ok(noVariables.includes('#123456, #ABCDEF'));
   assert.match(noVariables, /采用有层次的平面构成/);
   assert.match(noVariables, /用户明确的展示要求和禁用要求优先于模板/);
+});
+
+test('default theme business instructions include both colored and uncolored branches', () => {
+  const prompt = buildThemePrompt(input, '新能源', '极简');
+  assert.match(prompt, /如已指定品牌色，按填写顺序使用/);
+  assert.match(prompt, /如未指定品牌色，优先执行补充要求中的配色/);
 });

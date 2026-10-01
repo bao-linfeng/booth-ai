@@ -1,23 +1,17 @@
 import type { ActiveAiModel } from '../../../infra/ai-models.js';
 import { emptyRequirement, validateRequirement, type Catalog, type Requirement } from './domain.js';
 import { parseRequirement } from './parse.js';
-import { extractionInstruction } from './prompt.js';
+import { buildSelectionMessages } from './prompt.js';
 
 type Field = keyof Requirement;
 
-export async function requestExtraction(model: ActiveAiModel, text: string, catalog: Catalog, signal: AbortSignal): Promise<unknown> {
+export async function requestExtraction(model: ActiveAiModel, text: string, catalog: Catalog, signal: AbortSignal, templateBody?: string): Promise<unknown> {
   const endpoint = model.provider === 'qwen' ? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions' : 'https://api.deepseek.com/chat/completions';
-  const dictionaries = {
-    ...Object.fromEntries((['openingCounts', 'productSystems', 'styles', 'industries', 'budgetTiers', 'zones', 'features'] as const)
-      .map(group => [group, catalog[group].map(({ id, label }) => ({ id, label }))])),
-    boothSpaces: catalog.boothSpaces,
-    applicabilityQuestions: catalog.applicabilityQuestions,
-  };
   const response = await fetch(endpoint, {
     method: 'POST', signal,
     headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: model.model, temperature: 0, max_tokens: 2400, response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: extractionInstruction }, { role: 'user', content: JSON.stringify({ text, dictionaries }) }] })
+      messages: buildSelectionMessages(text, catalog, templateBody) })
   });
   if (!response.ok) throw new Error('Model unavailable');
   const payload: unknown = await response.json();
@@ -112,14 +106,14 @@ export function mergeExtraction(text: string, form: Requirement, catalog: Catalo
 }
 
 export async function parseWithModels(text: string, form: Requirement, catalog: Catalog, models: ActiveAiModel[],
-  extract: typeof requestExtraction = requestExtraction) {
+  extract: typeof requestExtraction = requestExtraction, templateBody?: string) {
   const deadline = Date.now() + 2800;
   for (const model of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const remaining = deadline - Date.now();
       if (remaining < 200) return parseRequirement(text, form, catalog);
       try {
-        const raw = await extract(model, text, catalog, AbortSignal.timeout(Math.min(1800, remaining)));
+        const raw = await extract(model, text, catalog, AbortSignal.timeout(Math.min(1800, remaining)), templateBody);
         return mergeExtraction(text, form, catalog, raw);
       } catch {
         // A second attempt is bounded; the rule parser remains available when both models fail.

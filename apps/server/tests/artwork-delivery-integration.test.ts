@@ -131,7 +131,7 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     assert.deepEqual(observedStates, notifications.map(event => event.direction ? { status: event.status } : { status: event.status, deliveryStatus: event.deliveryStatus, reservationStatus: 'settled' }));
     assert.equal(calls, 4); assert.equal(new Set(prompts).size, 4);
     const frozen = (await pool.query<{ snapshot: ArtworkSnapshot }>('SELECT generation_snapshot AS snapshot FROM artwork_jobs WHERE id=$1', [jobId])).rows[0]!.snapshot;
-    assert.equal(frozen.pipelineRevision, 3);
+    assert.equal(frozen.pipelineRevision, 4);
     for (const [index, direction] of DIRECTIONS.entries()) {
       const prompt = prompts[index]!;
       assert.equal(prompt, frozen.directionPrompts?.[direction]);

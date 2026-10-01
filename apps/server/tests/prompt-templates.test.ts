@@ -7,7 +7,7 @@ const id = '00000000-0000-0000-0000-000000000001';
 const adminId = '00000000-0000-0000-0000-000000000002';
 const industryId = '00000000-0000-0000-0000-000000000003';
 const styleId = '00000000-0000-0000-0000-000000000004';
-const row = () => ({ id, purpose: 'theme', industryId: null, styleId: null, body: 'Hello', variables: [],
+const row = () => ({ id, purpose: 'theme', industryId: null, styleId: null, body: '{{industryLabel}}', variables: ['industryLabel'],
   enabled: false, revision: 1, createdAt: new Date('2026-01-01T00:00:00.000Z'), updatedAt: new Date('2026-01-01T00:00:00.000Z') });
 
 test('prompt template list filters and pagination return only public fields', async () => {
@@ -32,13 +32,39 @@ test('create defaults to disabled and update applies CAS revision', async () => 
     if (sql.startsWith('UPDATE')) return { rows: [{ ...row(), enabled: true, revision: 2 }] };
     return { rows: [row()] };
   } } as unknown as pg.Pool;
-  const created = await createPromptTemplate(pool, { purpose: 'theme', body: 'Hello' }, adminId);
+  const created = await createPromptTemplate(pool, { purpose: 'theme', body: '{{industryLabel}}' }, adminId);
   assert.equal(created.enabled, false);
-  assert.deepEqual(calls[0]?.params, ['theme', null, null, 'Hello', [], adminId]);
+  assert.deepEqual(calls[0]?.params, ['theme', null, null, '{{industryLabel}}', ['industryLabel'], adminId]);
   const updated = await updatePromptTemplate(pool, id, { enabled: true, expectedRevision: 1 }, adminId);
   assert.equal(updated.revision, 2);
-  assert.match(calls[1]!.sql, /WHERE id = \$5 AND revision = \$6/);
-  assert.deepEqual(calls[1]?.params, [null, null, true, adminId, id, 1]);
+  assert.match(calls[2]!.sql, /WHERE id = \$5 AND revision = \$6/);
+  assert.deepEqual(calls[2]?.params, [null, ['industryLabel'], true, adminId, id, 1]);
+});
+
+test('create validates filter scope and dictionary scope before insert', async () => {
+  const calls: { sql: string; params?: unknown[] }[] = [];
+  const pool = { query: async (sql: string, params?: unknown[]) => {
+    calls.push({ sql, params });
+    return { rows: [] };
+  } } as unknown as pg.Pool;
+  await assert.rejects(() => createPromptTemplate(pool, { purpose: 'filter', body: '业务解析', industryId }, adminId), { reason: 'INVALID_PROMPT_SCOPE' });
+  await assert.rejects(() => createPromptTemplate(pool, { purpose: 'theme', body: '{{industryLabel}}', industryId }, adminId), { reason: 'INVALID_PROMPT_SCOPE' });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0]!.sql, /FROM dictionary_items/);
+});
+
+test('update reads current detail before validating CAS and enabling', async () => {
+  const calls: string[] = [];
+  const pool = { query: async (sql: string) => {
+    calls.push(sql);
+    if (sql.includes('FROM prompt_templates') && sql.includes('WHERE id')) return { rows: [{ ...row(), revision: 2 }] };
+    if (sql.startsWith('UPDATE')) return { rows: [{ ...row(), revision: 3, enabled: true }] };
+    return { rows: [] };
+  } } as unknown as pg.Pool;
+  const result = await updatePromptTemplate(pool, id, { enabled: true, expectedRevision: 2 }, adminId);
+  assert.equal(result.revision, 3);
+  assert.match(calls[0]!, /SELECT/);
+  assert.match(calls[1]!, /UPDATE/);
 });
 
 test('update distinguishes missing template, stale revision, and active uniqueness conflicts', async () => {
@@ -46,9 +72,10 @@ test('update distinguishes missing template, stale revision, and active uniquene
   await assert.rejects(() => updatePromptTemplate(stale, id, { expectedRevision: 0 }, adminId), { statusCode: 409 });
   const missing = { query: async () => ({ rows: [] }) } as unknown as pg.Pool;
   await assert.rejects(() => updatePromptTemplate(missing, id, { expectedRevision: 1 }, adminId), { statusCode: 404 });
-  const duplicate = { query: async () => { throw Object.assign(new Error('unique constraint'), {
-    code: '23505', constraint: 'prompt_templates_active_unique',
-  }); } } as unknown as pg.Pool;
+  const duplicate = { query: async (sql: string) => {
+    if (sql.startsWith('SELECT')) return { rows: [row()] };
+    throw Object.assign(new Error('unique constraint'), { code: '23505', constraint: 'prompt_templates_active_unique' });
+  } } as unknown as pg.Pool;
   await assert.rejects(() => updatePromptTemplate(duplicate, id, { enabled: true, expectedRevision: 1 }, adminId), { statusCode: 409 });
 });
 

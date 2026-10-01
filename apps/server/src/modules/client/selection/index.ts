@@ -10,6 +10,9 @@ import { matchSchemes } from './match.js';
 import { parseRequirement } from './parse.js';
 import { activeAiModels, type ActiveAiModel } from '../../../infra/ai-models.js';
 import { parseWithModels } from './llm.js';
+import { getActivePromptTemplate } from '../../admin/prompt-templates/service.js';
+import { PROMPT_DEFAULT_VERSION } from '../../prompts/template.js';
+import { buildSelectionMessages } from './prompt.js';
 import { deliverableAvailability } from '../schemes/service.js';
 import { ensureAttempt, getOptionalClientUserId, getVisitorId, recordParse, recordSearch } from '../../selection-analytics/service.js';
 
@@ -63,7 +66,12 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       const catalog = await dependency(() => loadCatalog(pool));
       const form = validateRequirement(request.body.form, catalog);
       const models: ActiveAiModel[] = await dependency(() => activeAiModels(pool, 'selection_parse', config.aiModelEncryptionKey));
-      const parsed = models.length ? await parseWithModels(request.body.text, form, catalog, models) : parseRequirement(request.body.text, form, catalog);
+      const template = models.length ? await dependency(() => getActivePromptTemplate(pool, 'filter')) : null;
+      const promptSnapshot = models.length ? {
+        source: template ? 'template' : 'default', templateId: template?.id ?? null, revision: template?.revision ?? null,
+        defaultVersion: PROMPT_DEFAULT_VERSION, messages: buildSelectionMessages(request.body.text, catalog, template?.body),
+      } : null;
+      const parsed = models.length ? await parseWithModels(request.body.text, form, catalog, models, undefined, template?.body) : parseRequirement(request.body.text, form, catalog);
       const data = {
         ...parsed,
         parser: parsed.parser as 'llm' | 'rules' | 'none',
@@ -71,7 +79,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       };
       const parseId = await recordParse(pool, {
         attemptId, identity: { visitorId, userId }, inputText: request.body.text, formRequirement: form,
-        result: data, durationMs: performance.now() - startedAt,
+        result: data, promptSnapshot, durationMs: performance.now() - startedAt,
       });
       request.log.info({ attemptId, parseId, degraded: data.degraded }, 'selection parse recorded');
       return { code: 0, data: { ...data, attemptId, parseId, visitorId } };

@@ -17,6 +17,8 @@ export interface PromptTemplate {
 
 export interface ListTemplatesQuery {
   purpose?: TemplatePurpose;
+  industryId?: string;
+  styleId?: string;
   enabled?: boolean;
   page?: number;
   pageSize?: number;
@@ -27,12 +29,10 @@ export interface CreateTemplateInput {
   industryId?: null | string;
   styleId?: null | string;
   body: string;
-  variables?: string[];
 }
 
 export interface UpdateTemplateInput {
   body?: string;
-  variables?: string[];
   enabled?: boolean;
   expectedRevision: number;
 }
@@ -67,5 +67,61 @@ export function updatePromptTemplateApi(
   return requestClient.request<PromptTemplate>(
     `/v1/admin/prompt-templates/${encodeURIComponent(id)}`,
     { method: 'PATCH', data: input },
+  );
+}
+
+export interface PromptDefinition {
+  purpose: TemplatePurpose;
+  label: string;
+  defaultBody: string;
+  defaultVersion: number;
+  fixedInstructions: string;
+  scope: string;
+  inputs: string[];
+  variables: {
+    name: string;
+    label: string;
+    source: string;
+    example: string;
+    fallback: string;
+  }[];
+}
+
+export interface PromptPreviewInput {
+  purpose: TemplatePurpose;
+  body: string;
+  sample: {
+    text?: string;
+    industryId?: string;
+    styleId?: string;
+    brandColors?: string[];
+    brandKeywords?: string;
+  };
+}
+
+export interface PromptPreview {
+  variables: string[];
+  issues: {
+    code: string;
+    message: string;
+    variable?: string;
+    offset?: number;
+  }[];
+  messages: { role: string; content: string }[];
+  directionPrompts: null | Record<'back' | 'front' | 'left' | 'right', string>;
+  attachments: string[];
+  dictionaryVersion?: string;
+}
+
+export function getPromptDefinitionsApi() {
+  return requestClient.get<PromptDefinition[]>(
+    '/v1/admin/prompt-templates/definitions',
+  );
+}
+
+export function previewPromptApi(input: PromptPreviewInput) {
+  return requestClient.post<PromptPreview>(
+    '/v1/admin/prompt-templates/preview',
+    input,
   );
 }
