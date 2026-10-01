@@ -20,6 +20,7 @@ import { registerAdminProjectRoutes } from './projects/index.js';
 import { registerAdminSchemeSearchesRoutes } from './scheme-searches/index.js';
 import { registerAdminCreditRoutes } from './credits/index.js';
 import { registerAdminGenerationJobRoutes } from './generation-jobs/index.js';
+import { registerAdminApplicabilityQuestionRoutes } from './applicability-questions/index.js';
 
 export async function registerAdminModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
   await app.register(async admin => {
@@ -47,6 +48,7 @@ export async function registerAdminModule(app: FastifyInstance, config: Config, 
     await registerAdminSchemeSearchesRoutes(admin, pool);
     await registerAdminAiModelRoutes(admin, pool, redis, config.aiModelEncryptionKey);
     await registerAdminPromptTemplateRoutes(admin, pool, redis);
-    await registerAdminGenerationJobRoutes(admin, pool, storage);
+    await registerAdminGenerationJobRoutes(admin, pool, storage, redis);
+    await registerAdminApplicabilityQuestionRoutes(admin, pool);
   }, { prefix: '/api/v1/admin' });
 }

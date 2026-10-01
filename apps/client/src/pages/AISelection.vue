@@ -16,7 +16,7 @@ import SelectionShell from '@/features/selection/SelectionShell.vue'
 import RequirementForm from '@/features/selection/RequirementForm.vue'
 import SchemeCard from '@/features/selection/SchemeCard.vue'
 import BoothIllustration from '@/features/selection/BoothIllustration.vue'
-import { emptyRequirement, type SelectionState, type Catalog, type MatchItem, type MatchResponse, type ParseResponse, type Requirement } from '@/features/selection/types'
+import { emptyRequirement, type SelectionState, type Catalog, type MatchItem, type MatchResponse, type ParseResponse, type Requirement, type PendingConfirmation } from '@/features/selection/types'
 import { previewCatalog, previewItems, previewStates } from '@/features/selection/preview'
 import { apiFetch } from '@/lib/api-client'
 
@@ -147,7 +147,7 @@ function isMatchResponse(value: unknown): value is MatchResponse {
       const specifications = item.specifications
       return isRecord(specifications) && ['lengthMm', 'widthMm', 'heightMm', 'areaM2', 'openingCount'].every(field => typeof specifications[field] === 'number') &&
         typeof specifications.productSystemId === 'string' && typeof specifications.productSystemLabel === 'string' &&
-        isStringArray(item.reasons) && isStringArray(item.pendingConfirmations) && isStringArray(item.preferenceMisses) &&
+        isStringArray(item.reasons) && Array.isArray(item.pendingConfirmations) && item.pendingConfirmations.every((p: unknown) => isRecord(p) && typeof (p as Record<string,unknown>).message === 'string' && ((p as Record<string,unknown>).type === 'missing_field' || (p as Record<string,unknown>).type === 'applicability_question')) && isStringArray(item.preferenceMisses) &&
         Array.isArray(item.differences) && item.differences.every(difference => isRecord(difference) &&
           ['field', 'requested', 'actual', 'reason'].every(field => typeof difference[field] === 'string'))
     }) &&
@@ -339,7 +339,7 @@ const sourceRows = computed(() => parseResult.value ? Object.entries(parseResult
     evidence: source.evidence
   })) : [])
 const items = computed(() => isPreview.value 
-  ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: ['尺寸、开口面数、限高和适用条件待确认'] } : item)
+  ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: [{ type: 'missing_field' as const, message: '尺寸、开口面数、限高和适用条件待确认' }] } : item)
   : liveItems.value
 )
 const manualQuestions = computed(() => [...new Set([
@@ -523,6 +523,16 @@ async function doMatch(mode: 'random' | 'filtered', textProvided: boolean, seque
   }
 }
 
+function answerApplicability(id: string, value: boolean) {
+  requirement.value = {
+    ...requirement.value,
+    applicabilityAnswers: { ...requirement.value.applicabilityAnswers, [id]: value }
+  }
+  if (state.value === 'results') {
+    void doMatch('filtered', !!text.value.trim(), ++requestSequence)
+  }
+}
+
 async function submit() {
   if (busy.value || (!isPreview.value && catalogState.value !== 'ready')) return
   if (isPreview.value) {
@@ -680,7 +690,7 @@ onMounted(() => {
           
           <Card v-if="state === 'idle'" class="overflow-hidden"><CardContent class="grid items-center gap-3 p-0 xl:grid-cols-2"><div class="space-y-5 p-6"><Badge variant="outline">从想法到空间</Badge><h2 class="text-2xl font-semibold leading-relaxed">让参展想法，<br />有一个具体的空间</h2><p class="text-sm leading-relaxed text-muted-foreground">填写展位尺寸，或用一句话描述需求。先筛选结构，再匹配偏好。</p><ol class="flex flex-wrap gap-4 text-xs text-muted-foreground"><li>01 描述需求</li><li>02 匹配方案</li><li>03 查看详情</li></ol></div><BoothIllustration class="w-full" /></CardContent><CardFooter class="flex-wrap justify-between gap-2 border-t pt-4 text-xs text-muted-foreground"><span>最多 3 套方案 · 每套 3 个视角</span><span>条件不全时明确标注待确认项</span></CardFooter></Card>
           <Card v-else-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? '正在识别您的需求' : '正在查找适合的方案' }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? '加载状态预览，可使用顶部工具栏切换。' : '正在调用接口匹配方案，请稍后。' }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>
-           <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '先发现一些灵感' : '为您找到的空间方案' }}</h2><Badge variant="secondary">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '随机推荐 · 适用条件待确认' : (isPreview ? '1 套直接采用 · 2 套参考' : `${liveMatchData?.counts.direct ?? 0} 套直接采用 · ${liveMatchData?.counts.reference ?? 0} 套参考`) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" /><p class="text-xs leading-relaxed text-muted-foreground">“可直接采用”指已提供结构条件与审核方案一致，不替代具体项目的报馆及施工确认。</p></section>
+           <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '先发现一些灵感' : '为您找到的空间方案' }}</h2><Badge variant="secondary">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '随机推荐 · 适用条件待确认' : (isPreview ? '1 套直接采用 · 2 套参考' : `${liveMatchData?.counts.direct ?? 0} 套直接采用 · ${liveMatchData?.counts.reference ?? 0} 套参考`) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" @answer-applicability="answerApplicability" /><p class="text-xs leading-relaxed text-muted-foreground">“可直接采用”指已提供结构条件与审核方案一致，不替代具体项目的报馆及施工确认。</p></section>
            <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? '当前组合暂时没有合适的方案' : isPreview ? '服务暂时不可用' : '请求失败' }}</h2><div v-if="state === 'empty'" class="max-w-md space-y-1 text-sm leading-relaxed text-muted-foreground"><p v-for="reason in liveMatchData?.reasons ?? ['您的需求已保留。可主动修改条件，或交给专业顾问。']" :key="reason">{{ reason }}</p></div><p v-else class="max-w-md text-sm leading-relaxed text-muted-foreground">{{ isPreview ? '输入已保留，系统异常不等于无匹配。当前可通过静态预览查看各界面状态。' : '接口调用失败，请检查网络或重试。' }}</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="mobileConditions = true; state = 'idle'">修改条件</Button><Button v-else-if="isPreview || state === 'error'" @click="submit">重试</Button><Button v-if="state === 'error' && !isPreview" as-child><RouterLink to="/ai-selection/preview">查看 UI 静态预览</RouterLink></Button><Button variant="outline" @click="manualOpen = true">转人工</Button></div></CardContent></Card>
           <Card><CardContent class="flex flex-wrap items-center gap-4 p-5"><MessageCircle class="size-6 text-primary" /><div class="flex-1 space-y-1"><h3 class="text-sm font-medium">特别的想法，交给专业的人</h3><p class="text-xs text-muted-foreground">尺寸特殊、需求复杂？让顾问一起梳理。</p></div><Button variant="outline" @click="manualOpen = true">转人工沟通<ArrowUpRight class="ml-2 size-4" /></Button></CardContent></Card>
         </div>

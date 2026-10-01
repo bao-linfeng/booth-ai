@@ -1,6 +1,6 @@
 import { requestClient } from '#/api/request';
 
-export type CreditKind = 'recharge' | 'sign_in' | 'theme_consume';
+export type CreditKind = 'artwork_consume' | 'recharge' | 'sign_in' | 'theme_consume';
 
 export interface CreditTransaction {
   id: string;

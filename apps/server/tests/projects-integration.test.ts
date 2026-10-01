@@ -115,8 +115,8 @@ test('quote transaction: concurrent retries, immutable snapshots, revision confl
   const job = randomUUID(); const result = randomUUID(); const themedAsset = randomUUID();
   await pool.query("INSERT INTO theme_jobs(id,user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,status,selected_result_id,selection_revision) VALUES($1,$2,$3,$4,'test',$5,'{}',1,'succeeded',$6,1)",[job,user,code,randomUUID(),randomUUID(),result]);
   await pool.query(`INSERT INTO scheme_assets(id,scheme_id,type,name,metadata) VALUES($1,$2,'artwork','私有主题',$3)`,[themedAsset,id,JSON.stringify({themeJobId:job})]);
-  await pool.query("INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum) VALUES($1,$2,'theme.png','image/png',10,'theme-hash')",[themedAsset,`project-tests/${randomUUID()}`]);
-  await pool.query('INSERT INTO theme_job_results(id,job_id,ordinal,asset_id) VALUES($1,$2,1,$3)',[result,job,themedAsset]);
+  const themeVersion=(await pool.query<{id:string}>("INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum) VALUES($1,$2,'theme.png','image/png',10,'theme-hash') RETURNING id",[themedAsset,`project-tests/${randomUUID()}`])).rows[0]!.id;
+  await pool.query('INSERT INTO theme_job_results(id,job_id,ordinal,asset_id,asset_version_id) VALUES($1,$2,1,$3,$4)',[result,job,themedAsset,themeVersion]);
   assert.ok((await listDeliverables(pool,code,'artwork')).every(asset => asset.assetId !== themedAsset));
   await assert.rejects(signDeliverable(pool,{signDownload:async()=>'',signDownloadWithName:async()=>''},code,'artwork',themedAsset),{statusCode:404});
   const themeInput = {...input,requestKey:randomUUID(),themeSelection:{themeJobId:job,resultId:result,selectionRevision:1}};

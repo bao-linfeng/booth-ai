@@ -58,6 +58,9 @@ export async function loadCatalog(pool: pg.Pool | pg.PoolClient): Promise<Catalo
     widthMm: row.widthMm,
     heightMm: row.heightMm,
   }));
+  const questionsResult = await pool.query<{ id: string; label: string; helpText: string }>(
+    `SELECT id, label, help_text AS "helpText" FROM applicability_questions WHERE enabled ORDER BY sort_order, id`
+  );
   
   return {
     dimensions: { lengthMm: numericValues('booth_length'), widthMm: numericValues('booth_width'), maxHeightMm: numericValues('booth_height'), areaM2: numericValues('booth_area') },
@@ -69,7 +72,7 @@ export async function loadCatalog(pool: pg.Pool | pg.PoolClient): Promise<Catalo
     budgetTiers: byType('budget_tier'),
     zones: byType('functional_zone'),
     features: byType('key_feature'),
-    applicabilityQuestions: [], // Currently empty, implement based on specific project needs
+    applicabilityQuestions: questionsResult.rows,
     rulesVersion,
     dictionaryVersion: createHash('sha256').update(JSON.stringify(result.rows)).digest('hex').slice(0, 16),
   };
@@ -87,7 +90,7 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
     WHERE s.publish_status = 'published'
       AND (SELECT r.decision FROM scheme_reviews r WHERE r.scheme_id = s.id AND r.scheme_revision = s.revision
         AND r.phase = 'overall' ORDER BY r.created_at DESC, r.id DESC LIMIT 1) = 'pass'
-      AND NOT EXISTS (SELECT 1 FROM scheme_assets a WHERE a.scheme_id = s.id AND NOT (a.metadata ? 'themeJobId') AND a.updated_at >
+      AND NOT EXISTS (SELECT 1 FROM scheme_assets a WHERE a.scheme_id = s.id AND NOT (a.metadata ? 'themeJobId') AND NOT (a.metadata ? 'artworkJobId') AND a.updated_at >
         (SELECT max(r.created_at) FROM scheme_reviews r WHERE r.scheme_id = s.id AND r.scheme_revision = s.revision AND r.phase = 'overall'))
       AND NOT EXISTS (SELECT 1 FROM unnest(array_remove(ARRAY[s.product_system_id, s.style_id, s.budget_tier_id] || s.industry_ids || s.zone_ids || s.feature_ids, NULL)) AS selected(id)
          LEFT JOIN dictionary_items di ON di.id = selected.id AND di.enabled
@@ -106,7 +109,7 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
       v.object_key AS "objectKey", v.width_px AS width, v.height_px AS height, v.mime_type AS mime
     FROM scheme_assets a
     JOIN LATERAL (SELECT * FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
-    WHERE a.scheme_id = ANY($1::uuid[]) AND a.is_active = true AND v.byte_size > 0 AND NOT (a.metadata ? 'themeJobId')
+    WHERE a.scheme_id = ANY($1::uuid[]) AND a.is_active = true AND v.byte_size > 0 AND NOT (a.metadata ? 'themeJobId') AND NOT (a.metadata ? 'artworkJobId')
     ORDER BY a.scheme_id, a.sort_order, a.id`, [result.rows.map(row => row.id)]);
     
   const candidates: Candidate[] = [];

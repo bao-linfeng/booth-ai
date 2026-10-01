@@ -333,6 +333,14 @@ async function openDetail(id: string) {
           </DescriptionsItem>
         </Descriptions>
 
+        <Descriptions v-if="detail.jobType === 'artwork'" bordered :column="1" size="small" class="mt-4">
+          <DescriptionsItem label="交付状态">{{ detail.deliveryStatus === 'ready' ? '四方向齐全' : '尚不完整' }}</DescriptionsItem>
+          <DescriptionsItem label="主题结果">{{ detail.themeSelection?.themeJobId }} / {{ detail.themeSelection?.resultId }} / 修订 {{ detail.themeSelection?.selectionRevision }}</DescriptionsItem>
+          <DescriptionsItem v-for="direction in detail.directions" :key="direction.direction" :label="direction.direction">{{ direction.status }} {{ direction.reason }}</DescriptionsItem>
+          <DescriptionsItem label="生成模型">{{ detail.generationSnapshot?.model.model }} / 修订 {{ detail.generationSnapshot?.model.revision }}</DescriptionsItem>
+          <DescriptionsItem label="素材用途">四面方向底图；清单画面映射及物理尺寸未核实。</DescriptionsItem>
+        </Descriptions>
+
         <div v-if="detail.sourcePreviewUrl" class="mt-4">
           <div class="mb-2 text-sm font-medium text-gray-500">原图</div>
           <Image :src="detail.sourcePreviewUrl" :width="160" />
@@ -360,7 +368,7 @@ async function openDetail(id: string) {
             >
               无预览
             </div>
-            <span class="text-xs text-center text-gray-500">#{{ result.ordinal }}</span>
+            <span class="text-xs text-center text-gray-500">{{ result.direction ?? `#${result.ordinal}` }} · {{ result.width }} × {{ result.height }}</span>
           </div>
           </div>
         </div>

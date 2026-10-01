@@ -1,7 +1,7 @@
 import { requestClient } from '#/api/request';
 
 export interface AiModelRecord {
-  purpose: 'selection_parse' | 'theme';
+  purpose: 'artwork' | 'selection_parse' | 'theme';
   provider: 'deepseek' | 'gemini' | 'openai' | 'qwen' | 'wanx';
   model: string;
   credentialConfigured: boolean;
@@ -17,7 +17,7 @@ export function getAiModelsApi() {
 
 export function updateAiModelApi(
   provider: AiModelRecord['provider'],
-  input: Pick<AiModelRecord, 'enabled' | 'priority' | 'unitCredits'> & {
+  input: Pick<AiModelRecord, 'purpose' | 'enabled' | 'priority' | 'unitCredits'> & {
     expectedRevision: number;
     apiKey?: null | string;
   },

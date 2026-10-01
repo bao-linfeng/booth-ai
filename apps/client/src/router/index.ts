@@ -1,7 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { externalLoginGuard } from './external-login'
 
 export const routes: RouteRecordRaw[] = [
+  { path: '/schemes/:code/artwork', name: 'ArtworkGeneration', component: () => import('@/pages/ArtworkJob.vue'), meta: { title: '四面素材生成' } },
+  { path: '/artwork-jobs/:jobId', name: 'ArtworkJob', component: () => import('@/pages/ArtworkJob.vue'), meta: { title: '四面素材与交付' } },
   { path: '/my-projects', name: 'MyProjects', component: () => import('@/pages/MyProjects.vue'), meta: { title: '我的项目' } },
   { path: '/my-projects/:projectId', name: 'MyProjectDetail', component: () => import('@/pages/MyProjects.vue'), meta: { title: '项目详情' } },
   { path: '/manual-request', name: 'ManualRequest', component: () => import('@/pages/ManualRequest.vue'), meta: { title: '人工需求申请' } },
@@ -202,5 +205,7 @@ const router = createRouter({
     return savedPosition || { top: 0, behavior: 'smooth' }
   }
 })
+
+router.beforeEach(externalLoginGuard)
 
 export default router

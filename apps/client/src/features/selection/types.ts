@@ -1,5 +1,14 @@
 export type SelectionState = 'idle' | 'parsing' | 'matching' | 'needs_clarification' | 'results' | 'empty' | 'error'
 
+export interface PendingConfirmation {
+  type: 'missing_field' | 'applicability_question'
+  field?: string
+  id?: string
+  label?: string
+  helpText?: string
+  message: string
+}
+
 export interface Requirement {
   lengthMm: number | null
   widthMm: number | null
@@ -49,7 +58,7 @@ export interface MatchItem {
   specifications: Specifications
   reasons: string[]
   differences: { field: string; requested: string; actual: string; reason: string }[]
-  pendingConfirmations: string[]
+  pendingConfirmations: PendingConfirmation[]
   preferenceMisses: string[]
 }
 export interface MatchResponse {

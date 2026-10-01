@@ -10,6 +10,7 @@ export interface QuoteInput {
   bomRevision?: number;
   drawingRevision?: number;
   artworkRevision?: number;
+  artworkJobId?: string;
   themeSelection?: { themeJobId: string; resultId: string; selectionRevision: number };
   entryPoint: 'scheme_detail' | 'bill_of_materials' | 'theme_result' | 'matching_results' | 'su';
   exhibition: { name: string; countryCode: string; city: string; startDate: string; endDate: string };
@@ -27,7 +28,7 @@ export interface Receipt {
   revision: number; schemeCode: string; bomRevision: number | null; drawingRevision: number | null;
   materialsStatus: { bom: string; drawings: string; artworks: string }; createdAt: string;
 }
-export interface ManualInput extends Omit<QuoteInput, 'schemeCode' | 'schemeRevision' | 'bomRevision' | 'drawingRevision' | 'artworkRevision' | 'themeSelection' | 'requirementContext'> {
+export interface ManualInput extends Omit<QuoteInput, 'schemeCode' | 'schemeRevision' | 'bomRevision' | 'drawingRevision' | 'artworkRevision' | 'artworkJobId' | 'themeSelection' | 'requirementContext'> {
   originalDescription: string; parsedRequirements?: Requirement; confirmedRequirements: Requirement; unresolvedQuestions?: string[];
 }
 export type ProjectStatus = 'pending' | 'following' | 'quoted' | 'won' | 'lost' | 'closed';
@@ -49,6 +50,7 @@ export function validDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 }
 export function normalizeQuote(input: QuoteInput): QuoteInput {
+  if (input.artworkJobId && (!input.themeSelection || input.artworkRevision !== undefined)) throw projectError('INVALID_INPUT', 400);
   const exhibition = { ...input.exhibition, name: input.exhibition.name.trim(), city: input.exhibition.city.trim() };
   const contact = { name: input.contact.name.trim(), ...(input.contact.email?.trim() ? { email: input.contact.email.trim() } : {}), ...(input.contact.phone?.trim() ? { phone: input.contact.phone.trim() } : {}) };
   const company = input.company?.trim() ?? '';

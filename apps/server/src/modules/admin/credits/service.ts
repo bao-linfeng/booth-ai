@@ -1,6 +1,6 @@
 import type pg from 'pg';
 
-export type CreditKind = 'sign_in' | 'recharge' | 'theme_consume';
+export type CreditKind = 'sign_in' | 'recharge' | 'theme_consume' | 'artwork_consume';
 
 interface CreditTransaction {
   id: string;

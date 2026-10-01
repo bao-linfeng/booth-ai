@@ -107,7 +107,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       const catalog = await dependency(() => loadCatalog(pool));
       const requirement = validateRequirement(request.body.requirement, catalog);
        const { candidates, diagnostics } = await dependency(() => loadCandidatePool(pool, catalog, storage));
-       const result = matchSchemes(candidates, requirement, request.body.mode, request.body.inputContext.textProvided, diagnostics);
+       const result = matchSchemes(candidates, requirement, request.body.mode, request.body.inputContext.textProvided, diagnostics, catalog.applicabilityQuestions);
       const data = {
         ...result,
         status: result.status as 'matched' | 'no_match' | 'needs_clarification',

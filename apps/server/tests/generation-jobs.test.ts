@@ -33,8 +33,21 @@ test('admin generation jobs list applies all filters, pagination and calculated 
   assert.equal(result.data[0]?.jobType, 'theme');
   assert.equal(result.data[0]?.totalCreditsConsumed, 20);
   assert.equal(result.data[0]?.durationMs, 5000);
-  assert.deepEqual(await listGenerationJobs(pool, { jobType: 'artwork' }), { data: [], total: 0, page: 1, pageSize: 20 });
   assert.equal(queries.length, 2);
+});
+
+test('admin artwork list queries real task records and mixed lists include both job types', async () => {
+  const queries: string[] = [];
+  const pool = { query: async (sql: string) => {
+    queries.push(sql);
+    return sql.includes('count(*)') ? { rows: [{ total: '1' }] } : { rows: [{ ...row, jobType: 'artwork', requestedCount: 4, usableCount: 3 }] };
+  } } as unknown as pg.Pool;
+  const result = await listGenerationJobs(pool, { jobType: 'artwork' });
+  assert.equal(result.data[0]?.jobType, 'artwork');
+  assert.equal(result.data[0]?.totalCreditsConsumed, 30);
+  assert.ok(queries.every(sql => sql.includes('FROM artwork_jobs')));
+  await listGenerationJobs(pool, {});
+  assert.match(queries[2]!, /UNION ALL/);
 });
 
 test('admin generation job detail loads results, labels and signed original preview', async () => {
@@ -43,7 +56,7 @@ test('admin generation job detail loads results, labels and signed original prev
     queries.push({ sql, args });
     if (sql.includes('FROM theme_jobs')) return { rows: [{ ...row, unitCredits: null, selectedResultId: resultId }] };
     if (sql.includes('FROM theme_job_results')) return { rows: [
-      { id: resultId, ordinal: 1, assetId: 'asset', previewUrl: null, width: null, height: null, createdAt: row.updatedAt },
+      { id: resultId, ordinal: 1, assetId: 'asset', objectKey: 'result/key', width: null, height: null, createdAt: row.updatedAt },
     ] };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: userId, label: '行业' }, { id: resultId, label: '风格' }] };
     if (sql.includes('FROM scheme_assets')) return { rows: [{ objectKey: 'original/key' }] };
@@ -61,10 +74,19 @@ test('admin generation job detail loads results, labels and signed original prev
   assert.equal(detail.industryLabel, '行业');
   assert.equal(detail.styleLabel, '风格');
   assert.equal(detail.sourcePreviewUrl, 'https://example.test/original');
-  assert.deepEqual(signed, [['original/key', 300]]);
-  assert.match(queries[1]?.sql ?? '', /ORDER BY ordinal ASC,id ASC/);
+  assert.deepEqual(signed, [['original/key', 300], ['result/key', 300]]);
+  assert.equal(detail.results[0]?.previewUrl, 'https://example.test/original');
+  assert.match(queries[1]?.sql ?? '', /ORDER BY r\.ordinal ASC,r\.id ASC/);
   assert.match(queries[3]?.sql ?? '', /ORDER BY created_at DESC, id DESC/);
   assert.deepEqual(queries.map(query => query.args), [[jobId], [jobId], [[userId, resultId]], [jobId]]);
+});
+
+test('admin cache-hit metrics report zero credits consumed', async () => {
+  const pool = { query: async (sql: string) => sql.includes('count(*)') ? { rows: [{ total: '1' }] } :
+    { rows: [{ ...row, cacheHit: true }] } } as unknown as pg.Pool;
+  const result = await listGenerationJobs(pool, {});
+  assert.equal(result.data[0]?.cacheHit, true);
+  assert.equal(result.data[0]?.totalCreditsConsumed, 0);
 });
 
 test('admin generation job detail tolerates missing labels, missing asset and signing failure', async () => {

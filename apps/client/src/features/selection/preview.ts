@@ -31,6 +31,6 @@ export const previewItems: MatchItem[] = [0, 1, 2].map(index => ({
   specifications: { lengthMm: 6000, widthMm: index === 2 ? 6000 : 3000, heightMm: 3500, areaM2: index === 2 ? 36 : 18, openingCount: index === 1 ? 3 : 2, productSystemId: 'fs62', productSystemLabel: 'FS62 布框' },
   reasons: index === 0 ? ['长宽、开口面数与已确认条件一致', '实际高度 3.5 m，未超过场馆限高'] : [],
   differences: index === 1 ? [{ field: 'openingCount', requested: '2 面', actual: '3 面', reason: '开口面数不同，需重新设计并核验' }] : index === 2 ? [{ field: 'widthMm', requested: '3 m', actual: '6 m', reason: '仅演示尺寸差异状态，不代表真实匹配结果' }] : [],
-  pendingConfirmations: index === 0 ? [] : ['需技术人员核对具体场馆适用条件'],
+  pendingConfirmations: index === 0 ? [] : [{ type: 'missing_field' as const, message: '需技术人员核对具体场馆适用条件' }],
   preferenceMisses: index === 2 ? ['材料预算档位与所选偏好不同'] : [],
 }))

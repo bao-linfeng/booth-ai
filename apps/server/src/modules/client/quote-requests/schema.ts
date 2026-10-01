@@ -7,6 +7,7 @@ export const revisionSchema = { type: 'integer', minimum: 1 };
 export const quoteSchema = { type: 'object', additionalProperties: false,
   required: ['requestKey','schemeCode','entryPoint','exhibition','scopeCodes','materialBudget','customerType','contact'], properties: {
     requestKey: keySchema, schemeCode: text(200,1), schemeRevision: revisionSchema, bomRevision: revisionSchema, drawingRevision: revisionSchema, artworkRevision: revisionSchema,
+    artworkJobId: { type: 'string', format: 'uuid' },
     entryPoint: { type: 'string', enum: ['scheme_detail','bill_of_materials','theme_result','matching_results','su'] },
     exhibition: { type: 'object', additionalProperties: false, required: ['name','countryCode','city','startDate','endDate'], properties: {
       name: text(200,1), countryCode: { type: 'string', pattern: '^[A-Z]{2}$' }, city: text(100,1), startDate: { type: 'string', format: 'date' }, endDate: { type: 'string', format: 'date' },

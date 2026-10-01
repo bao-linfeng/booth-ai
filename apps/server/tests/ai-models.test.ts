@@ -49,21 +49,37 @@ test('saving, keeping, and clearing a key are atomic and audited without secret 
     return { rows: [] };
   }, release: () => {} };
   const pool = { connect: async () => client, query: async () => ({ rows: [row] }) } as unknown as pg.Pool;
-  const saved = await updateAiModel(pool, 'gemini', { enabled: true, priority: 0, unitCredits: 10,
+  const saved = await updateAiModel(pool, 'gemini', { purpose: 'theme', enabled: true, priority: 0, unitCredits: 10,
     expectedRevision: 1, apiKey: providerKey }, 'admin-1', encryptionKey);
   assert.equal(saved?.credentialConfigured, true);
   assert.equal(decryptCredential(row.credentialCiphertext!, 'gemini', encryptionKey), providerKey);
   const ciphertext = row.credentialCiphertext;
-  await updateAiModel(pool, 'gemini', { enabled: true, priority: 0, unitCredits: 12, expectedRevision: 2 }, 'admin-1', encryptionKey);
+  await updateAiModel(pool, 'gemini', { purpose: 'theme', enabled: true, priority: 0, unitCredits: 12, expectedRevision: 2 }, 'admin-1', encryptionKey);
   assert.equal(row.credentialCiphertext, ciphertext);
-  await updateAiModel(pool, 'gemini', { enabled: false, priority: 0, unitCredits: 12,
+  await updateAiModel(pool, 'gemini', { purpose: 'theme', enabled: false, priority: 0, unitCredits: 12,
     expectedRevision: 3, apiKey: null }, 'admin-1', encryptionKey);
   assert.equal(row.credentialCiphertext, null);
   assert.equal(row.enabled, false);
   assert.equal(audit.length, 3);
   assert.equal(JSON.stringify(audit).includes(providerKey), false);
-  await assert.rejects(() => updateAiModel(pool, 'gemini', { enabled: false, priority: 0,
+  await assert.rejects(() => updateAiModel(pool, 'gemini', { purpose: 'theme', enabled: false, priority: 0,
     unitCredits: 12, expectedRevision: 3, apiKey: 'another-key' }, 'admin-1', encryptionKey), { statusCode: 409 });
-  await assert.rejects(() => updateAiModel(pool, 'gemini', { enabled: true, priority: 0,
+  await assert.rejects(() => updateAiModel(pool, 'gemini', { purpose: 'theme', enabled: true, priority: 0,
     unitCredits: 12, expectedRevision: 4 }, 'admin-1', encryptionKey), { statusCode: 400 });
+});
+
+test('artwork model updates target the purpose/provider pair and reject parser purpose misuse', async () => {
+  const queries: { sql: string; values?: unknown[] }[] = [];
+  const client = { query: async (sql: string, values?: unknown[]) => {
+    queries.push({ sql, values });
+    return sql.startsWith('SELECT credential_ciphertext') ? { rows: [{ configured: true, revision: 2 }] } : { rows: [] };
+  }, release: () => {} };
+  const pool = { connect: async () => client, query: async () => ({ rows: [{ ...initial(), purpose: 'artwork', provider: 'openai' }] }) } as unknown as pg.Pool;
+  const saved = await updateAiModel(pool, 'openai', { purpose: 'artwork', enabled: true, priority: 0, unitCredits: 10, expectedRevision: 2 }, 'admin', encryptionKey);
+  assert.equal(saved?.model, 'gpt-image-1.5');
+  const selected = queries.find(q => q.sql.startsWith('SELECT credential_ciphertext'))!;
+  assert.match(selected.sql, /provider=\$1 AND purpose=\$2/); assert.deepEqual(selected.values, ['openai', 'artwork']);
+  const updated = queries.find(q => q.sql.startsWith('UPDATE ai_model_configs'))!;
+  assert.match(updated.sql, /provider=\$6 AND purpose=\$7/); assert.equal(updated.values?.[6], 'artwork');
+  await assert.rejects(updateAiModel(pool, 'qwen', { purpose: 'artwork', enabled: true, priority: 0, unitCredits: 10, expectedRevision: 2 }, 'admin', encryptionKey), { statusCode: 400 });
 });

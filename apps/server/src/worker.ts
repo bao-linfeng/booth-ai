@@ -10,7 +10,7 @@ import { processEchoTask } from './modules/tasks/service.js';
 import { dispatchOutbox } from './modules/tasks/outbox.js';
 import { processThemeJob } from './modules/tasks/theme-worker.js';
 import { dispatchThemeOutbox } from './modules/tasks/theme-outbox.js';
-import { processArtworkJob } from './modules/tasks/artwork-worker.js';
+import { processArtworkJob, settleArtworkJob } from './modules/tasks/artwork-worker.js';
 import { dispatchArtworkOutbox } from './modules/tasks/artwork-outbox.js';
 
 const heartbeatPath = '/tmp/worker-ready';
@@ -71,10 +71,7 @@ async function main() {
   artworkWorker.on('error', () => console.error('Artwork worker connection error'));
   artworkWorker.on('failed', (job) => {
     if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
-    void database.query(
-      `UPDATE artwork_jobs SET status = 'failed', phase = NULL, updated_at = now() WHERE id = $1 AND status NOT IN ('succeeded', 'partially_succeeded', 'failed')`,
-      [job.data.jobId]
-    ).catch(() => console.error('Unable to persist failed artwork job status'));
+    void settleArtworkJob(database, job.data.jobId).catch(() => console.error('Unable to settle failed artwork job'));
   });
 
   await worker.waitUntilReady();

@@ -1,8 +1,13 @@
 import type pg from 'pg';
 import type { Queue } from 'bullmq';
 import { ARTWORK_TASK_NAME } from '../../infra/queue.js';
+import { settleArtworkJob } from './artwork-worker.js';
 
 export async function dispatchArtworkOutbox(database: pg.Pool, queue: Queue): Promise<void> {
+  const abandoned = (await database.query<{ id: string }>(`SELECT id FROM artwork_jobs
+    WHERE status IN ('running','settling') AND updated_at<now()-interval '15 minutes'
+      AND (lease_until IS NULL OR lease_until<now()) ORDER BY updated_at LIMIT 10`)).rows;
+  for (const { id } of abandoned) await settleArtworkJob(database, id);
   const client = await database.connect();
   try {
     await client.query('BEGIN');
@@ -18,6 +23,9 @@ export async function dispatchArtworkOutbox(database: pg.Pool, queue: Queue): Pr
       return;
     }
     for (const { jobId } of pending.rows) {
+      await queue.add(ARTWORK_TASK_NAME, { jobId }, {
+        jobId, attempts: 3, backoff: { type: 'exponential', delay: 2000 },
+      });
       await client.query(
         `UPDATE artwork_job_outbox SET picked_at = now() WHERE job_id = $1`,
         [jobId]
@@ -29,13 +37,6 @@ export async function dispatchArtworkOutbox(database: pg.Pool, queue: Queue): Pr
     }
     await client.query('COMMIT');
 
-    for (const { jobId } of pending.rows) {
-      await queue.add(ARTWORK_TASK_NAME, { jobId }, {
-        jobId,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2000 },
-      });
-    }
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;

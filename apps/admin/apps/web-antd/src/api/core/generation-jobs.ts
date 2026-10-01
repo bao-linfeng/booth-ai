@@ -11,6 +11,7 @@ export type GenerationJobStatus =
   | 'succeeded';
 
 export interface GenerationJobResult {
+  direction?: 'back' | 'front' | 'left' | 'right';
   id: string;
   ordinal: number;
   assetId: string;
@@ -44,6 +45,11 @@ export interface GenerationJob {
 }
 
 export interface GenerationJobDetail extends GenerationJob {
+  deliveryStatus?: string;
+  mappingStatus?: string;
+  themeSelection?: { themeJobId: string; resultId: string; selectionRevision: number };
+  directions?: { direction: string; status: string; reason: null | string }[];
+  generationSnapshot?: { model: { provider: string; model: string; revision: number }; prompt: string };
   sourceAssetId: string;
   offerId: string;
   requestKey: string;

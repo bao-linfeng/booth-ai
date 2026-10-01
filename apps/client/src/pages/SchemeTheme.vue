@@ -113,7 +113,7 @@ onMounted(async () => {
 // Actually, it says: "页面加载：先获取方案详情... 再自动调用 API-092 获取能力", 
 // and "获取报价并确认按钮... 先调用API获取能力...". Let's fetch initially, and also on button click before dialog.)
 async function fetchOffer() {
-  if (!schemeCode || !selectedAssetId.value || isPreview.value) return
+  if (!schemeCode || !selectedAssetId.value || !isLoggedIn.value || isPreview.value) return
   loadingOffer.value = true
   try {
     const hasFullInput = !!(industryId.value && styleId.value)
@@ -173,6 +173,10 @@ const blockedReasonText = computed(() => {
   if (reasons.includes('MODEL_UNAVAILABLE')) return '模型暂时不可用'
   return '当前视角暂不可生成'
 })
+
+function handleLogin() {
+  void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } })
+}
 
 async function handleGetQuote() {
   if (isPreview.value) return
@@ -302,7 +306,7 @@ async function handleConfirm() {
           <Card v-if="!isLoggedIn && !isPreview">
             <CardContent class="pt-6 space-y-4 text-center">
               <p class="text-sm text-muted-foreground">请先登录后使用 AI 换主题功能</p>
-              <Button disabled class="w-full">登录以继续</Button>
+              <Button class="w-full" @click="handleLogin">登录以继续</Button>
             </CardContent>
           </Card>
 

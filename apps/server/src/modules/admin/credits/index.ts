@@ -24,7 +24,7 @@ export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.P
     tags: ['admin-credits'],
     querystring: { type: 'object', additionalProperties: false, properties: {
       page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
-      userId: userIdSchema, kind: { type: 'string', enum: ['sign_in', 'recharge', 'theme_consume'] },
+      userId: userIdSchema, kind: { type: 'string', enum: ['sign_in', 'recharge', 'theme_consume', 'artwork_consume'] },
     } },
   } }, async request => ({ code: 0, data: await listCreditTransactions(pool, {
     page: request.query.page ?? 1, pageSize: request.query.pageSize ?? 20,

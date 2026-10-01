@@ -37,6 +37,15 @@ const routes: RouteRecordRaw[] = [
           title: '提示词模板',
         },
       },
+      {
+        name: 'ApplicabilityQuestions',
+        path: '/applicability-questions',
+        component: () => import('#/views/applicability-questions/index.vue'),
+        meta: {
+          icon: 'lucide:circle-help',
+          title: '适用条件问题',
+        },
+      },
     ],
   },
 ];

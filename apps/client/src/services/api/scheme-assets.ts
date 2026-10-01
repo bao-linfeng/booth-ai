@@ -13,7 +13,19 @@ export interface SchemeDeliverable {
 
 export interface SchemeDeliverables {
   schemeCode: string;
+  revision: string;
   items: SchemeDeliverable[];
+}
+
+export async function downloadSchemeArchive(code: string, type: SchemeAssetType, revision: string): Promise<Blob> {
+  const response = await apiFetch.raw<Blob, 'blob'>(
+    `/api/v1/client/schemes/${encodeURIComponent(code)}/${type}/download`,
+    { query: { revision }, responseType: 'blob', timeout: 120000, retry: 0 },
+  );
+  if (!response.headers.get('content-type')?.includes('application/zip') || !response._data?.size) {
+    throw new Error('Invalid archive response');
+  }
+  return response._data;
 }
 
 interface DownloadLink {

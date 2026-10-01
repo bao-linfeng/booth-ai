@@ -174,7 +174,12 @@ async function readinessForScheme(client: DbClient, scheme: SchemeRow): Promise<
   if (conditions?.status !== 'confirmed' || !Array.isArray(conditions.rules) ||
     !conditions.rules.every((rule: unknown) => rule !== null && typeof rule === 'object' &&
       'id' in rule && typeof rule.id === 'string' && 'expectedValue' in rule && typeof rule.expectedValue === 'boolean')) blockers.push('适用条件未确认');
-  else if (conditions.rules.length > 0) blockers.push('受控适用问题尚未配置');
+  else if (conditions.rules.length > 0) {
+    const knownIds = await client.query<{ id: string }>('SELECT id FROM applicability_questions WHERE enabled');
+    const knownSet = new Set(knownIds.rows.map(r => r.id));
+    const unknownRules = (conditions.rules as { id: string }[]).filter(r => !knownSet.has(r.id));
+    if (unknownRules.length > 0) blockers.push(`适用问题未在系统配置：${unknownRules.map(r => r.id).join('、')}`);
+  }
   if (conditions?.labelsConfirmed !== true) blockers.push('方案标签未核对');
   if (lastReview?.decision !== 'pass') blockers.push('缺少当前修订的整体审核通过记录');
   else if (assets.rows.some(asset => new Date(asset.updatedAt).getTime() > new Date(lastReview.createdAt).getTime())) blockers.push('审核后资产发生变化');

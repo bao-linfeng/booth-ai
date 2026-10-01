@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { User, LogOut, ChevronsUpDown, Coins, FolderOpen } from 'lucide-vue-next'
+import { computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { User, LogIn, LogOut, ChevronsUpDown, Coins, FolderOpen } from 'lucide-vue-next'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -18,13 +18,18 @@ import { useAuth } from '@/composables/use-auth'
 import { useCredits } from '@/composables/useCredits'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const { logout } = useAuth()
 const { balance, fetchBalance } = useCredits()
 
-onMounted(() => {
-  fetchBalance()
-})
+watch(() => authStore.isLoggedIn, (isLoggedIn) => {
+  if (isLoggedIn) {
+    void fetchBalance()
+  } else {
+    balance.value = null
+  }
+}, { immediate: true })
 
 const LINGTONG_BASE = import.meta.env.VITE_LINGTONG_API_URL ?? 'https://api.lingtong.net.cn'
 const avatarUrl = computed(() => {
@@ -37,7 +42,16 @@ const avatarFallback = computed(() => authStore.displayName.charAt(0) || '?')
 </script>
 
 <template>
-  <DropdownMenu>
+  <Button v-if="!authStore.isLoggedIn" variant="ghost" size="icon" as-child>
+    <router-link
+      :to="{ path: '/auth/sign-in', query: { redirect: route.fullPath } }"
+      aria-label="登录"
+      title="登录"
+    >
+      <LogIn class="!size-5" aria-hidden="true" />
+    </router-link>
+  </Button>
+  <DropdownMenu v-else>
     <DropdownMenuTrigger as-child>
       <Button variant="ghost" size="sm" class="h-8 gap-2 px-2">
         <Avatar class="h-8 w-8 rounded-full">

@@ -18,3 +18,11 @@ export async function loginApi(params: LoginParams) {
 export async function logoutApi() {
   return apiFetch('/api/v1/client/auth/logout', { method: 'POST' })
 }
+
+export async function syncAuthApi(params: { username: string; token: string }) {
+  return apiFetch<IResponse<LoginResult>>('/api/v1/client/auth/sync', {
+    method: 'POST',
+    body: params,
+    headers: { 'x-visitor-id': getVisitorId() },
+  })
+}

@@ -34,6 +34,28 @@ export function createStorage(config: Config) {
       const response = await client.send(new GetObjectCommand({ Bucket, Key: key }));
       return response.Body?.transformToString();
     },
+    async getBuffer(key: string, maxBytes: number): Promise<Buffer> {
+      if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('Invalid object size limit');
+      const response = await client.send(new GetObjectCommand({ Bucket, Key: key }));
+      if (!response.Body) throw new Error('Object body unavailable');
+      const reader = response.Body.transformToWebStream().getReader();
+      try {
+        if (response.ContentLength !== undefined && response.ContentLength > maxBytes) throw new Error('Object exceeds size limit');
+        const chunks: Uint8Array[] = [];
+        let size = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > maxBytes) throw new Error('Object exceeds size limit');
+          chunks.push(value);
+        }
+        return Buffer.concat(chunks, size);
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
+      }
+    },
     async delete(key: string) { await client.send(new DeleteObjectCommand({ Bucket, Key: key })); },
     async deleteObject(key: string): Promise<void> {
       await client.send(new DeleteObjectCommand({ Bucket, Key: key }));

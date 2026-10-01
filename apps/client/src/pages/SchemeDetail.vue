@@ -8,6 +8,8 @@ import {
   Box,
   Palette,
   Layers3,
+  Download,
+  Loader2,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +32,7 @@ import {
   downloadClientBomApi,
   type ClientBomResponse,
 } from "@/services/api/bom";
-import { getSchemeDeliverables, getSchemeDownload, type SchemeAssetType, type SchemeDeliverable } from "@/services/api/scheme-assets";
+import { downloadSchemeArchive, getSchemeDeliverables, getSchemeDownload, type SchemeAssetType, type SchemeDeliverable } from "@/services/api/scheme-assets";
 
 const route = useRoute();
 const preview = computed(() => route.path.startsWith("/ai-selection/preview/"));
@@ -57,41 +59,103 @@ const bomRevisionChanged = ref(false);
 const showBom = ref(false);
 const activeResource = ref<SchemeAssetType | null>(null);
 const resourceItems = ref<SchemeDeliverable[]>([]);
+const resourceRevision = ref('');
 const resourceLoading = ref(false);
 const resourceError = ref('');
 const downloadError = ref('');
 const downloadingAsset = ref<string | null>(null);
+const downloadingArchive = ref<SchemeAssetType | null>(null);
+const downloadBusy = computed(() => !!downloadingAsset.value || !!downloadingArchive.value);
 const previewAsset = ref<{ assetId: string; url: string; mimeType: string } | null>(null);
 const previewLoading = ref<string | null>(null);
+let resourceRequest = 0;
 
 async function toggleResource(type: SchemeAssetType) {
   if (activeResource.value === type) {
     activeResource.value = null;
+    resourceRequest++;
     return;
   }
   activeResource.value = type;
   previewAsset.value = null;
   resourceItems.value = [];
+  resourceRevision.value = '';
+  downloadError.value = '';
   await fetchResource(type);
 }
 
 async function fetchResource(type: SchemeAssetType) {
   if (!item.value?.code || preview.value) return;
   const code = item.value.code;
+  const request = ++resourceRequest;
   resourceLoading.value = true;
   resourceError.value = '';
   try {
     const result = await getSchemeDeliverables(code, type);
-    if (activeResource.value === type && item.value?.code === code) resourceItems.value = result.items;
+    if (request === resourceRequest && activeResource.value === type && item.value?.code === code) {
+      resourceItems.value = result.items;
+      resourceRevision.value = result.revision;
+    }
   } catch {
-    if (activeResource.value === type) resourceError.value = '资料加载失败，请重试';
+    if (request === resourceRequest && activeResource.value === type) resourceError.value = '资料加载失败，请重试';
   } finally {
-    if (activeResource.value === type) resourceLoading.value = false;
+    if (request === resourceRequest && activeResource.value === type) resourceLoading.value = false;
+  }
+}
+
+async function downloadAllResources(type: SchemeAssetType) {
+  if (!item.value?.code || preview.value || downloadBusy.value || resourceLoading.value ||
+    activeResource.value !== type || !resourceItems.value.length || !resourceRevision.value) return;
+  const code = item.value.code;
+  downloadingArchive.value = type;
+  downloadError.value = '';
+  try {
+    const blob = await downloadSchemeArchive(code, type, resourceRevision.value);
+    const safeCode = code.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, '_');
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${safeCode}@${type === 'drawings' ? '报馆图素材' : '平面素材'}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error: unknown) {
+    if (activeResource.value !== type || item.value?.code !== code) return;
+    const response = error && typeof error === 'object' && 'response' in error ? error.response as Response | undefined : undefined;
+    let reason: string | undefined;
+    try {
+      const data = error && typeof error === 'object' && 'data' in error ? error.data : undefined;
+      const body = (data instanceof Blob ? JSON.parse(await data.text()) : data) as { error?: { reason?: string } } | undefined;
+      reason = body?.error?.reason;
+    } catch {}
+    if (reason === 'DELIVERABLE_REVISION_CHANGED') {
+      previewAsset.value = null;
+      resourceItems.value = [];
+      resourceRevision.value = '';
+      downloadError.value = '资料已更新，请确认刷新后的列表，再重新下载。';
+      await fetchResource(type);
+    } else if (response?.status === 413) {
+      downloadError.value = '资料超过批量下载上限（30 个文件 / 50 MiB），请逐张下载或联系工作人员交接。';
+    } else if (reason === 'DELIVERABLE_FILENAME_CONFLICT' || reason === 'DELIVERABLE_FILENAME_INVALID') {
+      downloadError.value = '资料文件名重复或不符合规范，请联系工作人员修正后重试。';
+    } else if (reason === 'DELIVERABLES_INCOMPLETE') {
+      downloadError.value = '配套资料尚不完整，请联系工作人员补齐后重试。';
+    } else if (response?.status === 404) {
+      previewAsset.value = null;
+      resourceItems.value = [];
+      resourceRevision.value = '';
+      downloadError.value = '方案或配套资料暂不可用，请刷新页面后重试。';
+    } else {
+      downloadError.value = '打包下载失败，可能有原件缺失或读取异常，请重试；持续失败请联系工作人员。';
+    }
+  } finally {
+    downloadingArchive.value = null;
   }
 }
 
 async function downloadResource(type: SchemeAssetType | 'model', assetId?: string) {
-  if (!item.value?.code || downloadingAsset.value || preview.value) return;
+  if (!item.value?.code || downloadBusy.value || preview.value) return;
   downloadingAsset.value = assetId ?? 'model';
   downloadError.value = '';
   try {
@@ -517,13 +581,22 @@ onMounted(async () => {
                       <Button v-if="resourceError" size="sm" variant="outline" @click="fetchResource(resource.type)">重试</Button>
                       <p v-else-if="!resourceItems.length" class="text-muted-foreground">暂无可用资料</p>
                       <template v-else>
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+                          <span class="text-xs text-muted-foreground">共 {{ resourceItems.length }} 份资料</span>
+                          <Button size="sm" variant="outline" :disabled="downloadBusy || !resourceRevision" :aria-busy="downloadingArchive === resource.type" @click="downloadAllResources(resource.type)">
+                            <Loader2 v-if="downloadingArchive === resource.type" class="mr-1 size-3 animate-spin" />
+                            <Download v-else class="mr-1 size-3" />
+                            {{ downloadingArchive === resource.type ? '打包中…' : '下载全部' }}
+                          </Button>
+                          <p class="w-full text-xs text-muted-foreground">ZIP 打包下载，保留原文件名</p>
+                        </div>
                         <div v-for="asset in resourceItems" :key="asset.assetId" class="space-y-2 border-b py-2 last:border-0">
                           <div class="flex items-center justify-between gap-2">
                             <div class="min-w-0"><p class="truncate font-medium" :title="asset.name">{{ asset.name }}</p>
                               <p class="truncate text-xs text-muted-foreground" :title="asset.originalFilename">{{ asset.originalFilename }}</p></div>
                             <div class="flex shrink-0 gap-1">
                               <Button v-if="asset.mimeType.startsWith('image/') || asset.mimeType === 'application/pdf'" size="sm" variant="outline" :disabled="!!previewLoading" @click="showResourcePreview(resource.type, asset)">{{ previewAsset?.assetId === asset.assetId ? '收起' : '预览' }}</Button>
-                              <Button size="sm" variant="outline" :disabled="!!downloadingAsset" @click="downloadResource(resource.type, asset.assetId)">下载</Button>
+                              <Button size="sm" variant="outline" :disabled="downloadBusy" @click="downloadResource(resource.type, asset.assetId)">下载</Button>
                             </div>
                           </div>
                           <template v-if="previewAsset?.assetId === asset.assetId">
@@ -535,10 +608,10 @@ onMounted(async () => {
                     </template>
                   </div>
                 </template>
-                <Button variant="outline" class="w-full justify-start gap-2" :disabled="preview || !item.resources.model || !!downloadingAsset" @click="downloadResource('model')">
+                <Button variant="outline" class="w-full justify-start gap-2" :disabled="preview || !item.resources.model || downloadBusy" @click="downloadResource('model')">
                   <Box class="size-4" />SKP 模型<span class="ml-auto text-xs">{{ preview ? '示例' : item.resources.model ? '下载' : '暂无资料' }}</span>
                 </Button>
-                <p v-if="downloadError" class="text-xs text-destructive">{{ downloadError }}</p>
+                <p v-if="downloadError" role="alert" class="text-xs text-destructive">{{ downloadError }}</p>
                 <p class="text-xs leading-relaxed text-muted-foreground">
                   资料取自当前已发布方案，具体项目施工资料需另行确认。
                 </p></CardContent

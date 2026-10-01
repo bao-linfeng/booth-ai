@@ -1,9 +1,9 @@
 import { randomInt } from 'node:crypto';
-import { isEmpty, invalid, rulesVersion, type Candidate, type MatchDiagnostics, type MatchItem, type Requirement } from './domain.js';
+import { isEmpty, invalid, rulesVersion, type Candidate, type MatchDiagnostics, type MatchItem, type PendingConfirmation, type Requirement } from './domain.js';
 
 const intersects = (left: string[], right: string[]) => left.some(value => right.includes(value));
 
-export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean, poolDiagnostics?: MatchDiagnostics) {
+export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean, poolDiagnostics?: MatchDiagnostics, applicabilityQuestions: { id: string; label: string; helpText: string }[] = []) {
   if (mode === 'random' && (textProvided || !isEmpty(requirement))) invalid('Random requires empty input');
 
   const diagnostics: MatchDiagnostics = poolDiagnostics ? structuredClone(poolDiagnostics) : {
@@ -45,7 +45,7 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
     }
     items = shuffled.slice(0, 3).map(candidate => ({
       ...toItem(candidate, 'random'),
-      pendingConfirmations: ['随机推荐，尺寸、开口面数、限高及适用条件待确认']
+      pendingConfirmations: [{ type: 'missing_field', message: '随机推荐，尺寸、开口面数、限高及适用条件待确认' }]
     }));
   } else {
     const ranked: { item: MatchItem; deviation: number; preference: number }[] = [];
@@ -74,10 +74,18 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
       if (systemMiss || heightMiss || applicabilityMiss || tagsMiss || dimensionMiss) continue;
       
       const item = toItem(candidate, 'reference');
-      item.pendingConfirmations = missingFields.map(field => `需补充${field}`);
+      const pendingConfirmations: PendingConfirmation[] = missingFields.map(field => ({ type: 'missing_field' as const, field, message: `需补充${field}` }));
+      item.pendingConfirmations = pendingConfirmations;
       for (const rule of candidate.applicabilityRules) {
         if (requirement.applicabilityAnswers[rule.id] === undefined) {
-          item.pendingConfirmations.push(`需确认适用条件：${rule.id}`);
+          const question = applicabilityQuestions.find(q => q.id === rule.id);
+          item.pendingConfirmations.push({
+            type: 'applicability_question',
+            id: rule.id,
+            label: question?.label,
+            helpText: question?.helpText,
+            message: question ? `需确认：${question.label}` : `需确认适用条件：${rule.id}`,
+          });
         }
       }
       

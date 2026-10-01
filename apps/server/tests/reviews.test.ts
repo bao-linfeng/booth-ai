@@ -198,10 +198,11 @@ test('unconfigured applicability questions cannot be published as invisible cand
     if (sql.includes('FROM scheme_assets')) return { rows: assets };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [passedReview] };
+    if (sql.includes('FROM applicability_questions')) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
   });
   const readiness = await getSchemeReadiness(pool, 'S-1');
-  assert.ok(readiness.blockers.includes('受控适用问题尚未配置'));
+  assert.ok(readiness.blockers.some(b => b.includes('适用问题未在系统配置')));
   assert.equal(readiness.canPublish, false);
 });
 

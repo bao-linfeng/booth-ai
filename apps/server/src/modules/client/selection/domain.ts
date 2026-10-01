@@ -85,6 +85,15 @@ export interface Candidate {
   applicabilityNotes: string;
 }
 
+export interface PendingConfirmation {
+  type: 'missing_field' | 'applicability_question';
+  field?: string;
+  id?: string;
+  label?: string;
+  helpText?: string;
+  message: string;
+}
+
 export interface MatchItem {
   code: string;
   matchType: 'direct' | 'reference' | 'random';
@@ -92,7 +101,7 @@ export interface MatchItem {
   specifications: Specifications;
   reasons: string[];
   differences: { field: string; requested: string; actual: string; reason: string; }[];
-  pendingConfirmations: string[];
+  pendingConfirmations: PendingConfirmation[];
   preferenceMisses: string[];
 }
 

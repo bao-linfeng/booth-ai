@@ -57,16 +57,16 @@ const query = 'SELECT purpose, provider, enabled, priority, unit_credits AS "uni
 
 export async function listAiModels(pool: pg.Pool): Promise<AiModelConfig[]> {
   const result = await pool.query<AiModelRow>(query);
-  return result.rows.map(({ credentialCiphertext, ...row }) => ({ ...row, model: modelDefinitions[row.provider].model,
+  return result.rows.map(({ credentialCiphertext, ...row }) => ({ ...row, model: row.purpose === 'artwork' && row.provider === 'openai' ? 'gpt-image-1.5' : modelDefinitions[row.provider].model,
     credentialConfigured: credentialCiphertext !== null }));
 }
 
 export async function activeAiModels(pool: pg.Pool, purpose: AiPurpose, encryptionKey: string): Promise<ActiveAiModel[]> {
   const result = await pool.query<AiModelRow>(query);
   return result.rows.filter(row => row.purpose === purpose && row.enabled && row.credentialCiphertext !== null &&
-    (purpose !== 'theme' || row.unitCredits !== null)).map(row => {
+    (purpose === 'selection_parse' || row.unitCredits !== null)).map(row => {
     const { credentialCiphertext, ...config } = row;
-    return { ...config, model: modelDefinitions[row.provider].model, credentialConfigured: true,
+    return { ...config, model: config.purpose === 'artwork' && config.provider === 'openai' ? 'gpt-image-1.5' : modelDefinitions[row.provider].model, credentialConfigured: true,
       apiKey: decryptCredential(credentialCiphertext!, row.provider, encryptionKey) };
   }).sort((a, b) => a.priority - b.priority);
 }

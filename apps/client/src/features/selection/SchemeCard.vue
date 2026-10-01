@@ -5,9 +5,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import SchemeGallery from './SchemeGallery.vue'
-import type { MatchItem } from './types'
+import type { MatchItem, PendingConfirmation } from './types'
 
-defineProps<{ item: MatchItem; index: number; preview?: boolean }>()
+const props = defineProps<{ item: MatchItem; index: number; preview?: boolean }>()
+const emit = defineEmits<{ 'answer-applicability': [id: string, value: boolean] }>()
 const active = defineModel<number>('active', { default: 0 })
 </script>
 
@@ -41,9 +42,19 @@ const active = defineModel<number>('active', { default: 0 })
             <p class="leading-relaxed text-muted-foreground">{{ difference.reason }}</p>
           </div>
         </div>
-        <div v-if="item.pendingConfirmations.length" class="space-y-1 text-xs leading-relaxed">
+        <div v-if="item.pendingConfirmations.length" class="space-y-2 text-xs leading-relaxed">
           <strong>待确认</strong>
-          <p v-for="pending in item.pendingConfirmations" :key="pending" class="text-muted-foreground">{{ pending }}</p>
+          <template v-for="pending in item.pendingConfirmations" :key="pending.type === 'applicability_question' ? pending.id : pending.message">
+            <div v-if="pending.type === 'applicability_question' && pending.id" class="rounded-md border bg-muted/40 p-3 space-y-2">
+              <p class="font-medium text-foreground">{{ pending.label ?? pending.message }}</p>
+              <p v-if="pending.helpText" class="text-muted-foreground leading-relaxed">{{ pending.helpText }}</p>
+              <div class="flex gap-2 pt-1">
+                <Button size="sm" variant="outline" class="h-7 px-3 text-xs" :disabled="preview" @click="emit('answer-applicability', pending.id!, true)">是</Button>
+                <Button size="sm" variant="outline" class="h-7 px-3 text-xs" :disabled="preview" @click="emit('answer-applicability', pending.id!, false)">否</Button>
+              </div>
+            </div>
+            <p v-else class="text-muted-foreground">{{ pending.message }}</p>
+          </template>
         </div>
         <p v-if="item.matchType === 'random'" class="text-xs text-muted-foreground">随机推荐，适用条件待确认。</p>
         <p v-for="miss in item.preferenceMisses" :key="miss" class="text-xs text-muted-foreground">偏好提示：{{ miss }}</p>

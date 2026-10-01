@@ -9,13 +9,14 @@ import { activeAiModels, type ActiveAiModel } from '../../infra/ai-models.js';
 import { transaction } from '../../infra/database.js';
 import { getActivePromptTemplate } from '../admin/prompt-templates/service.js';
 import type { createStorage } from '../../infra/storage.js';
+import type { GenerationSnapshot, ThemeInput } from '../client/theme-jobs/service.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
-type ThemeInput = { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
-type ThemeJob = { requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string };
+type ThemeJob = { requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string; snapshot: GenerationSnapshot | null };
 type UploadedResult = {
   resultId: string;
   assetId: string;
+  versionId: string;
   objectKey: string;
   checksum: string;
   byteSize: number;
@@ -24,8 +25,8 @@ type UploadedResult = {
   previewUrl: string;
 };
 
-async function fetchSourceImageUrls(database: pg.Pool, sourceAssetId: string, config: ThemeConfig): Promise<{ internal: string; public: string }> {
-  const result = await database.query<{ objectKey: string }>(
+async function fetchSourceImageUrls(database: pg.Pool, sourceAssetId: string, config: ThemeConfig, objectKey?: string): Promise<{ internal: string; public: string }> {
+  const result = objectKey ? { rows: [{ objectKey }] } : await database.query<{ objectKey: string }>(
     `SELECT v.object_key AS "objectKey" FROM scheme_assets a
      JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
      WHERE a.id = $1 AND a.is_active = true`, [sourceAssetId]
@@ -67,8 +68,8 @@ async function generatedImage(url: string): Promise<{ bytes: Buffer; mimeType: s
   return { bytes: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get('content-type')?.split(';')[0] ?? 'image/png' };
 }
 
-async function fetchMaskBuffer(database: pg.Pool, sourceAssetId: string, config: ThemeConfig): Promise<Buffer | null> {
-  const result = await database.query<{ objectKey: string }>(
+async function fetchMaskBuffer(database: pg.Pool, sourceAssetId: string, config: ThemeConfig, objectKey?: string): Promise<Buffer | null> {
+  const result = objectKey ? { rows: [{ objectKey }] } : await database.query<{ objectKey: string }>(
     `SELECT v.object_key AS "objectKey"
      FROM scheme_assets a
      JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
@@ -199,7 +200,7 @@ export async function processThemeJob(
   } as unknown as ReturnType<typeof createStorage>;
   const job = (await database.query<ThemeJob>(
     `SELECT requested_count AS "requestedCount", source_asset_id AS "sourceAssetId", scheme_code AS "schemeCode", input,
-            unit_credits AS "unitCredits", user_id AS "userId", status FROM theme_jobs WHERE id = $1`, [jobId]
+             unit_credits AS "unitCredits", user_id AS "userId", status, generation_snapshot AS snapshot FROM theme_jobs WHERE id = $1`, [jobId]
   )).rows[0];
   if (!job) throw new Error(`Theme job ${jobId} not found`);
   const started = await database.query(
@@ -211,22 +212,31 @@ export async function processThemeJob(
 
   const urls: string[] = [];
   try {
-    const labels = await database.query<{ id: string; label: string }>(
-      `SELECT i.id::text AS id, i.item_label AS label FROM dictionary_items i
-       WHERE i.id IN ($1, $2)`, [job.input.industryId, job.input.styleId]
-    );
-    const industryLabel = labels.rows.find(row => row.id === job.input.industryId)?.label;
-    const styleLabel = labels.rows.find(row => row.id === job.input.styleId)?.label;
-    if (!industryLabel || !styleLabel) throw new Error('Theme dictionary labels not found');
-    const maskBuffer = await fetchMaskBuffer(database, job.sourceAssetId, config).catch(() => null);
-    const template = await getActivePromptTemplate(database, 'theme', job.input.industryId, job.input.styleId);
-    const prompt = template ? template.body.replace(/{{(brandColors|brandKeywords|industryLabel|styleLabel)}}/g, (_match, variable: string) => ({
-      brandColors: job.input.brandColors?.join(', ') ?? '无', brandKeywords: job.input.brandKeywords ?? '无',
-      industryLabel, styleLabel,
-    })[variable] ?? '') :
-      `请根据以下要求对展台展位图进行AI换主题处理：\n行业：${industryLabel}，风格：${styleLabel}，品牌色：${job.input.brandColors?.join('、') ?? '无'}，关键词：${job.input.brandKeywords ?? '无'}\n保持展台结构不变，仅替换主题风格、色彩和装饰元素。`;
-    const models = await activeAiModels(database, 'theme', config.aiModelEncryptionKey);
-    const imageUrls = await fetchSourceImageUrls(database, job.sourceAssetId, config);
+    let prompt = job.snapshot?.prompt;
+    if (prompt === undefined) {
+      const labels = await database.query<{ id: string; label: string }>(
+        `SELECT i.id::text AS id, i.item_label AS label FROM dictionary_items i
+         WHERE i.id IN ($1, $2)`, [job.input.industryId, job.input.styleId]
+      );
+      const industryLabel = labels.rows.find(row => row.id === job.input.industryId)?.label;
+      const styleLabel = labels.rows.find(row => row.id === job.input.styleId)?.label;
+      if (!industryLabel || !styleLabel) throw new Error('Theme dictionary labels not found');
+      const template = await getActivePromptTemplate(database, 'theme', job.input.industryId, job.input.styleId);
+      prompt = template ? template.body.replace(/{{(brandColors|brandKeywords|industryLabel|styleLabel)}}/g, (_match, variable: string) => ({
+        brandColors: job.input.brandColors?.join(', ') ?? '无', brandKeywords: job.input.brandKeywords ?? '无',
+        industryLabel, styleLabel,
+      })[variable] ?? '') :
+        `请根据以下要求对展台展位图进行AI换主题处理：\n行业：${industryLabel}，风格：${styleLabel}，品牌色：${job.input.brandColors?.join('、') ?? '无'}，关键词：${job.input.brandKeywords ?? '无'}\n保持展台结构不变，仅替换主题风格、色彩和装饰元素。`;
+    }
+    const maskBuffer = job.snapshot && !job.snapshot.mask ? null :
+      await fetchMaskBuffer(database, job.sourceAssetId, config, job.snapshot?.mask?.objectKey);
+    if (job.snapshot?.mask && !maskBuffer) throw new Error('Theme snapshot mask unavailable');
+    const activeModels = await activeAiModels(database, 'theme', config.aiModelEncryptionKey);
+    const models = job.snapshot ? job.snapshot.models.flatMap(snapshot => {
+      const model = activeModels.find(active => active.provider === snapshot.provider && active.model === snapshot.model && active.revision === snapshot.revision);
+      return model ? [model] : [];
+    }) : activeModels;
+    const imageUrls = await fetchSourceImageUrls(database, job.sourceAssetId, config, job.snapshot?.source.objectKey);
     for (const model of models) {
       for (let attempt = 0; attempt < 3 && urls.length < job.requestedCount; attempt++) {
         try {
@@ -302,6 +312,7 @@ export async function processThemeJob(
     uploadedResults.push({
       resultId,
       assetId,
+      versionId: randomUUID(),
       objectKey,
       checksum,
       byteSize: image.bytes.byteLength,
@@ -337,13 +348,13 @@ export async function processThemeJob(
           `INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, now())
            ON CONFLICT DO NOTHING`,
-          [randomUUID(), result.assetId, result.objectKey, `${result.assetId}.png`, result.mimeType, result.byteSize, result.checksum],
+           [result.versionId, result.assetId, result.objectKey, `${result.assetId}.png`, result.mimeType, result.byteSize, result.checksum],
         );
         await client.query(
-          `INSERT INTO theme_job_results (id, job_id, ordinal, asset_id, preview_url)
-            VALUES ($1, $2, $3, $4, $5)
+           `INSERT INTO theme_job_results (id, job_id, ordinal, asset_id, preview_url, asset_version_id)
+             VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (job_id, ordinal) DO NOTHING`,
-          [result.resultId, jobId, result.ordinal, result.assetId, result.previewUrl],
+           [result.resultId, jobId, result.ordinal, result.assetId, result.previewUrl, result.versionId],
         );
       }
       const usableCount = uploadedResults.length;

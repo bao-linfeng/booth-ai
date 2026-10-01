@@ -50,6 +50,8 @@ async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
+    if (response.status === 401) throw externalError('External authentication required', 401);
+    if (response.status === 403) throw externalError('External authentication forbidden', 403);
     let body: unknown;
     try {
       body = await response.json();

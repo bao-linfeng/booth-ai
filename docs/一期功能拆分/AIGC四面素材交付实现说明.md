@@ -1,0 +1,72 @@
+# AIGC 四面素材交付实现说明
+
+日期：2026-09-30。对应 E-01 / E-03 / E-05；补齐私有 AIGC 方向底图的生成、下载和项目交付链路。
+
+## 1. 本次冻结口径
+
+- 正、背、左、右各一张，使用 `front/back/left/right` 命名。清单画面映射返回 `mappingStatus=unresolved`，不阻止方向底图下载。
+- 统一解码、自动旋转并转为 sRGB PNG；实际长边至少 1536 px、短边至少 1024 px。不放大低分辨率图片通过验收。仅接受单帧 PNG/JPEG/WebP 来源，交付均为 PNG。
+- 单张上限 30 MiB、4000 万像素。四方向齐全且通过文件检查才为 `deliveryStatus=ready`。
+- 沿用后台 `artwork` 模型每张积分价格：提交原子预占四张费用；合格方向按张扣费，失败方向释放。明确免费、缓存免费复用和缺方向补生不在本次收费规则内。
+- 重新生成创建新的四方向任务，需要再次确认预占费用。网络重试使用原 `requestKey`，查询原受理结果。
+- 成果是供后续设计加工的方向底图；未核实物理尺寸、墙面拼接、清单画面编号或印刷适配。
+
+## 2. 使用链路
+
+1. 在主题结果页选为最终效果，点击“生成配套四面素材”。
+2. 生成页展示选定效果及其选择修订、单方向积分与整套预占额度，确认后提交。
+3. 结果页轮询本人任务，分别展示四方向真实阶段、错误原因、像素与积分结算。合格单张可下载；完整套装可下载 ZIP。
+4. 完整结果可携带 `artworkJobId` 申请报价，服务端与主题选择一起固定文件版本。
+5. 已有主题报价项目可从项目详情补充四面素材。绑定必须匹配项目固定的方案、主题任务、结果与选择修订，并校验项目修订。
+6. 项目素材绑定成功后状态更新为 `available`，留下项目事件和通知 Outbox。再次生成不会覆盖已交付版本。
+
+当前主题入口只查询当前已选上下文；改选后不混入旧素材。历史任务页和下载按任务受理时的快照与本人身份校验，允许查看本人旧任务。项目已固定的旧上下文可绑定相同上下文的既有完整任务；新生成仍要求当前主题选择一致。
+
+## 3. 实际接口
+
+以下路由均位于 `/api/v1/client`，需要有效客户端会话。请求不接受 `userId`、参考图 URL、提示词、模型、种子或墙面尺寸。
+
+| 方法与路径 | 契约 |
+|---|---|
+| POST `/artwork-offers` | `schemeCode, themeJobId, resultId, selectionRevision`；返回五分钟有效费用提议及像素门槛 |
+| POST `/artwork-jobs` | 上述上下文加 `requestKey, offerId`；202 新受理，200 幂等重放；原键异内容 409 |
+| GET `/artwork-jobs` | 查询参数为完整主题上下文；仅返回本人该次选定结果的生成记录 |
+| GET `/artwork-jobs/{jobId}` | 本人历史任务、方向状态、缺项、交付状态、预览及积分事实；非本人统一 404 |
+| GET `/artwork-jobs/{jobId}/assets/{assetId}/download` | 固定版本 PNG 附件流；跨任务资产 404，存储/哈希异常 503 |
+| GET `/artwork-jobs/{jobId}/download` | 完整 `ready` 集合 ZIP；缺方向 409，存储/哈希异常 503 |
+| PUT `/me/projects/{projectId}/artworks` | `artworkJobId, requestKey, expectedRevision`；本人项目、固定主题一致、完整套装才可绑定 |
+| POST `/quote-requests` | 可选 `artworkJobId` 必须和 `themeSelection` 同传，与标准库 `artworkRevision` 互斥 |
+
+PNG 下载和 ZIP 在响应前核实 SHA-256 及字节数，响应带 `Cache-Control: private, no-store`。预览为短时签名地址，不向浏览器暴露容器内部域名。
+
+原方案库素材继续使用 `/schemes/{code}/artworks`；私有素材使用上述任务路由，避免与公共集合修订混用。
+
+## 4. 后台与数据
+
+- `/api/v1/admin/generation-jobs?jobType=artwork` 查询真实任务；不传类型时合并主题与素材任务分页。
+- 任务详情包含主题引用、四方向状态/原因、固定模型/模板/提示词、参考图及结果预览；详情访问写审计。
+- 模型配置增加 `purpose=artwork`。模型保存请求必须显式传用途，按 `purpose + provider` 定位，独立维护凭据和积分价。
+- 当前高清生成适配使用 OpenAI `gpt-image-1.5`，请求 `1536x1024 / high / png`。配置默认禁用，须在后台填写素材模型的凭据与单方向价格再启用。已有主题模型配置不自动用于素材；当前 Gemini 2.5/万相适配无法证明满足该像素门槛，不开放为本链路模型。
+- 新迁移 `041_artwork_delivery.sql` 扩展主题上下文、不可变结果版本、方向状态、Worker 租约、素材积分预占/幂等扣费及模型配置。保留旧任务数据；未绑定主题且未验收的旧结果不冒充合格四面套装。
+- 公共素材、匹配候选和项目标准素材快照均排除 `metadata.artworkJobId`，生成结果不会混入公共方案库或使公共方案审核失效。
+- 项目绑定固定四个 `asset_version_id`，已有项目引用阻止删除相应历史文件版本。后续资产替换不会改变任务或项目交付内容。
+
+## 5. Worker 与故障处理
+
+四方向共用选定参考图文件版本、原主题品牌参数、提示词模板修订及单一模型修订。生成前核验参考文件 SHA-256；不在外部生成/文件上传时持有数据库锁。
+
+任务获取有限租约。方向先持久化 `submitting`，上游返回后持久化 `generated`，再做解码/转码、存储及结果事务。存储失败重试使用已生成结果，不再调用上游；遇到未确认的 `submitting` 不盲目重发，记录失败并释放对应预占。结果及结算有唯一约束；重复 Worker 和结算不得重复扣费。超过租约且长期无更新的异常任务由轮询结算已有合格结果并释放剩余额度。
+
+Outbox 在队列接受任务后才标记分发，Redis 出错回滚保留待分发事件，使用确定性 `jobId` 去重。
+
+共享参考与生成快照属于一致性控制，不等于视觉一致性的验收证明。品牌、角色、方向和跨面内容仍需以真实品牌样例由设计人员核对。
+
+## 6. 验证入口
+
+- `apps/server/tests/artwork-jobs.test.ts`：真实 JPEG→PNG、分辨率/坏文件/字节限制、Redis 分发失败回滚。
+- `apps/server/tests/artwork-delivery-integration.test.ts`：显式启用 `ARTWORK_TEST_DATABASE_URL`，创建临时隔离 Schema 并顺序应用迁移；真实 SQL 与模拟提供商/对象存储，覆盖并发受理、预占/部分结算、故障恢复、越权、ZIP 原件、项目快照及公共素材隔离。
+- `apps/server/tests/ai-models.test.ts`：用途/提供商独立配置与凭据安全。
+- `apps/server/tests/generation-jobs.test.ts`：后台两类任务查询与积分事实。
+- 后端 `npm run check / npm test / npm run build`，客户端 `pnpm build`，管理端定向类型检查与构建。
+
+集成测试中的提供商返回值为受控测试图片，可证明业务与文件链路，不能替代真实模型的视觉一致性和可制作性验收。

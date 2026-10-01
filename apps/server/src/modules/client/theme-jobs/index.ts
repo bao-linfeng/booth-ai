@@ -3,9 +3,10 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { listAiModels } from '../../../infra/ai-models.js';
-import { transaction } from '../../../infra/database.js';
 import { getSession } from '../../../infra/session.js';
 import type { createStorage } from '../../../infra/storage.js';
+import { createThemeJob, findCachedThemeJob, loadGenerationSnapshot, normalizeThemeInput, replayThemeRequest,
+  themeCacheKey, themeCredits, type ThemeOfferData } from './service.js';
 
 const OFFER_TTL_SECONDS = 300; // 5 minutes
 
@@ -77,7 +78,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       sourceAssetId: string;
       input?: { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
       requestedCount?: number;
-      cacheMode?: string;
+      cacheMode?: 'reuse' | 'refresh';
     };
   }>('/theme-offers', {
     schema: {
@@ -107,7 +108,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       },
     },
   }, async request => {
-    await requireClientSession(request.headers.authorization, redis);
+    const userId = await requireClientSession(request.headers.authorization, redis);
 
     // Check if any enabled theme model with credentials is available
     const allModels = await listAiModels(pool);
@@ -138,17 +139,17 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
     } | null = null;
 
     if (available && input?.industryId && input?.styleId) {
-      // Pick the highest-priority model for pricing
-      const primaryModel = availableModels.sort((a, b) => a.priority - b.priority)[0]!;
+      const parameters = { schemeCode: request.body.schemeCode, sourceAssetId: request.body.sourceAssetId,
+        input: normalizeThemeInput(input), requestedCount, cacheMode: request.body.cacheMode ?? 'reuse' };
+      const snapshot = await loadGenerationSnapshot(pool, parameters);
+      const cacheKey = themeCacheKey(userId, parameters, snapshot);
+      const cacheHit = parameters.cacheMode === 'reuse' && Boolean(await findCachedThemeJob(pool, userId, cacheKey, requestedCount));
+      const primaryModel = snapshot.models[0]!;
       const unitCredits = primaryModel.unitCredits!;
       const offerId = randomUUID();
       const expiresAt = new Date(Date.now() + OFFER_TTL_SECONDS * 1000).toISOString();
-      const offerData = {
-        schemeCode: request.body.schemeCode,
-        sourceAssetId: request.body.sourceAssetId,
-        industryId: input.industryId,
-        styleId: input.styleId,
-        requestedCount,
+      const offerData: ThemeOfferData = {
+        ...parameters, userId, cacheKey, snapshot, cacheHit,
         unitCredits,
         expiresAt,
         pricingRevision: primaryModel.revision,
@@ -159,9 +160,9 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
         expiresAt,
         pricingRevision: primaryModel.revision,
         unitCredits,
-        maxCredits: unitCredits * requestedCount,
+        maxCredits: cacheHit ? 0 : unitCredits * requestedCount,
         settlementRule: 'per_usable_image',
-        cacheHit: false,
+        cacheHit,
       };
     }
 
@@ -180,7 +181,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       sourceAssetId: string;
       input: { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
       requestedCount: number;
-      cacheMode?: string;
+      cacheMode?: 'reuse' | 'refresh';
     };
   }>('/theme-jobs', {
     schema: {
@@ -215,112 +216,22 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
     const userId = await requireClientSession(request.headers.authorization, redis);
     const { requestKey, offerId, schemeCode, sourceAssetId, input, requestedCount, cacheMode = 'reuse' } = request.body;
 
-    // Verify offer exists in Redis
+    const parameters = { schemeCode, sourceAssetId, input: normalizeThemeInput(input), requestedCount, cacheMode };
+    const replay = await replayThemeRequest(pool, userId, requestKey, parameters);
+    if (replay) {
+      reply.header('Location', `/api/v1/client/theme-jobs/${replay.jobId}`);
+      return { code: 0, data: replay };
+    }
+
     const offerRaw = await redis.get(`theme-offer:${offerId}`);
     if (!offerRaw) {
       reply.status(409);
       return { error: { code: 'REQUEST_ERROR', reason: 'OFFER_EXPIRED', message: 'Offer expired or not found', requestId: request.id } };
     }
-    const offerData = JSON.parse(offerRaw) as {
-      unitCredits: number;
-      pricingRevision: number;
-      schemeCode: string;
-      sourceAssetId: string;
-      industryId: string;
-      styleId: string;
-      requestedCount: number;
-    };
-    const unitCredits = offerData.unitCredits;
-
-    // Verify offer matches submitted parameters
-    if (
-      offerData.schemeCode !== schemeCode ||
-      offerData.sourceAssetId !== sourceAssetId ||
-      offerData.industryId !== input.industryId ||
-      offerData.styleId !== input.styleId ||
-      offerData.requestedCount !== requestedCount
-    ) {
-      reply.status(409);
-      return { error: { code: 'REQUEST_ERROR', reason: 'OFFER_MISMATCH', message: 'Submitted parameters do not match the offer', requestId: request.id } };
-    }
-
-    // Check idempotency: same user + requestKey
-    const existing = await pool.query<{ id: string; status: string }>(
-      `SELECT id, status FROM theme_jobs WHERE user_id = $1 AND request_key = $2`,
-      [userId, requestKey]
-    );
-    if (existing.rows[0]) {
-      const job = existing.rows[0];
-      return {
-        code: 0,
-        data: {
-          jobId: job.id,
-          status: job.status,
-          reusedRequest: true,
-          cacheHit: false,
-          credits: { status: 'pending', reservedCredits: 0, chargedCredits: 0, releasedCredits: 0 },
-          pollAfterMs: 2000,
-        },
-      };
-    }
-
-    // Create the job and its outbox record atomically.
-    const jobId = await transaction(pool, async client => {
-      // Lock user row to serialize concurrent credit reservations
-      await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [userId]);
-
-      // Check available balance (total credits minus already reserved)
-      const balanceResult = await client.query<{ availableBalance: number }>(
-        `SELECT (COALESCE(SUM(ct.amount), 0) - COALESCE(
-           (SELECT SUM(cr.reserved_amount) FROM credit_reservations cr WHERE cr.user_id = $1 AND cr.status = 'reserved'),
-           0
-         ))::integer AS "availableBalance"
-         FROM credit_transactions ct WHERE ct.user_id = $1`,
-        [userId]
-      );
-      const availableBalance = balanceResult.rows[0]?.availableBalance ?? 0;
-      const requiredCredits = unitCredits * requestedCount;
-      if (availableBalance < requiredCredits) {
-        const err = new Error('Insufficient credits for this request');
-        (err as NodeJS.ErrnoException & { statusCode: number }).statusCode = 402;
-        throw err;
-      }
-
-      const result = await client.query<{ id: string }>(
-        `INSERT INTO theme_jobs
-           (user_id, scheme_code, source_asset_id, offer_id, request_key, input, requested_count, cache_mode, status, unit_credits)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9)
-         RETURNING id`,
-        [userId, schemeCode, sourceAssetId, offerId, requestKey, JSON.stringify(input), requestedCount, cacheMode, unitCredits]
-      );
-      const jobId = result.rows[0]?.id;
-      if (!jobId) throw new Error('Failed to create theme job');
-
-      await client.query(
-        `INSERT INTO theme_job_outbox (job_id) VALUES ($1) ON CONFLICT DO NOTHING`,
-        [jobId]
-      );
-
-      await client.query(
-        `INSERT INTO credit_reservations (user_id, theme_job_id, reserved_amount) VALUES ($1, $2, $3)`,
-        [userId, jobId, requiredCredits]
-      );
-
-      return jobId;
-    });
-
-    reply.status(202);
-    return {
-      code: 0,
-      data: {
-        jobId,
-        status: 'pending',
-        reusedRequest: false,
-        cacheHit: false,
-        credits: { status: 'pending', reservedCredits: unitCredits * requestedCount, chargedCredits: 0, releasedCredits: 0 },
-        pollAfterMs: 2000,
-      },
-    };
+    const data = await createThemeJob(pool, userId, requestKey, offerId, parameters, JSON.parse(offerRaw) as ThemeOfferData);
+    reply.status(data.cacheHit || data.reusedRequest ? 200 : 202);
+    reply.header('Location', `/api/v1/client/theme-jobs/${data.jobId}`);
+    return { code: 0, data };
   });
 
   // GET /theme-jobs/:jobId — 查询任务状态（API-007）
@@ -341,15 +252,16 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
     const result = await pool.query<{
       id: string; schemeCode: string; sourceAssetId: string; sourceObjectKey: string | null; status: string; phase: string | null;
       requestedCount: number; usableCount: number; selectedResultId: string | null;
-      selectionRevision: number; unitCredits: number | null; input: unknown;
+      selectionRevision: number; unitCredits: number | null; input: unknown; cacheHit: boolean;
       createdAt: string; updatedAt: string;
     }>(
        `SELECT id, scheme_code AS "schemeCode", source_asset_id AS "sourceAssetId",
-               (SELECT av.object_key FROM asset_versions av WHERE av.asset_id = source_asset_id ORDER BY av.created_at DESC, av.id DESC LIMIT 1) AS "sourceObjectKey",
+                COALESCE(generation_snapshot->'source'->>'objectKey',
+                  (SELECT av.object_key FROM asset_versions av WHERE av.asset_id = source_asset_id ORDER BY av.created_at DESC, av.id DESC LIMIT 1)) AS "sourceObjectKey",
                status, phase,
               requested_count AS "requestedCount", usable_count AS "usableCount",
               selected_result_id AS "selectedResultId", selection_revision AS "selectionRevision",
-              unit_credits AS "unitCredits", input, created_at AS "createdAt", updated_at AS "updatedAt"
+               unit_credits AS "unitCredits", cache_hit AS "cacheHit", input, created_at AS "createdAt", updated_at AS "updatedAt"
        FROM theme_jobs WHERE id = $1 AND user_id = $2`,
       [jobId, userId]
     );
@@ -363,7 +275,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
        `SELECT tjr.id, tjr.ordinal, tjr.width, tjr.height, av.object_key AS "objectKey"
         FROM theme_job_results tjr
         JOIN scheme_assets sa ON sa.id = tjr.asset_id
-        JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = sa.id ORDER BY created_at DESC, id DESC LIMIT 1) av ON true
+         JOIN asset_versions av ON av.id = tjr.asset_version_id AND av.asset_id = sa.id
         WHERE tjr.job_id = $1 ORDER BY tjr.ordinal`,
        [jobId]
      );
@@ -374,7 +286,6 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       height: r.height ?? 0,
     })));
 
-    const unitCredits = job.unitCredits ?? 0;
     const isTerminal = ['succeeded', 'partially_succeeded', 'failed'].includes(job.status);
 
      const originalPreviewUrl = job.sourceObjectKey ? await storage.signDownload(job.sourceObjectKey, 900) : null;
@@ -388,15 +299,11 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
         phase: job.phase,
         requestedCount: job.requestedCount,
         usableCount: job.usableCount,
+        cacheHit: job.cacheHit,
          original: { assetId: job.sourceAssetId, previewUrl: originalPreviewUrl },
         results,
         selection: { resultId: job.selectedResultId, revision: job.selectionRevision },
-        credits: {
-          status: job.status === 'pending' ? 'pending' : job.status === 'failed' ? 'released' : 'settled',
-          reservedCredits: unitCredits * job.requestedCount,
-          chargedCredits: unitCredits * job.usableCount,
-          releasedCredits: unitCredits * (job.requestedCount - job.usableCount),
-        },
+        credits: themeCredits(job),
         failure: job.status === 'failed' ? { reason: 'GENERATION_FAILED', retryable: true } : null,
         pollAfterMs: isTerminal ? null : 2000,
         createdAt: job.createdAt,

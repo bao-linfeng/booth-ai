@@ -14,6 +14,7 @@ import SelectionShell from '@/features/selection/SelectionShell.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getQuoteContext, submitQuote, submitManualRequest, type ManualRequest, type QuoteContext, type QuoteRequest, type ProjectReceipt } from '@/services/api/projects'
 import { getThemeJob } from '@/services/api/theme-jobs'
+import { getArtworkJob } from '@/services/api/artwork-jobs'
 import type { MatchItem, Requirement } from '@/features/selection/types'
 import { apiFetch, lingtongPublicFetch } from '@/lib/api-client'
 import type { SchemeDetail } from '@/features/selection/types'
@@ -24,10 +25,11 @@ const router = useRouter()
 const auth = useAuthStore()
 const code = String(route.params.code)
 const manual = route.name === 'ManualRequest'
-const draftKey = manual ? 'booth:manual-draft' : `booth:quote-draft:${code}:${String(route.query.themeJobId ?? 'standard')}`
+const draftKey = manual ? 'booth:manual-draft' : `booth:quote-draft:${code}:${String(route.query.themeJobId ?? 'standard')}:${String(route.query.artworkJobId ?? 'pending')}`
 const context = ref<QuoteContext | null>(null)
 const theme = ref<QuoteRequest['themeSelection']>()
 const themePreview = ref('')
+const artworkJobId = ref<string>()
 const standardPreview = ref('')
 const loading = ref(true)
 const busy = ref(false)
@@ -119,6 +121,8 @@ async function loadContext() {
   if (manual) { loading.value = false; return }
   loading.value = true
   error.value = ''
+  theme.value = undefined
+  artworkJobId.value = undefined
   try {
     context.value = await getQuoteContext(code)
     void apiFetch<{ code: number; data: SchemeDetail }>(`/api/v1/client/schemes/${encodeURIComponent(code)}`).then(response => {
@@ -129,6 +133,7 @@ async function loadContext() {
       error.value = '您查看的清单已更新。请刷新资料并重新确认后提交。'
     }
     const jobId = route.query.themeJobId
+    if (route.query.artworkJobId && typeof jobId !== 'string') throw new Error('素材必须关联主题')
     if (typeof jobId === 'string') {
       if (!auth.isLoggedIn) { context.value = null; error.value = '请先登录，以读取您选择的主题效果。'; return }
       const job = await getThemeJob(jobId)
@@ -136,6 +141,11 @@ async function loadContext() {
       if (job.schemeCode !== code || !result) throw new Error('主题结果不可用')
       theme.value = { themeJobId: jobId, resultId: result.resultId, selectionRevision: job.selection.revision }
       themePreview.value = result.previewUrl
+      if (typeof route.query.artworkJobId === 'string') {
+        const artwork = await getArtworkJob(route.query.artworkJobId)
+        if (artwork.deliveryStatus !== 'ready' || artwork.schemeCode !== code || artwork.themeSelection.themeJobId !== jobId || artwork.themeSelection.resultId !== result.resultId || artwork.themeSelection.selectionRevision !== job.selection.revision) throw new Error('素材与主题不一致')
+        artworkJobId.value = artwork.jobId
+      }
     }
   } catch { context.value = null; error.value = '方案或选定效果已变化，暂时无法申请，请返回确认后重试。' }
   finally { loading.value = false }
@@ -163,6 +173,7 @@ async function submit() {
     pending.value = { requestKey: crypto.randomUUID(), schemeCode: code, schemeRevision: current.schemeRevision,
       ...(current.bomRevision ? { bomRevision: current.bomRevision } : {}), ...(current.drawingRevision ? { drawingRevision: current.drawingRevision } : {}),
       ...(!theme.value && current.artworkRevision ? { artworkRevision: current.artworkRevision } : {}), ...(theme.value ? { themeSelection: theme.value } : {}),
+      ...(artworkJobId.value ? { artworkJobId: artworkJobId.value } : {}),
       entryPoint: theme.value ? 'theme_result' : route.query.entryPoint === 'bill_of_materials' ? 'bill_of_materials' : 'scheme_detail',
       exhibition: { name: form.exhibitionName, countryCode: form.countryCode.toUpperCase(), city: form.city, startDate: form.startDate, endDate: form.endDate },
       scopeCodes: [...form.scopeCodes], scopeNotes: form.scopeNotes, materialBudget: { currency: form.currency, amount: form.amount }, customerType: form.customerType, company: form.company,
@@ -215,6 +226,7 @@ async function submitManual() {
         <dl class="grid gap-4 rounded-lg bg-muted p-5 sm:grid-cols-2"><div><dt class="text-sm text-muted-foreground">项目编号</dt><dd class="mt-1 font-mono text-xl">{{ receipt.projectNo }}</dd></div><div><dt class="text-sm text-muted-foreground">申请编号</dt><dd class="mt-1 break-all font-mono text-sm">{{ receipt.requestNo }}</dd></div></dl>
         <p class="text-sm leading-6 text-muted-foreground">管理人员将根据本次申请联系您，核对需求后提供人工报价。当前状态为待跟进，受理回执不代表已出具报价。</p>
         <p v-if="receipt.materialsStatus?.artworks === 'pending'" class="text-sm">已固定您选择的主题效果，配套平面素材待补充。</p>
+        <p v-if="artworkJobId && receipt.materialsStatus?.artworks === 'available'" class="text-sm">四面素材已固定到项目，可从项目详情查看与下载。</p>
         <Button as-child><RouterLink :to="`/my-projects/${receipt.projectId}`">查看我的项目</RouterLink></Button>
         <Button variant="outline" class="ml-3" @click="newRequest">填写另一份申请</Button>
       </CardContent></Card>
@@ -300,7 +312,7 @@ async function submitManual() {
         <aside class="space-y-4 lg:sticky lg:top-6"><Card><CardHeader><FileText class="size-6 text-primary" /><CardTitle class="text-base">{{ manual ? '人工需求承接' : '本次申请方案' }}</CardTitle></CardHeader><CardContent class="space-y-4 text-sm">
           <p v-if="!manual" class="break-all font-mono">{{ code }}</p><p v-else>原文与确认条件分别保存。提交后建立项目，由管理员联系并核对适用方案。</p><p v-if="loading" class="text-muted-foreground">读取方案资料…</p>
           <template v-else-if="context"><p>清单修订 {{ context.bomRevision }} · 方案修订 {{ context.schemeRevision }}</p><img v-if="themePreview || standardPreview" :src="themePreview || standardPreview" :alt="theme ? '本次选定主题效果' : '标准方案效果'" class="aspect-video w-full rounded-md object-contain" /><p>{{ theme ? '已带入您选择的主题效果' : '使用标准方案效果' }}</p><p v-if="theme" class="text-xs text-muted-foreground">主题平面素材尚待补充，不以标准素材代替。</p></template>
-          <div v-if="matchingSummary" class="space-y-2 border-t pt-4 text-xs"><p class="font-medium">{{ matchingSummary.matchType === 'direct' ? '匹配条件已带入' : '参考方案 · 适用性需确认' }}</p><p v-for="difference in matchingSummary.differences" :key="difference.field">{{ difference.requested }} → {{ difference.actual }}：{{ difference.reason }}</p><p v-for="confirmation in matchingSummary.pendingConfirmations" :key="confirmation">{{ confirmation }}</p></div>
+          <div v-if="matchingSummary" class="space-y-2 border-t pt-4 text-xs"><p class="font-medium">{{ matchingSummary.matchType === 'direct' ? '匹配条件已带入' : '参考方案 · 适用性需确认' }}</p><p v-for="difference in matchingSummary.differences" :key="difference.field">{{ difference.requested }} → {{ difference.actual }}：{{ difference.reason }}</p><p v-for="confirmation in matchingSummary.pendingConfirmations" :key="confirmation.message">{{ confirmation.message }}</p></div>
           <p class="border-t pt-4 text-xs leading-6 text-muted-foreground">提交时将固定当前资料。方案适用性、场馆规范和交付范围需经专业确认。</p>
         </CardContent></Card></aside>
       </div>

@@ -12,7 +12,8 @@ export async function registerAdminAiModelRoutes(app: FastifyInstance, pool: pg.
     schema: {
       tags: ['AI 模型配置'],
       params: { type: 'object', required: ['provider'], properties: { provider: { type: 'string', enum: Object.keys(modelDefinitions) } } },
-      body: { type: 'object', additionalProperties: false, required: ['enabled', 'priority', 'unitCredits', 'expectedRevision'], properties: {
+      body: { type: 'object', additionalProperties: false, required: ['purpose', 'enabled', 'priority', 'unitCredits', 'expectedRevision'], properties: {
+        purpose: { type: 'string', enum: ['selection_parse', 'theme', 'artwork'] },
         enabled: { type: 'boolean' }, priority: { type: 'integer', minimum: 0, maximum: 2 },
         unitCredits: { anyOf: [{ type: 'integer', minimum: 1, maximum: 100000 }, { type: 'null' }] },
         expectedRevision: { type: 'integer', minimum: 1 },

@@ -1,11 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { getGenerationJob, listGenerationJobs, type GenerationJobQuery } from './service.js';
+import { writeAuditLog } from '../../../infra/audit.js';
+import { getAdminIdFromRequest } from '../session.js';
+import type { Redis } from 'ioredis';
 
 export async function registerAdminGenerationJobRoutes(
   app: FastifyInstance,
   pool: pg.Pool,
   storage: { signDownload: (key: string, expiresIn: number) => Promise<string> },
+  redis?: Redis,
 ): Promise<void> {
   app.get('/generation-jobs', { schema: { tags: ['admin-generation-jobs'], querystring: {
     type: 'object', additionalProperties: false, properties: {
@@ -19,5 +23,10 @@ export async function registerAdminGenerationJobRoutes(
 
   app.get('/generation-jobs/:jobId', { schema: { tags: ['admin-generation-jobs'], params: {
     type: 'object', required: ['jobId'], additionalProperties: false, properties: { jobId: { type: 'string', format: 'uuid' } },
-  } } }, async request => ({ code: 0, data: await getGenerationJob(pool, (request.params as { jobId: string }).jobId, storage) }));
+  } } }, async (request, reply) => {
+    reply.header('Cache-Control', 'private, no-store');
+    const jobId = (request.params as { jobId: string }).jobId;
+    if (redis) await writeAuditLog(pool, { adminId: await getAdminIdFromRequest(request, redis), action: 'generation_job.view', targetType: 'generation_job', targetId: jobId });
+    return { code: 0, data: await getGenerationJob(pool, jobId, storage) };
+  });
 }

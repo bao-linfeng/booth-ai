@@ -19,6 +19,6 @@ export interface CurrentUser {
 
 export interface LoginResult {
   accessToken: string
-  expiresAt: string
+  expiresAt: number
   user: CurrentUser
 }

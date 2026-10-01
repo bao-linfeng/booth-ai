@@ -23,6 +23,7 @@ const models = ref<AiModelRecord[]>([]);
 const loading = ref(false);
 const saving = ref<null | string>(null);
 const keyDrafts = ref<Record<string, string>>({});
+const modelKey = (row: AiModelRecord) => `${row.purpose}:${row.provider}`;
 
 async function load() {
   loading.value = true;
@@ -33,18 +34,19 @@ async function load() {
   }
 }
 async function save(row: AiModelRecord) {
-  saving.value = row.provider;
+   saving.value = modelKey(row);
   try {
     await updateAiModelApi(row.provider, {
+      purpose: row.purpose,
       enabled: row.enabled,
       priority: row.priority,
       unitCredits: row.unitCredits,
       expectedRevision: row.revision,
-      ...(keyDrafts.value[row.provider]?.trim()
-        ? { apiKey: keyDrafts.value[row.provider]?.trim() }
+      ...(keyDrafts.value[modelKey(row)]?.trim()
+        ? { apiKey: keyDrafts.value[modelKey(row)]?.trim() }
         : {}),
     });
-    keyDrafts.value[row.provider] = '';
+    keyDrafts.value[modelKey(row)] = '';
     message.success('配置已保存');
     await load();
   } catch {
@@ -54,16 +56,17 @@ async function save(row: AiModelRecord) {
   }
 }
 async function clearKey(row: AiModelRecord) {
-  saving.value = row.provider;
+  saving.value = modelKey(row);
   try {
     await updateAiModelApi(row.provider, {
+      purpose: row.purpose,
       enabled: false,
       priority: row.priority,
       unitCredits: row.unitCredits,
       expectedRevision: row.revision,
       apiKey: null,
     });
-    keyDrafts.value[row.provider] = '';
+    keyDrafts.value[modelKey(row)] = '';
     message.success('密钥已清除，模型已停用');
     await load();
   } catch {
@@ -82,10 +85,10 @@ onMounted(load);
   >
     <div class="grid gap-5 lg:grid-cols-2">
       <Card
-        v-for="purpose in ['selection_parse', 'theme'] as const"
+        v-for="purpose in ['selection_parse', 'theme', 'artwork'] as const"
         :key="purpose"
         :title="
-          purpose === 'theme' ? 'AI 换主题 · 图像模型' : 'AI 智选 · 解析模型'
+          purpose === 'artwork' ? '四面平面素材 · 图像模型' : purpose === 'theme' ? 'AI 换主题 · 图像模型' : 'AI 智选 · 解析模型'
         "
         :loading="loading"
       >
@@ -114,7 +117,7 @@ onMounted(load);
           <div class="mb-4 flex flex-wrap items-end gap-3">
             <label class="w-full max-w-md">API Key（留空则保留已有密钥）
               <Input.Password
-                v-model:value="keyDrafts[row.provider]"
+                v-model:value="keyDrafts[modelKey(row)]"
                 autocomplete="new-password"
                 placeholder="输入新密钥，保存后生效"
                 class="mt-1"
@@ -125,7 +128,7 @@ onMounted(load);
               title="清除密钥并停用此模型？"
               @confirm="clearKey(row)"
             >
-              <Button danger :disabled="saving === row.provider">
+              <Button danger :disabled="saving === modelKey(row)">
                 清除密钥
               </Button>
             </Popconfirm>
@@ -135,7 +138,7 @@ onMounted(load);
               <Switch
                 v-model:checked="row.enabled"
                 :disabled="
-                  !row.credentialConfigured && !keyDrafts[row.provider]?.trim()
+                  !row.credentialConfigured && !keyDrafts[modelKey(row)]?.trim()
                 "
             /></label>
             <label
@@ -164,7 +167,7 @@ onMounted(load);
             /></label>
             <Button
               type="primary"
-              :loading="saving === row.provider"
+              :loading="saving === modelKey(row)"
               @click="save(row)"
             >
               保存

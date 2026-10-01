@@ -25,12 +25,14 @@ const kindLabels: Record<CreditKind, string> = {
   sign_in: '签到',
   recharge: '充值',
   theme_consume: 'AI换主题',
+  artwork_consume: '四面平面素材',
 };
 
 const kindColors: Record<CreditKind, string> = {
   sign_in: 'blue',
   recharge: 'green',
   theme_consume: 'orange',
+  artwork_consume: 'blue',
 };
 
 const kindOptions = Object.entries(kindLabels).map(([value, label]) => ({
