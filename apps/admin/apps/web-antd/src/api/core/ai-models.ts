@@ -17,7 +17,10 @@ export function getAiModelsApi() {
 
 export function updateAiModelApi(
   provider: AiModelRecord['provider'],
-  input: Pick<AiModelRecord, 'purpose' | 'enabled' | 'priority' | 'unitCredits'> & {
+  input: Pick<
+    AiModelRecord,
+    'enabled' | 'priority' | 'purpose' | 'unitCredits'
+  > & {
     expectedRevision: number;
     apiKey?: null | string;
   },

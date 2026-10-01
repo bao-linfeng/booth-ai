@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import type { ApplicabilityQuestion } from '#/api/core/applicability-questions';
+
+import { ref } from 'vue';
+
 import { Page } from '@vben/common-ui';
+
 import { Button, message, Modal, Tag, Tooltip } from 'ant-design-vue';
+
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { deleteQuestionApi, updateQuestionApi } from '#/api/core/applicability-questions';
+import {
+  deleteQuestionApi,
+  updateQuestionApi,
+} from '#/api/core/applicability-questions';
+
 import QuestionFormModal from './components/QuestionFormModal.vue';
 import { createFormOptions, createGridOptions } from './options';
-import { ref } from 'vue';
 
 const formModalRef = ref<InstanceType<typeof QuestionFormModal>>();
 const [Grid, gridApi] = useVbenVxeGrid({
@@ -59,7 +67,8 @@ function handleDelete(row: ApplicabilityQuestion) {
 
       <template #helpTextPreview="{ row }">
         <span class="text-xs font-mono text-gray-500">
-          {{ row.helpText?.slice(0, 60) }}{{ row.helpText?.length > 60 ? '...' : '' }}
+          {{ row.helpText?.slice(0, 60)
+          }}{{ row.helpText?.length > 60 ? '...' : '' }}
         </span>
       </template>
 

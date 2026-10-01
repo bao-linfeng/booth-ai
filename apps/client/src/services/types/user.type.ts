@@ -15,6 +15,7 @@ export interface CurrentUser {
   roles: string[]
   permissions: string[]
   lastSyncedAt: string
+  loginSource: 'password' | 'sso_token'
 }
 
 export interface LoginResult {

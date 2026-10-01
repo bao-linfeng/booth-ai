@@ -1,6 +1,6 @@
 import { requestClient } from '#/api/request';
 
-export type TemplatePurpose = 'artwork' | 'theme';
+export type TemplatePurpose = 'artwork' | 'filter' | 'theme';
 
 export interface PromptTemplate {
   id: string;

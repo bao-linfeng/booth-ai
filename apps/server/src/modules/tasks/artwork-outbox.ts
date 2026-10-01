@@ -1,13 +1,13 @@
 import type pg from 'pg';
 import type { Queue } from 'bullmq';
 import { ARTWORK_TASK_NAME } from '../../infra/queue.js';
-import { settleArtworkJob } from './artwork-worker.js';
+import { settleArtworkJob, type PublishArtworkEvent } from './artwork-worker.js';
 
-export async function dispatchArtworkOutbox(database: pg.Pool, queue: Queue): Promise<void> {
+export async function dispatchArtworkOutbox(database: pg.Pool, queue: Queue, publish: PublishArtworkEvent = async () => {}): Promise<void> {
   const abandoned = (await database.query<{ id: string }>(`SELECT id FROM artwork_jobs
     WHERE status IN ('running','settling') AND updated_at<now()-interval '15 minutes'
       AND (lease_until IS NULL OR lease_until<now()) ORDER BY updated_at LIMIT 10`)).rows;
-  for (const { id } of abandoned) await settleArtworkJob(database, id);
+  for (const { id } of abandoned) await settleArtworkJob(database, id, undefined, publish);
   const client = await database.connect();
   try {
     await client.query('BEGIN');
@@ -36,6 +36,7 @@ export async function dispatchArtworkOutbox(database: pg.Pool, queue: Queue): Pr
       );
     }
     await client.query('COMMIT');
+    for (const { jobId } of pending.rows) await publish(jobId, { status: 'queued' }).catch(() => {});
 
   } catch (e) {
     await client.query('ROLLBACK');

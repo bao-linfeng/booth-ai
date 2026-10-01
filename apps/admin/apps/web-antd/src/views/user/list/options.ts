@@ -42,6 +42,13 @@ export const createGridOptions = () => ({
       slots: { default: 'status' },
     },
     { field: 'createdAt', title: '创建时间', minWidth: 180 },
+    {
+      field: 'action',
+      title: '操作',
+      width: 80,
+      fixed: 'right' as const,
+      slots: { default: 'action' },
+    },
   ],
   pagerConfig: { total: 0, currentPage: 1, pageSize: 20, enabled: true },
   proxyConfig: {

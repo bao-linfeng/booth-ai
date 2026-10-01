@@ -26,8 +26,8 @@ const [Form, formApi] = useVbenForm({
       if (type.value === '新增') {
         await createPromptTemplateApi({
           purpose: values.purpose,
-          industryId: values.industryId || null,
-          styleId: values.styleId || null,
+          industryId: values.purpose === 'filter' ? null : (values.industryId || null),
+          styleId: values.purpose === 'filter' ? null : (values.styleId || null),
           body: values.body,
         });
       } else {
@@ -58,6 +58,7 @@ const [Form, formApi] = useVbenForm({
       componentProps: {
         placeholder: '请选择',
         options: [
+          { label: 'AI智选', value: 'filter' },
           { label: '换主题', value: 'theme' },
           { label: '四面图', value: 'artwork' },
         ],
@@ -68,6 +69,12 @@ const [Form, formApi] = useVbenForm({
       component: 'Select',
       fieldName: 'industryId',
       label: '行业',
+      dependencies: {
+        triggerFields: ['purpose'],
+        show(values) {
+          return values.purpose !== 'filter';
+        },
+      },
       componentProps: {
         placeholder: '留空表示通用（适用所有行业）',
         allowClear: true,
@@ -79,6 +86,12 @@ const [Form, formApi] = useVbenForm({
       component: 'Select',
       fieldName: 'styleId',
       label: '风格',
+      dependencies: {
+        triggerFields: ['purpose'],
+        show(values) {
+          return values.purpose !== 'filter';
+        },
+      },
       componentProps: {
         placeholder: '留空表示通用（适用所有风格）',
         allowClear: true,

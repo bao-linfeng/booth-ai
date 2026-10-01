@@ -1,6 +1,6 @@
 import { emptyRequirement, rulesVersion, type Catalog, type Requirement } from './domain.js';
 
-export function parseRequirement(text: string, form: Requirement, catalog: Catalog) {
+export function parseRequirement(text: string, form: Requirement, catalog: Catalog, recognizedEvidence: string[] = []) {
   const requirement = structuredClone(form);
   const fieldSources: Record<string, { source: 'form' | 'text' | 'derived'; evidence?: string }> = {};
   const overrides: { field: string; previousValue: unknown; value: unknown; evidence: string }[] = [];
@@ -134,7 +134,16 @@ export function parseRequirement(text: string, form: Requirement, catalog: Catal
     clarify('keywords', '同一功能同时被要求和禁止，请修正。');
   }
   
-  const remainder = [...normalized].map((char, index) => consumed.some(([start, end]) => index >= start && index < end) ? ' ' : char).join('');
+  for (const evidence of recognizedEvidence) {
+    let start = 0;
+    while (start < normalized.length) {
+      const index = normalized.indexOf(evidence, start);
+      if (index < 0 || !evidence.length) break;
+      consumed.push([index, index + evidence.length]);
+      start = index + evidence.length;
+    }
+  }
+  const remainder = normalized.split('').map((char, index) => consumed.some(([start, end]) => index >= start && index < end) ? ' ' : char).join('');
   const unhandledText = remainder.split(/[，,。；;\n]/).map(value => value.trim()).filter(value => value && !/^(?:的|展台|展位|风格|行业|开口|需要|有|和|与|及|想要|希望|必须|不要|不需要|带|一个|一点|简洁|改成|改为|\s)+$/.test(value));
   
   if (unhandledText.length) {

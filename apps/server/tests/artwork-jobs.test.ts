@@ -5,6 +5,66 @@ import type { Queue } from 'bullmq';
 import sharp from 'sharp';
 import { normalizeArtworkImage } from '../src/modules/tasks/artwork-worker.js';
 import { dispatchArtworkOutbox } from '../src/modules/tasks/artwork-outbox.js';
+import { DIRECTIONS, DIRECTION_LABELS, loadArtworkSnapshot } from '../src/modules/client/artwork-jobs/service.js';
+
+test('default artwork snapshot freezes single-reference reconstruction and resolves each requested camera direction', async () => {
+  const source = { sourceAssetId: 'theme-asset', versionId: 'theme-version', objectKey: 'selected-theme.png', checksum: 'theme-checksum',
+    input: { industryId: 'industry', styleId: 'style', brandColors: [], brandKeywords: '' } };
+  let templateEnabled = false;
+  const template = { id: 'template', revision: 3, body: '{{industryLabel}}/{{styleLabel}}/{{directionLabel}}', createdAt: new Date(), updatedAt: new Date() };
+  const pool = { query: async (sql: string) => {
+    if (sql.includes('FROM theme_jobs')) return { rows: [source] };
+    if (sql.includes('FROM ai_model_configs')) return { rows: [{ purpose: 'artwork', provider: 'openai', enabled: true,
+      priority: 1, unitCredits: 5, revision: 2, credentialCiphertext: Buffer.from('configured') }] };
+    if (sql.includes('FROM dictionary_items')) return { rows: [{ id: 'industry', label: '汽车' }, { id: 'style', label: '科技未来' }] };
+    if (sql.includes('FROM prompt_templates')) return { rows: templateEnabled ? [template] : [] };
+    throw new Error(`Unexpected query: ${sql}`);
+  } } as unknown as pg.Pool;
+  const context = { schemeCode: 'SCHEME', themeJobId: 'theme-job', resultId: 'theme-result', selectionRevision: 1 };
+  const snapshot = await loadArtworkSnapshot(pool, 'user', context);
+  assert.deepEqual(snapshot.source, { assetId: source.sourceAssetId, versionId: source.versionId, objectKey: source.objectKey, checksum: source.checksum });
+  assert.equal(snapshot.template, null);
+  assert.equal(snapshot.pipelineRevision, 3);
+  assert.match(snapshot.prompt, /行业：汽车。风格：科技未来。品牌色：沿用参考图已有配色/);
+  assert.match(snapshot.prompt, /唯一一张主题效果参考图/);
+  assert.match(snapshot.prompt, /最小必要的合理补全/);
+  assert.match(snapshot.prompt, /不把可见正面机械复制到不可见面/);
+  assert.match(snapshot.prompt, /观察者左手一侧定义为左侧，右手一侧定义为右侧/);
+  assert.match(snapshot.prompt, /原来所属的物理墙面或柜体/);
+  assert.match(snapshot.prompt, /视角、几何与遮挡正确性优先于品牌画面的完整展示/);
+  const directionPrompts = snapshot.directionPrompts;
+  assert.ok(directionPrompts);
+  assert.deepEqual(Object.keys(directionPrompts), [...DIRECTIONS]);
+  for (const direction of DIRECTIONS) {
+    const prompt: string = directionPrompts[direction];
+    assert.ok(prompt.includes(`本次只输出${DIRECTION_LABELS[direction]}一张，不输出其他方向`));
+    assert.ok(prompt.includes(`最终核对：本次目标是${DIRECTION_LABELS[direction]}。`));
+    assert.equal(prompt.match(/【本次相机：/g)?.length, 1);
+    assert.ok(prompt.includes(`【本次相机：${DIRECTION_LABELS[direction]} / ${direction.toUpperCase()}`));
+    assert.ok(!prompt.includes('{{'));
+  }
+  const { left, right } = directionPrompts;
+  assert.match(left, /沿\+X方向水平从左向右观察；画面向右为-Y/);
+  assert.match(right, /沿-X方向水平从右向左观察；画面向右为\+Y/);
+  assert.match(left, /前部\/入口在画面右侧，展台后部\/后墙在画面左侧/);
+  assert.match(right, /前部\/入口在画面左侧，展台后部\/后墙在画面右侧/);
+  assert.match(left, /物理左侧物体离相机更近/);
+  assert.match(right, /物理右侧物体离相机更近/);
+  assert.match(left, /在画面左端只能呈现实际厚度、端面或被遮挡的部分/);
+  assert.match(right, /在画面右端只能呈现实际厚度、端面或被遮挡的部分/);
+  assert.match(left, /不透明左侧墙存在时应看到它的外侧/);
+  assert.match(right, /不透明右侧墙存在时应看到它的外侧/);
+  assert.match(left, /不得停在左前方或左后方/);
+  assert.match(right, /不得停在右前方或右后方/);
+  templateEnabled = true;
+  const custom = await loadArtworkSnapshot(pool, 'user', context);
+  assert.deepEqual(custom.template, { id: template.id, revision: template.revision, body: template.body });
+  assert.ok(custom.prompt.startsWith('汽车/科技未来/{{directionLabel}}\n'));
+  assert.ok(!custom.prompt.includes('一、从单张参考图理解空间'));
+  for (const direction of DIRECTIONS) {
+    assert.equal(custom.directionPrompts?.[direction], custom.prompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction]));
+  }
+});
 
 test('artwork acceptance converts actual JPEG pixels to PNG and rejects low resolution, corrupt and oversized content', async () => {
   const jpeg = await sharp({ create: { width: 1536, height: 1024, channels: 3, background: '#345678' } }).jpeg().toBuffer();
@@ -30,7 +90,8 @@ test('artwork outbox rolls back when queue unavailable and marks dispatch only a
   assert.equal(events.at(-1), 'ROLLBACK');
   assert.ok(!events.some(e => e.includes('picked_at = now()') || e === 'COMMIT'));
   events.length = 0;
-  await dispatchArtworkOutbox(pool, { add: async (_name: string, _body: unknown, options: { jobId: string }) => { assert.equal(options.jobId, 'task'); events.push('ENQUEUED'); } } as unknown as Queue);
+  await dispatchArtworkOutbox(pool, { add: async (_name: string, _body: unknown, options: { jobId: string }) => { assert.equal(options.jobId, 'task'); events.push('ENQUEUED'); } } as unknown as Queue,
+    async (id, event) => { assert.equal(id, 'task'); assert.deepEqual(event, { status: 'queued' }); assert.equal(events.at(-1), 'COMMIT'); events.push('PUBLISHED'); });
   assert.ok(events.indexOf('ENQUEUED') < events.findIndex(e => e.includes('picked_at = now()')));
-  assert.equal(events.at(-1), 'COMMIT');
+  assert.equal(events.at(-1), 'PUBLISHED');
 });

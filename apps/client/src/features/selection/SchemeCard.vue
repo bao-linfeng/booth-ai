@@ -7,7 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import SchemeGallery from './SchemeGallery.vue'
 import type { MatchItem, PendingConfirmation } from './types'
 
-const props = defineProps<{ item: MatchItem; index: number; preview?: boolean }>()
+const props = defineProps<{ item: MatchItem; index: number; preview?: boolean; searchId?: string }>()
 const emit = defineEmits<{ 'answer-applicability': [id: string, value: boolean] }>()
 const active = defineModel<number>('active', { default: 0 })
 </script>
@@ -59,7 +59,7 @@ const active = defineModel<number>('active', { default: 0 })
         <p v-if="item.matchType === 'random'" class="text-xs text-muted-foreground">随机推荐，适用条件待确认。</p>
         <p v-for="miss in item.preferenceMisses" :key="miss" class="text-xs text-muted-foreground">偏好提示：{{ miss }}</p>
         <Button as-child variant="outline" class="mt-auto justify-between">
-          <RouterLink :to="{ path: `${preview ? '/ai-selection/preview/schemes' : '/schemes'}/${encodeURIComponent(item.code)}` }">查看方案详情<ArrowUpRight class="size-4" /></RouterLink>
+          <RouterLink :to="{ path: `${preview ? '/ai-selection/preview/schemes' : '/schemes'}/${encodeURIComponent(item.code)}`, query: !preview && searchId ? { searchId } : {} }">查看方案详情<ArrowUpRight class="size-4" /></RouterLink>
         </Button>
       </div>
     </CardContent>

@@ -34,7 +34,7 @@ async function load() {
   }
 }
 async function save(row: AiModelRecord) {
-   saving.value = modelKey(row);
+  saving.value = modelKey(row);
   try {
     await updateAiModelApi(row.provider, {
       purpose: row.purpose,
@@ -88,7 +88,11 @@ onMounted(load);
         v-for="purpose in ['selection_parse', 'theme', 'artwork'] as const"
         :key="purpose"
         :title="
-          purpose === 'artwork' ? '四面平面素材 · 图像模型' : purpose === 'theme' ? 'AI 换主题 · 图像模型' : 'AI 智选 · 解析模型'
+          purpose === 'artwork'
+            ? '四面平面素材 · 图像模型'
+            : purpose === 'theme'
+              ? 'AI 换主题 · 图像模型'
+              : 'AI 智选 · 解析模型'
         "
         :loading="loading"
       >

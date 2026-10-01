@@ -6,7 +6,7 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { registerThemeModelRoutes } from '../src/modules/client/theme-jobs/index.js';
 import type { createStorage } from '../src/infra/storage.js';
-import { themeCacheKey, normalizeThemeInput, type GenerationSnapshot, type ThemeParameters } from '../src/modules/client/theme-jobs/service.js';
+import { themeCacheKey, normalizeThemeInput, type GenerationSnapshot, type ThemeParameters, type ThemeOfferData } from '../src/modules/client/theme-jobs/service.js';
 
 const jobId = '00000000-0000-4000-8000-000000000001';
 const resultId = '00000000-0000-4000-8000-000000000002';
@@ -98,6 +98,65 @@ test('creating a theme job writes the outbox entry in the same transaction', asy
   assert.ok(statements.findIndex(sql => sql.includes('INSERT INTO theme_job_outbox')) < statements.indexOf('COMMIT'));
   assert.equal(response.json().data.cacheHit, false);
   assert.equal(response.json().data.credits.heldCredits, 10);
+});
+
+test('theme offer pins the complete normalized brief and submission persists the same prompt', async t => {
+  let savedSnapshot: GenerationSnapshot | undefined;
+  const { app, offers } = await setup((sql, params) => {
+    if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
+    if (sql.includes('availableBalance')) return { rows: [{ availableBalance: 100 }] };
+    if (sql.includes('FROM theme_jobs')) return { rows: [] };
+    if (sql.includes('INSERT INTO theme_jobs')) {
+      savedSnapshot = JSON.parse(params?.[11] as string) as GenerationSnapshot;
+      return { rows: [{ id: jobId, status: 'pending', cacheHit: false, requestedCount: 1, usableCount: 0, unitCredits: 10 }] };
+    }
+    if (sql.includes('INSERT INTO')) return { rows: [] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  t.after(() => app.close());
+  const input = { ...parameters, input: { ...parameters.input, brandColors: ['#aabbcc', '#AABBCC', '#123456'], brandKeywords: '  展示储能产品，不要树叶  ' } };
+  const offer = await offerFor(app, input);
+  const storedOffer = JSON.parse(offers.get(`theme-offer:${offer.id}`)!) as ThemeOfferData;
+  assert.deepEqual(JSON.parse(storedOffer.snapshot.prompt.split('\n')[2]!), {
+    行业: '科技', 风格: '现代', 品牌色: '#AABBCC, #123456', 品牌关键词及补充要求: '展示储能产品，不要树叶',
+  });
+  const response = await app.inject({ method: 'POST', url: '/theme-jobs', headers,
+    payload: { ...input, offerId: offer.id, requestKey: '00000000-0000-4000-8000-000000000004' } });
+  assert.equal(response.statusCode, 202, response.body);
+  assert.equal(savedSnapshot?.prompt, storedOffer.snapshot.prompt);
+});
+
+test('theme offers and submissions persist the owning search and reject unrelated search context', async t => {
+  const searchId = '00000000-0000-4000-8000-000000000010';
+  const wrongSearchId = '00000000-0000-4000-8000-000000000011';
+  const { app } = await setup((sql, params) => {
+    if (sql.includes('FROM selection_searches')) {
+      assert.equal(params?.[1], userId);
+      assert.equal(params?.[2], 'S-1');
+      return { rows: params?.[0] === searchId ? [{ exists: 1 }] : [] };
+    }
+    if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
+    if (sql.includes('availableBalance')) return { rows: [{ availableBalance: 100 }] };
+    if (sql.includes('FROM theme_jobs')) return { rows: [] };
+    if (sql.includes('INSERT INTO theme_jobs')) {
+      assert.ok(sql.includes('search_id'));
+      assert.equal(params?.[15], searchId);
+      return { rows: [{ id: jobId, status: 'pending', cacheHit: false, requestedCount: 1, usableCount: 0, unitCredits: 10 }] };
+    }
+    if (sql.includes('INSERT INTO')) return { rows: [] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  t.after(() => app.close());
+  const input = { ...parameters, searchId };
+  const offer = await offerFor(app, input);
+  const body = { ...input, offerId: offer.id, requestKey: '00000000-0000-4000-8000-000000000004' };
+  const accepted = await app.inject({ method: 'POST', url: '/theme-jobs', headers, payload: body });
+  assert.equal(accepted.statusCode, 202, accepted.body);
+  const rejected = await app.inject({ method: 'POST', url: '/theme-offers', headers, payload: { ...input, searchId: wrongSearchId } });
+  assert.equal(rejected.statusCode, 409);
+  const mismatched = await app.inject({ method: 'POST', url: '/theme-jobs', headers, payload: { ...body, searchId: undefined } });
+  assert.equal(mismatched.statusCode, 409);
+  assert.match(mismatched.body, /Submitted parameters do not match the offer/);
 });
 
 test('cache offer and submission reuse assets for free without an outbox or reservation', async t => {
@@ -210,7 +269,8 @@ test('cache fingerprint normalizes input and isolates all generation dependencie
   assert.notEqual(key, themeCacheKey('other-user', input, snapshot));
   for (const changed of [ { ...snapshot, source: { ...snapshot.source, checksum: 'changed' } },
     { ...snapshot, mask: { ...snapshot.source, assetId: 'mask' } }, { ...snapshot, template: { id: 'template', revision: 2, body: 'new' } },
-    { ...snapshot, models: [{ ...snapshot.models[0]!, revision: 2 }] }, { ...snapshot, pipelineRevision: 2 } ]) {
+    { ...snapshot, models: [{ ...snapshot.models[0]!, revision: 2 }] }, { ...snapshot, pipelineRevision: 2 },
+    { ...snapshot, prompt: 'updated default prompt' } ]) {
     assert.notEqual(key, themeCacheKey(userId, input, changed));
   }
 });

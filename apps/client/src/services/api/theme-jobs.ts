@@ -1,4 +1,4 @@
-import { apiFetch } from '@/lib/api-client'
+import { API_BASE_URL, apiFetch } from '@/lib/api-client'
 
 export interface ThemeOffer {
   available: boolean
@@ -37,6 +37,7 @@ export interface ThemeJobResult {
 export interface ThemeJob {
   jobId: string
   schemeCode: string
+  searchId: string | null
   status: 'pending' | 'queued' | 'running' | 'settling' | 'succeeded' | 'partially_succeeded' | 'failed'
   phase: string | null
   requestedCount: number
@@ -58,7 +59,8 @@ export async function getThemeOffer(
   schemeCode: string,
   sourceAssetId: string,
   input?: ThemeJobInput,
-  requestedCount?: number
+  requestedCount?: number,
+  searchId?: string
 ): Promise<ThemeOffer> {
   const res = await apiFetch<{ code: number; data: ThemeOffer }>(
     '/api/v1/client/theme-offers',
@@ -70,6 +72,7 @@ export async function getThemeOffer(
         ...(input ? { input } : {}),
         ...(requestedCount ? { requestedCount } : {}),
         cacheMode: 'reuse',
+        ...(searchId ? { searchId } : {}),
       },
     }
   )
@@ -84,6 +87,7 @@ export async function createThemeJob(payload: {
   input: ThemeJobInput
   requestedCount: number
   cacheMode: 'reuse' | 'refresh'
+  searchId?: string
 }): Promise<{ jobId: string; status: string; pollAfterMs: number }> {
   const res = await apiFetch<{ code: number; data: { jobId: string; status: string; pollAfterMs: number } }>(
     '/api/v1/client/theme-jobs',
@@ -109,7 +113,7 @@ export async function createThemeJobEventsTicket(jobId: string): Promise<string>
 
 export function openThemeJobEvents(jobId: string, ticket: string, onUpdate: () => void, onError: () => void): EventSource {
   const events = new EventSource(
-    `/api/v1/client/theme-jobs/${encodeURIComponent(jobId)}/events?ticket=${encodeURIComponent(ticket)}`
+    `${API_BASE_URL.replace(/\/+$/, '')}/api/v1/client/theme-jobs/${encodeURIComponent(jobId)}/events?ticket=${encodeURIComponent(ticket)}`
   )
   events.addEventListener('update', onUpdate)
   events.onerror = onError

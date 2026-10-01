@@ -10,6 +10,7 @@ export interface SessionData {
   username: string;
   externalJwtCiphertext: string;
   expiresAt: number;
+  loginSource: 'password' | 'sso_token';
 }
 
 function tokenKey(token: string): string {

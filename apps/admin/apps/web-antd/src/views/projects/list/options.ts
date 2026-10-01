@@ -1,4 +1,6 @@
-import { listProjectsApi, statusLabels, type ProjectQuery } from '#/api/core/projects';
+import type { ProjectQuery } from '#/api/core/projects';
+
+import { listProjectsApi, statusLabels } from '#/api/core/projects';
 
 export const createFormOptions = () => ({
   schema: [
@@ -67,7 +69,12 @@ export const createGridOptions = () => ({
   height: 'auto',
   toolbarConfig: { custom: true, refresh: true, zoom: true },
   columns: [
-    { field: 'projectNo', title: '项目编号', minWidth: 160, fixed: 'left' as const },
+    {
+      field: 'projectNo',
+      title: '项目编号',
+      minWidth: 160,
+      fixed: 'left' as const,
+    },
     {
       field: 'sourceType',
       title: '来源',

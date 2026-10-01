@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Project } from '#/api/core/projects';
+
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -7,7 +9,7 @@ import { formatDateTime } from '@vben/utils';
 import { Button, Tag } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { statusLabels, type Project } from '#/api/core/projects';
+import { statusLabels } from '#/api/core/projects';
 
 import { createFormOptions, createGridOptions } from './options';
 
@@ -30,7 +32,11 @@ function handleProcess(row: Project) {
   <Page auto-content-height>
     <Grid>
       <template #source="{ row }">
-        {{ (row as Project).sourceType === 'quote_request' ? '报价申请' : '人工需求' }}
+        {{
+          (row as Project).sourceType === 'quote_request'
+            ? '报价申请'
+            : '人工需求'
+        }}
       </template>
 
       <template #budget="{ row }">

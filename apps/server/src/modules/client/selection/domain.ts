@@ -1,4 +1,4 @@
-export const rulesVersion = 'selection-2026-09-29';
+export const rulesVersion = 'selection-2026-10-01';
 
 export interface MatchDiagnostics {
   reviewedPublished: number;

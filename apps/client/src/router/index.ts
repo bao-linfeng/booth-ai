@@ -7,6 +7,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/artwork-jobs/:jobId', name: 'ArtworkJob', component: () => import('@/pages/ArtworkJob.vue'), meta: { title: '四面素材与交付' } },
   { path: '/my-projects', name: 'MyProjects', component: () => import('@/pages/MyProjects.vue'), meta: { title: '我的项目' } },
   { path: '/my-projects/:projectId', name: 'MyProjectDetail', component: () => import('@/pages/MyProjects.vue'), meta: { title: '项目详情' } },
+  { path: '/my-searches', name: 'MySearches', component: () => import('@/pages/MySearches.vue'), meta: { title: '检索记录' } },
   { path: '/manual-request', name: 'ManualRequest', component: () => import('@/pages/ManualRequest.vue'), meta: { title: '人工需求申请' } },
   {
     path: '/schemes/:code/quote',

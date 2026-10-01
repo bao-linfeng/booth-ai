@@ -40,6 +40,8 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     const legacyVersion = (await pool.query<{ id: string }>("INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum) VALUES ($1,'legacy.png','legacy.png','image/png',10,'legacy-hash') RETURNING id", [legacyAsset])).rows[0]!.id;
     await pool.query('INSERT INTO theme_job_results(job_id,ordinal,asset_id) VALUES ($1,1,$2)', [legacy, legacyAsset]);
     await pool.query(await readFile(new URL('../migrations/040_theme_result_cache.sql', import.meta.url), 'utf8'));
+    await pool.query(await readFile(new URL('../migrations/027_selection_analytics.sql', import.meta.url), 'utf8'));
+    await pool.query(await readFile(new URL('../migrations/044_theme_job_search.sql', import.meta.url), 'utf8'));
     assert.equal((await pool.query('SELECT asset_version_id FROM theme_job_results WHERE job_id=$1', [legacy])).rows[0].asset_version_id, legacyVersion);
     assert.equal((await pool.query('SELECT cache_key FROM theme_jobs WHERE id=$1', [legacy])).rows[0].cache_key, null);
     for (const [code, item] of [['industry', industry], ['style', style]]) {
@@ -76,6 +78,11 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     const initial = await submit(offer.id);
     assert.equal(initial.statusCode, 202, initial.body);
     const jobId = initial.json().data.jobId as string;
+    const acceptedPrompt = (await pool.query('SELECT generation_snapshot FROM theme_jobs WHERE id=$1', [jobId])).rows[0].generation_snapshot.prompt as string;
+    assert.match(acceptedPrompt, /#AABBCC\/brand/);
+    assert.deepEqual(JSON.parse(acceptedPrompt.split('\n')[2]!), {
+      行业: 'industry', 风格: 'style', 品牌色: '#AABBCC', 品牌关键词及补充要求: 'brand',
+    });
     await pool.query("UPDATE prompt_templates SET body='changed after acceptance' WHERE id=$1", [template]);
     const originalFetch = globalThis.fetch;
     let providerCalls = 0;
@@ -83,7 +90,7 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
       const url = String(input);
       if (url.includes('silo:9000')) return new Response(new Uint8Array([1, 2, 3]));
       assert.equal(url, 'https://api.openai.com/v1/images/edits');
-      assert.equal((init?.body as FormData).get('prompt'), '#AABBCC/brand');
+      assert.equal((init?.body as FormData).get('prompt'), acceptedPrompt);
       providerCalls++;
       return Response.json({ data: [{ b64_json: 'aW1hZ2U=' }] });
     };

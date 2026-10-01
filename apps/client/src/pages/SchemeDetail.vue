@@ -427,7 +427,7 @@ onMounted(async () => {
                    as-child
                    class="w-full"
                  >
-                   <RouterLink :to="preview ? `/ai-selection/preview/schemes/${item.code}/theme` : `/schemes/${item.code}/theme`">
+                    <RouterLink :to="{ path: preview ? `/ai-selection/preview/schemes/${item.code}/theme` : `/schemes/${encodeURIComponent(item.code)}/theme`, query: !preview && typeof route.query.searchId === 'string' ? { searchId: route.query.searchId } : {} }">
                      <Palette class="mr-2 size-4" />AI 换主题
                    </RouterLink>
                  </Button>

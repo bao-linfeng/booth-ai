@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import type { ApplicabilityQuestion } from '#/api/core/applicability-questions';
+
 import { ref } from 'vue';
+
 import { useVbenModal } from '@vben/common-ui';
+
 import { message } from 'ant-design-vue';
+
 import { useVbenForm } from '#/adapter/form';
-import { createQuestionApi, updateQuestionApi } from '#/api/core/applicability-questions';
+import {
+  createQuestionApi,
+  updateQuestionApi,
+} from '#/api/core/applicability-questions';
 
 const emit = defineEmits(['reload']);
 const type = ref<'新增' | '编辑'>('新增');

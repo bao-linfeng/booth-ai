@@ -98,8 +98,8 @@ async function handleToggle(row: PromptTemplate) {
 
       <!-- 列插槽 -->
       <template #purpose="{ row }">
-        <Tag :color="row.purpose === 'theme' ? 'blue' : 'orange'">
-          {{ row.purpose === 'theme' ? '换主题' : '四面图' }}
+        <Tag :color="row.purpose === 'theme' ? 'blue' : row.purpose === 'filter' ? 'green' : 'orange'">
+          {{ row.purpose === 'theme' ? '换主题' : row.purpose === 'filter' ? 'AI智选' : '四面图' }}
         </Tag>
       </template>
 

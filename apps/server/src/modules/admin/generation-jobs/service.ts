@@ -138,7 +138,7 @@ async function getArtworkGenerationJob(pool: pg.Pool, jobId: string, storage?: {
   const { snapshot, ...publicJob } = job;
   return { ...jobMetrics({ ...publicJob, jobType: 'artwork' }), isSelected: false, industryLabel: null, styleLabel: null,
     sourcePreviewUrl: storage && snapshot ? await storage.signDownload(snapshot.source.objectKey, 300) : null,
-    generationSnapshot: snapshot ? { model: snapshot.model, template: snapshot.template, prompt: snapshot.prompt, quality: snapshot.quality, pipelineRevision: snapshot.pipelineRevision } : null,
+    generationSnapshot: snapshot ? { model: snapshot.model, template: snapshot.template, prompt: snapshot.prompt, directionPrompts: snapshot.directionPrompts, quality: snapshot.quality, pipelineRevision: snapshot.pipelineRevision } : null,
     themeSelection: { themeJobId: job.themeJobId, resultId: job.themeResultId, selectionRevision: job.themeSelectionRevision },
     directions, missingDirections: DIRECTIONS.filter(d => !files.some(f => f.direction === d)), mappingStatus: 'unresolved',
     results: await Promise.all(files.map(async (file, index) => ({ id: file.assetId, ordinal: index + 1, direction: file.direction, assetId: file.assetId,

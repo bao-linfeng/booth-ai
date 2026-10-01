@@ -3,10 +3,12 @@ import type pg from 'pg';
 import { listAiModels, type AiModelConfig } from '../../../infra/ai-models.js';
 import { transaction } from '../../../infra/database.js';
 import { getActivePromptTemplate } from '../../admin/prompt-templates/service.js';
+import { buildThemePrompt } from './prompt.js';
 
 export type ThemeInput = { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
 export type ThemeParameters = {
   schemeCode: string; sourceAssetId: string; input: ThemeInput; requestedCount: number; cacheMode: 'reuse' | 'refresh';
+  searchId?: string;
 };
 export type AssetSnapshot = { assetId: string; versionId: string; objectKey: string; checksum: string };
 export type GenerationSnapshot = {
@@ -41,7 +43,7 @@ function hash(value: unknown): string {
 }
 
 export function themeRequestHash(parameters: ThemeParameters): string {
-  return hash([parameters.schemeCode, parameters.sourceAssetId, normalizeThemeInput(parameters.input), parameters.requestedCount, parameters.cacheMode]);
+  return hash([parameters.schemeCode, parameters.sourceAssetId, normalizeThemeInput(parameters.input), parameters.requestedCount, parameters.cacheMode, parameters.searchId ?? null]);
 }
 
 export function themeCacheKey(userId: string, parameters: ThemeParameters, snapshot: GenerationSnapshot): string {
@@ -80,10 +82,7 @@ export async function loadGenerationSnapshot(pool: pg.Pool, parameters: ThemePar
   if (!models.length) throw Object.assign(new Error('Theme models unavailable'), { statusCode: 409, reason: 'MODEL_UNAVAILABLE' });
   const template = await getActivePromptTemplate(pool, 'theme', parameters.input.industryId, parameters.input.styleId);
   const input = normalizeThemeInput(parameters.input);
-  const prompt = template ? template.body.replace(/{{(brandColors|brandKeywords|industryLabel|styleLabel)}}/g, (_match, variable: string) => ({
-    brandColors: input.brandColors?.join(', ') ?? '无', brandKeywords: input.brandKeywords ?? '无', industryLabel, styleLabel,
-  })[variable] ?? '') :
-    `请根据以下要求对展台展位图进行AI换主题处理：\n行业：${industryLabel}，风格：${styleLabel}，品牌色：${input.brandColors?.join('、') ?? '无'}，关键词：${input.brandKeywords ?? '无'}\n保持展台结构不变，仅替换主题风格、色彩和装饰元素。`;
+  const prompt = buildThemePrompt(input, industryLabel, styleLabel, template?.body);
   return { source, mask, models, template: template ? { id: template.id, revision: template.revision, body: template.body } : null, prompt, pipelineRevision: 1 };
 }
 
@@ -119,7 +118,7 @@ function submission(job: JobSummary, reusedRequest: boolean) {
 export async function replayThemeRequest(database: Database, userId: string, requestKey: string, parameters: ThemeParameters) {
   const job = (await database.query<JobSummary & ThemeParameters>(
     `SELECT id, status, cache_hit AS "cacheHit", requested_count AS "requestedCount", usable_count AS "usableCount",
-            unit_credits AS "unitCredits", scheme_code AS "schemeCode", source_asset_id AS "sourceAssetId", input, cache_mode AS "cacheMode"
+             unit_credits AS "unitCredits", scheme_code AS "schemeCode", source_asset_id AS "sourceAssetId", input, cache_mode AS "cacheMode", search_id AS "searchId"
      FROM theme_jobs WHERE user_id = $1 AND request_key = $2`, [userId, requestKey],
   )).rows[0];
   if (!job) return null;
@@ -129,8 +128,19 @@ export async function replayThemeRequest(database: Database, userId: string, req
   return submission(job, true);
 }
 
+export async function assertThemeSearch(database: Database, userId: string, parameters: ThemeParameters): Promise<void> {
+  if (!parameters.searchId) return;
+  const result = await database.query(
+    `SELECT 1 FROM selection_searches s WHERE s.id = $1 AND s.user_id = $2 AND s.status = 'matched'
+     AND EXISTS (SELECT 1 FROM jsonb_array_elements(s.result_snapshot) item WHERE item->>'code' = $3)`,
+    [parameters.searchId, userId, parameters.schemeCode],
+  );
+  if (!result.rows[0]) throw Object.assign(new Error('Search does not contain this scheme'), { statusCode: 409, reason: 'SEARCH_UNAVAILABLE' });
+}
+
 export async function createThemeJob(pool: pg.Pool, userId: string, requestKey: string, offerId: string,
   parameters: ThemeParameters, offer: ThemeOfferData) {
+  await assertThemeSearch(pool, userId, parameters);
   if (offer.userId !== userId || themeRequestHash(offer) !== themeRequestHash(parameters)) {
     throw Object.assign(new Error('Submitted parameters do not match the offer'), { statusCode: 409, reason: 'OFFER_MISMATCH' });
   }
@@ -157,13 +167,13 @@ export async function createThemeJob(pool: pg.Pool, userId: string, requestKey: 
     const job = (await client.query<JobSummary>(
       `INSERT INTO theme_jobs
        (user_id, scheme_code, source_asset_id, offer_id, request_key, input, requested_count, cache_mode, status,
-        unit_credits, cache_key, generation_snapshot, cache_hit, cached_from_job_id, usable_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         unit_credits, cache_key, generation_snapshot, cache_hit, cached_from_job_id, usable_count, search_id)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING id, status, cache_hit AS "cacheHit", requested_count AS "requestedCount", usable_count AS "usableCount",
                  unit_credits AS "unitCredits"`,
       [userId, parameters.schemeCode, parameters.sourceAssetId, offerId, requestKey, JSON.stringify(normalizeThemeInput(parameters.input)),
         parameters.requestedCount, parameters.cacheMode, cachedJobId ? 'succeeded' : 'pending', offer.unitCredits, cacheKey,
-        JSON.stringify(snapshot), Boolean(cachedJobId), cachedJobId, cachedJobId ? parameters.requestedCount : 0],
+         JSON.stringify(snapshot), Boolean(cachedJobId), cachedJobId, cachedJobId ? parameters.requestedCount : 0, parameters.searchId ?? null],
     )).rows[0];
     if (!job) throw new Error('Failed to create theme job');
     if (cachedJobId) {

@@ -1,4 +1,4 @@
-import { apiFetch } from '@/lib/api-client'
+import { API_BASE_URL, apiFetch } from '@/lib/api-client'
 
 export type Direction = 'front' | 'back' | 'left' | 'right'
 export const directionLabels: Record<Direction, string> = { front: '正面', back: '背面', left: '左侧', right: '右侧' }
@@ -26,6 +26,15 @@ export async function getArtworkJobs(context: ArtworkContext) {
 }
 export async function getArtworkJob(jobId: string) {
   return (await apiFetch<{ code: number; data: ArtworkJob }>(`/api/v1/client/artwork-jobs/${encodeURIComponent(jobId)}`)).data
+}
+export async function createArtworkJobEventsTicket(jobId: string): Promise<string> {
+  return (await apiFetch<{ code: number; data: { ticket: string } }>(`/api/v1/client/artwork-jobs/${encodeURIComponent(jobId)}/events-ticket`, { method: 'POST', retry: 0 })).data.ticket
+}
+export function openArtworkJobEvents(jobId: string, ticket: string, onUpdate: () => void, onError: () => void): EventSource {
+  const events = new EventSource(`${API_BASE_URL.replace(/\/+$/, '')}/api/v1/client/artwork-jobs/${encodeURIComponent(jobId)}/events?ticket=${encodeURIComponent(ticket)}`)
+  events.addEventListener('update', onUpdate)
+  events.onerror = onError
+  return events
 }
 export async function downloadArtwork(jobId: string, assetId?: string) {
   const suffix = assetId ? `assets/${encodeURIComponent(assetId)}/download` : 'download'

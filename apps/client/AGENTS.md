@@ -50,7 +50,8 @@
 
 ## 状态管理
 
-- **无 Pinia**；状态通过 composables（`src/composables/`）和 `@vueuse/core` 管理。
+- **有 Pinia**（`pinia-plugin-persistedstate` 持久化），Store 定义在 `src/stores/`。
+- 轻量的跨组件状态优先用 composables（`src/composables/`）和 `@vueuse/core` 管理；需要持久化或全局共享的状态放 Store。
 - 全局初始化顺序（`main.ts`）：`initializeTheme()` → `useCollecty()` → 创建 app → 挂载 router → mount。不要改变此顺序。
 
 ---

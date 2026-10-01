@@ -61,8 +61,9 @@ export async function registerAdminAuthRoutes(app: FastifyInstance, config: Conf
     const accessToken = await createSession(redis, {
       site: 'admin', localId, externalUserId: detail.externalUserId, username: detail.username,
       externalJwtCiphertext: encryptJwt(login.externalJwt, config.sessionSecret),
+      loginSource: 'password',
     }, config.sessionTtlSeconds, expiresAt);
-    const user: CurrentUser = toCurrentUser(localId, detail, 'admin');
+    const user: CurrentUser = toCurrentUser(localId, detail, 'admin', 'password');
     return { code: 0, message: 'ok', data: { accessToken, expiresAt, user } };
   });
 

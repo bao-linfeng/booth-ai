@@ -9,7 +9,8 @@ import { activeAiModels, type ActiveAiModel } from '../../infra/ai-models.js';
 import { transaction } from '../../infra/database.js';
 import { getActivePromptTemplate } from '../admin/prompt-templates/service.js';
 import type { createStorage } from '../../infra/storage.js';
-import type { GenerationSnapshot, ThemeInput } from '../client/theme-jobs/service.js';
+import { normalizeThemeInput, type GenerationSnapshot, type ThemeInput } from '../client/theme-jobs/service.js';
+import { buildThemePrompt } from '../client/theme-jobs/prompt.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
 type ThemeJob = { requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string; snapshot: GenerationSnapshot | null };
@@ -222,11 +223,7 @@ export async function processThemeJob(
       const styleLabel = labels.rows.find(row => row.id === job.input.styleId)?.label;
       if (!industryLabel || !styleLabel) throw new Error('Theme dictionary labels not found');
       const template = await getActivePromptTemplate(database, 'theme', job.input.industryId, job.input.styleId);
-      prompt = template ? template.body.replace(/{{(brandColors|brandKeywords|industryLabel|styleLabel)}}/g, (_match, variable: string) => ({
-        brandColors: job.input.brandColors?.join(', ') ?? '无', brandKeywords: job.input.brandKeywords ?? '无',
-        industryLabel, styleLabel,
-      })[variable] ?? '') :
-        `请根据以下要求对展台展位图进行AI换主题处理：\n行业：${industryLabel}，风格：${styleLabel}，品牌色：${job.input.brandColors?.join('、') ?? '无'}，关键词：${job.input.brandKeywords ?? '无'}\n保持展台结构不变，仅替换主题风格、色彩和装饰元素。`;
+      prompt = buildThemePrompt(normalizeThemeInput(job.input), industryLabel, styleLabel, template?.body);
     }
     const maskBuffer = job.snapshot && !job.snapshot.mask ? null :
       await fetchMaskBuffer(database, job.sourceAssetId, config, job.snapshot?.mask?.objectKey);

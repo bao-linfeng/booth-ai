@@ -146,6 +146,68 @@ export async function recordSearch(pool: pg.Pool, input: SearchRecordInput): Pro
   return id;
 }
 
+export async function listUserSearches(
+  pool: pg.Pool,
+  userId: string,
+  query: { page: number; pageSize: number },
+): Promise<{
+  data: Array<{
+    id: string;
+    status: string;
+    mode: string;
+    inputText: string;
+    finalRequirement: unknown;
+    directCount: number;
+    referenceCount: number;
+    randomCount: number;
+    resultCount: number;
+    resultSnapshot: unknown;
+    createdAt: string;
+  }>;
+  total: number;
+  page: number;
+  pageSize: number;
+}> {
+  const [count, rows] = await Promise.all([
+    pool.query<{ total: number }>(
+      `SELECT count(*)::int AS total
+       FROM selection_searches
+       WHERE user_id = $1 AND status = 'matched'`,
+      [userId],
+    ),
+    pool.query<{
+      id: string;
+      status: string;
+      mode: string;
+      inputText: string;
+      finalRequirement: unknown;
+      directCount: number;
+      referenceCount: number;
+      randomCount: number;
+      resultCount: number;
+      resultSnapshot: unknown;
+      createdAt: string;
+    }>(
+      `SELECT id, status, mode, input_text AS "inputText", final_requirement AS "finalRequirement",
+        direct_count AS "directCount", reference_count AS "referenceCount",
+        random_count AS "randomCount", result_count AS "resultCount",
+        result_snapshot AS "resultSnapshot", created_at AS "createdAt"
+       FROM selection_searches
+       WHERE user_id = $1 AND status = 'matched'
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [userId, query.pageSize, (query.page - 1) * query.pageSize],
+    ),
+  ]);
+
+  return {
+    data: rows.rows,
+    total: count.rows[0]?.total ?? 0,
+    page: query.page,
+    pageSize: query.pageSize,
+  };
+}
+
 export async function linkVisitorToUser(pool: pg.Pool, visitorId: string, userId: string): Promise<void> {
   if (!visitorPattern.test(visitorId)) return;
   await pool.query('UPDATE selection_attempts SET user_id=COALESCE(user_id,$2) WHERE visitor_id=$1', [visitorId, userId]);

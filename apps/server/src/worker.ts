@@ -62,16 +62,17 @@ async function main() {
     ).catch(() => console.error('Unable to persist failed theme job status'));
   });
 
+  const publishArtworkEvent = async (jobId: string, event: unknown) => {
+    await producerRedis.publish(`artwork-job:${jobId}`, JSON.stringify(event));
+  };
   const artworkWorker = new Worker(ARTWORK_QUEUE_NAME, async job => {
     if (job.name !== ARTWORK_TASK_NAME || typeof job.data.jobId !== 'string') throw new Error('Invalid artwork job');
-    return processArtworkJob(database, job.data.jobId, config, storage, async (jobId, event) => {
-      await producerRedis.publish(`artwork-job:${jobId}`, JSON.stringify(event));
-    });
+    return processArtworkJob(database, job.data.jobId, config, storage, publishArtworkEvent);
   }, { connection: consumerRedis, concurrency: 2 });
   artworkWorker.on('error', () => console.error('Artwork worker connection error'));
   artworkWorker.on('failed', (job) => {
     if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
-    void settleArtworkJob(database, job.data.jobId).catch(() => console.error('Unable to settle failed artwork job'));
+    void settleArtworkJob(database, job.data.jobId, undefined, publishArtworkEvent).catch(() => console.error('Unable to settle failed artwork job'));
   });
 
   await worker.waitUntilReady();
@@ -85,7 +86,7 @@ async function main() {
       try {
         await dispatchOutbox(database, queue);
         await dispatchThemeOutbox(database, themeQueue);
-        await dispatchArtworkOutbox(database, artworkQueue);
+        await dispatchArtworkOutbox(database, artworkQueue, publishArtworkEvent);
         if (consumerRedis.status !== 'ready' || producerRedis.status !== 'ready' || !worker.isRunning()) throw new Error('Worker unavailable');
         await writeFile(heartbeatPath, String(Date.now()));
       } catch {

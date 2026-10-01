@@ -28,6 +28,7 @@ const { balance, loading: loadingCredits, fetchBalance } = useCredits()
 const isLoggedIn = computed(() => authStore.isLoggedIn)
 
 const schemeCode = route.params.code as string
+const searchId = typeof route.query.searchId === 'string' ? route.query.searchId : undefined
 const isPreview = computed(() => route.path.startsWith('/ai-selection/preview/'))
 
 // State
@@ -123,7 +124,7 @@ async function fetchOffer() {
       brandColors: brandColors.value,
       brandKeywords: brandKeywords.value
     } : undefined
-    const res = await getThemeOffer(schemeCode, selectedAssetId.value, input, parseInt(requestedCount.value, 10))
+    const res = await getThemeOffer(schemeCode, selectedAssetId.value, input, parseInt(requestedCount.value, 10), searchId)
     themeOffer.value = res
     
     // Auto-select valid industry and style if not set
@@ -200,6 +201,7 @@ async function handleConfirm() {
       requestKey: crypto.randomUUID(),
       offerId: themeOffer.value.offer.id,
       schemeCode,
+      searchId,
       sourceAssetId: selectedAssetId.value,
       input,
       requestedCount: parseInt(requestedCount.value, 10),

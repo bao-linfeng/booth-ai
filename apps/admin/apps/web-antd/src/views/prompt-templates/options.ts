@@ -15,6 +15,7 @@ export const createFormOptions = (
         placeholder: '请选择',
         allowClear: true,
         options: [
+          { label: 'AI智选', value: 'filter' },
           { label: '换主题', value: 'theme' },
           { label: '四面图', value: 'artwork' },
         ],

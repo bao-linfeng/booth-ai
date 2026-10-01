@@ -20,42 +20,79 @@ const savingSelection = ref(false)
 
 let events: EventSource | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
+let connecting = false
+let fetching = false
+let refreshRequested = false
 
 onMounted(() => {
   void fetchJob(true)
 })
 
 onUnmounted(() => {
-  events?.close()
-  if (reconnectTimer) clearTimeout(reconnectTimer)
+  disposed = true
+  stopEvents()
 })
 
+function stopEvents() {
+  events?.close()
+  events = null
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = null
+}
+
+function scheduleReconnect() {
+  stopEvents()
+  if (disposed || !isPending.value) return
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    void fetchJob()
+  }, 3000)
+}
+
 async function fetchJob(initial = false) {
+  if (disposed) return
+  if (fetching) {
+    refreshRequested = true
+    return
+  }
+  fetching = true
   if (initial) loading.value = true
   try {
     const res = await getThemeJob(jobId)
+    if (disposed) return
     jobData.value = res
-    if (isPending.value) void connectEvents()
+    if (isPending.value) {
+      if (!events && !connecting) void connectEvents()
+    } else {
+      stopEvents()
+    }
   } catch (e) {
     console.error('Failed to load job', e)
     if (initial) error.value = true
+    else scheduleReconnect()
   } finally {
+    fetching = false
     if (initial) loading.value = false
+    if (refreshRequested) {
+      refreshRequested = false
+      if (!disposed && isPending.value) void fetchJob()
+    }
   }
 }
 
 async function connectEvents() {
-  events?.close()
-  if (!isPending.value) return
+  if (disposed || !isPending.value || events || connecting) return
+  connecting = true
   try {
     const ticket = await createThemeJobEventsTicket(jobId)
-    events = openThemeJobEvents(jobId, ticket, () => { void fetchJob() }, () => {
-      events?.close()
-      reconnectTimer = setTimeout(() => { void fetchJob() }, 3000)
-    })
+    if (disposed || !isPending.value) return
+    events = openThemeJobEvents(jobId, ticket, () => { void fetchJob() }, scheduleReconnect)
   } catch (e) {
     console.error('Failed to connect theme job events', e)
-    reconnectTimer = setTimeout(() => { void fetchJob() }, 3000)
+    scheduleReconnect()
+  } finally {
+    connecting = false
   }
 }
 
@@ -171,10 +208,10 @@ const failureReason = computed(() => {
             </div>
             <div class="flex gap-4 pt-4">
               <Button variant="outline" as-child>
-                <RouterLink :to="`/schemes/${jobData.schemeCode}`">使用原方案</RouterLink>
+                <RouterLink :to="{ path: `/schemes/${encodeURIComponent(jobData.schemeCode)}`, query: jobData.searchId ? { searchId: jobData.searchId } : {} }">使用原方案</RouterLink>
               </Button>
               <Button v-if="jobData.failure?.retryable" as-child>
-                <RouterLink :to="`/schemes/${jobData.schemeCode}/theme`">重新生成</RouterLink>
+                <RouterLink :to="{ path: `/schemes/${encodeURIComponent(jobData.schemeCode)}/theme`, query: jobData.searchId ? { searchId: jobData.searchId } : {} }">重新生成</RouterLink>
               </Button>
             </div>
           </CardContent>
@@ -197,7 +234,7 @@ const failureReason = computed(() => {
                 <h3 class="font-medium flex items-center gap-2"><ImageIcon class="size-4" /> 原版方案</h3>
               </div>
               <div class="aspect-video bg-muted rounded-lg overflow-hidden border relative">
-                <img :src="jobData.original.previewUrl" class="w-full h-full object-cover" />
+                <img :src="jobData.original.previewUrl" class="w-full h-full object-contain" />
               </div>
             </div>
 
@@ -219,7 +256,7 @@ const failureReason = computed(() => {
               </div>
               
               <div v-if="activeResult" class="aspect-video bg-muted rounded-lg overflow-hidden border relative group">
-                <img :src="activeResult.previewUrl" class="w-full h-full object-cover" />
+                <img :src="activeResult.previewUrl" class="w-full h-full object-contain" />
                 <div 
                   v-if="selectedResultId === activeResult.resultId"
                   class="absolute top-3 right-3 bg-emerald-500 text-white text-xs font-medium px-2 py-1 rounded shadow-sm flex items-center gap-1"
@@ -228,12 +265,12 @@ const failureReason = computed(() => {
                 </div>
               </div>
 
-              <div class="flex items-center justify-between pt-2">
+              <div class="flex flex-col gap-3 pt-2">
                 <p class="text-sm text-muted-foreground">
                   <template v-if="jobData.results.length > 1">第 {{ activeResultIndex + 1 }} 张，共 {{ jobData.results.length }} 张</template>
                   <template v-else>生成完毕</template>
                 </p>
-                <div class="flex gap-3">
+                <div class="flex flex-wrap gap-3">
                   <Button v-if="selectedResultId" variant="outline" as-child>
                     <RouterLink :to="{ path: `/schemes/${encodeURIComponent(jobData.schemeCode)}/artwork`, query: { themeJobId: jobId } }">生成配套四面素材</RouterLink>
                   </Button>
@@ -241,7 +278,7 @@ const failureReason = computed(() => {
                     <RouterLink :to="{ path: `/schemes/${encodeURIComponent(jobData.schemeCode)}/quote`, query: { themeJobId: jobId } }">使用选定效果申请报价</RouterLink>
                   </Button>
                   <Button variant="outline" as-child>
-                    <RouterLink :to="`/schemes/${jobData.schemeCode}`">继续使用原方案</RouterLink>
+                    <RouterLink :to="{ path: `/schemes/${encodeURIComponent(jobData.schemeCode)}`, query: jobData.searchId ? { searchId: jobData.searchId } : {} }">继续使用原方案</RouterLink>
                   </Button>
                   <Button 
                     v-if="activeResult && selectedResultId !== activeResult.resultId"

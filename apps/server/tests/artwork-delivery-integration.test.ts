@@ -10,7 +10,7 @@ import JSZip from 'jszip';
 import { encryptCredential } from '../src/infra/ai-models.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerArtworkJobRoutes } from '../src/modules/client/artwork-jobs/index.js';
-import { artworkArchive, artworkFiles, getArtworkJob, readyArtworkFiles, DIRECTIONS } from '../src/modules/client/artwork-jobs/service.js';
+import { artworkArchive, artworkFiles, getArtworkJob, readyArtworkFiles, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot } from '../src/modules/client/artwork-jobs/service.js';
 import { processArtworkJob, settleArtworkJob } from '../src/modules/tasks/artwork-worker.js';
 import { bindProjectArtworks } from '../src/modules/projects/artwork-delivery.js';
 import { createQuoteRequest } from '../src/modules/projects/service.js';
@@ -111,8 +111,38 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
       return Response.json({ data: [{ b64_json: data.toString('base64') }] });
     }) as typeof fetch;
     const config = { aiModelEncryptionKey: encryptionKey, s3: { endpoint: 'http://storage.test', publicEndpoint: 'http://public.test', region: 'us-east-1', bucket: 'test', accessKeyId: 'test', secretAccessKey: 'test' } };
-    await processArtworkJob(pool, jobId, config, storage);
-    assert.equal(calls, 4); assert.equal(new Set(prompts.map(p => p.replace(/正面|背面|左侧|右侧/g, '方向'))).size, 1);
+    const notifications: { direction?: string; status: string; deliveryStatus?: string }[] = [];
+    const observedStates: { status: string; deliveryStatus?: string; reservationStatus?: string }[] = [];
+    await processArtworkJob(pool, jobId, config, storage, async (id, event) => {
+      const update = event as typeof notifications[number];
+      if (update.direction) {
+        const state = (await pool.query('SELECT status FROM artwork_job_directions WHERE job_id=$1 AND direction=$2', [id, update.direction])).rows[0];
+        notifications.push(update);
+        observedStates.push({ status: state.status });
+      } else if (update.deliveryStatus) {
+        const state = (await pool.query('SELECT status,delivery_status FROM artwork_jobs WHERE id=$1', [id])).rows[0];
+        const reservation = (await pool.query('SELECT status FROM credit_reservations WHERE artwork_job_id=$1', [id])).rows[0];
+        notifications.push(update);
+        observedStates.push({ status: state.status, deliveryStatus: state.delivery_status, reservationStatus: reservation.status });
+      }
+    });
+    for (const direction of DIRECTIONS) assert.deepEqual(notifications.filter(e => e.direction === direction).map(e => e.status), ['submitting', 'generated', 'succeeded']);
+    assert.deepEqual(notifications.at(-1), { status: 'succeeded', deliveryStatus: 'ready', phase: null });
+    assert.deepEqual(observedStates, notifications.map(event => event.direction ? { status: event.status } : { status: event.status, deliveryStatus: event.deliveryStatus, reservationStatus: 'settled' }));
+    assert.equal(calls, 4); assert.equal(new Set(prompts).size, 4);
+    const frozen = (await pool.query<{ snapshot: ArtworkSnapshot }>('SELECT generation_snapshot AS snapshot FROM artwork_jobs WHERE id=$1', [jobId])).rows[0]!.snapshot;
+    assert.equal(frozen.pipelineRevision, 3);
+    for (const [index, direction] of DIRECTIONS.entries()) {
+      const prompt = prompts[index]!;
+      assert.equal(prompt, frozen.directionPrompts?.[direction]);
+      assert.ok(prompt.includes(`本次只输出${DIRECTION_LABELS[direction]}一张，不输出其他方向`));
+      assert.ok(prompt.includes(`最终核对：本次目标是${DIRECTION_LABELS[direction]}。`));
+      assert.equal(prompt.match(/【本次相机：/g)?.length, 1);
+      assert.ok(prompt.includes(`【本次相机：${DIRECTION_LABELS[direction]} / ${direction.toUpperCase()}`));
+      assert.ok(!prompt.includes('{{'));
+    }
+    assert.match(prompts[2]!, /前部\/入口在画面右侧，展台后部\/后墙在画面左侧/);
+    assert.match(prompts[3]!, /前部\/入口在画面左侧，展台后部\/后墙在画面右侧/);
     const ready = await getArtworkJob(pool, storage, user, jobId);
     assert.equal(ready.deliveryStatus, 'ready'); assert.equal(ready.credits.chargedCredits, 40); assert.equal(ready.credits.heldCredits, 0);
     assert.ok(ready.directions.every(d => d.width === 1536 && d.height === 1024));
@@ -131,6 +161,8 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     const adminList = await listGenerationJobs(pool, { jobType: 'artwork' }); assert.equal(adminList.total, 1); assert.equal(adminList.data[0]?.jobType, 'artwork');
     assert.equal((await listGenerationJobs(pool, {})).total, 2);
     const adminDetail = await getGenerationJob(pool, jobId, storage); assert.equal(adminDetail.jobType, 'artwork'); assert.equal(adminDetail.results.length, 4);
+    assert.ok('generationSnapshot' in adminDetail);
+    assert.deepEqual(adminDetail.generationSnapshot?.directionPrompts, frozen.directionPrompts);
     assert.equal(JSON.stringify(adminDetail).includes('"objectKey"'), false);
     assert.equal((await listDeliverables(pool, code, 'artwork')).length, 1);
     const quote: QuoteInput = { requestKey: randomUUID(), schemeCode: code, schemeRevision: 1, bomRevision: 1, entryPoint: 'theme_result', themeSelection: { themeJobId: themeJob, resultId: result, selectionRevision: 1 },
@@ -154,7 +186,11 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     assert.deepEqual((await artworkFiles(pool, jobId)).map(f => f.versionId), files.map(f => f.versionId));
     assert.deepEqual((await pool.query('SELECT materials_snapshot FROM projects WHERE id=$1', [projectId])).rows[0].materials_snapshot, pinned);
     await pool.query('UPDATE theme_jobs SET selection_revision=1 WHERE id=$1', [themeJob]);
-    mode = 'partial'; const partialId = await accept(await submission()); await processArtworkJob(pool, partialId, config, storage);
+    mode = 'partial'; const partialId = await accept(await submission());
+    const partialEvents: unknown[] = [];
+    await processArtworkJob(pool, partialId, config, storage, async (_id, event) => { partialEvents.push(event); });
+    assert.ok(partialEvents.some(event => (event as { direction?: string; status: string }).direction === 'back' && (event as { status: string }).status === 'failed'));
+    assert.deepEqual(partialEvents.at(-1), { status: 'partially_succeeded', deliveryStatus: 'incomplete', phase: null });
     const partial = await getArtworkJob(pool, storage, user, partialId); assert.equal(partial.status, 'partially_succeeded'); assert.equal(partial.deliveryStatus, 'incomplete');
     assert.equal(partial.credits.chargedCredits, 30); assert.equal(partial.credits.releasedCredits, 10); assert.deepEqual(partial.missingDirections, ['back']);
     await assert.rejects(readyArtworkFiles(pool, user, partialId, context), { reason: 'ARTWORK_INCOMPLETE' });
@@ -166,8 +202,12 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     assert.equal(calls, beforeRetry + 1); await processArtworkJob(pool, retryId, config, retryStorage); assert.equal(calls, beforeRetry + 4);
     assert.equal((await getArtworkJob(pool, storage, user, retryId)).deliveryStatus, 'ready');
     const uncertainId = await accept(await submission());
+    const historicalPrompt = '历史任务：{{directionLabel}}正交立面，只生成{{directionLabel}}。';
+    await pool.query(`UPDATE artwork_jobs SET generation_snapshot=(generation_snapshot-'directionPrompts') || $2::jsonb WHERE id=$1`,
+      [uncertainId, JSON.stringify({ prompt: historicalPrompt, pipelineRevision: 2 })]);
     await pool.query("UPDATE artwork_job_directions SET status='submitting' WHERE job_id=$1 AND direction='front'", [uncertainId]);
     const beforeUnknown = calls; await processArtworkJob(pool, uncertainId, config, storage); assert.equal(calls, beforeUnknown + 3);
+    assert.deepEqual(prompts.slice(beforeUnknown), DIRECTIONS.slice(1).map(direction => historicalPrompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction])));
     assert.equal((await getArtworkJob(pool, storage, user, uncertainId)).directions[0]?.reason, 'PROVIDER_OUTCOME_UNKNOWN');
     const abandonedId = await accept(await submission());
     await pool.query("UPDATE artwork_jobs SET status='running',lease_until=now()-interval '20 minutes' WHERE id=$1", [abandonedId]);

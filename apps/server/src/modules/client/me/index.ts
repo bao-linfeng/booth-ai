@@ -37,6 +37,6 @@ export async function registerClientMeRoutes(app: FastifyInstance, config: Confi
       throw error;
     }
     const localId = await syncClientUser(pool, detail, false);
-    return { code: 0, message: 'ok', data: toCurrentUser(localId, detail, 'client') };
+    return { code: 0, message: 'ok', data: toCurrentUser(localId, detail, 'client', session.loginSource) };
   });
 }

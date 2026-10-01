@@ -5,7 +5,8 @@ import { randomUUID } from 'node:crypto';
 import { listAiModels } from '../../../infra/ai-models.js';
 import { getSession } from '../../../infra/session.js';
 import type { createStorage } from '../../../infra/storage.js';
-import { createThemeJob, findCachedThemeJob, loadGenerationSnapshot, normalizeThemeInput, replayThemeRequest,
+import { streamThemeJobEvents } from './events.js';
+import { assertThemeSearch, createThemeJob, findCachedThemeJob, loadGenerationSnapshot, normalizeThemeInput, replayThemeRequest,
   themeCacheKey, themeCredits, type ThemeOfferData } from './service.js';
 
 const OFFER_TTL_SECONDS = 300; // 5 minutes
@@ -49,21 +50,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       return { error: { code: 'REQUEST_ERROR', message: 'Invalid events ticket', requestId: request.id } };
     }
     await redis.del(`theme-events-ticket:${ticket}`);
-    reply.hijack();
-    const response = reply.raw;
-    response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' });
-    response.write(': connected\n\n');
-    const subscriber = redis.duplicate();
-    const channel = `theme-job:${request.params.jobId}`;
-    const onMessage = (_channel: string, message: string) => response.write(`event: update\ndata: ${message}\n\n`);
-    subscriber.on('message', onMessage);
-    const cleanup = async () => {
-      subscriber.off('message', onMessage);
-      await subscriber.unsubscribe(channel);
-      subscriber.disconnect();
-    };
-    request.raw.on('close', () => { void cleanup(); });
-    await subscriber.subscribe(channel);
+    await streamThemeJobEvents(pool, redis, request.params.jobId, ticketData.userId, reply);
   });
 
   app.get('/theme-models', { schema: { tags: ['AI 换主题'], summary: '可选择的图像模型及每张图积分' } }, async () => {
@@ -79,6 +66,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       input?: { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
       requestedCount?: number;
       cacheMode?: 'reuse' | 'refresh';
+      searchId?: string;
     };
   }>('/theme-offers', {
     schema: {
@@ -104,6 +92,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
           },
           requestedCount: { type: 'integer', minimum: 1, maximum: 4 },
           cacheMode: { type: 'string', enum: ['reuse', 'refresh'] },
+          searchId: { type: 'string', format: 'uuid' },
         },
       },
     },
@@ -140,7 +129,8 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
 
     if (available && input?.industryId && input?.styleId) {
       const parameters = { schemeCode: request.body.schemeCode, sourceAssetId: request.body.sourceAssetId,
-        input: normalizeThemeInput(input), requestedCount, cacheMode: request.body.cacheMode ?? 'reuse' };
+        input: normalizeThemeInput(input), requestedCount, cacheMode: request.body.cacheMode ?? 'reuse', searchId: request.body.searchId };
+      await assertThemeSearch(pool, userId, parameters);
       const snapshot = await loadGenerationSnapshot(pool, parameters);
       const cacheKey = themeCacheKey(userId, parameters, snapshot);
       const cacheHit = parameters.cacheMode === 'reuse' && Boolean(await findCachedThemeJob(pool, userId, cacheKey, requestedCount));
@@ -182,6 +172,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       input: { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
       requestedCount: number;
       cacheMode?: 'reuse' | 'refresh';
+      searchId?: string;
     };
   }>('/theme-jobs', {
     schema: {
@@ -209,14 +200,15 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
           },
           requestedCount: { type: 'integer', minimum: 1, maximum: 4 },
           cacheMode: { type: 'string', enum: ['reuse', 'refresh'] },
+          searchId: { type: 'string', format: 'uuid' },
         },
       },
     },
   }, async (request, reply) => {
     const userId = await requireClientSession(request.headers.authorization, redis);
-    const { requestKey, offerId, schemeCode, sourceAssetId, input, requestedCount, cacheMode = 'reuse' } = request.body;
+    const { requestKey, offerId, schemeCode, sourceAssetId, input, requestedCount, cacheMode = 'reuse', searchId } = request.body;
 
-    const parameters = { schemeCode, sourceAssetId, input: normalizeThemeInput(input), requestedCount, cacheMode };
+    const parameters = { schemeCode, sourceAssetId, input: normalizeThemeInput(input), requestedCount, cacheMode, searchId };
     const replay = await replayThemeRequest(pool, userId, requestKey, parameters);
     if (replay) {
       reply.header('Location', `/api/v1/client/theme-jobs/${replay.jobId}`);
@@ -253,7 +245,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       id: string; schemeCode: string; sourceAssetId: string; sourceObjectKey: string | null; status: string; phase: string | null;
       requestedCount: number; usableCount: number; selectedResultId: string | null;
       selectionRevision: number; unitCredits: number | null; input: unknown; cacheHit: boolean;
-      createdAt: string; updatedAt: string;
+      createdAt: string; updatedAt: string; searchId: string | null;
     }>(
        `SELECT id, scheme_code AS "schemeCode", source_asset_id AS "sourceAssetId",
                 COALESCE(generation_snapshot->'source'->>'objectKey',
@@ -261,7 +253,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
                status, phase,
               requested_count AS "requestedCount", usable_count AS "usableCount",
               selected_result_id AS "selectedResultId", selection_revision AS "selectionRevision",
-               unit_credits AS "unitCredits", cache_hit AS "cacheHit", input, created_at AS "createdAt", updated_at AS "updatedAt"
+               unit_credits AS "unitCredits", cache_hit AS "cacheHit", input, created_at AS "createdAt", updated_at AS "updatedAt", search_id AS "searchId"
        FROM theme_jobs WHERE id = $1 AND user_id = $2`,
       [jobId, userId]
     );
@@ -295,6 +287,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       data: {
         jobId: job.id,
         schemeCode: job.schemeCode,
+        searchId: job.searchId,
         status: job.status,
         phase: job.phase,
         requestedCount: job.requestedCount,

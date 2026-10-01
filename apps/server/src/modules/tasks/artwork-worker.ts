@@ -8,6 +8,7 @@ import type { createStorage } from '../../infra/storage.js';
 import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, artworkFiles, completeArtworkFiles, type ArtworkSnapshot, type Direction } from '../client/artwork-jobs/service.js';
 
 type ArtworkConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
+export type PublishArtworkEvent = (jobId: string, event: unknown) => Promise<void>;
 type ArtworkJob = {
   schemeCode: string;
   unitCredits: number | null;
@@ -89,7 +90,7 @@ export async function processArtworkJob(
   jobId: string,
   config: ArtworkConfig,
   storage?: ReturnType<typeof createStorage>,
-  publish: (jobId: string, event: unknown) => Promise<void> = async () => {},
+  publish: PublishArtworkEvent = async () => {},
 ): Promise<void> {
   if (!storage) throw new Error('Artwork storage required');
   const lease = randomUUID();
@@ -102,6 +103,7 @@ export async function processArtworkJob(
     if (state && !['succeeded', 'partially_succeeded', 'failed'].includes(state.status)) throw new Error('Artwork lease busy');
     return;
   }
+  await publish(jobId, { status: 'running' }).catch(() => {});
   try {
     if (!job.snapshot) {
       await database.query(`UPDATE artwork_job_directions SET status='failed',reason='LEGACY_CONTEXT_UNAVAILABLE' WHERE job_id=$1 AND status<>'succeeded'`, [jobId]);
@@ -119,21 +121,23 @@ export async function processArtworkJob(
         const state = (await database.query<{ status: string; url: string | null }>('SELECT status,generated_url AS url FROM artwork_job_directions WHERE job_id=$1 AND direction=$2', [jobId, direction])).rows[0];
         if (!state || state.status === 'succeeded' || state.status === 'failed') continue;
         if (state.status === 'submitting') {
-          await failDirection(database, jobId, direction, 'PROVIDER_OUTCOME_UNKNOWN');
+          await failDirection(database, jobId, direction, 'PROVIDER_OUTCOME_UNKNOWN', publish);
           continue;
         }
         let url = state.url;
         if (!url) {
-          if (!model) { await failDirection(database, jobId, direction, 'MODEL_UNAVAILABLE'); continue; }
+          if (!model) { await failDirection(database, jobId, direction, 'MODEL_UNAVAILABLE', publish); continue; }
           await database.query("UPDATE artwork_job_directions SET status='submitting',updated_at=now() WHERE job_id=$1 AND direction=$2 AND status='pending'", [jobId, direction]);
+          await publish(jobId, { direction, status: 'submitting' }).catch(() => {});
           try {
-            const prompt = snapshot.prompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction]);
+            const prompt = snapshot.directionPrompts?.[direction] ?? snapshot.prompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction]);
             const generated = await generateWithOpenAI(model, reference, prompt, 1);
             url = generated[0] ?? null;
             if (!url) throw new Error('No generated image');
             await database.query("UPDATE artwork_job_directions SET status='generated',generated_url=$3,updated_at=now() WHERE job_id=$1 AND direction=$2", [jobId, direction, url]);
+            await publish(jobId, { direction, status: 'generated' }).catch(() => {});
           } catch {
-            await failDirection(database, jobId, direction, 'PROVIDER_OUTCOME_UNKNOWN');
+            await failDirection(database, jobId, direction, 'PROVIDER_OUTCOME_UNKNOWN', publish);
             continue;
           }
         }
@@ -141,7 +145,7 @@ export async function processArtworkJob(
         try { image = await normalizeArtworkImage((await generatedImage(url)).bytes); }
         catch (error) {
           const reason = error instanceof Error && error.message.startsWith('ARTWORK_') ? error.message : 'ARTWORK_IMAGE_INVALID';
-          await failDirection(database, jobId, direction, reason);
+          await failDirection(database, jobId, direction, reason, publish);
           continue;
         }
         const assetId = randomUUID(); const versionId = randomUUID();
@@ -160,21 +164,22 @@ export async function processArtworkJob(
             [jobId, index + 1, assetId, versionId, direction, image.width, image.height]);
           await client.query("UPDATE artwork_job_directions SET status='succeeded',generated_url=NULL,reason=NULL,updated_at=now() WHERE job_id=$1 AND direction=$2", [jobId, direction]);
         });
+        await publish(jobId, { direction, status: 'succeeded' }).catch(() => {});
       }
     }
-    await settleArtworkJob(database, jobId, lease);
-    await publish(jobId, { status: 'settled' }).catch(() => {});
+    await settleArtworkJob(database, jobId, lease, publish);
   } finally {
     await database.query('UPDATE artwork_jobs SET lease_token=NULL,lease_until=NULL WHERE id=$1 AND lease_token=$2', [jobId, lease]);
   }
 }
 
-async function failDirection(database: pg.Pool, jobId: string, direction: Direction, reason: string) {
+async function failDirection(database: pg.Pool, jobId: string, direction: Direction, reason: string, publish: PublishArtworkEvent) {
   await database.query("UPDATE artwork_job_directions SET status='failed',reason=$3,generated_url=NULL,updated_at=now() WHERE job_id=$1 AND direction=$2", [jobId, direction, reason]);
+  await publish(jobId, { direction, status: 'failed', reason }).catch(() => {});
 }
 
-export async function settleArtworkJob(database: pg.Pool, jobId: string, lease?: string) {
-  return transaction(database, async client => {
+export async function settleArtworkJob(database: pg.Pool, jobId: string, lease?: string, publish: PublishArtworkEvent = async () => {}) {
+  const event = await transaction(database, async client => {
     const job = (await client.query<ArtworkJob & { leaseToken: string | null; leaseUntil: Date | null }>(`SELECT user_id AS "userId",unit_credits AS "unitCredits",status,
       lease_token AS "leaseToken",lease_until AS "leaseUntil" FROM artwork_jobs WHERE id=$1 FOR UPDATE`, [jobId])).rows[0];
     if (!job || ['succeeded', 'partially_succeeded', 'failed'].includes(job.status)) return;
@@ -186,7 +191,11 @@ export async function settleArtworkJob(database: pg.Pool, jobId: string, lease?:
       VALUES($1,'artwork_consume',$2,$3,$4) ON CONFLICT DO NOTHING`, [job.userId, -usable * job.unitCredits!, `artwork_job:${jobId}`, jobId]);
     await client.query("UPDATE credit_reservations SET status=$2,updated_at=now() WHERE artwork_job_id=$1 AND status='reserved'", [jobId, usable ? 'settled' : 'released']);
     await client.query("UPDATE artwork_job_directions SET status='failed',reason=COALESCE(reason,'PROCESSING_FAILED'),generated_url=NULL WHERE job_id=$1 AND status<>'succeeded'", [jobId]);
+    const status = usable === 4 ? 'succeeded' : usable ? 'partially_succeeded' : 'failed';
+    const deliveryStatus = completeArtworkFiles(files) ? 'ready' : 'incomplete';
     await client.query(`UPDATE artwork_jobs SET status=$2,delivery_status=$3,usable_count=$4,phase=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
-      [jobId, usable === 4 ? 'succeeded' : usable ? 'partially_succeeded' : 'failed', completeArtworkFiles(files) ? 'ready' : 'incomplete', usable]);
+      [jobId, status, deliveryStatus, usable]);
+    return { status, deliveryStatus, phase: null };
   });
+  if (event) await publish(jobId, event).catch(() => {});
 }

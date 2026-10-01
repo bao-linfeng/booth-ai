@@ -35,7 +35,7 @@ export async function registerAdminMeRoutes(app: FastifyInstance, config: Config
       if (detail.externalUserId !== session.externalUserId) throw authenticationError();
       checkAdminRole(detail.roles);
       const localId = await syncAdmin(pool, detail, false);
-      return { code: 0, message: 'ok', data: toCurrentUser(localId, detail, 'admin') };
+      return { code: 0, message: 'ok', data: toCurrentUser(localId, detail, 'admin', session.loginSource) };
     } catch (error) {
       const statusCode = (error as Partial<{ statusCode: number }>).statusCode;
       if (statusCode === 403 || statusCode === 401) {

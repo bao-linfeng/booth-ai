@@ -333,43 +333,60 @@ async function openDetail(id: string) {
           </DescriptionsItem>
         </Descriptions>
 
-        <Descriptions v-if="detail.jobType === 'artwork'" bordered :column="1" size="small" class="mt-4">
-          <DescriptionsItem label="交付状态">{{ detail.deliveryStatus === 'ready' ? '四方向齐全' : '尚不完整' }}</DescriptionsItem>
-          <DescriptionsItem label="主题结果">{{ detail.themeSelection?.themeJobId }} / {{ detail.themeSelection?.resultId }} / 修订 {{ detail.themeSelection?.selectionRevision }}</DescriptionsItem>
-          <DescriptionsItem v-for="direction in detail.directions" :key="direction.direction" :label="direction.direction">{{ direction.status }} {{ direction.reason }}</DescriptionsItem>
-          <DescriptionsItem label="生成模型">{{ detail.generationSnapshot?.model.model }} / 修订 {{ detail.generationSnapshot?.model.revision }}</DescriptionsItem>
-          <DescriptionsItem label="素材用途">四面方向底图；清单画面映射及物理尺寸未核实。</DescriptionsItem>
-        </Descriptions>
+        <div v-if="detail.jobType === 'artwork'" class="mt-4">
+          <Descriptions bordered :column="1" size="small">
+            <DescriptionsItem label="交付状态">
+              {{ detail.deliveryStatus === 'ready' ? '四方向齐全' : '尚不完整' }}
+            </DescriptionsItem>
+            <DescriptionsItem label="主题结果">
+              {{ detail.themeSelection?.themeJobId }} /
+              {{ detail.themeSelection?.resultId }} / 修订
+              {{ detail.themeSelection?.selectionRevision }}
+            </DescriptionsItem>
+            <DescriptionsItem
+              v-for="direction in detail.directions"
+              :key="direction.direction"
+              :label="direction.direction"
+            >
+              {{ direction.status }} {{ direction.reason }}
+            </DescriptionsItem>
+            <DescriptionsItem label="生成模型">
+              {{ detail.generationSnapshot?.model.model }} / 修订
+              {{ detail.generationSnapshot?.model.revision }}
+            </DescriptionsItem>
+            <DescriptionsItem label="素材用途">
+              四面方向底图；清单画面映射及物理尺寸未核实。
+            </DescriptionsItem>
+          </Descriptions>
+        </div>
 
         <div v-if="detail.sourcePreviewUrl" class="mt-4">
           <div class="mb-2 text-sm font-medium text-gray-500">原图</div>
           <Image :src="detail.sourcePreviewUrl" :width="160" />
         </div>
 
-        <div
-          v-if="detail.results && detail.results.length > 0"
-          class="mt-4"
-        >
+        <div v-if="detail.results && detail.results.length > 0" class="mt-4">
           <div class="mb-2 text-sm font-medium text-gray-500">AI生成</div>
           <div class="grid grid-cols-4 gap-3">
-          <div
-            v-for="result in detail.results"
-            :key="result.id"
-            class="flex flex-col gap-1"
-          >
-            <Image
-              v-if="result.previewUrl"
-              :src="result.previewUrl"
-              class="h-28 rounded object-contain"
-            />
             <div
-              v-else
-              class="bg-gray-100 flex items-center justify-center text-gray-400 text-xs h-28 rounded"
+              v-for="result in detail.results"
+              :key="result.id"
+              class="flex flex-col gap-1"
             >
-              无预览
+              <Image
+                v-if="result.previewUrl"
+                :src="result.previewUrl"
+                class="h-28 rounded object-contain"
+              />
+              <div
+                v-else
+                class="bg-gray-100 flex items-center justify-center text-gray-400 text-xs h-28 rounded"
+              >
+                无预览
+              </div>
+              <span class="text-xs text-center text-gray-500">{{ result.direction ?? `#${result.ordinal}` }} ·
+                {{ result.width }} × {{ result.height }}</span>
             </div>
-            <span class="text-xs text-center text-gray-500">{{ result.direction ?? `#${result.ordinal}` }} · {{ result.width }} × {{ result.height }}</span>
-          </div>
           </div>
         </div>
       </div>

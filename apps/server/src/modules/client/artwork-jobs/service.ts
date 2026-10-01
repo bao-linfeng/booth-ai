@@ -13,11 +13,48 @@ export const DIRECTIONS = ['front', 'back', 'left', 'right'] as const;
 export type Direction = typeof DIRECTIONS[number];
 export const DIRECTION_LABELS: Record<Direction, string> = { front: '正面', back: '背面', left: '左侧', right: '右侧' };
 export const ARTWORK_QUALITY = { minLongEdge: 1536, minShortEdge: 1024, maxPixels: 40_000_000, maxBytes: 30 * 1024 * 1024 };
+const DIRECTION_CAMERA_INSTRUCTIONS: Record<Direction, string> = {
+  front: `【本次相机：正面 / FRONT】相机位于正面入口外，沿+Y方向水平朝展台中心观察，画面向右为+X，上方为+Z。展台物理左侧在画面左边，物理右侧在画面右边。按真实布局呈现入口、主展示墙、立柱和前方柜台；前方物体遮挡后方物体，不为了露出全部画面而移动家具。`,
+  back: `【本次相机：背面 / BACK】相机位于展台正后方，沿-Y方向水平朝展台中心与正面入口观察，画面向右为-X，上方为+Z。展台物理右侧在画面左边，物理左侧在画面右边。展示墙体、立柱和柜体真正的背侧及相应遮挡；背面材质按可见结构合理延续，不能直接复用正面展示墙、正面柜门和正面装饰的完整构图，也不能通过镜像正面图代替背面重绘。`,
+  left: `【本次相机：左侧 / LEFT — 严格左视图】相机位于展台物理左侧外部，与展台中心处于同一前后位置，沿+X方向水平从左向右观察；画面向右为-Y，上方为+Z。只移动相机，不转动展台或任何墙板。不得停在左前方或左后方，不得露出正面的宽幅展示构图。
+画面方位硬约束：展台前部/入口在画面右侧，展台后部/后墙在画面左侧；从画面左到右依次是后部→前部。图像横向展开的是展台前后纵深，而不是正面左右宽度。
+遮挡硬约束：物理左侧物体离相机更近，遮挡投影重叠的物理右侧物体；不透明左侧墙存在时应看到它的外侧，并遮挡其后的内部陈设；若左侧开放，应透过开口看到内部及对侧墙的内侧，保持开放，不补成封闭展示墙。
+轮廓核对：沿左右宽度延伸的主背墙与视线平行，在画面左端只能呈现实际厚度、端面或被遮挡的部分，不能作为宽幅背景展开；沿前后纵深延伸的侧墙才可能显示宽面。柜台展示其真实左侧，不能把柜台正面和正面品牌图案转向镜头。
+例如参考结构为后墙加一面左侧墙的L形展台：从本方向首先看到左侧墙外侧，它可能遮挡内部；后墙收窄在画面左端。这只是投影示例，不能据此给参考图增加墙体。`,
+  right: `【本次相机：右侧 / RIGHT — 严格右视图】相机位于展台物理右侧外部，与展台中心处于同一前后位置，沿-X方向水平从右向左观察；画面向右为+Y，上方为+Z。只移动相机，不转动展台或任何墙板。不得停在右前方或右后方，不得露出正面的宽幅展示构图。
+画面方位硬约束：展台前部/入口在画面左侧，展台后部/后墙在画面右侧；从画面左到右依次是前部→后部。图像横向展开的是展台前后纵深，而不是正面左右宽度。
+遮挡硬约束：物理右侧物体离相机更近，遮挡投影重叠的物理左侧物体；不透明右侧墙存在时应看到它的外侧，并遮挡其后的内部陈设；若右侧开放，应透过开口看到内部及对侧墙的内侧，保持开放，不补成封闭展示墙。
+轮廓核对：沿左右宽度延伸的主背墙与视线平行，在画面右端只能呈现实际厚度、端面或被遮挡的部分，不能作为宽幅背景展开；沿前后纵深延伸的侧墙才可能显示宽面。柜台展示其真实右侧，不能把柜台正面和正面品牌图案转向镜头。
+例如参考结构为后墙加一面左侧墙且右侧开放的L形展台：从本方向透过右侧开口看到左侧墙内侧；后墙收窄在画面右端。这只是投影示例，不能据此给参考图增加墙体。不能把左侧图镜像后作为右侧图，非对称结构必须保持原来的物理位置。`,
+};
+const DEFAULT_ARTWORK_INSTRUCTIONS = `任务：根据提供的唯一一张主题效果参考图，理解并重建同一个展台的空间结构，绘制其{{directionLabel}}正交立面方向底图。本次只输出{{directionLabel}}一张，不输出其他方向。改变的是相机观察方向，不是展台设计；不能只对原图换排版、裁切、翻转或轻微改变透视。
+
+{{cameraInstructions}}
+
+一、从单张参考图理解空间
+先根据墙体连接、地面边界、立柱厚度、柜台位置和遮挡关系理解展台的三维布局，再从目标方向重新投影。参考图即使是斜视或透视图，也不能把参考图的相机位置直接当作目标方向。保留已有墙体、立柱、框架、门洞、柜台、桌椅及装饰的数量、相对位置、高低关系与比例，不移动、删除或新增可辨认的结构，不把三维展台摊开成一排平面墙板。
+参考图未直接展示的侧面、背面和厚度，必须根据可见结构、材质及连接关系作最小必要的合理补全，使目标方向完整且在空间上成立。不可见区域优先延续已有的结构和材质，不凭空增加门窗、屏幕、柜台、立柱或复杂装饰；没有依据时不假设左右对称，不把可见正面机械复制到不可见面。
+
+二、统一方向基准
+以展台主入口和主要展示面所在一侧为正面；若有多个开放入口，以参考图主要展示墙的展示面朝向及主要迎宾区域确定正面，不能在不同方向请求中另选入口作为正面。想象观察者站在正面入口外、面向展台内部：观察者左手一侧定义为左侧，右手一侧定义为右侧，远离观察者的一侧为背面。四个方向均采用这一固定基准，不能随目标视图重新定义左右，也不能按参考图片边缘把左半张、右半张当成侧视图。
+
+固定空间坐标：+X指向展台物理右侧，+Y从前部入口指向后部，+Z竖直向上。相机始终保持+Z向上，不滚转。这些坐标只用于理解空间，不画在输出图上。
+
+三、品牌与画面连续性
+沿用参考图已有的品牌标识、文字、图案、角色、颜色、材质、灯光设计和主题风格，不重新设计主题。图案与标识应保持在原来所属的物理墙面或柜体上，随目标方向的可见性和遮挡显示；不能为了展示主视觉把正面主题图案、主展示墙或柜台正面复制到每一个方向。不可见面可使用同品牌的简洁颜色和材质合理延续；不要为补全隐藏面编造新标语或新品牌。原有文字保持正常可读朝向，不镜像文字和标识。
+视角、几何与遮挡正确性优先于品牌画面的完整展示。处于端面、背向相机或被遮挡的文字和图案可以不可读或完全不可见，禁止为了让文字可读而旋转墙面、展开贴图、透视穿墙或移动标识。
+
+四、正交投影与输出
+采用严格正交投影：相机水平，视线垂直于目标立面；无透视消失点，无近大远小，无俯视、仰视、三分之四视角或斜视。不以旋转整张图片代替改变三维观察方向。真实侧视中墙板可能只显示很窄的端面，应接受这种结果，不能为了填满画布强行展开墙面；立柱、柜台和其他实体仍应按实际可见轮廓呈现。
+白色或干净中性背景，完整展台居中、落在同一水平基线上，保留少量均匀留白，不裁切顶部或两侧，不拉伸展台去填满画布。输出单张1536×1024高清PNG方向底图，边缘和品牌画面清晰；不拼四宫格，不添加方向标签、尺寸线、坐标轴、水印或额外说明。
+
+最终核对：本次目标是{{directionLabel}}。确认观察位置符合目标方向、结构和遮挡符合该方向、没有将正面画面换排版后冒充侧面或背面，再仅输出目标方向图像。`;
 export type ArtworkContext = { schemeCode: string; themeJobId: string; resultId: string; selectionRevision: number };
 type Database = Pick<pg.Pool, 'query'>;
 export type ArtworkSnapshot = {
   source: { assetId: string; versionId: string; objectKey: string; checksum: string };
   input: ThemeInput; prompt: string; template: { id: string; revision: number; body: string } | null;
+  directionPrompts?: Record<Direction, string>;
   model: Pick<AiModelConfig, 'provider' | 'model' | 'revision' | 'unitCredits'>;
   quality: typeof ARTWORK_QUALITY; pipelineRevision: number;
 };
@@ -71,11 +108,16 @@ export async function loadArtworkSnapshot(pool: pg.Pool, userId: string, context
   const template = await getActivePromptTemplate(pool, 'artwork', selected.input.industryId, selected.input.styleId);
   const values: Record<string, string> = { industryLabel, styleLabel, brandColors: selected.input.brandColors?.join(', ') ?? '', brandKeywords: selected.input.brandKeywords ?? '', directionLabel: '{{directionLabel}}' };
   const body = template?.body.replace(/{{(industryLabel|styleLabel|brandColors|brandKeywords|directionLabel)}}/g, (_match, key: string) => values[key] ?? '') ??
-    `行业：${industryLabel}。风格：${styleLabel}。品牌色：${values.brandColors}。品牌关键词：${values.brandKeywords}。`;
-  const prompt = `${body}\n以所选主题效果图为唯一视觉参考，生成展台的{{directionLabel}}正交立面方向底图。无透视、无斜视、不新增结构。四面必须沿用同一品牌形象、角色、图案、色彩、材质与风格。不要重新设计主题，不拼成四宫格，不添加标注和尺寸线。输出单张高清平面底图。`;
+    `行业：${industryLabel || '以参考图为准'}。风格：${styleLabel || '以参考图为准'}。品牌色：${values.brandColors || '沿用参考图已有配色'}。品牌关键词：${values.brandKeywords || '沿用参考图已有品牌与主题'}。`;
+  const instructions = template ? '以所选主题效果图为唯一视觉参考，生成展台的{{directionLabel}}正交立面方向底图。无透视、无斜视、不新增结构。四面必须沿用同一品牌形象、角色、图案、色彩、材质与风格。不要重新设计主题，不拼成四宫格，不添加标注和尺寸线。输出单张高清平面底图。' : DEFAULT_ARTWORK_INSTRUCTIONS;
+  const prompt = `${body}\n${instructions}`;
+  const directionPrompts = Object.fromEntries(DIRECTIONS.map(direction => [direction,
+    prompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction])
+      .replaceAll('{{cameraInstructions}}', DIRECTION_CAMERA_INSTRUCTIONS[direction]),
+  ])) as Record<Direction, string>;
   return { source: { assetId: selected.sourceAssetId, versionId: selected.versionId, objectKey: selected.objectKey, checksum: selected.checksum }, input: selected.input,
-    template: template ? { id: template.id, revision: template.revision, body: template.body } : null, prompt,
-    model: { provider: model.provider, model: model.model, revision: model.revision, unitCredits: model.unitCredits }, quality: ARTWORK_QUALITY, pipelineRevision: 1 };
+    template: template ? { id: template.id, revision: template.revision, body: template.body } : null, prompt, directionPrompts,
+    model: { provider: model.provider, model: model.model, revision: model.revision, unitCredits: model.unitCredits }, quality: ARTWORK_QUALITY, pipelineRevision: 3 };
 }
 export async function createArtworkJob(pool: pg.Pool, userId: string, requestKey: string, offerId: string, context: ArtworkContext, offer: ArtworkOffer) {
   if (offer.userId !== userId || artworkHash(context) !== artworkHash(offer)) throw projectError('OFFER_MISMATCH');
