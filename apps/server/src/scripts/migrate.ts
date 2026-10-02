@@ -1,8 +1,6 @@
-import { createHash } from 'node:crypto';
-import { readdir, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { loadConfig } from '../config.js';
 import { createDatabase } from '../infra/database.js';
+import { readMigrations } from '../infra/migrations.js';
 
 const pool = createDatabase(loadConfig());
 try {
@@ -11,10 +9,7 @@ try {
     // Serialize migration runners; each migration and its checksum commit atomically.
     await client.query('SELECT pg_advisory_lock(19002401)');
     await client.query('CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())');
-    const directory = resolve('migrations');
-    for (const version of (await readdir(directory)).filter(name => /^\d+_.+\.sql$/.test(name)).sort()) {
-      const sql = await readFile(resolve(directory, version), 'utf8');
-      const checksum = createHash('sha256').update(sql).digest('hex');
+    for (const { version, checksum, sql } of await readMigrations()) {
       const existing = await client.query<{ checksum: string }>('SELECT checksum FROM schema_migrations WHERE version = $1', [version]);
       if (existing.rows[0]) {
         if (existing.rows[0].checksum !== checksum) throw new Error('Applied migration checksum mismatch');

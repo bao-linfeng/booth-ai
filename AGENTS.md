@@ -185,7 +185,7 @@ src/
 | `S3_BUCKET` | Bucket 名称 |
 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` | S3 凭据 |
 
-可选：`NODE_ENV`（默认 `development`）、`HOST`（默认 `0.0.0.0`）、`PORT`（默认 `3000`）、`LOG_LEVEL`（默认 `info`）。
+可选：`NODE_ENV`（默认 `development`）、`HOST`（默认 `0.0.0.0`）、`PORT`（默认 `3000`）、`LOG_LEVEL`（默认 `info`）、`PROJECT_NOTIFICATION_WEBHOOK_URL` / `PROJECT_NOTIFICATION_WEBHOOK_SECRET`（项目通知 Webhook，见 `docs/worker-observability.md`）。
 
 ---
 

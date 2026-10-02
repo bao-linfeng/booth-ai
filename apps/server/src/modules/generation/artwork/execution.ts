@@ -8,10 +8,12 @@ import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, artworkFiles, completeAr
 import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../../credits/service.js';
 import { claimGeneration, publishGeneration, refreshGeneration } from '../execution.js';
 import { downloadImage, editImage, ImageGenerationError, normalizeGeneratedImage } from '../../../infra/image-provider.js';
+import { logger } from '../../../infra/logger.js';
 
 type ArtworkConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
 export type PublishArtworkEvent = (jobId: string, event: unknown) => Promise<void>;
 type ArtworkJob = {
+  requestId: string | null;
   schemeCode: string;
   unitCredits: number | null;
   userId: string;
@@ -40,9 +42,10 @@ export async function processArtworkJob(
   if (!claim) return;
   const { lease, deadline } = claim;
   try {
-    const job = (await database.query<ArtworkJob>(`SELECT scheme_code AS "schemeCode", user_id AS "userId",
+    const job = (await database.query<ArtworkJob>(`SELECT request_id AS "requestId", scheme_code AS "schemeCode", user_id AS "userId",
       unit_credits AS "unitCredits", generation_snapshot AS snapshot, status FROM artwork_jobs WHERE id = $1`, [jobId])).rows[0];
     if (!job) throw new Error('Artwork job not found');
+    const log = logger.child({ jobKind: 'artwork', jobId, requestId: job.requestId });
     if (deadline.getTime() <= Date.now()) { await settleArtworkJob(database, jobId, lease, publish); return; }
     await publishGeneration(publish, jobId, { status: 'running' });
     if (!job.snapshot) {
@@ -76,13 +79,19 @@ export async function processArtworkJob(
           }
           await updateDirection(database, jobId, lease, direction, 'submitting');
           await publishGeneration(publish, jobId, { direction, status: 'submitting' });
+          let providerRequestId: string | undefined;
           try {
             const prompt = snapshot.directionPrompts?.[direction] ?? snapshot.prompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction]);
-            const generated = await editImage(model, reference, prompt, 1, deadline, { artwork: true });
+            const generated = await editImage(model, reference, prompt, 1, deadline, { artwork: true, onProviderRequest: async id => {
+              providerRequestId = id;
+              await database.query('UPDATE artwork_job_directions SET provider_request_id=$3 WHERE job_id=$1 AND direction=$2', [jobId, direction, id]);
+            } });
             url = generated[0] ?? null;
             if (!url) throw new ImageGenerationError('PROVIDER_NO_IMAGE');
+            log.info({ direction, provider: model.provider, providerRequestId }, 'Artwork provider request completed');
           } catch (error) {
             const reason = error instanceof ImageGenerationError ? error.code : 'PROVIDER_OUTCOME_UNKNOWN';
+            log.warn({ direction, provider: model.provider, providerRequestId, code: reason }, 'Artwork provider request failed');
             if (error instanceof ImageGenerationError && error.retryable && !error.outcomeUnknown) {
               await updateDirection(database, jobId, lease, direction, 'pending');
               throw error;

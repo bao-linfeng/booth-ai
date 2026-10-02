@@ -11,6 +11,7 @@ export interface Config {
   sessionTtlSeconds: number;
   externalApiUrl: string;
   s3: { endpoint: string; publicEndpoint: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string };
+  projectNotificationWebhook?: { url: string; secret: string };
 }
 
 // Validate names, never include supplied values (which may contain credentials).
@@ -46,6 +47,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin !== origin) throw new Error();
     } catch { throw new Error('Invalid CORS_ORIGINS: explicit origins required'); }
   }
+  // The notification channel is optional; without it project events stay pending in the outbox.
+  let projectNotificationWebhook: Config['projectNotificationWebhook'];
+  if (env.PROJECT_NOTIFICATION_WEBHOOK_URL?.trim()) {
+    const secret = required('PROJECT_NOTIFICATION_WEBHOOK_SECRET');
+    if (Buffer.byteLength(secret, 'utf8') < 32) throw new Error('Invalid PROJECT_NOTIFICATION_WEBHOOK_SECRET');
+    projectNotificationWebhook = { url: url('PROJECT_NOTIFICATION_WEBHOOK_URL', nodeEnv === 'production' ? ['https:'] : ['http:', 'https:']), secret };
+  }
   return {
     nodeEnv: nodeEnv as Config['nodeEnv'], host: env.HOST ?? '0.0.0.0', port, logLevel,
     databaseUrl: url('DATABASE_URL', ['postgres:', 'postgresql:']),
@@ -57,5 +65,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       region: env.S3_REGION ?? 'us-east-1', bucket: required('S3_BUCKET'),
       accessKeyId: required('S3_ACCESS_KEY'), secretAccessKey: required('S3_SECRET_KEY'),
     },
+    ...(projectNotificationWebhook ? { projectNotificationWebhook } : {}),
   };
 }

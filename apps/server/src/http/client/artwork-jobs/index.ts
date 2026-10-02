@@ -51,7 +51,8 @@ export async function registerArtworkJobRoutes(app: FastifyInstance, pool: pg.Po
     if (replay) return { code: 0, data: replay };
     const raw = await redis.get(`artwork-offer:${request.body.offerId}`);
     if (!raw) throw projectError('OFFER_EXPIRED');
-    const data = await createArtworkJob(pool, userId, request.body.requestKey, request.body.offerId, request.body, JSON.parse(raw) as ArtworkOffer);
+    const data = await createArtworkJob(pool, userId, request.body.requestKey, request.body.offerId, request.body, JSON.parse(raw) as ArtworkOffer, request.id);
+    if (!data.reusedRequest) request.log.info({ jobKind: 'artwork', jobId: data.jobId }, 'generation job accepted');
     return reply.code(data.reusedRequest ? 200 : 202).send({ code: 0, data });
   });
   app.get<{ Querystring: ArtworkContext }>('/artwork-jobs', { schema: { querystring: { type: 'object', additionalProperties: false, required: contextRequired, properties: contextProperties } } }, async (request, reply) => {

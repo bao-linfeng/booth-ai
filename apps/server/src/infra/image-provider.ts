@@ -80,16 +80,34 @@ export async function normalizeGeneratedImage(bytes: Buffer, minLongEdge = 1, mi
   }
 }
 
-async function providerJson(url: string, init: RequestInit, deadline: Date, submitting: boolean): Promise<unknown> {
+// Provider request identifiers are opaque diagnostics; keep only safe, bounded tokens.
+export function providerRequestId(headers: Pick<Headers, 'get'>, body: unknown): string | undefined {
+  const fromBody = body && typeof body === 'object' ? (body as { request_id?: unknown; responseId?: unknown }) : {};
+  const candidate = headers.get('x-request-id') ?? fromBody.request_id ?? fromBody.responseId;
+  return typeof candidate === 'string' && /^[\w.:-]{1,128}$/.test(candidate) ? candidate : undefined;
+}
+
+type ProviderRequestObserver = (requestId: string) => Promise<void> | void;
+
+// Recording diagnostics must never change how the provider outcome is classified.
+async function observeProviderRequest(observe: ProviderRequestObserver | undefined, headers: Pick<Headers, 'get'>, body: unknown) {
+  const requestId = providerRequestId(headers, body);
+  if (requestId && observe) try { await observe(requestId); } catch {}
+}
+
+async function providerJson(url: string, init: RequestInit, deadline: Date, submitting: boolean, observe?: ProviderRequestObserver): Promise<unknown> {
   try {
     const response = await fetch(url, { ...init, redirect: 'error', signal: requestSignal(deadline, submitting ? 180_000 : 30_000) });
     if (!response.ok) {
+      await observeProviderRequest(observe, response.headers, undefined);
       await response.body?.cancel().catch(() => {});
       throw new ImageGenerationError(response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_REQUEST_FAILED',
         response.status === 429 || (!submitting && response.status >= 500), submitting && response.status >= 500);
     }
     const bytes = await readBytes(response, Math.ceil(IMAGE_LIMITS.maxBytes * 4 / 3) * 4 + 1024 * 1024);
-    return JSON.parse(bytes.toString('utf8')) as unknown;
+    const body = JSON.parse(bytes.toString('utf8')) as unknown;
+    await observeProviderRequest(observe, response.headers, body);
+    return body;
   } catch (error) {
     if (error instanceof ImageGenerationError && error.code.startsWith('PROVIDER_')) throw error;
     throw new ImageGenerationError(submitting ? 'PROVIDER_OUTCOME_UNKNOWN' : 'PROVIDER_POLL_UNAVAILABLE', !submitting, submitting);
@@ -97,12 +115,12 @@ async function providerJson(url: string, init: RequestInit, deadline: Date, subm
 }
 
 export async function editImage(model: ActiveAiModel, reference: Buffer, prompt: string, count: number,
-  deadline: Date, options: { mask?: Buffer; artwork?: boolean; sourceUrl?: string; onSubmitted?: (taskId: string) => Promise<void> } = {}): Promise<string[]> {
+  deadline: Date, options: { mask?: Buffer; artwork?: boolean; sourceUrl?: string; onSubmitted?: (taskId: string) => Promise<void>; onProviderRequest?: ProviderRequestObserver } = {}): Promise<string[]> {
   if (model.provider === 'wanx') {
     const body = await providerJson('https://dashscope.aliyuncs.com/api/v1/services/aigc/image2image/image-synthesis', {
       method: 'POST', headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json', 'X-DashScope-Async': 'enable' },
       body: JSON.stringify({ model: model.model, input: { function: 'description_edit', prompt, base_image_url: options.sourceUrl }, parameters: { n: count } }),
-    }, deadline, true) as { output?: { task_id?: string } };
+    }, deadline, true, options.onProviderRequest) as { output?: { task_id?: string } };
     if (typeof body?.output?.task_id !== 'string' || !body.output.task_id) throw new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
     await options.onSubmitted?.(body.output.task_id);
     return pollWanx(model, body.output.task_id, deadline);
@@ -113,7 +131,7 @@ export async function editImage(model: ActiveAiModel, reference: Buffer, prompt:
     const body = await providerJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.model)}:generateContent`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': model.apiKey },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: reference.toString('base64') } }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }),
-    }, deadline, true) as { candidates?: { content?: { parts?: { inlineData?: { mimeType?: string; data?: string } }[] } }[] };
+    }, deadline, true, options.onProviderRequest) as { candidates?: { content?: { parts?: { inlineData?: { mimeType?: string; data?: string } }[] } }[] };
     if (!Array.isArray(body?.candidates)) throw new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
     return body.candidates.flatMap(candidate => Array.isArray(candidate?.content?.parts) ? candidate.content.parts.flatMap(part =>
       typeof part?.inlineData?.data === 'string' ? [`data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`] : []) : []);
@@ -129,7 +147,7 @@ export async function editImage(model: ActiveAiModel, reference: Buffer, prompt:
   if (options.mask) form.set('mask', new Blob([new Uint8Array(options.mask)], { type: 'image/png' }), 'mask.png');
   const body = await providerJson('https://api.openai.com/v1/images/edits', {
     method: 'POST', headers: { Authorization: `Bearer ${model.apiKey}` }, body: form,
-  }, deadline, true) as { data?: { b64_json?: string; url?: string }[] };
+  }, deadline, true, options.onProviderRequest) as { data?: { b64_json?: string; url?: string }[] };
   if (!Array.isArray(body?.data)) throw new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
   return body.data.flatMap(item => typeof item?.b64_json === 'string' && item.b64_json ? [`data:image/png;base64,${item.b64_json}`] :
     typeof item?.url === 'string' && item.url ? [item.url] : []);

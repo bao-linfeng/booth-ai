@@ -47,9 +47,11 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     await pool.query(await readFile(new URL('../migrations/044_theme_job_search.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/048_theme_worker_lease.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/037_artwork_jobs.sql', import.meta.url), 'utf8'));
+    await pool.query(await readFile(new URL('../migrations/041_artwork_delivery.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/049_generation_recovery.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/050_asset_scope.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/051_account_session_versions.sql', import.meta.url), 'utf8'));
+    await pool.query(await readFile(new URL('../migrations/052_generation_observability.sql', import.meta.url), 'utf8'));
     assert.equal((await pool.query('SELECT asset_version_id FROM theme_job_results WHERE job_id=$1', [legacy])).rows[0].asset_version_id, legacyVersion);
     assert.equal((await pool.query('SELECT cache_key FROM theme_jobs WHERE id=$1', [legacy])).rows[0].cache_key, null);
     for (const [code, item] of [['industry', industry], ['style', style]]) {

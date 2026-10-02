@@ -213,7 +213,8 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       reply.status(409);
       return { error: { code: 'REQUEST_ERROR', reason: 'OFFER_EXPIRED', message: 'Offer expired or not found', requestId: request.id } };
     }
-    const data = await createThemeJob(pool, userId, requestKey, offerId, parameters, JSON.parse(offerRaw) as ThemeOfferData);
+    const data = await createThemeJob(pool, userId, requestKey, offerId, parameters, JSON.parse(offerRaw) as ThemeOfferData, request.id);
+    if (!data.reusedRequest) request.log.info({ jobKind: 'theme', jobId: data.jobId, cacheHit: data.cacheHit }, 'generation job accepted');
     reply.status(data.cacheHit || data.reusedRequest ? 200 : 202);
     reply.header('Location', `/api/v1/client/theme-jobs/${data.jobId}`);
     return { code: 0, data };

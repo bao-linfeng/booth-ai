@@ -141,7 +141,7 @@ export async function assertThemeSearch(database: Database, userId: string, para
 }
 
 export async function createThemeJob(pool: pg.Pool, userId: string, requestKey: string, offerId: string,
-  parameters: ThemeParameters, offer: ThemeOfferData) {
+  parameters: ThemeParameters, offer: ThemeOfferData, requestId: string | null = null) {
   await assertThemeSearch(pool, userId, parameters);
   if (offer.userId !== userId || themeRequestHash(offer) !== themeRequestHash(parameters)) {
     throw Object.assign(new Error('Submitted parameters do not match the offer'), { statusCode: 409, reason: 'OFFER_MISMATCH' });
@@ -161,13 +161,13 @@ export async function createThemeJob(pool: pg.Pool, userId: string, requestKey: 
     const job = (await client.query<JobSummary>(
       `INSERT INTO theme_jobs
        (user_id, scheme_code, source_asset_id, offer_id, request_key, input, requested_count, cache_mode, status,
-         unit_credits, cache_key, generation_snapshot, cache_hit, cached_from_job_id, usable_count, search_id)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         unit_credits, cache_key, generation_snapshot, cache_hit, cached_from_job_id, usable_count, search_id, request_id)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING id, status, cache_hit AS "cacheHit", requested_count AS "requestedCount", usable_count AS "usableCount",
                  unit_credits AS "unitCredits"`,
       [userId, parameters.schemeCode, parameters.sourceAssetId, offerId, requestKey, JSON.stringify(normalizeThemeInput(parameters.input)),
         parameters.requestedCount, parameters.cacheMode, cachedJobId ? 'succeeded' : 'pending', offer.unitCredits, cacheKey,
-         JSON.stringify(snapshot), Boolean(cachedJobId), cachedJobId, cachedJobId ? parameters.requestedCount : 0, parameters.searchId ?? null],
+         JSON.stringify(snapshot), Boolean(cachedJobId), cachedJobId, cachedJobId ? parameters.requestedCount : 0, parameters.searchId ?? null, requestId],
     )).rows[0];
     if (!job) throw new Error('Failed to create theme job');
     if (cachedJobId) {

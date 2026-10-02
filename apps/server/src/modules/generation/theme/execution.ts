@@ -12,9 +12,10 @@ import { buildThemePrompt } from './prompt.js';
 import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../../credits/service.js';
 import { claimGeneration, publishGeneration, refreshGeneration } from '../execution.js';
 import { downloadImage, editImage, IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage, pollWanx } from '../../../infra/image-provider.js';
+import { logger, type Logger } from '../../../infra/logger.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
-type ThemeJob = { requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string; snapshot: GenerationSnapshot | null };
+type ThemeJob = { requestId: string | null; requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string; snapshot: GenerationSnapshot | null };
 type ProviderAttempt = { id: string; provider: string; model: string; revision: number; status: string; taskId: string | null };
 type Publish = (jobId: string, event: unknown) => Promise<void>;
 
@@ -70,7 +71,7 @@ async function persistGenerated(database: pg.Pool, jobId: string, lease: string,
 }
 
 async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, lease: string, deadline: Date,
-  config: ThemeConfig, storage: ReturnType<typeof createStorage>) {
+  config: ThemeConfig, storage: ReturnType<typeof createStorage>, log: Logger) {
   const saved = await database.query<{ ordinal: number; url: string }>('SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId]);
   const attempts = (await database.query<ProviderAttempt>(`SELECT id, provider, model, revision, status, provider_task_id AS "taskId"
     FROM theme_job_provider_attempts WHERE job_id = $1 ORDER BY created_at, id`, [jobId])).rows;
@@ -125,11 +126,15 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
       });
       let urls: string[];
       let submitted = false;
+      let providerRequestId: string | undefined;
       try {
         urls = await editImage(model, source.reference, prompt, model.provider === 'gemini' ? 1 : job.requestedCount,
           deadline, { ...source, onSubmitted: async taskId => {
             submitted = true;
             await database.query("UPDATE theme_job_provider_attempts SET status = 'waiting', provider_task_id = $2, updated_at = now() WHERE id = $1", [attemptId, taskId]);
+          }, onProviderRequest: async id => {
+            providerRequestId = id;
+            await database.query('UPDATE theme_job_provider_attempts SET provider_request_id = $2 WHERE id = $1', [attemptId, id]);
           } });
       } catch (error) {
         if (submitted) {
@@ -142,13 +147,14 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
         const classified = error instanceof ImageGenerationError ? error : new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
         await database.query('UPDATE theme_job_provider_attempts SET status = $2, reason = $3, updated_at = now() WHERE id = $1',
           [attemptId, classified.outcomeUnknown ? 'unknown' : 'failed', classified.code]);
-        console.error('Theme provider attempt failed', { jobId, provider: model.provider, code: classified.code });
+        log.warn({ attemptId, provider: model.provider, providerRequestId, code: classified.code }, 'Theme provider attempt failed');
         if (classified.outcomeUnknown || collected > 0) return;
         if (!classified.retryable) break;
         if (index < 2) await delay(2000 * 2 ** index);
         continue;
       }
       await persistGenerated(database, jobId, lease, attemptId, urls, job.requestedCount);
+      log.info({ attemptId, provider: model.provider, providerRequestId, images: urls.length }, 'Theme provider attempt completed');
       if (urls.length) {
         collected += urls.length;
         if (model.provider === 'gemini' && collected < job.requestedCount) {
@@ -190,12 +196,13 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
   if (!claim) return;
   const { lease, deadline } = claim;
   try {
-    const job = (await database.query<ThemeJob>(`SELECT requested_count AS "requestedCount", source_asset_id AS "sourceAssetId", scheme_code AS "schemeCode", input,
+    const job = (await database.query<ThemeJob>(`SELECT request_id AS "requestId", requested_count AS "requestedCount", source_asset_id AS "sourceAssetId", scheme_code AS "schemeCode", input,
       unit_credits AS "unitCredits", user_id AS "userId", status, generation_snapshot AS snapshot FROM theme_jobs WHERE id = $1`, [jobId])).rows[0];
     if (!job) throw new Error('Theme job not found');
+    const log = logger.child({ jobKind: 'theme', jobId, requestId: job.requestId });
     if (deadline.getTime() <= Date.now()) { await settleThemeJob(database, jobId, lease, publish); return; }
     await publishGeneration(publish, jobId, { status: 'running' });
-    await generateTheme(database, jobId, job, lease, deadline, config, storage);
+    await generateTheme(database, jobId, job, lease, deadline, config, storage, log);
     const saved = await database.query<{ ordinal: number; url: string }>('SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId]);
     for (const { ordinal, url } of saved.rows) {
       const existing = await database.query('SELECT id FROM theme_job_results WHERE job_id = $1 AND ordinal = $2', [jobId, ordinal]);
@@ -205,7 +212,7 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
       try { image = await normalizeGeneratedImage(await downloadImage(url, deadline)); }
       catch (error) {
         if (!(error instanceof ImageGenerationError) || error.retryable) throw error;
-        console.error('Theme result rejected', { jobId, ordinal, code: error.code });
+        log.warn({ ordinal, code: error.code }, 'Theme result rejected');
         continue;
       }
       await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'result_persisting');

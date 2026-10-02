@@ -1,5 +1,6 @@
 import { Redis } from 'ioredis';
 import type { Config } from '../config.js';
+import { logger } from './logger.js';
 
 export function createRedis(config: Config, role: 'request' | 'worker' = 'request') {
   const redis = new Redis(config.redisUrl, {
@@ -9,7 +10,7 @@ export function createRedis(config: Config, role: 'request' | 'worker' = 'reques
     ...(role === 'request' ? { commandTimeout: 5000 } : {}),
     retryStrategy: times => Math.min(times * 250, 5000),
   });
-  redis.on('error', () => console.error(`Redis ${role} connection error`));
+  redis.on('error', () => logger.error({ redisRole: role }, 'Redis connection error'));
   return redis;
 }
 

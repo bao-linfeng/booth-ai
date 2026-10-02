@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/credit-invariants.md` — 积分账本不变量（预占、结算、对账）
 - `docs/theme-outbox-recovery.md` — 生成任务 Outbox 恢复机制
 - `docs/asset-scope.md` — 方案基线资产与用户生成素材的作用域隔离
+- `docs/worker-observability.md` — Worker 调度隔离、健康状态、指标、链路追踪与项目通知投递
 
 ## 易错点速记
 

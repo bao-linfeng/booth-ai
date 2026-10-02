@@ -1,10 +1,11 @@
 import pg from 'pg';
 import type { Config } from '../config.js';
+import { logger } from './logger.js';
 
 export function createDatabase(config: Config) {
   const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10, connectionTimeoutMillis: 5000, idleTimeoutMillis: 30000, statement_timeout: 10000 });
   // A dropped idle connection must not terminate the process or print connection details.
-  pool.on('error', () => console.error('PostgreSQL idle connection error'));
+  pool.on('error', () => logger.error('PostgreSQL idle connection error'));
   return pool;
 }
 
