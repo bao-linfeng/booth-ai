@@ -110,9 +110,9 @@ export async function processArtworkJob(
         await transaction(database, async client => {
           const current = (await client.query("SELECT id FROM artwork_jobs WHERE id=$1 AND lease_token=$2 AND status='running' FOR UPDATE", [jobId, lease])).rows[0];
           if (!current) throw new Error('Artwork lease lost');
-          await client.query(`INSERT INTO scheme_assets(id,scheme_id,type,name,sort_order,metadata)
-            SELECT $1,id,'artwork',$2,$3,$4 FROM schemes WHERE code=$5`, [assetId, `${DIRECTION_LABELS[direction]}方向底图`, index,
-              JSON.stringify({ artworkJobId: jobId, direction, mappingStatus: 'unresolved', physicalDimensions: 'unverified' }), job.schemeCode]);
+          await client.query(`INSERT INTO scheme_assets(id,scheme_id,type,name,sort_order,metadata,source,owner_user_id,visibility)
+            SELECT $1,id,'artwork',$2,$3,$4,'artwork_generation',$6,'private' FROM schemes WHERE code=$5`, [assetId, `${DIRECTION_LABELS[direction]}方向底图`, index,
+              JSON.stringify({ artworkJobId: jobId, direction, mappingStatus: 'unresolved', physicalDimensions: 'unverified' }), job.schemeCode, job.userId]);
           await client.query(`INSERT INTO asset_versions(id,asset_id,object_key,original_filename,mime_type,byte_size,checksum,width_px,height_px)
             VALUES($1,$2,$3,$4,'image/png',$5,$6,$7,$8)`, [versionId, assetId, objectKey, `${direction}.png`, image.bytes.length, checksum, image.width, image.height]);
           await client.query(`INSERT INTO artwork_job_results(job_id,ordinal,asset_id,asset_version_id,direction,width,height) VALUES($1,$2,$3,$4,$5,$6,$7)`,

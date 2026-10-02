@@ -13,11 +13,11 @@ test('new assets without an explicit sort order follow existing assets', async (
   const query = async (sql: string, params?: unknown[]) => {
     if (sql.includes('SELECT id::text AS id FROM schemes')) return { rows: [{ id: 'scheme-id' }] };
     if (sql.includes('MAX(sort_order)')) return { rows: [{ sortOrder: 1 }] };
-    if (sql.includes('INSERT INTO scheme_assets')) {
+    if (sql.includes('INSERT INTO scheme_baseline_assets')) {
       insertedValues = params;
       return { rows: [] };
     }
-    if (sql.includes('FROM scheme_assets sa')) return { rows: [asset] };
+    if (sql.includes('FROM scheme_baseline_assets sa')) return { rows: [asset] };
     return { rows: [], rowCount: 1 };
   };
   const pool = { connect: async () => ({ query, release: () => {} }) } as unknown as pg.Pool;
@@ -37,13 +37,13 @@ test('replacing a logical asset adds a version and atomically retracts a publish
     query: async (sql: string) => {
       queries.push(sql);
       if (sql.includes('SELECT id::text AS id FROM schemes')) return { rows: [{ id: 'scheme-id' }] };
-      if (sql.includes('FROM scheme_assets sa')) return { rows: [{
+      if (sql.includes('FROM scheme_baseline_assets sa')) return { rows: [{
         id: 'asset-id', schemeId: 'scheme-id', schemeCode: 'S-1', schemeName: '方案', type: 'rendering',
         name: '图', sortOrder: 0, relatedAssetId: null, metadata: {}, isActive: true, revision: 1,
         createdAt: new Date(), updatedAt: new Date(), versionId: null,
       }] };
       if (sql.includes('INSERT INTO asset_versions')) return { rows: [{ id: 'version-id', assetId: 'asset-id', objectKey: 'object', originalFilename: 'image.png', mimeType: 'image/png', byteSize: 1, checksum: 'hash', widthPx: 1600, heightPx: 900, pageCount: null, createdAt: new Date() }] };
-      if (sql.includes('UPDATE scheme_assets')) return { rowCount: 1 };
+      if (sql.includes('UPDATE scheme_baseline_assets')) return { rowCount: 1 };
       return { rows: [], rowCount: 1 };
     },
     release: () => {},
@@ -64,9 +64,9 @@ test('removing a non-model asset also retracts published schemes in the same tra
   const asset = { id: 'asset-id', schemeId: 'scheme-id', schemeCode: 'S-1', schemeName: '方案', type: 'rendering', name: '图', sortOrder: 0, relatedAssetId: null, metadata: {}, isActive: true, revision: 1, createdAt: new Date(), updatedAt: new Date(), versionId: null };
   const query = async (sql: string) => {
     queries.push(sql);
-    if (sql.includes('FROM scheme_assets sa')) return { rows: [asset] };
+    if (sql.includes('FROM scheme_baseline_assets sa')) return { rows: [asset] };
     if (sql.includes('SELECT id::text AS id FROM schemes')) return { rows: [{ id: 'scheme-id' }] };
-    if (sql.includes('UPDATE scheme_assets')) return { rows: [{ revision: 2 }] };
+    if (sql.includes('UPDATE scheme_baseline_assets')) return { rows: [{ revision: 2 }] };
     return { rows: [], rowCount: 1 };
   };
   const pool = { query, connect: async () => ({ query, release: () => {} }) } as unknown as pg.Pool;
@@ -86,10 +86,10 @@ test('changing a rendering sort order also updates its paired masks', async () =
     query: async (sql: string) => {
       queries.push(sql);
       if (sql.includes('SELECT id::text AS id FROM schemes')) return { rows: [{ id: 'scheme-id' }] };
-      if (sql.includes('FROM scheme_assets sa')) return { rows: [asset] };
-      if (sql.includes('SELECT 1 FROM scheme_assets')) return { rowCount: 0, rows: [] };
+      if (sql.includes('FROM scheme_baseline_assets sa')) return { rows: [asset] };
+      if (sql.includes('SELECT 1 FROM scheme_baseline_assets')) return { rowCount: 0, rows: [] };
       if (sql.includes("type = 'mask' AND related_asset_id")) return { rowCount: 1, rows: [] };
-      if (sql.includes('UPDATE scheme_assets')) return { rowCount: 1, rows: [] };
+      if (sql.includes('UPDATE scheme_baseline_assets')) return { rowCount: 1, rows: [] };
       return { rows: [], rowCount: 1 };
     },
     release: () => {},

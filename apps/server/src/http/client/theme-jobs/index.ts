@@ -266,10 +266,11 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       }>(
        `SELECT tjr.id, tjr.ordinal, tjr.width, tjr.height, av.object_key AS "objectKey"
         FROM theme_job_results tjr
-        JOIN scheme_assets sa ON sa.id = tjr.asset_id
+         JOIN scheme_assets sa ON sa.id = tjr.asset_id
+           AND sa.source = 'theme_generation' AND sa.visibility = 'private' AND sa.owner_user_id = $2
          JOIN asset_versions av ON av.id = tjr.asset_version_id AND av.asset_id = sa.id
         WHERE tjr.job_id = $1 ORDER BY tjr.ordinal`,
-       [jobId]
+       [jobId, userId]
      );
     const results = await Promise.all(resultsQ.rows.map(async r => ({
       resultId: r.id,

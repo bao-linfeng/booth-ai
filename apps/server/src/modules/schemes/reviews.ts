@@ -116,7 +116,7 @@ async function readinessForScheme(client: DbClient, scheme: SchemeRow): Promise<
     SELECT a.id::text AS id, a.type, a.sort_order AS "sortOrder", a.related_asset_id::text AS "relatedAssetId",
       a.updated_at AS "updatedAt", v.width_px AS "widthPx", v.height_px AS "heightPx",
       v.mime_type AS "mimeType", v.byte_size::text AS "byteSize", v.object_key AS "objectKey"
-    FROM scheme_assets a
+    FROM scheme_baseline_assets a
     LEFT JOIN LATERAL (SELECT width_px, height_px, mime_type, byte_size, object_key FROM asset_versions
       WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
     WHERE a.scheme_id = $1 AND a.is_active = true`, [scheme.id]);

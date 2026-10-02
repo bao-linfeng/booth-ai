@@ -155,7 +155,7 @@ function toSchemeAsset(row: AssetRow): SchemeAsset {
 async function findAsset(pool: pg.Pool | pg.PoolClient, schemeCode: string, assetId: string, activeOnly = true): Promise<SchemeAsset | null> {
   const result = await pool.query<AssetRow>(`
     SELECT ${assetColumns}
-    FROM scheme_assets sa
+    FROM scheme_baseline_assets sa
     JOIN schemes s ON s.id = sa.scheme_id
     ${latestVersionJoin}
     WHERE s.code = $1 AND sa.id = $2${activeOnly ? ' AND sa.is_active = true' : ''}
@@ -166,7 +166,7 @@ async function findAsset(pool: pg.Pool | pg.PoolClient, schemeCode: string, asse
 
 async function ensureRelatedAsset(pool: pg.Pool | pg.PoolClient, schemeId: string, relatedAssetId: string | null | undefined): Promise<void> {
   if (!relatedAssetId) return;
-  const related = await pool.query('SELECT 1 FROM scheme_assets WHERE id = $1 AND scheme_id = $2', [relatedAssetId, schemeId]);
+  const related = await pool.query('SELECT 1 FROM scheme_baseline_assets WHERE id = $1 AND scheme_id = $2', [relatedAssetId, schemeId]);
   if (!related.rowCount) throw requestError('Related asset must belong to the same scheme', 400);
 }
 
@@ -174,14 +174,14 @@ async function ensureMaskRelatedAsset(pool: pg.Pool | pg.PoolClient, schemeId: s
   if (!relatedAssetId) return;
   const related = await pool.query<{ type: string }>(`
     SELECT type
-    FROM scheme_assets
+    FROM scheme_baseline_assets
     WHERE id = $1 AND scheme_id = $2 AND type = 'rendering' AND is_active = true
     FOR UPDATE
   `, [relatedAssetId, schemeId]);
   if (related.rows[0]?.type !== 'rendering') throw requestError('Related asset for a mask must be a rendering', 400);
   const paired = await pool.query(`
     SELECT 1
-    FROM scheme_assets
+    FROM scheme_baseline_assets
     WHERE scheme_id = $1 AND type = 'mask' AND related_asset_id = $2 AND is_active = true${assetId ? ' AND id <> $3' : ''}
     LIMIT 1
   `, assetId ? [schemeId, relatedAssetId, assetId] : [schemeId, relatedAssetId]);
@@ -198,13 +198,13 @@ async function resolveSortOrder(
   if (sortOrder !== undefined) return sortOrder;
   if (type === 'mask' && relatedAssetId) {
     const related = await client.query<{ sortOrder: number }>(
-      'SELECT sort_order AS "sortOrder" FROM scheme_assets WHERE id = $1 AND scheme_id = $2',
+      'SELECT sort_order AS "sortOrder" FROM scheme_baseline_assets WHERE id = $1 AND scheme_id = $2',
       [relatedAssetId, schemeId],
     );
     if (related.rows[0]) return related.rows[0].sortOrder;
   }
   const result = await client.query<{ sortOrder: number | null }>(
-    'SELECT MAX(sort_order)::integer AS "sortOrder" FROM scheme_assets WHERE scheme_id = $1 AND type = $2 AND is_active = true',
+    'SELECT MAX(sort_order)::integer AS "sortOrder" FROM scheme_baseline_assets WHERE scheme_id = $1 AND type = $2 AND is_active = true',
     [schemeId, type],
   );
   return (result.rows[0]?.sortOrder ?? -1) + 1;
@@ -225,14 +225,14 @@ export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Pro
   const [records, count] = await Promise.all([
     pool.query<AssetRow>(`
       SELECT ${assetColumns}
-      FROM scheme_assets sa
+      FROM scheme_baseline_assets sa
       JOIN schemes s ON s.id = sa.scheme_id
       ${latestVersionJoin}
       ${where}
       ORDER BY s.code ASC, sa.sort_order ASC, sa.created_at ASC, sa.id ASC
       LIMIT $${values.length + 1} OFFSET $${values.length + 2}
     `, [...values, options.pageSize, offset]),
-    pool.query<{ total: string }>(`SELECT count(*)::text AS total FROM scheme_assets sa JOIN schemes s ON s.id = sa.scheme_id ${where}`, values),
+    pool.query<{ total: string }>(`SELECT count(*)::text AS total FROM scheme_baseline_assets sa JOIN schemes s ON s.id = sa.scheme_id ${where}`, values),
   ]);
   return { data: records.rows.map(toSchemeAsset), total: Number(count.rows[0]?.total ?? 0), page: options.page, pageSize: options.pageSize };
 }
@@ -240,7 +240,7 @@ export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Pro
 export async function listSchemeAssets(pool: pg.Pool, schemeCode: string, type?: AssetType): Promise<SchemeAsset[]> {
   const result = await pool.query<AssetRow>(`
     SELECT ${assetColumns}
-    FROM scheme_assets sa
+    FROM scheme_baseline_assets sa
     JOIN schemes s ON s.id = sa.scheme_id
     ${latestVersionJoin}
     WHERE s.code = $1 AND sa.is_active = true${type ? ' AND sa.type = $2' : ''}
@@ -265,7 +265,7 @@ export async function createAsset(pool: pg.Pool, adminId: string | null, input: 
     if (input.type === 'mask') await ensureMaskRelatedAsset(client, schemeRow.id, input.relatedAssetId);
     const sortOrder = await resolveSortOrder(client, schemeRow.id, input.type, input.relatedAssetId, input.sortOrder);
     await client.query(`
-      INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, related_asset_id, metadata, created_by, updated_by)
+      INSERT INTO scheme_baseline_assets (id, scheme_id, type, name, sort_order, related_asset_id, metadata, created_by, updated_by)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     `, [assetId, schemeRow.id, input.type, input.name, sortOrder, input.relatedAssetId ?? null, input.metadata ?? {}, adminId, adminId]);
     await invalidatePublishedScheme(client, schemeRow.id, adminId);
@@ -295,7 +295,7 @@ export async function createAssetWithVersion(
     const assetId = randomUUID();
     const sortOrder = await resolveSortOrder(client, schemeRow.id, input.type, input.relatedAssetId, input.sortOrder);
     await client.query(`
-      INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, related_asset_id, metadata, created_by, updated_by)
+      INSERT INTO scheme_baseline_assets (id, scheme_id, type, name, sort_order, related_asset_id, metadata, created_by, updated_by)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     `, [assetId, schemeRow.id, input.type, input.name, sortOrder, input.relatedAssetId ?? null, input.metadata ?? {}, adminId, adminId]);
     await client.query(`
@@ -329,7 +329,7 @@ export async function addAssetVersion(pool: pg.Pool, adminId: string | null, sch
     const version = result.rows[0];
     if (!version) throw requestError('Failed to create asset version', 500);
     const updated = await client.query(`
-      UPDATE scheme_assets SET revision = revision + 1, updated_by = $1, updated_at = now()
+      UPDATE scheme_baseline_assets SET revision = revision + 1, updated_by = $1, updated_at = now()
       WHERE id = $2 AND revision = $3 AND is_active = true
     `, [adminId, assetId, expectedRevision]);
     if (!updated.rowCount) throw requestError('Asset revision conflict', 409);
@@ -351,7 +351,7 @@ export async function updateAsset(pool: pg.Pool, adminId: string | null, schemeC
       if (asset.type === 'rendering' || (asset.type === 'mask' && relatedAssetId)) {
         const pairedRenderingId = asset.type === 'rendering' ? asset.id : relatedAssetId;
         const duplicateOrder = await client.query<{ id: string }>(`
-          SELECT id::text AS id FROM scheme_assets
+          SELECT id::text AS id FROM scheme_baseline_assets
           WHERE scheme_id = $1 AND type = 'rendering' AND sort_order = $2
             AND id <> $3 AND is_active = true
           LIMIT 1
@@ -359,19 +359,19 @@ export async function updateAsset(pool: pg.Pool, adminId: string | null, schemeC
         const displacedRenderingId = duplicateOrder.rows[0]?.id;
         if (displacedRenderingId) {
           await client.query(`
-            UPDATE scheme_assets
+            UPDATE scheme_baseline_assets
             SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
             WHERE id = $3 AND scheme_id = $4 AND is_active = true
           `, [asset.sortOrder, adminId, displacedRenderingId, asset.schemeId]);
           await client.query(`
-            UPDATE scheme_assets
+            UPDATE scheme_baseline_assets
             SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
             WHERE scheme_id = $3 AND type = 'mask' AND related_asset_id = $4 AND is_active = true
           `, [asset.sortOrder, adminId, asset.schemeId, displacedRenderingId]);
         }
         if (asset.type === 'mask') {
           await client.query(`
-            UPDATE scheme_assets
+            UPDATE scheme_baseline_assets
             SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
             WHERE id = $3 AND scheme_id = $4 AND is_active = true
           `, [input.sortOrder, adminId, pairedRenderingId, asset.schemeId]);
@@ -379,13 +379,13 @@ export async function updateAsset(pool: pg.Pool, adminId: string | null, schemeC
       }
       if (asset.type === 'mask' && relatedAssetId) {
         await client.query(`
-          UPDATE scheme_assets
+          UPDATE scheme_baseline_assets
           SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
           WHERE id = $3 AND scheme_id = $4 AND is_active = true
         `, [input.sortOrder, adminId, relatedAssetId, asset.schemeId]);
       } else if (asset.type === 'rendering') {
         await client.query(`
-          UPDATE scheme_assets
+          UPDATE scheme_baseline_assets
           SET sort_order = $1, revision = revision + 1, updated_by = $2, updated_at = now()
           WHERE scheme_id = $3 AND type = 'mask' AND related_asset_id = $4 AND is_active = true
         `, [input.sortOrder, adminId, asset.schemeId, asset.id]);
@@ -401,7 +401,7 @@ export async function updateAsset(pool: pg.Pool, adminId: string | null, schemeC
     values.push(adminId);
     updates.push(`updated_by = $${values.length}`, 'updated_at = now()', 'revision = revision + 1');
     values.push(assetId, expectedRevision);
-    const updated = await client.query(`UPDATE scheme_assets SET ${updates.join(', ')} WHERE id = $${values.length - 1} AND revision = $${values.length} AND is_active = true`, values);
+    const updated = await client.query(`UPDATE scheme_baseline_assets SET ${updates.join(', ')} WHERE id = $${values.length - 1} AND revision = $${values.length} AND is_active = true`, values);
     if (!updated.rowCount) {
       const current = await findAsset(client, schemeCode, assetId);
       if (!current) throw requestError('Asset not found', 404);
@@ -417,7 +417,7 @@ export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeC
     return transaction(pool, async client => {
       const scheme = await client.query<{ id: string }>('SELECT id::text AS id FROM schemes WHERE code=$1 FOR UPDATE', [schemeCode]);
       if (!scheme.rows[0]) throw requestError('Scheme not found', 404);
-      const result = await client.query<{ revision: number }>('UPDATE scheme_assets SET is_active=false,revision=revision+1,updated_by=$1,updated_at=now() WHERE id=$2 AND scheme_id=$3 AND revision=$4 AND is_active=true RETURNING revision', [adminId, assetId, scheme.rows[0].id, expectedRevision]);
+      const result = await client.query<{ revision: number }>('UPDATE scheme_baseline_assets SET is_active=false,revision=revision+1,updated_by=$1,updated_at=now() WHERE id=$2 AND scheme_id=$3 AND revision=$4 AND is_active=true RETURNING revision', [adminId, assetId, scheme.rows[0].id, expectedRevision]);
       if (!result.rows[0]) throw requestError('Asset revision conflict', 409);
       await invalidatePublishedScheme(client, scheme.rows[0].id, adminId);
       return result.rows[0].revision;
@@ -429,7 +429,7 @@ export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeC
     const asset = await findAsset(client, schemeCode, assetId);
     if (!asset) throw requestError('Asset not found', 404);
     const result = await client.query<{ revision: number }>(`
-      UPDATE scheme_assets SET is_active = false, revision = revision + 1, updated_by = $1, updated_at = now()
+      UPDATE scheme_baseline_assets SET is_active = false, revision = revision + 1, updated_by = $1, updated_at = now()
       WHERE id = $2 AND revision = $3 AND is_active = true RETURNING revision
     `, [adminId, assetId, expectedRevision]);
     if (!result.rows[0]) throw requestError('Asset revision conflict', 409);

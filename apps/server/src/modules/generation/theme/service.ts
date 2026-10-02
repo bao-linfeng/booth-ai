@@ -55,7 +55,7 @@ export function themeCacheKey(userId: string, parameters: ThemeParameters, snaps
 export async function loadGenerationSnapshot(pool: pg.Pool, parameters: ThemeParameters): Promise<GenerationSnapshot> {
   const source = (await pool.query<AssetSnapshot>(
     `SELECT a.id AS "assetId", v.id AS "versionId", v.object_key AS "objectKey", v.checksum
-     FROM scheme_assets a JOIN schemes s ON s.id = a.scheme_id
+     FROM scheme_baseline_assets a JOIN schemes s ON s.id = a.scheme_id
      JOIN LATERAL (SELECT * FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
      WHERE a.id = $1 AND s.code = $2 AND s.publish_status = 'published' AND a.is_active AND a.type = 'rendering'`,
     [parameters.sourceAssetId, parameters.schemeCode],
@@ -63,7 +63,7 @@ export async function loadGenerationSnapshot(pool: pg.Pool, parameters: ThemePar
   if (!source) throw Object.assign(new Error('Theme source image unavailable'), { statusCode: 409, reason: 'SOURCE_UNAVAILABLE' });
   const mask = (await pool.query<AssetSnapshot>(
     `SELECT a.id AS "assetId", v.id AS "versionId", v.object_key AS "objectKey", v.checksum
-     FROM scheme_assets a
+     FROM scheme_baseline_assets a
      JOIN LATERAL (SELECT * FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
      WHERE a.related_asset_id = $1 AND a.type = 'mask' AND a.is_active
      ORDER BY a.id LIMIT 1`, [parameters.sourceAssetId],
@@ -93,7 +93,8 @@ export async function findCachedThemeJob(database: Database, userId: string, cac
      WHERE j.user_id = $1 AND j.cache_key = $2 AND j.status = 'succeeded' AND NOT j.cache_hit
        AND j.requested_count = $3 AND j.usable_count = $3
        AND (SELECT count(*) FROM theme_job_results r
-            JOIN scheme_assets a ON a.id = r.asset_id AND a.is_active
+             JOIN scheme_assets a ON a.id = r.asset_id AND a.is_active
+               AND a.source = 'theme_generation' AND a.visibility = 'private' AND a.owner_user_id = j.user_id
             JOIN asset_versions v ON v.id = r.asset_version_id AND v.asset_id = a.id
             WHERE r.job_id = j.id) = $3
      ORDER BY j.created_at DESC, j.id DESC LIMIT 1`, [userId, cacheKey, requestedCount],
@@ -175,7 +176,8 @@ export async function createThemeJob(pool: pg.Pool, userId: string, requestKey: 
          SELECT $1, r.ordinal, r.asset_id, r.asset_version_id, r.width, r.height
          FROM theme_job_results r JOIN scheme_assets a ON a.id = r.asset_id AND a.is_active
          JOIN asset_versions v ON v.id = r.asset_version_id AND v.asset_id = a.id
-         WHERE r.job_id = $2 RETURNING id`, [job.id, cachedJobId],
+          WHERE r.job_id = $2 AND a.source = 'theme_generation' AND a.visibility = 'private' AND a.owner_user_id = $3
+          RETURNING id`, [job.id, cachedJobId, userId],
       );
       if (copied.rowCount !== parameters.requestedCount) throw Object.assign(new Error('Cached result unavailable'), { statusCode: 409, reason: 'OFFER_STALE' });
     } else {

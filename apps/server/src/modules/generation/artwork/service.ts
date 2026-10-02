@@ -106,6 +106,7 @@ export async function assertThemeSelection(database: Database, userId: string, c
     `SELECT j.input,r.asset_id AS "sourceAssetId",v.id AS "versionId",v.object_key AS "objectKey",v.checksum
      FROM theme_jobs j JOIN theme_job_results r ON r.job_id=j.id AND r.id=j.selected_result_id
      JOIN scheme_assets a ON a.id=r.asset_id AND a.is_active
+       AND a.source='theme_generation' AND a.visibility='private' AND a.owner_user_id=j.user_id
      JOIN asset_versions v ON v.id=r.asset_version_id AND v.asset_id=r.asset_id
      JOIN schemes s ON s.code=j.scheme_code AND s.id=a.scheme_id AND s.publish_status='published'
      WHERE j.id=$1 AND j.user_id=$2 AND j.scheme_code=$3 AND r.id=$4 AND j.selection_revision=$5
@@ -164,7 +165,9 @@ export interface ArtworkFile extends AssetSnapshot { direction: Direction; width
 export async function artworkFiles(database: Database, jobId: string): Promise<ArtworkFile[]> {
   return (await database.query<ArtworkFile>(`SELECT r.direction,r.width,r.height,a.id AS "assetId",a.type,a.name,a.revision,a.metadata,
     v.id AS "versionId",v.object_key AS "objectKey",v.checksum,v.original_filename AS filename,v.mime_type AS "mimeType",v.byte_size::float8 AS "byteSize"
-    FROM artwork_job_results r JOIN scheme_assets a ON a.id=r.asset_id
+    FROM artwork_job_results r JOIN artwork_jobs j ON j.id=r.job_id
+    JOIN scheme_assets a ON a.id=r.asset_id
+      AND a.source='artwork_generation' AND a.visibility='private' AND a.owner_user_id=j.user_id
     JOIN asset_versions v ON v.id=r.asset_version_id AND v.asset_id=r.asset_id
     WHERE r.job_id=$1 AND r.direction IS NOT NULL ORDER BY r.ordinal`, [jobId])).rows;
 }

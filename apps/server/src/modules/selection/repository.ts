@@ -90,7 +90,7 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
     WHERE s.publish_status = 'published'
       AND (SELECT r.decision FROM scheme_reviews r WHERE r.scheme_id = s.id AND r.scheme_revision = s.revision
         AND r.phase = 'overall' ORDER BY r.created_at DESC, r.id DESC LIMIT 1) = 'pass'
-      AND NOT EXISTS (SELECT 1 FROM scheme_assets a WHERE a.scheme_id = s.id AND NOT (a.metadata ? 'themeJobId') AND NOT (a.metadata ? 'artworkJobId') AND a.updated_at >
+      AND NOT EXISTS (SELECT 1 FROM scheme_baseline_assets a WHERE a.scheme_id = s.id AND a.updated_at >
         (SELECT max(r.created_at) FROM scheme_reviews r WHERE r.scheme_id = s.id AND r.scheme_revision = s.revision AND r.phase = 'overall'))
       AND NOT EXISTS (SELECT 1 FROM unnest(array_remove(ARRAY[s.product_system_id, s.style_id, s.budget_tier_id] || s.industry_ids || s.zone_ids || s.feature_ids, NULL)) AS selected(id)
          LEFT JOIN dictionary_items di ON di.id = selected.id AND di.enabled
@@ -107,9 +107,9 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
   const assets = await pool.query<AssetRow>(`
     SELECT a.id, a.scheme_id AS "schemeId", a.type, a.sort_order AS "order", a.related_asset_id AS "relatedAssetId",
       v.object_key AS "objectKey", v.width_px AS width, v.height_px AS height, v.mime_type AS mime
-    FROM scheme_assets a
+    FROM scheme_baseline_assets a
     JOIN LATERAL (SELECT * FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
-    WHERE a.scheme_id = ANY($1::uuid[]) AND a.is_active = true AND v.byte_size > 0 AND NOT (a.metadata ? 'themeJobId') AND NOT (a.metadata ? 'artworkJobId')
+    WHERE a.scheme_id = ANY($1::uuid[]) AND a.is_active = true AND v.byte_size > 0
     ORDER BY a.scheme_id, a.sort_order, a.id`, [result.rows.map(row => row.id)]);
     
   const candidates: Candidate[] = [];

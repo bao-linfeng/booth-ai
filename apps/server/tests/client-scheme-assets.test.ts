@@ -109,7 +109,7 @@ test('both archive routes return complete ZIPs with original Unicode names, bina
     assert.deepEqual(Object.keys(zip.files), deps.state[type].map(row => row.originalFilename));
     for (const row of deps.state[type]) assert.deepEqual(await zip.file(row.originalFilename)!.async('nodebuffer'), deps.content);
   }
-  assert.ok(deps.queries.some(sql => sql.includes('a.type = $2') && sql.includes("NOT (a.metadata ? 'themeJobId')") && sql.includes("NOT (a.metadata ? 'artworkJobId')")));
+  assert.ok(deps.queries.some(sql => sql.includes('a.type = $2') && sql.includes('JOIN scheme_baseline_assets a')));
 });
 
 test('archive revisions reject stale lists and are stable across repeated downloads', async t => {

@@ -25,7 +25,7 @@ async function setup(query: Query) {
     if (sql.includes('FROM ai_model_configs')) return { rows: [{ purpose: 'theme', provider: 'openai', enabled: true,
       priority: 1, unitCredits: 10, revision: 1, credentialCiphertext: Buffer.from('configured') }] };
     if (sql.includes('FROM dictionaries d')) return { rows: [{ type: 'industry', id: 'industry', label: '科技' }, { type: 'style', id: 'style', label: '现代' }] };
-    if (sql.includes('FROM scheme_assets a JOIN schemes')) return { rows: [{ assetId: 'source', versionId: 'source-v1', objectKey: 'source.png', checksum: 'source-hash' }] };
+    if (sql.includes('FROM scheme_baseline_assets a JOIN schemes')) return { rows: [{ assetId: 'source', versionId: 'source-v1', objectKey: 'source.png', checksum: 'source-hash' }] };
     if (sql.includes('a.related_asset_id')) return { rows: [] };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: 'industry', label: '科技' }, { id: 'style', label: '现代' }] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };

@@ -41,7 +41,7 @@ async function fixture(count = 2, prompt?: string) {
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
     if (sql.includes('FROM ai_model_configs')) return { rows: enabled ? [{ purpose: 'theme', provider: 'openai', enabled: true,
       priority: 1, unitCredits: 3, revision: 1, credentialCiphertext: encryptCredential('api-key', 'openai', encryptionKey) }] : [] };
-    if (sql.includes('FROM scheme_assets')) return { rows: [{ objectKey: 'source/image.png' }] };
+    if (sql.includes('FROM scheme_baseline_assets')) return { rows: [{ objectKey: 'source/image.png' }] };
     if (sql.includes('FROM theme_job_generated_urls')) return { rows: [...urls] };
     if (sql.includes('INSERT INTO theme_job_generated_urls')) urls.push({ ordinal: Number(params?.[1]), url: String(params?.[2]) });
     if (sql.includes('FROM theme_job_provider_attempts')) return { rows: [...attempts] };

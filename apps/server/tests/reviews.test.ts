@@ -40,7 +40,7 @@ function poolFor(query: QueryHandler): pg.Pool {
 test('readiness reports active asset counts, verification and blockers', async () => {
   const pool = poolFor(sql => {
     if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
-    if (sql.includes('FROM scheme_assets')) return { rows: assets.filter(asset => asset.type !== 'checklist' && asset.type !== 'mask' && asset.id !== 'render-2') };
+    if (sql.includes('FROM scheme_baseline_assets')) return { rows: assets.filter(asset => asset.type !== 'checklist' && asset.type !== 'mask' && asset.id !== 'render-2') };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'pending_verification' }] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
@@ -60,7 +60,7 @@ test('readiness reports active asset counts, verification and blockers', async (
 test('readiness requires a valid opening count without directions', async () => {
   const pool = poolFor(sql => {
     if (sql.includes('FROM schemes WHERE code')) return { rows: [{ ...scheme, openingCount: null }] };
-    if (sql.includes('FROM scheme_assets')) return { rows: assets };
+    if (sql.includes('FROM scheme_baseline_assets')) return { rows: assets };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [passedReview] };
     throw new Error(`Unexpected query: ${sql}`);
@@ -73,7 +73,7 @@ test('readiness requires a valid opening count without directions', async () => 
 test('readiness requires masks to use the same sort order as their renderings', async () => {
   const pool = poolFor(sql => {
     if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
-    if (sql.includes('FROM scheme_assets')) return {
+    if (sql.includes('FROM scheme_baseline_assets')) return {
       rows: assets.map(asset => asset.id === 'mask-1' ? { ...asset, sortOrder: 9 } : asset),
     };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
@@ -119,7 +119,7 @@ test('publish locks the scheme, rechecks readiness and commits', async () => {
   const pool = poolFor(sql => {
     queries.push(sql);
     if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
-    if (sql.includes('FROM scheme_assets')) return { rows: assets };
+    if (sql.includes('FROM scheme_baseline_assets')) return { rows: assets };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [passedReview] };
     if (sql.includes('UPDATE schemes')) return { rows: [{ ...scheme, publishStatus: 'published' }] };
@@ -138,7 +138,7 @@ test('publish refuses assets changed after the overall review', async () => {
   const pool = poolFor(sql => {
     queries.push(sql);
     if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
-    if (sql.includes('FROM scheme_assets')) return { rows: assets.map(asset => asset.id === 'model' ? { ...asset, updatedAt: new Date('2026-01-03T00:00:00Z') } : asset) };
+    if (sql.includes('FROM scheme_baseline_assets')) return { rows: assets.map(asset => asset.id === 'model' ? { ...asset, updatedAt: new Date('2026-01-03T00:00:00Z') } : asset) };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [passedReview] };
     if (['BEGIN', 'ROLLBACK'].includes(sql)) return { rows: [] };
@@ -151,7 +151,7 @@ test('passing an overall review requires complete assets and confirmed applicabi
   const pool = poolFor(sql => {
     if (sql.includes('FROM schemes WHERE code')) return { rows: [{ ...scheme, applicableConditions: null }] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [] };
-    if (sql.includes('FROM scheme_assets')) return { rows: assets };
+    if (sql.includes('FROM scheme_baseline_assets')) return { rows: assets };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
     throw new Error(`Unexpected query: ${sql}`);
   });
@@ -164,7 +164,7 @@ test('a complete draft can receive an overall pass before publication', async ()
   const pool = poolFor(sql => {
     if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [] };
-    if (sql.includes('FROM scheme_assets')) return { rows: assets };
+    if (sql.includes('FROM scheme_baseline_assets')) return { rows: assets };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
     if (sql.includes('INSERT INTO scheme_reviews')) return { rows: [{
       id: 'review-2', schemeId: scheme.id, requestKey: 'overall-new', schemeRevision: 2,
@@ -195,7 +195,7 @@ test('unconfigured applicability questions cannot be published as invisible cand
     if (sql.includes('FROM schemes WHERE code')) return { rows: [{ ...scheme, applicableConditions: {
       status: 'confirmed', rules: [{ id: 'venue-restriction', expectedValue: true }], labelsConfirmed: true,
     } }] };
-    if (sql.includes('FROM scheme_assets')) return { rows: assets };
+    if (sql.includes('FROM scheme_baseline_assets')) return { rows: assets };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [passedReview] };
     if (sql.includes('FROM applicability_questions')) return { rows: [] };

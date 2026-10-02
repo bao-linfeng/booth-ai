@@ -38,8 +38,8 @@ export async function captureScheme(client: pg.PoolClient, input: Pick<QuoteInpu
   if (input.bomRevision !== undefined && (bom?.status !== 'verified' || bom.revision !== input.bomRevision)) throw projectError('BOM_REVISION_CHANGED');
   const assets = (await client.query<AssetSnapshot>(`SELECT a.id AS "assetId",a.type,a.name,a.revision,a.metadata,
     v.id AS "versionId",v.object_key AS "objectKey",v.checksum,v.original_filename AS filename,v.mime_type AS "mimeType"
-    FROM scheme_assets a JOIN LATERAL (SELECT * FROM asset_versions WHERE asset_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) v ON true
-    WHERE a.scheme_id=$1 AND a.is_active AND v.byte_size>0 AND NOT (a.metadata ? 'themeJobId') AND NOT (a.metadata ? 'artworkJobId') ORDER BY a.sort_order,a.id`, [scheme.id])).rows;
+    FROM scheme_baseline_assets a JOIN LATERAL (SELECT * FROM asset_versions WHERE asset_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) v ON true
+    WHERE a.scheme_id=$1 AND a.is_active AND v.byte_size>0 ORDER BY a.sort_order,a.id`, [scheme.id])).rows;
   if (!bom || bom.status !== 'verified' || !['model','checklist','rendering','mask','drawing','artwork'].every(type => assets.some(asset => asset.type === type))) throw projectError('SCHEME_UNAVAILABLE');
   if (input.themeSelection && input.artworkRevision !== undefined) throw projectError('INVALID_INPUT',400);
   if (input.artworkJobId && (!input.themeSelection || !userId)) throw projectError('INVALID_INPUT',400);
@@ -57,7 +57,8 @@ export async function captureScheme(client: pg.PoolClient, input: Pick<QuoteInpu
       v.id AS "versionId",v.object_key AS "objectKey",v.checksum,v.original_filename AS filename,v.mime_type AS "mimeType"
       FROM theme_job_results r JOIN scheme_assets a ON a.id=r.asset_id
       JOIN asset_versions v ON v.id=r.asset_version_id AND v.asset_id=a.id
-      WHERE r.id=$1 AND r.job_id=$2 AND v.byte_size>0`, [selection.resultId, selection.themeJobId])).rows[0];
+      WHERE r.id=$1 AND r.job_id=$2 AND v.byte_size>0
+        AND a.source='theme_generation' AND a.visibility='private' AND a.owner_user_id=$3`, [selection.resultId, selection.themeJobId, userId])).rows[0];
     if (!asset) throw projectError('THEME_SELECTION_CHANGED');
     selectedTheme = { ...selection, asset };
   }

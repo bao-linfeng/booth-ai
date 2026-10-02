@@ -20,7 +20,7 @@ type Publish = (jobId: string, event: unknown) => Promise<void>;
 
 async function themeSource(database: pg.Pool, job: ThemeJob, storage: ReturnType<typeof createStorage>) {
   const key = job.snapshot?.source.objectKey ?? (await database.query<{ objectKey: string }>(
-    `SELECT v.object_key AS "objectKey" FROM scheme_assets a
+    `SELECT v.object_key AS "objectKey" FROM scheme_baseline_assets a
      JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
      WHERE a.id = $1 AND a.is_active = true`, [job.sourceAssetId],
   )).rows[0]?.objectKey;
@@ -32,7 +32,7 @@ async function themeSource(database: pg.Pool, job: ThemeJob, storage: ReturnType
   }
   let maskKey = job.snapshot?.mask?.objectKey;
   if (!job.snapshot) maskKey = (await database.query<{ objectKey: string }>(
-    `SELECT v.object_key AS "objectKey" FROM scheme_assets a
+    `SELECT v.object_key AS "objectKey" FROM scheme_baseline_assets a
      JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
      WHERE a.related_asset_id = $1 AND a.type = 'mask' AND a.is_active = true LIMIT 1`, [job.sourceAssetId],
   )).rows[0]?.objectKey;
@@ -216,9 +216,9 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
       await transaction(database, async client => {
         const owner = await client.query("SELECT id FROM theme_jobs WHERE id = $1 AND lease_token = $2 AND status = 'running' FOR UPDATE", [jobId, lease]);
         if (!owner.rows[0]) throw new ImageGenerationError('GENERATION_LEASE_LOST_OR_EXPIRED');
-        await client.query(`INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, metadata)
-          SELECT $1, id, 'artwork', $2, $3, $4 FROM schemes WHERE code = $5`,
-        [assetId, `AI 换主题结果 ${ordinal}`, ordinal - 1, JSON.stringify({ themeJobId: jobId }), job.schemeCode]);
+        await client.query(`INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, metadata, source, owner_user_id, visibility)
+          SELECT $1, id, 'artwork', $2, $3, $4, 'theme_generation', $6, 'private' FROM schemes WHERE code = $5`,
+        [assetId, `AI 换主题结果 ${ordinal}`, ordinal - 1, JSON.stringify({ themeJobId: jobId }), job.schemeCode, job.userId]);
         await client.query(`INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, width_px, height_px)
           VALUES ($1, $2, $3, $4, 'image/png', $5, $6, $7, $8)`,
         [versionId, assetId, objectKey, `${ordinal}.png`, image.bytes.length, createHash('sha256').update(image.bytes).digest('hex'), image.width, image.height]);

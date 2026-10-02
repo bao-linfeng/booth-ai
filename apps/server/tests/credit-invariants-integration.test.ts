@@ -175,7 +175,7 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
   await t.test('artwork settlement rolls back debit and reservation together, then replays idempotently', async () => {
     const task = await job(await user(), 'artwork', 4);
     const asset = randomUUID(); const version = randomUUID();
-    await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name) VALUES($1,$2,'artwork','front')", [asset, scheme]);
+    await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name,source,owner_user_id,visibility) SELECT $1,$2,'artwork','front','artwork_generation',user_id,'private' FROM artwork_jobs WHERE id=$3", [asset, scheme, task.id]);
     await pool.query("INSERT INTO asset_versions(id,asset_id,object_key,original_filename,mime_type,byte_size,checksum) VALUES($1,$2,'front.png','front.png','image/png',10,'checksum')", [version, asset]);
     await pool.query("INSERT INTO artwork_job_results(job_id,ordinal,asset_id,asset_version_id,direction,width,height) VALUES($1,1,$2,$3,'front',1536,1024)", [task.id, asset, version]);
     await pool.query(`CREATE FUNCTION reject_artwork_commit() RETURNS trigger LANGUAGE plpgsql AS $$
