@@ -29,7 +29,7 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
     await admin.query(`DROP SCHEMA ${schema} CASCADE`);
     await admin.end();
   });
-  for (const migration of ['002_auth', '030_credits', '031_theme_jobs', '032_theme_job_results', '038_credit_reservations_and_generated_urls', '039_credit_idempotency', '046_theme_outbox_reconciliation']) {
+  for (const migration of ['002_auth', '030_credits', '031_theme_jobs', '032_theme_job_results', '038_credit_reservations_and_generated_urls', '039_credit_idempotency', '046_theme_outbox_reconciliation', '048_theme_worker_lease']) {
     await database.query(await readFile(new URL(`../migrations/${migration}.sql`, import.meta.url), 'utf8'));
   }
   await database.query('ALTER TABLE theme_jobs ADD COLUMN cache_hit boolean NOT NULL DEFAULT false');

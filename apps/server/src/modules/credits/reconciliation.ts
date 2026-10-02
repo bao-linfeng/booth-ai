@@ -31,7 +31,7 @@ export async function reconcileJobCredits(database: pg.Pool, queues: CreditQueue
             `SELECT user_id AS "userId", amount, kind FROM credit_transactions WHERE ${kind}_job_id = $1`, [job.id],
           )).rows[0];
           if (reservation && reservation.userId !== current.userId) return { reason: 'RESERVATION_OWNER_MISMATCH', repaired: false };
-          if (current.status === 'failed' || (terminalCreditJob(current.status) && current.usableCount === 0 && !charge)) {
+          if (current.status === 'failed') {
             if (charge) return { reason: 'FAILED_JOB_CHARGED', repaired: false };
             if (reservation && reservation.status !== 'released') {
               await releaseJobCredits(client, job);
@@ -48,7 +48,18 @@ export async function reconcileJobCredits(database: pg.Pool, queues: CreditQueue
             return { repaired: false };
           }
           if (terminalCreditJob(current.status)) {
-            if (current.usableCount === 0 && !charge) return { reason: 'TERMINAL_RESULT_MISMATCH', repaired: false };
+            if (current.usableCount === 0 && !charge) {
+              const results = await client.query(`SELECT 1 FROM ${kind}_job_results WHERE job_id = $1 LIMIT 1`, [job.id]);
+              if (results.rows.length) return { reason: 'TERMINAL_RESULT_MISMATCH', repaired: false };
+              await client.query(`UPDATE ${kind}_jobs SET status = 'failed', phase = NULL, lease_token = NULL,
+                lease_until = NULL, updated_at = now()${kind === 'artwork' ? ", delivery_status = 'incomplete'" : ''} WHERE id = $1`, [job.id]);
+              if (kind === 'artwork') {
+                await client.query(`UPDATE artwork_job_directions SET status = 'failed',
+                  reason = COALESCE(reason, 'PROCESSING_FAILED'), generated_url = NULL, updated_at = now() WHERE job_id = $1`, [job.id]);
+              }
+              await releaseJobCredits(client, job);
+              return { repaired: true };
+            }
             if (!charge || current.unitCredits === null || charge.amount !== -current.usableCount * current.unitCredits ||
                 charge.userId !== current.userId || charge.kind !== `${kind}_consume`) return { reason: 'TERMINAL_CHARGE_MISMATCH', repaired: false };
             if (!reservation) return { reason: 'TERMINAL_RESERVATION_MISSING', repaired: false };

@@ -205,6 +205,82 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     assert.equal((await reconcileJobCredits(pool, { theme: queue, artwork: queue })).checked, 0);
   });
 
+  await t.test('zero-result terminal recovery rolls back atomically, then releases theme and artwork holds idempotently', async () => {
+    for (const kind of ['theme', 'artwork'] as const) {
+      for (const status of ['succeeded', 'partially_succeeded']) {
+        const task = await job(await user(), kind);
+        await pool.query(`UPDATE ${kind}_jobs SET status=$2,lease_token=$3,lease_until=now()+interval '15 minutes' WHERE id=$1`,
+          [task.id, status, randomUUID()]);
+        if (kind === 'artwork') {
+          await pool.query("UPDATE artwork_jobs SET delivery_status='ready' WHERE id=$1", [task.id]);
+          await pool.query("INSERT INTO artwork_job_directions(job_id,direction,status,generated_url) VALUES($1,'front','succeeded','stale-url')", [task.id]);
+        }
+        await pool.query(`CREATE FUNCTION reject_zero_result_recovery() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN IF NEW.status='failed' AND OLD.status<>'failed' THEN RAISE EXCEPTION 'injected recovery commit'; END IF; RETURN NEW; END $$;
+          CREATE CONSTRAINT TRIGGER reject_zero_result_recovery AFTER UPDATE ON ${kind}_jobs
+          DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_zero_result_recovery()`);
+        try {
+          const report = await reconcile();
+          assert.ok(report.issues.some(issue => issue.id === task.id && issue.reason === 'RECONCILIATION_FAILED'));
+          assert.deepEqual(await state(task), { status, usable: 0, reservation: 'reserved', charges: [] });
+          assert.equal((await pool.query(`SELECT credit_checked_at FROM ${kind}_jobs WHERE id=$1`, [task.id])).rows[0].credit_checked_at, null);
+        } finally {
+          await pool.query(`DROP TRIGGER reject_zero_result_recovery ON ${kind}_jobs; DROP FUNCTION reject_zero_result_recovery()`);
+        }
+        const report = await reconcile();
+        assert.ok(!report.issues.some(issue => issue.id === task.id));
+        assert.deepEqual(await state(task), { status: 'failed', usable: 0, reservation: 'released', charges: [] });
+        const current = (await pool.query(`SELECT lease_token,lease_until,credit_checked_at FROM ${kind}_jobs WHERE id=$1`, [task.id])).rows[0];
+        assert.equal(current.lease_token, null);
+        assert.equal(current.lease_until, null);
+        assert.ok(current.credit_checked_at);
+        if (kind === 'artwork') {
+          assert.equal((await pool.query('SELECT delivery_status FROM artwork_jobs WHERE id=$1', [task.id])).rows[0].delivery_status, 'incomplete');
+          assert.deepEqual((await pool.query('SELECT status,generated_url,reason FROM artwork_job_directions WHERE job_id=$1', [task.id])).rows,
+            [{ status: 'failed', generated_url: null, reason: 'PROCESSING_FAILED' }]);
+        }
+        await reconcile();
+        assert.deepEqual(await state(task), { status: 'failed', usable: 0, reservation: 'released', charges: [] });
+      }
+      const missingHold = await job(await user(), kind, 1, 10, false);
+      await pool.query(`UPDATE ${kind}_jobs SET status='succeeded' WHERE id=$1`, [missingHold.id]);
+      await reconcile();
+      assert.deepEqual(await state(missingHold), { status: 'failed', usable: 0, reservation: undefined, charges: [] });
+    }
+  });
+
+  await t.test('zero-result cached jobs release stray holds without changing their terminal status', async () => {
+    const task = await job(await user());
+    await pool.query("UPDATE theme_jobs SET status='succeeded',cache_hit=true WHERE id=$1", [task.id]);
+    const report = await reconcile();
+    assert.ok(!report.issues.some(issue => issue.id === task.id));
+    assert.deepEqual(await state(task), { status: 'succeeded', usable: 0, reservation: 'released', charges: [] });
+    await reconcile();
+    assert.deepEqual(await state(task), { status: 'succeeded', usable: 0, reservation: 'released', charges: [] });
+  });
+
+  await t.test('zero-result reconciliation preserves conflicting result and ledger evidence', async () => {
+    for (const kind of ['theme', 'artwork'] as const) {
+      const withResult = await job(await user(), kind);
+      const asset = randomUUID();
+      await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name) VALUES($1,$2,'artwork','legacy')", [asset, scheme]);
+      await pool.query(`INSERT INTO ${kind}_job_results(job_id,ordinal,asset_id) VALUES($1,1,$2)`, [withResult.id, asset]);
+      await pool.query(`UPDATE ${kind}_jobs SET status='succeeded' WHERE id=$1`, [withResult.id]);
+      const charged = await job(await user(), kind);
+      await pool.query(`UPDATE ${kind}_jobs SET status='succeeded' WHERE id=$1`, [charged.id]);
+      await pool.query(`INSERT INTO credit_transactions(user_id,kind,amount,${kind}_job_id)
+        SELECT user_id,$2,-10,id FROM ${kind}_jobs WHERE id=$1`, [charged.id, `${kind}_consume`]);
+      const report = await reconcile();
+      assert.ok(report.issues.some(issue => issue.id === withResult.id && issue.reason === 'TERMINAL_RESULT_MISMATCH'));
+      assert.ok(report.issues.some(issue => issue.id === charged.id && issue.reason === 'TERMINAL_CHARGE_MISMATCH'));
+      assert.deepEqual(await state(withResult), { status: 'succeeded', usable: 0, reservation: 'reserved', charges: [] });
+      assert.deepEqual(await state(charged), { status: 'succeeded', usable: 0, reservation: 'reserved', charges: [-10] });
+      for (const task of [withResult, charged]) {
+        assert.ok((await pool.query(`SELECT credit_checked_at FROM ${kind}_jobs WHERE id=$1`, [task.id])).rows[0].credit_checked_at);
+      }
+    }
+  });
+
   await t.test('concurrent recharge and lost-response retries return one immutable transaction; changed payload conflicts', async () => {
     const owner = await user(0); const other = await user(0);
     const input = { userId: owner, amount: 25, note: 'test', operatorId, requestKey: randomUUID() };
