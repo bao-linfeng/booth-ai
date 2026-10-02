@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import JSZip from 'jszip';
 import type pg from 'pg';
 import { listAiModels, type AiModelConfig } from '../../../infra/ai-models.js';
 import { transaction } from '../../../infra/database.js';
 import type { createStorage } from '../../../infra/storage.js';
+import { storedZipStream } from '../../../infra/zip.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
 import { digest, projectError } from '../../projects/domain.js';
 import type { AssetSnapshot } from '../../projects/snapshot.js';
@@ -209,17 +209,30 @@ export async function readyArtworkFiles(database: Database, userId: string, jobI
   if (job.deliveryStatus !== 'ready' || !completeArtworkFiles(files)) throw projectError('ARTWORK_INCOMPLETE');
   return files;
 }
-export async function artworkArchive(pool: pg.Pool, storage: Pick<ReturnType<typeof createStorage>, 'getBuffer'>, userId: string, jobId: string) {
+async function* verifiedArtwork(source: AsyncIterable<Uint8Array>, file: ArtworkFile) {
+  const hash = createHash('sha256');
+  let size = 0;
+  for await (const chunk of source) {
+    hash.update(chunk);
+    size += chunk.byteLength;
+    yield chunk;
+  }
+  if (size !== file.byteSize || hash.digest('hex') !== file.checksum) throw new Error('Artwork integrity mismatch');
+}
+// Streams the archive instead of buffering up to 4 × 30MB per request. Missing or resized objects are rejected with 503
+// before any byte is sent; a checksum mismatch found mid-stream aborts the response, so the client never gets a valid ZIP.
+export async function artworkArchive(pool: pg.Pool, storage: Pick<ReturnType<typeof createStorage>, 'objectSize' | 'openRead'>, userId: string, jobId: string) {
   const job = await ownedArtworkJob(pool, userId, jobId);
   const files = await readyArtworkFiles(pool, userId, jobId, job);
-  const zip = new JSZip();
   try {
-    for (const file of files) {
-      const bytes = await storage.getBuffer(file.objectKey, file.byteSize);
-      if (bytes.length !== file.byteSize || createHash('sha256').update(bytes).digest('hex') !== file.checksum) throw new Error('Artwork integrity mismatch');
-      zip.file(`${file.direction}.png`, bytes);
-    }
-    return { buffer: await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' }),
-      filename: `${job.schemeCode.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')}@四面素材-${jobId.slice(0, 8)}.zip` };
+    const sizes = await Promise.all(files.map(file => storage.objectSize(file.objectKey)));
+    if (sizes.some((size, index) => size !== files[index]!.byteSize)) throw new Error('Artwork integrity mismatch');
   } catch { throw projectError('ARTWORK_STORAGE_UNAVAILABLE', 503); }
+  return {
+    stream: storedZipStream(files.map(file => ({
+      name: `${file.direction}.png`,
+      open: async () => verifiedArtwork(await storage.openRead(file.objectKey, file.byteSize), file),
+    }))),
+    filename: `${job.schemeCode.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')}@四面素材-${jobId.slice(0, 8)}.zip`,
+  };
 }

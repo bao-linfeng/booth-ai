@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../infra/storage.js';
-import { rulesVersion, type BoothSpace, type Candidate, type Catalog, type MatchDiagnostics, type Option } from './domain.js';
+import { rulesVersion, type BoothSpace, type Candidate, type CandidateImage, type Catalog, type MatchDiagnostics, type MatchItem, type Option, type PublicImage } from './domain.js';
 
 interface CandidateRow {
   id: string;
@@ -78,7 +78,7 @@ export async function loadCatalog(pool: pg.Pool | pg.PoolClient): Promise<Catalo
   };
 }
 
-export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: Catalog, storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>, code?: string): Promise<{ candidates: Candidate[]; diagnostics: MatchDiagnostics }> {
+export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: Catalog, code?: string): Promise<{ candidates: Candidate[]; diagnostics: MatchDiagnostics }> {
   const result = await pool.query<CandidateRow>(`
     SELECT s.id, s.code, s.length_mm AS "lengthMm", s.width_mm AS "widthMm",
       s.height_mm AS "heightMm", s.area_sqm::float8 AS "areaM2", s.opening_count AS "openingCount",
@@ -112,15 +112,23 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
     WHERE a.scheme_id = ANY($1::uuid[]) AND a.is_active = true AND v.byte_size > 0
     ORDER BY a.scheme_id, a.sort_order, a.id`, [result.rows.map(row => row.id)]);
     
+  const assetsByScheme = new Map<string, AssetRow[]>();
+  for (const asset of assets.rows) {
+    const bound = assetsByScheme.get(asset.schemeId);
+    if (bound) bound.push(asset);
+    else assetsByScheme.set(asset.schemeId, [asset]);
+  }
+  const productSystems = new Map(catalog.productSystems.map(option => [option.id, option]));
+  const questionIds = new Set(catalog.applicabilityQuestions.map(question => question.id));
   const candidates: Candidate[] = [];
-  
+
   for (const row of result.rows) {
-    const product = catalog.productSystems.find(option => option.id === row.productSystemId);
-    const bound = assets.rows.filter(asset => asset.schemeId === row.id);
+    const product = productSystems.get(row.productSystemId);
+    const bound = assetsByScheme.get(row.id) ?? [];
     const images = bound.filter(asset => asset.type === 'rendering');
     const masks = bound.filter(asset => asset.type === 'mask');
     const rules = row.conditions?.rules;
-    const validRules = Array.isArray(rules) && rules.every((rule: unknown) => !!rule && typeof rule === 'object' && 'id' in rule && typeof rule.id === 'string' && 'expectedValue' in rule && typeof rule.expectedValue === 'boolean' && catalog.applicabilityQuestions.some(question => question.id === rule.id));
+    const validRules = Array.isArray(rules) && rules.every((rule: unknown) => !!rule && typeof rule === 'object' && 'id' in rule && typeof rule.id === 'string' && 'expectedValue' in rule && typeof rule.expectedValue === 'boolean' && questionIds.has(rule.id));
     const invalidData = ![row.lengthMm, row.widthMm, row.heightMm].every(value => Number.isSafeInteger(value) && value > 0)
       || row.areaM2 !== row.lengthMm * row.widthMm / 1_000_000
       || !Number.isInteger(row.openingCount) || row.openingCount < 1 || row.openingCount > 4 || !product
@@ -141,10 +149,7 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
         openingCount: row.openingCount,
         productSystemId: product.id, productSystemLabel: product.label
       },
-      images: await Promise.all(images.map(async image => {
-        const url = await storage.signDownload(image.objectKey, 300);
-        return { assetId: image.id, url, thumbnailUrl: url, order: image.order, width: image.width!, height: image.height! };
-      })),
+      images: images.map(image => ({ assetId: image.id, objectKey: image.objectKey, order: image.order, width: image.width!, height: image.height! })),
       styleId: row.styleId,
       industryIds: row.industryIds ?? [],
       budgetTierId: row.budgetTierId,
@@ -157,4 +162,17 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
     });
   }
   return { candidates, diagnostics };
+}
+
+type Signer = Pick<ReturnType<typeof createStorage>, 'signDownload'>;
+
+export function signImages(storage: Signer, images: CandidateImage[]): Promise<PublicImage[]> {
+  return Promise.all(images.map(async ({ objectKey, ...image }) => {
+    const url = await storage.signDownload(objectKey, 300);
+    return { ...image, url, thumbnailUrl: url };
+  }));
+}
+
+export function signMatchItems(storage: Signer, items: MatchItem[]): Promise<MatchItem<PublicImage>[]> {
+  return Promise.all(items.map(async item => ({ ...item, images: await signImages(storage, item.images) })));
 }

@@ -41,4 +41,11 @@ test('bounded S3 binary reads preserve bytes and reject oversized and unavailabl
   await assert.rejects(storage.getBuffer('chunked', bytes.length), /size limit/);
   await assert.rejects(storage.getBuffer('missing', bytes.length));
   await assert.rejects(storage.getBuffer('binary', 0), /Invalid object size limit/);
+  const streamed: Uint8Array[] = [];
+  for await (const chunk of await storage.openRead('chunked', bytes.length * 2)) streamed.push(chunk);
+  assert.deepEqual(Buffer.concat(streamed), Buffer.concat([bytes, bytes]));
+  await assert.rejects(async () => { for await (const _ of await storage.openRead('chunked', bytes.length)); }, /size limit/);
+  await assert.rejects(storage.openRead('binary', bytes.length - 1), /size limit/);
+  assert.equal(await storage.objectSize('binary'), bytes.length);
+  await assert.rejects(storage.objectSize('missing'));
 });

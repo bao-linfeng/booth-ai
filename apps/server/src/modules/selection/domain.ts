@@ -61,6 +61,15 @@ export interface Specifications {
   productSystemLabel: string;
 }
 
+/** Unsigned rendering reference; URLs are signed only for the items actually returned. */
+export interface CandidateImage {
+  assetId: string;
+  objectKey: string;
+  order: number;
+  width: number;
+  height: number;
+}
+
 export interface PublicImage {
   assetId: string;
   url: string;
@@ -73,7 +82,7 @@ export interface PublicImage {
 export interface Candidate {
   code: string;
   specifications: Specifications;
-  images: PublicImage[];
+  images: CandidateImage[];
   styleId: string | null;
   industryIds: string[];
   budgetTierId: string | null;
@@ -94,10 +103,10 @@ export interface PendingConfirmation {
   message: string;
 }
 
-export interface MatchItem {
+export interface MatchItem<Image = CandidateImage> {
   code: string;
   matchType: 'direct' | 'reference' | 'random';
-  images: PublicImage[];
+  images: Image[];
   specifications: Specifications;
   reasons: string[];
   differences: { field: string; requested: string; actual: string; reason: string; }[];

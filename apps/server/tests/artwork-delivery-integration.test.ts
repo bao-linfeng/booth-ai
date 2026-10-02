@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
+import { buffer as streamBuffer } from 'node:stream/consumers';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
@@ -43,9 +44,9 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     const small = await sharp(jpeg).resize(512, 342).png().toBuffer();
     const sourceChecksum = createHash('sha256').update(jpeg).digest('hex');
     const buffers = new Map<string, Buffer>([['selected-theme.jpg', jpeg]]);
-    const storage = { getBuffer: async (key: string) => {
-      const bytes = buffers.get(key); if (!bytes) throw new Error('Missing storage object'); return bytes;
-    }, putBuffer: async (key: string, bytes: Buffer, mime: string) => { assert.equal(mime, 'image/png'); buffers.set(key, bytes); },
+    const read = (key: string) => { const bytes = buffers.get(key); if (!bytes) throw new Error('Missing storage object'); return bytes; };
+    const storage = { getBuffer: async (key: string) => read(key), objectSize: async (key: string) => read(key).length,
+    openRead: async (key: string) => [read(key)], putBuffer: async (key: string, bytes: Buffer, mime: string) => { assert.equal(mime, 'image/png'); buffers.set(key, bytes); },
     signDownload: async (key: string) => `https://assets.example.test/${key}` } as unknown as ReturnType<typeof createStorage>;
     async function addAsset(type: string, order = 0, related?: string) {
       const id = randomUUID();
@@ -150,7 +151,7 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     assert.ok(ready.directions.every(d => d.width === 1536 && d.height === 1024));
     await processArtworkJob(pool, jobId, config, storage); await settleArtworkJob(pool, jobId);
     assert.equal(calls, 4); assert.equal((await pool.query('SELECT * FROM credit_transactions WHERE artwork_job_id=$1', [jobId])).rowCount, 1);
-    const zip = await JSZip.loadAsync((await artworkArchive(pool, storage, user, jobId)).buffer);
+    const zip = await JSZip.loadAsync(await streamBuffer((await artworkArchive(pool, storage, user, jobId)).stream));
     assert.deepEqual(Object.keys(zip.files).sort(), ['back.png', 'front.png', 'left.png', 'right.png']);
     for (const direction of DIRECTIONS) assert.equal((await sharp(await zip.file(`${direction}.png`)!.async('nodebuffer')).metadata()).format, 'png');
     const files = await artworkFiles(pool, jobId);

@@ -1,4 +1,4 @@
-import { S3Client, HeadBucketCommand, CreateBucketCommand, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, HeadBucketCommand, HeadObjectCommand, CreateBucketCommand, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Config } from '../config.js';
 
@@ -11,6 +11,35 @@ export function createStorage(config: Config) {
   const client = new S3Client({ ...options, endpoint: config.s3.endpoint });
   const publicClient = new S3Client({ ...options, endpoint: config.s3.publicEndpoint });
   const Bucket = config.s3.bucket;
+  // Bounded streaming read; the returned iterable must be consumed (or returned) to release the connection.
+  async function openRead(key: string, maxBytes: number): Promise<AsyncIterable<Uint8Array>> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('Invalid object size limit');
+    const response = await client.send(new GetObjectCommand({ Bucket, Key: key }));
+    if (!response.Body) throw new Error('Object body unavailable');
+    const reader = response.Body.transformToWebStream().getReader();
+    const release = async () => {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    };
+    if (response.ContentLength !== undefined && response.ContentLength > maxBytes) {
+      await release();
+      throw new Error('Object exceeds size limit');
+    }
+    return (async function* () {
+      let size = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) return;
+          size += value.byteLength;
+          if (size > maxBytes) throw new Error('Object exceeds size limit');
+          yield value;
+        }
+      } finally {
+        await release();
+      }
+    })();
+  }
   return {
     async check() { await client.send(new HeadBucketCommand({ Bucket })); },
     async ensureBucket() {
@@ -35,26 +64,19 @@ export function createStorage(config: Config) {
       return response.Body?.transformToString();
     },
     async getBuffer(key: string, maxBytes: number): Promise<Buffer> {
-      if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('Invalid object size limit');
-      const response = await client.send(new GetObjectCommand({ Bucket, Key: key }));
-      if (!response.Body) throw new Error('Object body unavailable');
-      const reader = response.Body.transformToWebStream().getReader();
-      try {
-        if (response.ContentLength !== undefined && response.ContentLength > maxBytes) throw new Error('Object exceeds size limit');
-        const chunks: Uint8Array[] = [];
-        let size = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          size += value.byteLength;
-          if (size > maxBytes) throw new Error('Object exceeds size limit');
-          chunks.push(value);
-        }
-        return Buffer.concat(chunks, size);
-      } finally {
-        await reader.cancel().catch(() => {});
-        reader.releaseLock();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      for await (const chunk of await openRead(key, maxBytes)) {
+        chunks.push(chunk);
+        size += chunk.byteLength;
       }
+      return Buffer.concat(chunks, size);
+    },
+    openRead,
+    async objectSize(key: string): Promise<number> {
+      const response = await client.send(new HeadObjectCommand({ Bucket, Key: key }));
+      if (response.ContentLength === undefined) throw new Error('Object size unavailable');
+      return response.ContentLength;
     },
     async delete(key: string) { await client.send(new DeleteObjectCommand({ Bucket, Key: key })); },
     async deleteObject(key: string): Promise<void> {

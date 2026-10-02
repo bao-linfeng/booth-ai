@@ -72,7 +72,7 @@ export async function registerArtworkJobRoutes(app: FastifyInstance, pool: pg.Po
   app.get<{ Params: { jobId: string } }>('/artwork-jobs/:jobId/download', { schema: { params: jobParams } }, async (request, reply) => {
     const archive = await artworkArchive(pool, storage, clientUserId(request), request.params.jobId);
     return reply.header('Cache-Control', 'private, no-store').type('application/zip')
-      .header('Content-Disposition', `attachment; filename="artworks.zip"; filename*=UTF-8''${encodeURIComponent(archive.filename)}`).send(archive.buffer);
+      .header('Content-Disposition', `attachment; filename="artworks.zip"; filename*=UTF-8''${encodeURIComponent(archive.filename)}`).send(archive.stream);
   });
   app.get<{ Params: { jobId: string; assetId: string } }>('/artwork-jobs/:jobId/assets/:assetId/download', { schema: { params: {
     type: 'object', required: ['jobId', 'assetId'], properties: { jobId: uuid, assetId: uuid },

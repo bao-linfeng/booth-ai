@@ -108,7 +108,7 @@ test('asset scope migration and all baseline consumers isolate generated assets 
     company: '测试公司', contact: { name: '联系人', email: 'test@example.com' } };
   await t.test('selection, anonymous downloads and quote snapshots use the same baseline', async () => {
     const catalog = await loadCatalog(pool);
-    const candidates = await loadCandidatePool(pool, catalog, { signDownload: async key => key }, code);
+    const candidates = await loadCandidatePool(pool, catalog, code);
     assert.equal(candidates.candidates.length, 1);
     assert.deepEqual(new Set(candidates.candidates[0]!.images.map(image => image.assetId)), new Set(images.map(image => image.id)));
     assert.deepEqual((await listDeliverables(pool, code, 'artwork')).map(item => item.assetId), [baseline.get('artwork')!.id]);
@@ -130,7 +130,7 @@ test('asset scope migration and all baseline consumers isolate generated assets 
     assert.equal(await findCachedThemeJob(pool, other, 'scope-cache', 1), null);
     await assert.rejects(loadGenerationSnapshot(pool, { schemeCode: code, sourceAssetId: theme.id, input: { industryId: randomUUID(), styleId: randomUUID() }, requestedCount: 1, cacheMode: 'reuse' }), { reason: 'SOURCE_UNAVAILABLE' });
     await pool.query('UPDATE scheme_assets SET is_active=false WHERE id=$1', [baseline.get('artwork')!.id]);
-    assert.equal((await loadCandidatePool(pool, catalog, { signDownload: async () => '' }, code)).candidates.length, 0);
+    assert.equal((await loadCandidatePool(pool, catalog, code)).candidates.length, 0);
     assert.deepEqual(await listDeliverables(pool, code, 'artwork'), []);
     assert.equal((await deliverableAvailability(pool, code)).artwork, false);
     await assert.rejects(createQuoteRequest(pool, user, { ...input, requestKey: randomUUID() }), { reason: 'SCHEME_UNAVAILABLE' });

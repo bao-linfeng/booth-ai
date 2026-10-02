@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
-import type { MatchDiagnostics, MatchItem, Requirement } from '../selection/domain.js';
+import type { MatchDiagnostics, MatchItem, PublicImage, Requirement } from '../selection/domain.js';
+
+type RecordedMatchItem = MatchItem<Pick<PublicImage, 'assetId' | 'order' | 'width' | 'height'>>;
 
 const visitorPattern = /^[a-zA-Z0-9_-]{16,128}$/;
 
@@ -42,7 +44,7 @@ export interface SearchRecordInput {
     counts: { direct: number; reference: number; random: number; total: number };
     reasons: string[];
     diagnostics: MatchDiagnostics;
-    items: MatchItem[];
+    items: RecordedMatchItem[];
     rulesVersion: string;
     dictionaryVersion: string;
   };
@@ -85,7 +87,7 @@ export async function recordParse(pool: pg.Pool, input: ParseRecordInput): Promi
   return id;
 }
 
-function snapshotItems(items: MatchItem[]) {
+function snapshotItems(items: RecordedMatchItem[]) {
   return items.map(item => ({
     code: item.code,
     matchType: item.matchType,

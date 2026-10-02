@@ -11,7 +11,7 @@ import { parseWithModels } from './llm.js';
 import { matchSchemes } from './match.js';
 import { parseRequirement } from './parse.js';
 import { buildSelectionMessages } from './prompt.js';
-import { loadCandidatePool, loadCatalog } from './repository.js';
+import { loadCandidatePool, loadCatalog, signImages, signMatchItems } from './repository.js';
 
 export interface ParseSelectionInput {
   attemptId?: string;
@@ -68,10 +68,12 @@ export async function matchSelection(pool: pg.Pool, storage: Pick<ReturnType<typ
   const attemptId = await ensureAttempt(pool, input.attemptId, identity);
   const catalog = await getSelectionCatalog(pool);
   const requirement = validateRequirement(input.requirement, catalog);
-  const { candidates, diagnostics } = await selectionDependency(() => loadCandidatePool(pool, catalog, storage));
+  const { candidates, diagnostics } = await selectionDependency(() => loadCandidatePool(pool, catalog));
   const result = matchSchemes(candidates, requirement, input.mode, input.inputContext.textProvided, diagnostics, catalog.applicabilityQuestions);
+  // Only the returned items (at most three) need presigned image URLs.
+  const items = await selectionDependency(() => signMatchItems(storage, result.items));
   const data = {
-    ...result, status: result.status as 'matched' | 'no_match' | 'needs_clarification',
+    ...result, items, status: result.status as 'matched' | 'no_match' | 'needs_clarification',
     dictionaryVersion: catalog.dictionaryVersion, attemptId, visitorId: identity.visitorId,
   };
   const searchId = await recordSearch(pool, {
@@ -84,8 +86,10 @@ export async function matchSelection(pool: pg.Pool, storage: Pick<ReturnType<typ
 
 export async function getSelectionScheme(pool: pg.Pool, storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>, code: string) {
   const catalog = await getSelectionCatalog(pool);
-  const { candidates: [candidate] } = await selectionDependency(() => loadCandidatePool(pool, catalog, storage, code));
+  const { candidates: [candidate] } = await selectionDependency(() => loadCandidatePool(pool, catalog, code));
   if (!candidate) throw Object.assign(new Error('Scheme not visible'), { statusCode: 404 });
-  const availability = await selectionDependency(() => deliverableAvailability(pool, candidate.code));
-  return { candidate, availability };
+  const [images, availability] = await selectionDependency(() => Promise.all([
+    signImages(storage, candidate.images), deliverableAvailability(pool, candidate.code),
+  ]));
+  return { candidate: { ...candidate, images }, availability };
 }

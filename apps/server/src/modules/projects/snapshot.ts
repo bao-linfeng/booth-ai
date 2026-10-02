@@ -31,7 +31,7 @@ export async function captureScheme(client: pg.PoolClient, input: Pick<QuoteInpu
   if (!scheme || scheme.publishStatus !== 'published') throw projectError('SCHEME_UNAVAILABLE');
   if (input.schemeRevision !== undefined && input.schemeRevision !== scheme.revision) throw projectError('SCHEME_REVISION_CHANGED');
   const catalog = await loadCatalog(client);
-  const { candidates } = await loadCandidatePool(client,catalog,{ signDownload: async () => '' },scheme.code);
+  const { candidates } = await loadCandidatePool(client,catalog,scheme.code);
   if (!candidates.length) throw projectError('SCHEME_UNAVAILABLE');
   await client.query('SELECT id FROM scheme_boms WHERE scheme_id=$1 FOR UPDATE', [scheme.id]);
   const bom = await getBom(client, scheme.code);
