@@ -8,7 +8,7 @@ import type pg from 'pg';
 import { loadConfig } from '../src/config.js';
 import type { Logger } from '../src/infra/logger.js';
 import { errorCode } from '../src/infra/logger.js';
-import { providerRequestId } from '../src/infra/image-provider.js';
+import { providerRequestId } from '../src/infra/ai/image.js';
 import { migrationReadiness, readMigrations } from '../src/infra/migrations.js';
 import { createWebhookSender, WebhookDeliveryError } from '../src/infra/webhook.js';
 import { PROJECT_NOTIFICATION_MAX_ATTEMPTS, projectNotificationBackoffSeconds } from '../src/modules/projects/notifications.js';

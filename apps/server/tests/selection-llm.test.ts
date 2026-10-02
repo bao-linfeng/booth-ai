@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { emptyRequirement, type Catalog } from '../src/modules/selection/domain.js';
 import { mergeExtraction, parseWithModels, requestExtraction } from '../src/modules/selection/llm.js';
 import { matchSchemes } from '../src/modules/selection/match.js';
-import type { ActiveAiModel } from '../src/infra/ai-models.js';
+import type { ActiveAiModel } from '../src/infra/ai/types.js';
 
 const catalog: Catalog = {
   dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] }, boothSpaces: [],
@@ -12,7 +12,7 @@ const catalog: Catalog = {
   features: [], applicabilityQuestions: [],
 };
 const models: ActiveAiModel[] = ['qwen', 'deepseek'].map((provider, index) => ({
-  purpose: 'selection_parse', provider: provider as 'qwen' | 'deepseek', model: provider,
+  purpose: 'selection_parse', provider, label: provider, model: provider,
   apiKey: 'test-key', credentialConfigured: true, enabled: true, priority: index + 1, unitCredits: null, revision: 1,
 }));
 

@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import sharp from 'sharp';
-import { downloadImage, editImage, geminiAspectRatio, IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage } from '../src/infra/image-provider.js';
-import { modelDefinitions } from '../src/infra/ai-models.js';
+import { AI_MODELS, downloadGeneratedImage as downloadImage, findModelDefinition, imageAdapter } from '../src/infra/ai/catalog.js';
+import { IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage } from '../src/infra/ai/image.js';
+import { geminiAspectRatio } from '../src/infra/ai/providers/gemini-image.js';
+import type { ActiveAiModel, AiPurpose, ImageEditRequest } from '../src/infra/ai/types.js';
 
 const deadline = () => new Date(Date.now() + 60_000);
+function activeModel(purpose: AiPurpose, provider: string, apiKey = 'secret'): ActiveAiModel {
+  const { label, model } = findModelDefinition(purpose, provider)!;
+  return { purpose, provider, label, model, apiKey, revision: 1, unitCredits: 3, priority: 0, enabled: true, credentialConfigured: true };
+}
+const edit = (model: ActiveAiModel, reference: Buffer, prompt: string, options: Partial<ImageEditRequest> = {}) =>
+  imageAdapter(model).edit(model, { reference, prompt, count: 1, deadline: deadline(), ...options });
 
 test('image acceptance detects actual format, normalizes PNG and rejects malformed or oversized images', async () => {
   const jpeg = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).jpeg().toBuffer();
@@ -39,24 +47,22 @@ test('generated download is bounded, timed and rejects untrusted URLs or redirec
 test('supplier errors distinguish explicit rejection from uncertain acceptance without leaking response bodies', async t => {
   const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
   const reference = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
-  const model = { purpose: 'theme', provider: 'openai', model: modelDefinitions.openai.model, apiKey: 'secret',
-    revision: 1, unitCredits: 3, priority: 1, enabled: true, credentialConfigured: true } as const;
+  const model = activeModel('theme', 'openai');
   for (const [status, retryable, unknown] of [[400, false, false], [429, true, false], [500, false, true]] as const) {
     globalThis.fetch = async (_input, init) => { assert.ok(init?.signal); return new Response('secret upstream body', { status }); };
-    await assert.rejects(editImage(model, reference, 'prompt', 1, deadline()), error =>
+    await assert.rejects(edit(model, reference, 'prompt'), error =>
       error instanceof ImageGenerationError && error.retryable === retryable && error.outcomeUnknown === unknown && !error.message.includes('secret'));
   }
   globalThis.fetch = async () => { throw new Error('network reset secret'); };
-  await assert.rejects(editImage(model, reference, 'prompt', 1, deadline()), error => error instanceof ImageGenerationError && error.outcomeUnknown);
+  await assert.rejects(edit(model, reference, 'prompt'), error => error instanceof ImageGenerationError && error.outcomeUnknown);
   globalThis.fetch = async () => new Response('malformed JSON');
-  await assert.rejects(editImage(model, reference, 'prompt', 1, deadline()), /PROVIDER_OUTCOME_UNKNOWN/);
+  await assert.rejects(edit(model, reference, 'prompt'), /PROVIDER_OUTCOME_UNKNOWN/);
 });
 
 test('gemini edits send the documented generateContent payload and keep only final images', async t => {
   const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
   const reference = await sharp({ create: { width: 1200, height: 800, channels: 3, background: '#123456' } }).png().toBuffer();
-  const model = { purpose: 'artwork', provider: 'gemini', model: modelDefinitions.gemini.model, apiKey: 'gemini-secret',
-    revision: 1, unitCredits: 3, priority: 0, enabled: true, credentialConfigured: true } as const;
+  const model = activeModel('artwork', 'gemini', 'gemini-secret');
   assert.equal(model.model, 'gemini-3.1-flash-image');
   const requests: { url: string; headers: Headers; body: any }[] = [];
   globalThis.fetch = async (input, init) => {
@@ -68,7 +74,7 @@ test('gemini edits send the documented generateContent payload and keep only fin
     ] } }] });
   };
   const observed: string[] = [];
-  const images = await editImage(model, reference, 'artwork prompt', 1, deadline(), { artwork: true, mask: Buffer.from('ignored'), onProviderRequest: id => { observed.push(id); } });
+  const images = await edit(model, reference, 'artwork prompt', { mask: Buffer.from('ignored'), onProviderRequest: id => { observed.push(id); } });
   assert.deepEqual(images, ['data:image/jpeg;base64,ZmluYWw=']);
   assert.deepEqual(observed, ['resp-1']);
   const [request] = requests;
@@ -82,7 +88,7 @@ test('gemini edits send the documented generateContent payload and keep only fin
   assert.ok(Buffer.from(parts[1].inlineData.data, 'base64').equals(reference));
 
   const portrait = await sharp({ create: { width: 900, height: 1600, channels: 3, background: '#123456' } }).jpeg().toBuffer();
-  await editImage({ ...model, purpose: 'theme' }, portrait, 'theme prompt', 1, deadline());
+  await edit(activeModel('theme', 'gemini', 'gemini-secret'), portrait, 'theme prompt');
   assert.equal(requests[1]?.body.generationConfig.imageConfig.aspectRatio, '9:16');
   assert.equal(requests[1]?.body.contents[0].parts[1].inlineData.mimeType, 'image/jpeg');
 });
@@ -98,8 +104,7 @@ test('gemini aspect ratio picks the closest supported ratio', () => {
 test('gemini responses without final images are classified instead of silently empty', async t => {
   const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
   const reference = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
-  const model = { purpose: 'theme', provider: 'gemini', model: modelDefinitions.gemini.model, apiKey: 'secret',
-    revision: 1, unitCredits: 3, priority: 0, enabled: true, credentialConfigured: true } as const;
+  const model = activeModel('theme', 'gemini');
   const cases: [unknown, string, boolean][] = [
     [{ promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } }, 'PROVIDER_CONTENT_BLOCKED', false],
     [{ candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [] } }] }, 'PROVIDER_CONTENT_BLOCKED', false],
@@ -109,11 +114,11 @@ test('gemini responses without final images are classified instead of silently e
   ];
   for (const [body, code, unknown] of cases) {
     globalThis.fetch = async () => Response.json(body);
-    await assert.rejects(editImage(model, reference, 'prompt', 1, deadline()), error =>
+    await assert.rejects(edit(model, reference, 'prompt'), error =>
       error instanceof ImageGenerationError && error.code === code && !error.retryable && error.outcomeUnknown === unknown);
   }
   globalThis.fetch = async () => new Response('{"error":{"message":"secret upstream"}}', { status: 429 });
-  await assert.rejects(editImage(model, reference, 'prompt', 1, deadline()), error =>
+  await assert.rejects(edit(model, reference, 'prompt'), error =>
     error instanceof ImageGenerationError && error.code === 'PROVIDER_RATE_LIMITED' && error.retryable && !error.message.includes('secret'));
 });
 
@@ -128,8 +133,31 @@ test('gemini re-encodes references that would exceed the inline request limit', 
     sent = JSON.parse(String(init?.body)).contents[0].parts[1].inlineData;
     return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'ZmluYWw=' } }] } }] });
   };
-  await editImage({ purpose: 'theme', provider: 'gemini', model: modelDefinitions.gemini.model, apiKey: 'secret',
-    revision: 1, unitCredits: 3, priority: 0, enabled: true, credentialConfigured: true }, reference, 'prompt', 1, deadline());
+  await edit(activeModel('theme', 'gemini'), reference, 'prompt');
   assert.equal(sent?.mimeType, 'image/jpeg');
   assert.ok(Buffer.from(sent!.data, 'base64').length < 14 * 1024 * 1024);
+});
+
+test('catalog registers each purpose/provider once with an adapter matching its purpose', () => {
+  const keys = AI_MODELS.map(definition => `${definition.purpose}:${definition.provider}`);
+  assert.equal(new Set(keys).size, keys.length);
+  for (const definition of AI_MODELS) {
+    assert.match(definition.provider, /^[a-z][a-z0-9_-]{0,63}$/);
+    assert.ok(definition.model && definition.label);
+    if (definition.purpose === 'selection_parse') assert.equal(typeof definition.adapter.complete, 'function');
+    else assert.ok(definition.adapter.maxImagesPerRequest >= 1 && typeof definition.adapter.edit === 'function');
+  }
+  assert.throws(() => imageAdapter({ purpose: 'selection_parse', provider: 'qwen' }), /PROVIDER_UNSUPPORTED/);
+  assert.throws(() => imageAdapter({ purpose: 'artwork', provider: 'wanx' }), /PROVIDER_UNSUPPORTED/);
+});
+
+test('openai adapter derives size and quality from the model purpose', async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  const reference = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
+  const forms: FormData[] = [];
+  globalThis.fetch = async (_input, init) => { forms.push(init?.body as FormData); return Response.json({ data: [{ b64_json: 'aW1n' }] }); };
+  assert.deepEqual(await edit(activeModel('artwork', 'openai'), reference, 'prompt'), ['data:image/png;base64,aW1n']);
+  await edit(activeModel('theme', 'openai'), reference, 'prompt', { count: 3, mask: reference });
+  assert.deepEqual([forms[0]?.get('model'), forms[0]?.get('size'), forms[0]?.get('quality'), forms[0]?.get('n')], ['gpt-image-1.5', '1536x1024', 'high', '1']);
+  assert.deepEqual([forms[1]?.get('size'), forms[1]?.get('quality'), forms[1]?.get('n'), forms[1]?.has('mask')], ['1792x1024', null, '3', true]);
 });

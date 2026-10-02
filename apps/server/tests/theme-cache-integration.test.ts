@@ -6,7 +6,7 @@ import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
 import sharp from 'sharp';
-import { encryptCredential } from '../src/infra/ai-models.js';
+import { encryptCredential } from '../src/infra/ai/config.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerThemeModelRoutes } from '../src/http/client/theme-jobs/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';

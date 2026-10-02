@@ -8,7 +8,7 @@ import type { Redis } from 'ioredis';
 import pg from 'pg';
 import sharp from 'sharp';
 import JSZip from 'jszip';
-import { encryptCredential } from '../src/infra/ai-models.js';
+import { encryptCredential } from '../src/infra/ai/config.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerArtworkJobRoutes } from '../src/http/client/artwork-jobs/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';

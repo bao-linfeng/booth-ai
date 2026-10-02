@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import type { CreditJob } from '../credits/service.js';
-import { GENERATION_DEADLINE_MINUTES, GENERATION_LEASE_MINUTES, ImageGenerationError } from '../../infra/image-provider.js';
+import { GENERATION_DEADLINE_MINUTES, GENERATION_LEASE_MINUTES, ImageGenerationError } from '../../infra/ai/image.js';
 import { logger } from '../../infra/logger.js';
 
 export async function claimGeneration(database: pg.Pool, job: CreditJob) {

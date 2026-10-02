@@ -3,14 +3,15 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import type pg from 'pg';
 import sharp from 'sharp';
-import { encryptCredential, modelDefinitions } from '../src/infra/ai-models.js';
+import { findModelDefinition } from '../src/infra/ai/catalog.js';
+import { encryptCredential } from '../src/infra/ai/config.js';
 import { processThemeJob } from '../src/modules/generation/theme/execution.js';
 
 const encryptionKey = 'a'.repeat(64);
 const config = { aiModelEncryptionKey: encryptionKey, s3: { endpoint: 'http://silo:9000', publicEndpoint: 'http://localhost:19000',
   region: 'us-east-1', bucket: 'booth-assets', accessKeyId: 'access', secretAccessKey: 'secret' } };
 
-async function fixture(count = 2, prompt?: string) {
+async function fixture(count = 2, prompt?: string, provider = 'openai') {
   const jobId = randomUUID(); const userId = randomUUID(); const industryId = randomUUID(); const styleId = randomUUID();
   const image = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
   const queries: { sql: string; params?: unknown[] }[] = [];
@@ -21,7 +22,7 @@ async function fixture(count = 2, prompt?: string) {
   const job = () => ({ requestedCount: count, sourceAssetId: randomUUID(), schemeCode: 'S-1',
     input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status,
     leaseToken, leaseUntil: null, snapshot: prompt === undefined ? null : { prompt, mask: null, source: { objectKey: 'pinned.png' },
-      models: [{ provider: 'openai', model: modelDefinitions.openai.model, revision: 1 }] } });
+      models: [{ provider: 'openai', model: findModelDefinition('theme', 'openai')!.model, revision: 1 }] } });
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
     if (sql.startsWith('UPDATE theme_jobs SET lease_token = $2')) {
@@ -39,8 +40,8 @@ async function fixture(count = 2, prompt?: string) {
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
-    if (sql.includes('FROM ai_model_configs')) return { rows: enabled ? [{ purpose: 'theme', provider: 'openai', enabled: true,
-      priority: 1, unitCredits: 3, revision: 1, credentialCiphertext: encryptCredential('api-key', 'openai', encryptionKey) }] : [] };
+    if (sql.includes('FROM ai_model_configs')) return { rows: enabled ? [{ purpose: 'theme', provider, enabled: true,
+      priority: 1, unitCredits: 3, revision: 1, credentialCiphertext: encryptCredential('api-key', provider, encryptionKey) }] : [] };
     if (sql.includes('FROM scheme_baseline_assets')) return { rows: [{ objectKey: 'source/image.png' }] };
     if (sql.includes('FROM theme_job_generated_urls')) return { rows: [...urls] };
     if (sql.includes('INSERT INTO theme_job_generated_urls')) urls.push({ ordinal: Number(params?.[1]), url: String(params?.[2]) });
@@ -81,6 +82,18 @@ test('theme worker persists generation, accepts real images and settles once des
   assert.ok(f.queries.findIndex(q => q.sql.includes('INSERT INTO theme_job_provider_attempts')) < f.queries.findIndex(q => q.sql.includes('INSERT INTO theme_job_generated_urls')));
 });
 
+test('theme worker calls a single-image provider again until the requested count is collected', async t => {
+  const f = await fixture(2, undefined, 'gemini'); const oldFetch = globalThis.fetch; let calls = 0;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async input => {
+    assert.match(String(input), /generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.1-flash-image:generateContent$/);
+    calls++; return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: f.image.toString('base64') } }] } }] });
+  };
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+  assert.equal(calls, 2); assert.equal(f.state(), 'succeeded'); assert.equal(f.results.length, 2);
+  assert.deepEqual(f.attempts.map(attempt => [attempt.provider, attempt.status]), [['gemini', 'succeeded'], ['gemini', 'succeeded']]);
+});
+
 test('theme storage retry with partial generation never submits again and skips already uploaded ordinals', async t => {
   const f = await fixture(3); const oldFetch = globalThis.fetch; let calls = 0; let uploads = 0;
   t.after(() => { globalThis.fetch = oldFetch; });
@@ -95,7 +108,7 @@ test('theme storage retry with partial generation never submits again and skips 
 });
 
 test('theme outcome-unknown retry does not call a supplier', async t => {
-  const f = await fixture(1); f.attempts.push({ id: randomUUID(), provider: 'openai', model: modelDefinitions.openai.model, revision: 1, status: 'submitting' });
+  const f = await fixture(1); f.attempts.push({ id: randomUUID(), provider: 'openai', model: findModelDefinition('theme', 'openai')!.model, revision: 1, status: 'submitting' });
   const oldFetch = globalThis.fetch; t.after(() => { globalThis.fetch = oldFetch; });
   globalThis.fetch = async () => assert.fail('Must not resubmit an uncertain request');
   await processThemeJob(f.pool, f.jobId, config, f.storage as never);

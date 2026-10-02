@@ -3,7 +3,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type pg from 'pg';
 import sharp from 'sharp';
 import type { Config } from '../../../config.js';
-import { activeAiModels } from '../../../infra/ai-models.js';
+import { downloadGeneratedImage, imageAdapter } from '../../../infra/ai/catalog.js';
+import { activeAiModels } from '../../../infra/ai/config.js';
+import { IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
 import { transaction } from '../../../infra/database.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
 import type { createStorage } from '../../../infra/storage.js';
@@ -11,7 +13,6 @@ import { normalizeThemeInput, type GenerationSnapshot, type ThemeInput } from '.
 import { buildThemePrompt } from './prompt.js';
 import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../../credits/service.js';
 import { claimGeneration, publishGeneration, refreshGeneration } from '../execution.js';
-import { downloadImage, editImage, IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage, pollWanx } from '../../../infra/image-provider.js';
 import { logger, type Logger } from '../../../infra/logger.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
@@ -89,7 +90,9 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
     if (!model) throw new ImageGenerationError('MODEL_UNAVAILABLE', true);
     await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'provider_waiting');
     try {
-      const urls = await pollWanx(model, unresolved.taskId, deadline);
+      const adapter = imageAdapter(model);
+      if (!adapter.poll) throw new ImageGenerationError('PROVIDER_UNSUPPORTED');
+      const urls = await adapter.poll(model, unresolved.taskId, deadline);
       await persistGenerated(database, jobId, lease, unresolved.id, urls, job.requestedCount);
     } catch (error) {
       if (!(error instanceof ImageGenerationError) || error.retryable) throw error;
@@ -114,6 +117,7 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
   const source = await themeSource(database, job, storage);
   let collected = 0;
   for (const model of models) {
+    const adapter = imageAdapter(model);
     const prior = attempts.filter(attempt => attempt.provider === model.provider && attempt.model === model.model && attempt.revision === model.revision).length;
     for (let index = prior; index < 3; index++) {
       await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'provider_submitting');
@@ -125,17 +129,17 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
           VALUES($1, $2, $3, $4, $5, 'submitting')`, [attemptId, jobId, model.provider, model.model, model.revision]);
       });
       let urls: string[];
+      const count = Math.min(adapter.maxImagesPerRequest, job.requestedCount - collected);
       let submitted = false;
       let providerRequestId: string | undefined;
       try {
-        urls = await editImage(model, source.reference, prompt, model.provider === 'gemini' ? 1 : job.requestedCount,
-          deadline, { ...source, onSubmitted: async taskId => {
-            submitted = true;
-            await database.query("UPDATE theme_job_provider_attempts SET status = 'waiting', provider_task_id = $2, updated_at = now() WHERE id = $1", [attemptId, taskId]);
-          }, onProviderRequest: async id => {
-            providerRequestId = id;
-            await database.query('UPDATE theme_job_provider_attempts SET provider_request_id = $2 WHERE id = $1', [attemptId, id]);
-          } });
+        urls = await adapter.edit(model, { ...source, prompt, count, deadline, onSubmitted: async taskId => {
+          submitted = true;
+          await database.query("UPDATE theme_job_provider_attempts SET status = 'waiting', provider_task_id = $2, updated_at = now() WHERE id = $1", [attemptId, taskId]);
+        }, onProviderRequest: async id => {
+          providerRequestId = id;
+          await database.query('UPDATE theme_job_provider_attempts SET provider_request_id = $2 WHERE id = $1', [attemptId, id]);
+        } });
       } catch (error) {
         if (submitted) {
           if (error instanceof ImageGenerationError && !error.retryable && !error.outcomeUnknown && error.code === 'PROVIDER_GENERATION_FAILED') {
@@ -157,7 +161,8 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
       log.info({ attemptId, provider: model.provider, providerRequestId, images: urls.length }, 'Theme provider attempt completed');
       if (urls.length) {
         collected += urls.length;
-        if (model.provider === 'gemini' && collected < job.requestedCount) {
+        // Providers capped below the requested count are called again for the remainder; short answers end the job.
+        if (urls.length >= count && collected < job.requestedCount) {
           index--;
           continue;
         }
@@ -209,7 +214,7 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
       if (existing.rows[0]) continue;
       await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'result_validating');
       let image: Awaited<ReturnType<typeof normalizeGeneratedImage>>;
-      try { image = await normalizeGeneratedImage(await downloadImage(url, deadline)); }
+      try { image = await normalizeGeneratedImage(await downloadGeneratedImage(url, deadline)); }
       catch (error) {
         if (!(error instanceof ImageGenerationError) || error.retryable) throw error;
         log.warn({ ordinal, code: error.code }, 'Theme result rejected');

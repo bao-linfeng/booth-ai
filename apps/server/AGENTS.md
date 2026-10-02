@@ -12,6 +12,7 @@
 - [`docs/theme-outbox-recovery.md`](../../docs/theme-outbox-recovery.md) — 生成任务 Outbox 恢复机制
 - [`docs/asset-scope.md`](../../docs/asset-scope.md) — 方案基线资产与用户生成素材的作用域隔离
 - [`docs/worker-observability.md`](../../docs/worker-observability.md) — Worker 调度隔离、健康状态、指标、链路追踪与项目通知投递
+- [`docs/一期功能拆分/AI模型接入与配置.md`](../../docs/一期功能拆分/AI模型接入与配置.md) — AI 模型目录、适配器约定与接入新模型步骤（只改 `src/infra/ai/`，业务代码不写 provider 分支）
 
 ---
 
@@ -100,7 +101,7 @@ src/
 │   ├── redis.ts         # createRedis(config, 'worker'|'request')，角色决定重试策略
 │   ├── storage.ts       # S3 双端点客户端 + getSignedUrl（公开端点专用）
 │   ├── queue.ts         # Foundation、主题、画稿队列定义
-│   └── image-provider.ts # 外部图像生成、轮询、下载与图像校验
+│   └── ai/              # AI 模型目录 catalog.ts、配置与凭据 config.ts、图像通用能力 image.ts、providers/ 各提供商适配器
 ├── http/
 │   ├── admin/           # 管理端路由、校验、身份提取与响应映射
 │   ├── client/          # 参展商路由、校验、身份提取与响应映射

@@ -2,7 +2,9 @@ import { requestClient } from '#/api/request';
 
 export interface AiModelRecord {
   purpose: 'artwork' | 'selection_parse' | 'theme';
-  provider: 'deepseek' | 'gemini' | 'openai' | 'qwen' | 'wanx';
+  provider: string;
+  /** Display name from the server model catalog. */
+  label: string;
   model: string;
   credentialConfigured: boolean;
   enabled: boolean;

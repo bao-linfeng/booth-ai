@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
-import { listAiModels } from '../../../infra/ai-models.js';
+import { listAiModels } from '../../../infra/ai/config.js';
 import { clientUserId, requirePrincipal } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
 import type { createStorage } from '../../../infra/storage.js';
@@ -47,7 +47,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
   app.get('/theme-models', { schema: { tags: ['AI 换主题'], summary: '可选择的图像模型及每张图积分' } }, async () => {
     const models = (await listAiModels(pool)).filter(model => model.purpose === 'theme' && model.enabled &&
       model.credentialConfigured && model.unitCredits !== null);
-    return { code: 0, data: models.map(({ provider, model, unitCredits, revision }) => ({ provider, model, unitCredits, revision })) };
+    return { code: 0, data: models.map(({ provider, label, model, unitCredits, revision }) => ({ provider, label, model, unitCredits, revision })) };
   });
 
   app.post<{

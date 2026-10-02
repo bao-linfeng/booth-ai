@@ -1,13 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import type { Config } from '../../../config.js';
-import { activeAiModels, type ActiveAiModel } from '../../../infra/ai-models.js';
+import { downloadGeneratedImage, imageAdapter } from '../../../infra/ai/catalog.js';
+import { activeAiModels } from '../../../infra/ai/config.js';
+import { ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
+import type { ActiveAiModel } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, artworkFiles, completeArtworkFiles, type ArtworkSnapshot, type Direction } from './service.js';
 import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../../credits/service.js';
 import { claimGeneration, publishGeneration, refreshGeneration } from '../execution.js';
-import { downloadImage, editImage, ImageGenerationError, normalizeGeneratedImage } from '../../../infra/image-provider.js';
 import { logger } from '../../../infra/logger.js';
 
 type ArtworkConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
@@ -82,7 +84,7 @@ export async function processArtworkJob(
           let providerRequestId: string | undefined;
           try {
             const prompt = snapshot.directionPrompts?.[direction] ?? snapshot.prompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction]);
-            const generated = await editImage(model, reference, prompt, 1, deadline, { artwork: true, onProviderRequest: async id => {
+            const generated = await imageAdapter(model).edit(model, { reference, prompt, count: 1, deadline, onProviderRequest: async id => {
               providerRequestId = id;
               await database.query('UPDATE artwork_job_directions SET provider_request_id=$3 WHERE job_id=$1 AND direction=$2', [jobId, direction, id]);
             } });
@@ -103,7 +105,7 @@ export async function processArtworkJob(
           await publishGeneration(publish, jobId, { direction, status: 'generated' });
         }
         let image: Awaited<ReturnType<typeof normalizeArtworkImage>>;
-        try { image = await normalizeArtworkImage(await downloadImage(url, deadline)); }
+        try { image = await normalizeArtworkImage(await downloadGeneratedImage(url, deadline)); }
         catch (error) {
           if (error instanceof ImageGenerationError && error.retryable) throw error;
           const reason = error instanceof ImageGenerationError ? error.code.replace(/^IMAGE_/, 'ARTWORK_') :

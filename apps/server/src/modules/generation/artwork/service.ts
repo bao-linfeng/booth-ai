@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
-import { ARTWORK_PROVIDERS, listAiModels, type AiModelConfig } from '../../../infra/ai-models.js';
+import { listAiModels } from '../../../infra/ai/config.js';
+import type { AiModelConfig } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { storedZipStream } from '../../../infra/zip.js';
@@ -118,7 +119,7 @@ export async function assertThemeSelection(database: Database, userId: string, c
 }
 export async function loadArtworkSnapshot(pool: pg.Pool, userId: string, context: ArtworkContext): Promise<ArtworkSnapshot> {
   const selected = await assertThemeSelection(pool, userId, context);
-  const model = (await listAiModels(pool)).filter(m => m.purpose === 'artwork' && ARTWORK_PROVIDERS.includes(m.provider) && m.enabled && m.credentialConfigured && m.unitCredits !== null && m.unitCredits > 0)
+  const model = (await listAiModels(pool)).filter(m => m.purpose === 'artwork' && m.enabled && m.credentialConfigured && m.unitCredits !== null && m.unitCredits > 0)
     .sort((a, b) => a.priority - b.priority || a.provider.localeCompare(b.provider))[0];
   if (!model) throw projectError('MODEL_UNAVAILABLE');
   const labels = (await pool.query<{ id: string; label: string }>(`SELECT id::text AS id,item_label AS label FROM dictionary_items WHERE id=ANY($1::uuid[])`,

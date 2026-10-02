@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { Config } from '../../config.js';
-import { activeAiModels } from '../../infra/ai-models.js';
+import { activeAiModels } from '../../infra/ai/config.js';
 import type { createStorage } from '../../infra/storage.js';
 import { deliverableAvailability } from '../assets/deliverables.js';
 import { getActivePromptTemplate } from '../prompts/service.js';

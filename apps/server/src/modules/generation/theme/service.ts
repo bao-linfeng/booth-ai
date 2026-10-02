@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
-import { listAiModels, type AiModelConfig } from '../../../infra/ai-models.js';
+import { listAiModels } from '../../../infra/ai/config.js';
+import type { AiModelConfig } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
 import { buildThemePrompt } from './prompt.js';

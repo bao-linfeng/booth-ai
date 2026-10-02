@@ -5,7 +5,8 @@ import test from 'node:test';
 import type { Queue } from 'bullmq';
 import pg from 'pg';
 import sharp from 'sharp';
-import { encryptCredential, modelDefinitions } from '../src/infra/ai-models.js';
+import { findModelDefinition } from '../src/infra/ai/catalog.js';
+import { encryptCredential } from '../src/infra/ai/config.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { transaction } from '../src/infra/database.js';
 import { reserveJobCredits } from '../src/modules/credits/service.js';
@@ -43,7 +44,7 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
     await transaction(pool, async client => {
       await client.query(`INSERT INTO theme_jobs(id,user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,unit_credits,generation_snapshot)
         VALUES($1::uuid,$2,'RECOVERY',$3,'offer',$1::text,'{}',$4,3,$5)`, [id, user, source, count, JSON.stringify({ prompt: 'frozen prompt', mask: null,
-        source: { assetId: source, versionId: version, objectKey: 'source.png', checksum }, models: [{ provider, model: modelDefinitions[provider].model, revision: 1 }] })]);
+        source: { assetId: source, versionId: version, objectKey: 'source.png', checksum }, models: [{ provider, model: findModelDefinition('theme', provider)!.model, revision: 1 }] })]);
       await reserveJobCredits(client, { kind: 'theme', id }, user, count * 3);
     });
     return id;
@@ -64,7 +65,7 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
 
   const uncertain = await seed(1);
   await pool.query(`INSERT INTO theme_job_provider_attempts(id,job_id,provider,model,revision,status)
-    VALUES($1,$2,'openai',$3,1,'submitting')`, [randomUUID(), uncertain, modelDefinitions.openai.model]);
+    VALUES($1,$2,'openai',$3,1,'submitting')`, [randomUUID(), uncertain, findModelDefinition('theme', 'openai')!.model]);
   await processThemeJob(pool, uncertain, config, storage);
   assert.equal(calls, 1);
   assert.equal((await pool.query('SELECT status,reason FROM theme_job_provider_attempts WHERE job_id=$1', [uncertain])).rows[0].reason, 'PROVIDER_OUTCOME_UNKNOWN');
@@ -78,7 +79,7 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
 
   const waiting = await seed(1, 'wanx');
   await pool.query(`INSERT INTO theme_job_provider_attempts(id,job_id,provider,model,revision,status,provider_task_id)
-    VALUES($1,$2,'wanx',$3,1,'waiting','persisted-task')`, [randomUUID(), waiting, modelDefinitions.wanx.model]);
+    VALUES($1,$2,'wanx',$3,1,'waiting','persisted-task')`, [randomUUID(), waiting, findModelDefinition('theme', 'wanx')!.model]);
   globalThis.fetch = async (input, init) => {
     assert.equal(String(input), 'https://dashscope.aliyuncs.com/api/v1/tasks/persisted-task'); assert.ok(init?.signal);
     return Response.json({ output: { task_status: 'SUCCEEDED', results: [{ url: `data:image/png;base64,${image.toString('base64')}` }] } });

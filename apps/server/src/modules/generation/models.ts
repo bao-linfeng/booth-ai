@@ -1,5 +1,7 @@
 import type pg from 'pg';
-import { ARTWORK_PROVIDERS, encryptCredential, listAiModels, modelDefinitions, type AiProvider, type AiPurpose } from '../../infra/ai-models.js';
+import { findModelDefinition } from '../../infra/ai/catalog.js';
+import { encryptCredential, listAiModels } from '../../infra/ai/config.js';
+import type { AiProvider, AiPurpose } from '../../infra/ai/types.js';
 import { writeAuditLog } from '../../infra/audit.js';
 
 export interface ModelUpdate {
@@ -13,8 +15,7 @@ export interface ModelUpdate {
 
 export async function updateAiModel(pool: pg.Pool, provider: AiProvider, input: ModelUpdate, adminId: string, encryptionKey: string) {
   const { enabled, priority, unitCredits, expectedRevision, apiKey, purpose } = input;
-  if ((purpose === 'selection_parse') !== (modelDefinitions[provider].purpose === 'selection_parse') ||
-    (purpose === 'artwork' && !ARTWORK_PROVIDERS.includes(provider)) ||
+  if (!findModelDefinition(purpose, provider) ||
     (enabled && purpose === 'selection_parse' && priority === 0) || (purpose !== 'selection_parse' && priority !== 0) ||
     (purpose !== 'selection_parse' && enabled && unitCredits === null) || (purpose === 'selection_parse' && unitCredits !== null) ||
     (apiKey !== undefined && apiKey !== null && (!apiKey.trim() || apiKey !== apiKey.trim()))) {
@@ -23,6 +24,7 @@ export async function updateAiModel(pool: pg.Pool, provider: AiProvider, input: 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query('INSERT INTO ai_model_configs (purpose, provider) VALUES ($1, $2) ON CONFLICT DO NOTHING', [purpose, provider]);
     const current = await client.query<{ configured: boolean; revision: number }>(
       'SELECT credential_ciphertext IS NOT NULL AS configured, revision FROM ai_model_configs WHERE provider=$1 AND purpose=$2 FOR UPDATE', [provider, purpose]);
     if (current.rows[0]?.revision !== expectedRevision) throw Object.assign(new Error('Model configuration changed'), { statusCode: 409 });

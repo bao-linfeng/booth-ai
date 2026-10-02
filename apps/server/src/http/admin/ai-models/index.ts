@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
-import { listAiModels, modelDefinitions, type AiProvider } from '../../../infra/ai-models.js';
+import { AI_PROVIDERS } from '../../../infra/ai/catalog.js';
+import { listAiModels } from '../../../infra/ai/config.js';
+import type { AiProvider } from '../../../infra/ai/types.js';
 import { adminUserId } from '../../authentication.js';
 import { updateAiModel, type ModelUpdate } from '../../../modules/generation/models.js';
 
@@ -11,7 +13,7 @@ export async function registerAdminAiModelRoutes(app: FastifyInstance, pool: pg.
   app.put<{ Params: { provider: AiProvider }; Body: ModelUpdate }>('/ai-models/:provider', {
     schema: {
       tags: ['AI 模型配置'],
-      params: { type: 'object', required: ['provider'], properties: { provider: { type: 'string', enum: Object.keys(modelDefinitions) } } },
+      params: { type: 'object', required: ['provider'], properties: { provider: { type: 'string', enum: AI_PROVIDERS } } },
       body: { type: 'object', additionalProperties: false, required: ['purpose', 'enabled', 'priority', 'unitCredits', 'expectedRevision'], properties: {
         purpose: { type: 'string', enum: ['selection_parse', 'theme', 'artwork'] },
         enabled: { type: 'boolean' }, priority: { type: 'integer', minimum: 0, maximum: 2 },

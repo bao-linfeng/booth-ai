@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type pg from 'pg';
-import { activeAiModels, decryptCredential, encryptCredential, listAiModels } from '../src/infra/ai-models.js';
+import { AI_MODELS } from '../src/infra/ai/catalog.js';
+import { activeAiModels, decryptCredential, encryptCredential, listAiModels } from '../src/infra/ai/config.js';
 import { updateAiModel } from '../src/modules/generation/models.js';
 
 const encryptionKey = 'a'.repeat(64);
@@ -22,12 +23,12 @@ test('model credentials are authenticated and never exposed by config listing', 
       credentialCiphertext: encryptCredential(providerKey, 'openai', encryptionKey) },
   ] }) } as unknown as pg.Pool;
   const models = await listAiModels(pool);
+  const theme = (provider: string) => models.find(model => model.purpose === 'theme' && model.provider === provider);
   assert.equal(JSON.stringify(models).includes(providerKey), false);
   assert.equal(JSON.stringify(models).includes('credentialCiphertext'), false);
-  assert.equal(models[0]?.credentialConfigured, true);
-  assert.equal(models[1]?.credentialConfigured, false);
-  assert.equal(models[2]?.model, 'gpt-image-2.5-sunburst');
-  assert.equal(models[2]?.credentialConfigured, true);
+  assert.equal(theme('gemini')?.credentialConfigured, true);
+  assert.equal(theme('wanx')?.credentialConfigured, false);
+  assert.deepEqual([theme('openai')?.model, theme('openai')?.label, theme('openai')?.credentialConfigured], ['gpt-image-2.5-sunburst', 'GPT Image (OpenAI)', true]);
   const active = await activeAiModels(pool, 'theme', encryptionKey);
   assert.deepEqual(active.map(model => model.provider), ['gemini', 'openai']);
   assert.equal(active[0]?.apiKey, providerKey);
@@ -97,4 +98,29 @@ test('gemini can serve artwork with the Nano Banana default model', async () => 
   const [artwork] = await activeAiModels(pool, 'artwork', encryptionKey);
   assert.deepEqual([artwork?.provider, artwork?.model, artwork?.apiKey], ['gemini', 'gemini-3.1-flash-image', providerKey]);
   assert.equal((await activeAiModels(pool, 'theme', encryptionKey))[0]?.model, 'gemini-3.1-flash-image');
+});
+
+test('the catalog, not stored rows, decides which models are listed and usable', async () => {
+  const pool = { query: async () => ({ rows: [
+    { ...initial(), provider: 'retired', enabled: true, unitCredits: 1, credentialCiphertext: encryptCredential(providerKey, 'retired', encryptionKey) },
+  ] }) } as unknown as pg.Pool;
+  const models = await listAiModels(pool);
+  assert.deepEqual(models.map(model => `${model.purpose}:${model.provider}`), AI_MODELS.map(model => `${model.purpose}:${model.provider}`));
+  assert.ok(models.every(model => !model.enabled && model.revision === 1 && !model.credentialConfigured && model.unitCredits === null));
+  assert.deepEqual(await activeAiModels(pool, 'theme', encryptionKey), []);
+});
+
+test('first save of a catalog model without a stored row creates it inside the update transaction', async () => {
+  const queries: { sql: string; values?: unknown[] }[] = [];
+  const client = { query: async (sql: string, values?: unknown[]) => {
+    queries.push({ sql, values });
+    return sql.startsWith('SELECT credential_ciphertext') ? { rows: [{ configured: false, revision: 1 }] } : { rows: [] };
+  }, release: () => {} };
+  const pool = { connect: async () => client, query: async () => ({ rows: [] }) } as unknown as pg.Pool;
+  await updateAiModel(pool, 'gemini', { purpose: 'artwork', enabled: true, priority: 0, unitCredits: 8, expectedRevision: 1, apiKey: providerKey }, 'admin', encryptionKey);
+  const statements = queries.map(query => query.sql.split(/\s/)[0]);
+  assert.deepEqual(statements.slice(0, 4), ['BEGIN', 'INSERT', 'SELECT', 'UPDATE']);
+  assert.match(queries[1]!.sql, /ON CONFLICT DO NOTHING/);
+  assert.deepEqual(queries[1]!.values, ['artwork', 'gemini']);
+  await assert.rejects(updateAiModel(pool, 'unknown', { purpose: 'theme', enabled: false, priority: 0, unitCredits: null, expectedRevision: 1 }, 'admin', encryptionKey), { statusCode: 400 });
 });

@@ -1,4 +1,5 @@
-import type { ActiveAiModel } from '../../infra/ai-models.js';
+import { textAdapter } from '../../infra/ai/catalog.js';
+import type { ActiveAiModel } from '../../infra/ai/types.js';
 import { emptyRequirement, validateRequirement, type Catalog, type Requirement } from './domain.js';
 import { parseRequirement } from './parse.js';
 import { buildSelectionMessages } from './prompt.js';
@@ -6,17 +7,8 @@ import { buildSelectionMessages } from './prompt.js';
 type Field = keyof Requirement;
 
 export async function requestExtraction(model: ActiveAiModel, text: string, catalog: Catalog, signal: AbortSignal, templateBody?: string): Promise<unknown> {
-  const endpoint = model.provider === 'qwen' ? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions' : 'https://api.deepseek.com/chat/completions';
-  const response = await fetch(endpoint, {
-    method: 'POST', signal,
-    headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: model.model, temperature: 0, max_tokens: 2400, response_format: { type: 'json_object' },
-      messages: buildSelectionMessages(text, catalog, templateBody) })
-  });
-  if (!response.ok) throw new Error('Model unavailable');
-  const payload: unknown = await response.json();
-  const content = (payload as { choices?: { message?: { content?: unknown } }[] }).choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || content.length > 12000) throw new Error('Invalid model response');
+  const content = await textAdapter(model).complete(model, { messages: buildSelectionMessages(text, catalog, templateBody), maxTokens: 2400, json: true, signal });
+  if (content.length > 12000) throw new Error('Invalid model response');
   return JSON.parse(content) as unknown;
 }
 

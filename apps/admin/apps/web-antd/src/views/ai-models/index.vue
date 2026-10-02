@@ -102,17 +102,7 @@ onMounted(load);
           class="mb-4 rounded-lg border p-4 last:mb-0"
         >
           <div class="mb-4 flex flex-wrap items-center gap-2">
-            <strong>{{
-              row.provider === 'qwen'
-                ? '通义千问'
-                : row.provider === 'deepseek'
-                  ? 'DeepSeek'
-                  : row.provider === 'gemini'
-                    ? 'Gemini Nano Banana'
-                    : row.provider === 'openai'
-                      ? 'GPT Image (OpenAI)'
-                      : '通义万相'
-            }}</strong>
+            <strong>{{ row.label }}</strong>
             <Tag>{{ row.model }}</Tag>
             <Tag :color="row.credentialConfigured ? 'success' : 'warning'">
               {{ row.credentialConfigured ? '凭据已配置' : '缺少凭据' }}

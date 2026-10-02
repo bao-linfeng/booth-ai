@@ -414,7 +414,7 @@ onMounted(async () => {
                      </SelectTrigger>
                      <SelectContent>
                        <SelectItem v-for="model in themeModels" :key="model.provider" :value="model.provider">
-                         {{ model.provider === 'gemini' ? 'Gemini Nano Banana' : model.provider === 'openai' ? 'GPT Image (OpenAI)' : '通义万相' }} · {{ model.unitCredits }} 积分/张
+                         {{ model.label }} · {{ model.unitCredits }} 积分/张
                        </SelectItem>
                      </SelectContent>
                    </Select>
