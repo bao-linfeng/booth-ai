@@ -96,12 +96,12 @@ test('administrator can list BOMs without external scheme permissions', async t 
   const app = await buildApp(config, healthy, {
     pool: { query: async (sql: string) => {
       if (sql.includes('INSERT INTO admins')) return { rows: [{ id: 'admin-id' }] };
-      if (sql.includes('FROM admins WHERE id=')) return { rows: [{ enabled: true, roles: ['ROLE_ADMIN'] }] };
+      if (sql.includes('FROM admins WHERE id=')) return { rows: [{ enabled: true, roles: ['ROLE_ADMIN'], sessionVersion: 1 }] };
       if (sql.includes('count(*)::text AS count FROM scheme_boms')) return { rows: [{ count: '0' }] };
       if (sql.includes('FROM scheme_boms b JOIN schemes s')) return { rows: [] };
       throw new Error('Unexpected query');
     } },
-    redis: { get: async () => JSON.stringify({ site: 'admin', localId: 'admin-id', externalUserId: 1,
+    redis: { get: async () => JSON.stringify({ site: 'admin', localId: 'admin-id', externalUserId: 1, sessionVersion: 1,
       username: 'admin', externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret), expiresAt: Math.floor(Date.now() / 1000) + 60 }) },
     storage: {},
   } as unknown as NonNullable<Parameters<typeof buildApp>[2]>);
@@ -124,7 +124,7 @@ test('prompt template routes expose definitions, preview real builders, and isol
   const industryId = '00000000-0000-0000-0000-000000000003';
   const styleId = '00000000-0000-0000-0000-000000000004';
   const pool = { query: async (sql: string) => {
-    if (sql.includes('FROM admins')) return { rows: [{ enabled: true, roles: ['ROLE_ADMIN'] }] };
+    if (sql.includes('FROM admins')) return { rows: [{ enabled: true, roles: ['ROLE_ADMIN'], sessionVersion: 1 }] };
     if (sql.includes('FROM dictionaries')) return { rows: [] };
     if (sql.includes('FROM dictionary_items') && sql.includes('ANY')) return { rows: [
       { id: industryId, label: '医疗', code: 'industry' }, { id: styleId, label: '现代', code: 'style' },
@@ -132,7 +132,7 @@ test('prompt template routes expose definitions, preview real builders, and isol
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
     throw new Error('private SQL detail');
   } } as never;
-  const redis = { get: async (key: string) => key.startsWith('session:') ? JSON.stringify({ site: 'admin', localId: 'admin-id', externalUserId: 1, expiresAt: Math.floor(Date.now() / 1000) + 60 }) : null } as never;
+  const redis = { get: async (key: string) => key.startsWith('session:') ? JSON.stringify({ site: 'admin', localId: 'admin-id', externalUserId: 1, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 60 }) : null } as never;
   const app = await buildApp(config, healthy, { pool, redis, storage: {} } as never);
   t.after(() => app.close());
   await registerAdminPromptTemplateRoutes(app, pool, redis);

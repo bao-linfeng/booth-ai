@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { digest, normalizeQuote, type QuoteInput } from '../src/modules/projects/domain.js';
-import { requireProjectUser } from '../src/http/client/quote-requests/index.js';
+import { resolvePrincipal } from '../src/modules/identity/principal.js';
 import { registerQuoteRequestRoutes } from '../src/http/client/quote-requests/index.js';
 import { defaultAssignee } from '../src/modules/projects/service.js';
 import Fastify from 'fastify';
@@ -34,11 +34,11 @@ test('canonical hash is independent of object field order', () => {
 test('quote identity rejects anonymous, disabled and wrong-site sessions', async () => {
   const pool = { query: async () => ({ rows: [{ enabled: false }] }) } as unknown as pg.Pool;
   const absent = { get: async () => null } as unknown as Redis;
-  await assert.rejects(requireProjectUser(undefined,pool,absent),{ statusCode: 401 });
-  const session = { get: async () => JSON.stringify({ site: 'client', localId: 'id', expiresAt: Math.floor(Date.now()/1000)+1000 }) } as unknown as Redis;
-  await assert.rejects(requireProjectUser('Bearer token',pool,session),{ statusCode: 403 });
-  const wrongSite = { get: async () => JSON.stringify({ site: 'admin', expiresAt: Math.floor(Date.now()/1000)+1000 }), del: async () => 1 } as unknown as Redis;
-  await assert.rejects(requireProjectUser('Bearer token',pool,wrongSite),{ statusCode: 401 });
+  await assert.rejects(resolvePrincipal(pool,absent,'token','client'),{ statusCode: 401 });
+  const session = { get: async () => JSON.stringify({ site: 'client', localId: 'id', sessionVersion: 1, expiresAt: Math.floor(Date.now()/1000)+1000 }), del: async () => 1 } as unknown as Redis;
+  await assert.rejects(resolvePrincipal(pool,session,'token','client'),{ statusCode: 403 });
+  const wrongSite = { get: async () => JSON.stringify({ site: 'admin', localId: 'id', sessionVersion: 1, expiresAt: Math.floor(Date.now()/1000)+1000 }), del: async () => 1 } as unknown as Redis;
+  await assert.rejects(resolvePrincipal(pool,wrongSite,'token','client'),{ statusCode: 401 });
 });
 test('quote route rejects anonymous, unknown fields and invalid partial theme references', async t => {
   const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });

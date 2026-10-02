@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { getGenerationJob, listGenerationJobs, type GenerationJobQuery } from '../../../modules/generation/queries.js';
 import { writeAuditLog } from '../../../infra/audit.js';
-import { getAdminIdFromRequest } from '../session.js';
+import { adminUserId } from '../../authentication.js';
 import type { Redis } from 'ioredis';
 
 export async function registerAdminGenerationJobRoutes(
@@ -26,7 +26,7 @@ export async function registerAdminGenerationJobRoutes(
   } } }, async (request, reply) => {
     reply.header('Cache-Control', 'private, no-store');
     const jobId = (request.params as { jobId: string }).jobId;
-    if (redis) await writeAuditLog(pool, { adminId: await getAdminIdFromRequest(request, redis), action: 'generation_job.view', targetType: 'generation_job', targetId: jobId });
+    if (redis) await writeAuditLog(pool, { adminId: adminUserId(request), action: 'generation_job.view', targetType: 'generation_job', targetId: jobId });
     return { code: 0, data: await getGenerationJob(pool, jobId, storage) };
   });
 }

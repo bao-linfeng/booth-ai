@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest, RouteOptions } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { getAdminIdFromRequest } from '../session.js';
+import { adminUserId } from '../../authentication.js';
 import { createPromptTemplate, getPromptTemplate, listPromptTemplates, updatePromptTemplate,
   type CreateTemplateInput, type UpdateTemplateInput } from '../../../modules/prompts/management-service.js';
 import { promptDefinitions, previewPrompt, type PreviewInput } from '../../../modules/prompts/preview.js';
@@ -56,7 +56,7 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
       styleId: { anyOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
       body: bodySchema,
     } } },
-  }, async request => ({ code: 0, data: await createPromptTemplate(pool, request.body, await getAdminIdFromRequest(request, redis)) }));
+  }, async request => ({ code: 0, data: await createPromptTemplate(pool, request.body, adminUserId(request)) }));
 
   app.get<{ Params: IdParams }>('/prompt-templates/:id', { schema: { tags, params: idSchema } }, async (request, reply) => {
     const template = await getPromptTemplate(pool, request.params.id);
@@ -71,5 +71,5 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
       expectedRevision: { type: 'integer', minimum: 1 },
     } } },
   }, async request => ({ code: 0, data: await updatePromptTemplate(pool, request.params.id, request.body,
-    await getAdminIdFromRequest(request, redis)) }));
+    adminUserId(request)) }));
 }

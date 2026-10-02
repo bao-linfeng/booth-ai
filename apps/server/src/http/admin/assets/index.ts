@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { createStorage } from '../../../infra/storage.js';
-import { getAdminIdFromRequest } from '../session.js';
+import { adminUserId } from '../../authentication.js';
 import { addAssetVersion, createAssetWithVersion, deleteAsset, getAsset, getAssetVersion, listAssets, listSchemeAssets, updateAsset, type AssetType, type ListAssetsOptions, type SchemeAsset, type UpdateAssetInput } from '../../../modules/assets/service.js';
 
 interface CodeParams { code: string; }
@@ -169,7 +169,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     await storage.putBuffer(objectKey, fileBuffer, mimeType);
     let asset: SchemeAsset;
     try {
-      asset = await createAssetWithVersion(pool, await getAdminIdFromRequest(request, redis), {
+      asset = await createAssetWithVersion(pool, adminUserId(request), {
         schemeCode,
         type,
         name,
@@ -204,7 +204,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
       const asset = await getAsset(pool, schemeCode, params.assetId);
       validateAssetMetadata(asset.type, input.metadata);
     }
-    return { code: 0, data: await updateAsset(pool, await getAdminIdFromRequest(request, redis), schemeCode, params.assetId, input, expectedRevision) };
+    return { code: 0, data: await updateAsset(pool, adminUserId(request), schemeCode, params.assetId, input, expectedRevision) };
   });
 
   app.post('/schemes/:code/assets/:assetId/versions', {
@@ -235,7 +235,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     const objectKey = `schemes/${schemeCode}/${asset.type}/${randomUUID()}_${originalFilename}`;
     await storage.putBuffer(objectKey, fileBuffer, mimeType);
     try {
-      const version = await addAssetVersion(pool, await getAdminIdFromRequest(request, redis), schemeCode, params.assetId, {
+      const version = await addAssetVersion(pool, adminUserId(request), schemeCode, params.assetId, {
         objectKey, originalFilename, mimeType, byteSize: fileBuffer.byteLength,
         checksum: createHash('sha256').update(fileBuffer).digest('hex'),
         ...(dimensions ?? {}),
@@ -252,7 +252,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
   }, async request => {
     const params = request.params as AssetParams;
     const { expectedRevision } = request.body as DeleteBody;
-    return { code: 0, data: { revision: await deleteAsset(pool, await getAdminIdFromRequest(request, redis), decodedCode(params), params.assetId, expectedRevision) } };
+    return { code: 0, data: { revision: await deleteAsset(pool, adminUserId(request), decodedCode(params), params.assetId, expectedRevision) } };
   });
 
   app.get('/schemes/:code/assets/:assetId/download', {

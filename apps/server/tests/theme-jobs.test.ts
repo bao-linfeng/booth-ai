@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { registerThemeModelRoutes } from '../src/http/client/theme-jobs/index.js';
+import { registerAuthentication } from '../src/http/authentication.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { themeCacheKey, normalizeThemeInput, type GenerationSnapshot, type ThemeParameters, type ThemeOfferData } from '../src/modules/generation/theme/service.js';
 
@@ -22,6 +23,7 @@ async function setup(query: Query) {
   const run = async (sql: string, params?: unknown[]) => {
     statements.push(sql);
     if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] };
+    if (sql.includes('session_version')) return { rows: [{ enabled: true, roles: [], sessionVersion: 1 }] };
     if (sql.includes('FROM ai_model_configs')) return { rows: [{ purpose: 'theme', provider: 'openai', enabled: true,
       priority: 1, unitCredits: 10, revision: 1, credentialCiphertext: Buffer.from('configured') }] };
     if (sql.includes('FROM dictionaries d')) return { rows: [{ type: 'industry', id: 'industry', label: '科技' }, { type: 'style', id: 'style', label: '现代' }] };
@@ -41,8 +43,9 @@ async function setup(query: Query) {
   } as unknown as pg.Pool;
   const offers = new Map<string, string>();
   const redis = {
+    eval: async () => 1,
     get: async (key: string) => key === sessionKey
-      ? JSON.stringify({ site: 'client', localId: userId, expiresAt: Math.floor(Date.now() / 1000) + 60 })
+      ? JSON.stringify({ site: 'client', localId: userId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 60 })
       : offers.get(key) ?? null,
     set: async (key: string, value: string) => { offers.set(key, value); return 'OK'; },
   } as unknown as Redis;
@@ -50,6 +53,8 @@ async function setup(query: Query) {
     signDownload: async (key: string) => `https://assets.example/${key}`,
   } as unknown as ReturnType<typeof createStorage>;
   const app = Fastify();
+  registerAuthentication(app, pool, redis, 'client');
+  app.setErrorHandler((error: Error & { statusCode?: number; reason?: string }, _request, reply) => reply.code(error.statusCode ?? 500).send({ error: { reason: error.reason } }));
   await registerThemeModelRoutes(app, pool, redis, storage);
   await app.ready();
   return { app, statements, offers };
@@ -161,7 +166,7 @@ test('theme offers and submissions persist the owning search and reject unrelate
   assert.equal(rejected.statusCode, 409);
   const mismatched = await app.inject({ method: 'POST', url: '/theme-jobs', headers, payload: { ...body, searchId: undefined } });
   assert.equal(mismatched.statusCode, 409);
-  assert.match(mismatched.body, /Submitted parameters do not match the offer/);
+  assert.equal(mismatched.json().error.reason, 'OFFER_MISMATCH');
 });
 
 test('cache offer and submission reuse assets for free without an outbox or reservation', async t => {
@@ -222,7 +227,7 @@ test('idempotent cache replay works after offer expiry and preserves free billin
   assert.equal(response.json().data.reusedRequest, true);
   assert.equal(response.json().data.cacheHit, true);
   assert.equal(response.json().data.credits.status, 'not_charged');
-  assert.equal(statements.length, 1);
+  assert.equal(statements.filter(sql => !sql.includes('session_version')).length, 1);
   const conflict = await app.inject({ method: 'POST', url: '/theme-jobs', headers, payload: { ...parameters, input: { ...parameters.input, brandKeywords: 'different' }, offerId: 'expired', requestKey: '00000000-0000-4000-8000-000000000004' } });
   assert.equal(conflict.statusCode, 409);
 });

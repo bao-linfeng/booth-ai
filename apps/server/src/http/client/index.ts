@@ -14,9 +14,11 @@ import { registerClientManualRequestRoutes } from './manual-requests/index.js';
 import { registerClientCreditRoutes } from './credits/index.js';
 import { registerQuoteRequestRoutes } from './quote-requests/index.js';
 import { registerClientProjectRoutes } from './projects/index.js';
+import { registerAuthentication } from '../authentication.js';
 
 export async function registerClientModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
   await app.register(async client => {
+    registerAuthentication(client, pool, redis, 'client');
     await registerClientAuthRoutes(client, config, pool, redis);
     await registerClientMeRoutes(client, config, pool, redis);
     await registerClientCreditRoutes(client, pool, redis);

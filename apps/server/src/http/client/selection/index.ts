@@ -2,23 +2,18 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import type { Config } from '../../../config.js';
-import { createHash } from 'node:crypto';
 import type { createStorage } from '../../../infra/storage.js';
 import { requirementSchema } from '../../../modules/selection/domain.js';
-import { getSelectionCatalog, getSelectionScheme, matchSelection, parseSelection, selectionDependency,
+import { getSelectionCatalog, getSelectionScheme, matchSelection, parseSelection,
   type MatchSelectionInput, type ParseSelectionInput } from '../../../modules/selection/service.js';
-import { getOptionalClientUserId, getVisitorId } from './identity.js';
+import { getVisitorId } from './identity.js';
+import { rateLimit } from '../../rate-limits.js';
 
 export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>, config: Config) {
   await app.register(async selection => {
     selection.addHook('onRequest', async (request, reply) => {
       reply.header('Cache-Control', 'no-store');
-      const key = `selection:rate:${createHash('sha256').update(request.ip).digest('hex')}:${Math.floor(Date.now() / 60000)}`;
-      const count = await selectionDependency(() => redis.eval('local n = redis.call("INCR", KEYS[1]); if n == 1 then redis.call("EXPIRE", KEYS[1], 60) end; return n', 1, key));
-      if (Number(count) > 60) {
-        reply.header('Retry-After', '60');
-        throw Object.assign(new Error('Rate limited'), { statusCode: 429 });
-      }
+      await rateLimit(redis, 'selection')(request, reply);
     });
 
     selection.get('/catalog/options', {
@@ -44,7 +39,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       }
     }, async request => {
       const visitorId = getVisitorId(request);
-      const userId = await getOptionalClientUserId(pool, redis, request);
+      const userId = request.principal?.localId ?? null;
       const data = await parseSelection(pool, config, request.body, { visitorId, userId });
       request.log.info({ attemptId: data.attemptId, parseId: data.parseId, degraded: data.degraded }, 'selection parse recorded');
       return { code: 0, data };
@@ -74,7 +69,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
       }
     }, async request => {
       const visitorId = getVisitorId(request);
-      const userId = await getOptionalClientUserId(pool, redis, request);
+      const userId = request.principal?.localId ?? null;
       const data = await matchSelection(pool, storage, request.body, { visitorId, userId });
 
       request.log.info({

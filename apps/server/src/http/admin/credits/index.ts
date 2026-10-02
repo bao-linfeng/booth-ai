@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { getAdminIdFromRequest } from '../session.js';
+import { adminUserId } from '../../authentication.js';
 import { getUserCreditBalance, listCreditTransactions, rechargeCredits, type CreditKind } from '../../../modules/credits/management-service.js';
 
 interface CreditListQuery {
@@ -40,7 +40,7 @@ export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.P
       note: { type: 'string' },
     } },
   } }, async request => {
-    const operatorId = await getAdminIdFromRequest(request, redis);
+    const operatorId = adminUserId(request);
     return { code: 0, data: await rechargeCredits(pool, { ...request.body, operatorId }) };
   });
 

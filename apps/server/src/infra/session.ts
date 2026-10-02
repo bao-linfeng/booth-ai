@@ -11,6 +11,7 @@ export interface SessionData {
   externalJwtCiphertext: string;
   expiresAt: number;
   loginSource: 'password' | 'sso_token';
+  sessionVersion: number;
 }
 
 function tokenKey(token: string): string {
@@ -54,10 +55,13 @@ export async function getSession(redis: Redis, token: string, site: SessionSite)
   if (!raw) return null;
   try {
     const data = JSON.parse(raw) as SessionData;
-    if (data.site !== site || data.expiresAt < Math.floor(Date.now() / 1000)) {
+    if (data.site !== 'client' && data.site !== 'admin' || typeof data.localId !== 'string' || !data.localId ||
+      !Number.isSafeInteger(data.sessionVersion) || data.sessionVersion < 1 || !Number.isSafeInteger(data.expiresAt) ||
+      data.expiresAt <= Math.floor(Date.now() / 1000)) {
       await redis.del(key);
       return null;
     }
+    if (data.site !== site) return null;
     return data;
   } catch {
     await redis.del(key);

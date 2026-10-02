@@ -7,6 +7,7 @@ import type { Redis } from 'ioredis';
 import pg from 'pg';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerClientProjectRoutes } from '../src/http/client/projects/index.js';
+import { registerAuthentication } from '../src/http/authentication.js';
 import { listSearchJobs } from '../src/modules/generation/search-jobs.js';
 import { assertThemeSearch, themeRequestHash, type ThemeParameters } from '../src/modules/generation/theme/service.js';
 
@@ -19,6 +20,7 @@ test('search history returns one inline theme and its artwork previews per searc
   const artworkJobId = randomUUID();
   const pool = { query: async (sql: string, params: unknown[]) => {
     assert.equal(params[0], userId);
+    if (sql.includes('session_version')) return { rows: [{ enabled: true, roles: [], sessionVersion: 1 }] };
     if (sql.includes('count(*)')) return { rows: [{ total: 1 }] };
     if (sql.includes('FROM selection_searches')) return { rows: [{
       id: searchId, status: 'matched', mode: 'filtered', inputText: '', finalRequirement: {},
@@ -31,8 +33,9 @@ test('search history returns one inline theme and its artwork previews per searc
       createdAt: '2026-10-01T03:00:00.000Z', objectKey: 'theme.png', artworkJobId, artworkStatus: 'succeeded',
       deliveryStatus: 'ready', artworkCreatedAt: '2026-10-01T04:00:00.000Z', views: [{ direction: 'front', objectKey: 'front.png' }] }] };
   } } as unknown as pg.Pool;
-  const redis = { get: async () => JSON.stringify({ site: 'client', localId: userId, expiresAt: Math.floor(Date.now() / 1000) + 3600 }) } as unknown as Redis;
+  const redis = { get: async () => JSON.stringify({ site: 'client', localId: userId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }) } as unknown as Redis;
   const app = Fastify();
+  registerAuthentication(app, pool, redis, 'client');
   t.after(() => app.close());
   await registerClientProjectRoutes(app, pool, redis, storage);
   const response = await app.inject({ url: '/me/searches', headers: { authorization: 'Bearer test' } });

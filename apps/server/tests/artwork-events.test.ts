@@ -8,6 +8,7 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerArtworkJobRoutes } from '../src/http/client/artwork-jobs/index.js';
+import { registerAuthentication } from '../src/http/authentication.js';
 
 const jobId = '00000000-0000-4000-8000-000000000001';
 const userId = '00000000-0000-4000-8000-000000000002';
@@ -40,9 +41,9 @@ async function setup(options: { status?: string; subscribeError?: boolean; snaps
   subscriber.subscribeError = options.subscribeError ?? false;
   const values = new Map<string, string>();
   values.set(`session:${createHash('sha256').update('owner').digest('hex').slice(0, 32)}`,
-    JSON.stringify({ site: 'client', localId: userId, expiresAt: Math.floor(Date.now() / 1000) + 3600 }));
+    JSON.stringify({ site: 'client', localId: userId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }));
   values.set(`session:${createHash('sha256').update('other').digest('hex').slice(0, 32)}`,
-    JSON.stringify({ site: 'client', localId: otherJobId, expiresAt: Math.floor(Date.now() / 1000) + 3600 }));
+    JSON.stringify({ site: 'client', localId: otherJobId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }));
   const redis = {
     get: async (key: string) => values.get(key) ?? null,
     getdel: async (key: string) => {
@@ -63,7 +64,7 @@ async function setup(options: { status?: string; subscribeError?: boolean; snaps
   } as unknown as Redis;
   const pool = {
     query: async (sql: string, params: unknown[]) => {
-      if (sql.includes('FROM users')) return { rows: [{ enabled: true }] };
+      if (sql.includes('FROM users')) return { rows: [{ enabled: true, roles: [], sessionVersion: 1 }] };
       if (sql.startsWith('SELECT status, phase')) {
         assert.equal(subscriber.subscribed, true, 'subscribe before reading the current state');
         assert.deepEqual(params, [jobId, userId]);
@@ -76,6 +77,7 @@ async function setup(options: { status?: string; subscribeError?: boolean; snaps
   } as unknown as pg.Pool;
   const app = Fastify();
   await app.register(cors, { origin: ['http://localhost:5173'] });
+  registerAuthentication(app, pool, redis, 'client');
   await registerArtworkJobRoutes(app, pool, redis, {} as ReturnType<typeof createStorage>);
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
   async function ticket() {
@@ -106,7 +108,7 @@ test('artwork event tickets require ownership, reject invalid and mismatched tic
   assert.equal((await app.inject({ method: 'POST', url: '/artwork-jobs/invalid/events-ticket' })).statusCode, 400);
   assert.equal((await app.inject({ url: `/artwork-jobs/${jobId}/events?ticket=${randomUUID()}` })).statusCode, 401);
   const issued = await ticket();
-  assert.deepEqual(JSON.parse(values.get(`artwork-events-ticket:${issued}`)!), { jobId, userId });
+  assert.deepEqual(JSON.parse(values.get(`artwork-events-ticket:${issued}`)!), { jobId, userId, token: 'owner' });
   assert.equal((await app.inject({ url: `/artwork-jobs/${otherJobId}/events?ticket=${issued}` })).statusCode, 401);
   assert.equal((await app.inject({ url: `/artwork-jobs/${jobId}/events?ticket=${issued}` })).statusCode, 401);
   assert.equal((await app.inject({ url: `/artwork-jobs/${jobId}/events` })).statusCode, 400);

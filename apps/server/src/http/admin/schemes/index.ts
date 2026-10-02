@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { getAdminIdFromRequest } from '../session.js';
+import { adminUserId } from '../../authentication.js';
 import { createScheme, deleteScheme, getScheme, listSchemes, updateScheme, type ListSchemesOptions, type SchemeInput } from '../../../modules/schemes/service.js';
 
 interface SchemeQuery extends Partial<ListSchemesOptions> {}
@@ -143,16 +143,16 @@ export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.
   app.post('/schemes', {
     schema: { tags: ['admin-schemes'], body: { type: 'object', required: ['code', 'name'], additionalProperties: false, properties: schemeProperties } },
   }, async request => {
-    return { code: 0, data: await createScheme(pool, await getAdminIdFromRequest(request, redis), request.body as SchemeInput) };
+    return { code: 0, data: await createScheme(pool, adminUserId(request), request.body as SchemeInput) };
   });
   app.put('/schemes/:code', {
     schema: { tags: ['admin-schemes'], params: codeParamsSchema, body: { type: 'object', required: ['editRevision'], additionalProperties: false, properties: updateProperties } },
   }, async request => {
     const { editRevision, ...input } = request.body as UpdateBody;
-    return { code: 0, data: await updateScheme(pool, decodedCode(request.params as CodeParams), await getAdminIdFromRequest(request, redis), input, editRevision) };
+    return { code: 0, data: await updateScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request), input, editRevision) };
   });
   app.delete('/schemes/:code', { schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async (request) => {
-    await deleteScheme(pool, await getAdminIdFromRequest(request, redis), decodedCode(request.params as CodeParams));
+    await deleteScheme(pool, adminUserId(request), decodedCode(request.params as CodeParams));
     return { code: 0, data: null };
   });
 }

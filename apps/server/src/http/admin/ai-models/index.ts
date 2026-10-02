@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import { listAiModels, modelDefinitions, type AiProvider } from '../../../infra/ai-models.js';
-import { getAdminIdFromRequest } from '../session.js';
+import { adminUserId } from '../../authentication.js';
 import { updateAiModel, type ModelUpdate } from '../../../modules/generation/models.js';
 
 export async function registerAdminAiModelRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, encryptionKey: string) {
@@ -21,5 +21,5 @@ export async function registerAdminAiModelRoutes(app: FastifyInstance, pool: pg.
       } }
     }
   }, async request => ({ code: 0, data: await updateAiModel(pool, request.params.provider, request.body,
-    await getAdminIdFromRequest(request, redis), encryptionKey) }));
+    adminUserId(request), encryptionKey) }));
 }

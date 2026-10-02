@@ -11,6 +11,7 @@ import { transaction } from '../src/infra/database.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { rechargeCredits } from '../src/modules/credits/management-service.js';
 import { registerAdminCreditRoutes } from '../src/http/admin/credits/index.js';
+import { registerAuthentication } from '../src/http/authentication.js';
 import { reconcileJobCredits } from '../src/modules/credits/reconciliation.js';
 import { lockCreditUser, reserveJobCredits, releaseJobCredits, type CreditJob } from '../src/modules/credits/service.js';
 import { settleThemeJob, processThemeJob } from '../src/modules/generation/theme/execution.js';
@@ -308,7 +309,8 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     await rechargeCredits(pool, { ...input, requestKey: randomUUID() });
     assert.equal((await pool.query('SELECT SUM(amount)::int AS balance FROM credit_transactions WHERE user_id=$1', [owner])).rows[0].balance, 50);
     const app = Fastify();
-    const redis = { get: async () => JSON.stringify({ site: 'admin', localId: operatorId, expiresAt: Math.floor(Date.now() / 1000) + 3600 }) } as unknown as Redis;
+    const redis = { get: async () => JSON.stringify({ site: 'admin', localId: operatorId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }) } as unknown as Redis;
+    registerAuthentication(app, pool, redis, 'admin');
     await registerAdminCreditRoutes(app, pool, redis);
     try {
       const { operatorId: _operator, ...body } = input;

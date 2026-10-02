@@ -3,14 +3,12 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { Config } from '../../../config.js';
 import { checkAdminRole, fetchExternalUserDetail } from '../../../infra/external-auth.js';
-import { decryptJwt, destroySession, getSession } from '../../../infra/session.js';
+import { decryptJwt, destroySession } from '../../../infra/session.js';
 import { toCurrentUser } from '../../../modules/identity/service.js';
 import { syncAdmin } from '../../../modules/identity/admin-service.js';
+import { revokeAccountSessions } from '../../../modules/identity/principal.js';
 
-function authorizationToken(authorization: string | undefined): string | null {
-  const match = authorization?.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || null;
-}
+import { requirePrincipal } from '../../authentication.js';
 
 function authenticationError(): Error & { statusCode: number } {
   const error = new Error('Authentication required') as Error & { statusCode: number };
@@ -20,9 +18,7 @@ function authenticationError(): Error & { statusCode: number } {
 
 export async function registerAdminMeRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
   app.get('/me', { schema: { tags: ['admin-auth'] } }, async request => {
-    const token = authorizationToken(request.headers.authorization);
-    const session = token ? await getSession(redis, token, 'admin') : null;
-    if (!token || !session) throw authenticationError();
+    const { token, session, localId: accountId } = requirePrincipal(request, 'admin');
     let externalJwt: string;
     try {
       externalJwt = decryptJwt(session.externalJwtCiphertext, config.sessionSecret);
@@ -34,11 +30,12 @@ export async function registerAdminMeRoutes(app: FastifyInstance, config: Config
       const detail = await fetchExternalUserDetail(config, session.username, externalJwt);
       if (detail.externalUserId !== session.externalUserId) throw authenticationError();
       checkAdminRole(detail.roles);
-      const localId = await syncAdmin(pool, detail, false);
+      const { id: localId } = await syncAdmin(pool, detail, false);
       return { code: 0, message: 'ok', data: toCurrentUser(localId, detail, 'admin', session.loginSource) };
     } catch (error) {
       const statusCode = (error as Partial<{ statusCode: number }>).statusCode;
       if (statusCode === 403 || statusCode === 401) {
+        await revokeAccountSessions(pool, 'admin', accountId);
         await destroySession(redis, token);
         throw authenticationError();
       }

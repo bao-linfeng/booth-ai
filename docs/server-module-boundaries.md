@@ -35,3 +35,7 @@
 `http/client/selection` 提取访客/登录身份、校验请求、限流及映射响应。
 `modules/selection/service.ts` 编排字典加载、模型和提示词查询、需求解析、候选匹配以及流水记录。
 业务服务接收普通输入与 `SelectionIdentity`，无需 Fastify 请求对象即可调用与测试。
+
+## 认证入口
+
+`http/authentication.ts` 统一建立请求级 principal，业务路由只提取身份；`modules/identity/principal.ts` 校验账户和 Session 版本，领域服务保留对象归属校验。认证、禁用、会话撤销和限流策略见 [server-authentication.md](./server-authentication.md)。

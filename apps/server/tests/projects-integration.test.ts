@@ -5,6 +5,7 @@ import pg from 'pg';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import { registerQuoteRequestRoutes } from '../src/http/client/quote-requests/index.js';
+import { registerAuthentication } from '../src/http/authentication.js';
 import { createManualProject, createQuoteRequest } from '../src/modules/projects/service.js';
 import { linkProjectScheme, type SchemeLinkInput } from '../src/modules/projects/admin-service.js';
 import { getProject } from '../src/modules/projects/repository.js';
@@ -58,8 +59,9 @@ test('quote transaction: concurrent retries, immutable snapshots, revision confl
   assert.ok(results.every(result => result.receipt.projectId === receipt.projectId));
   assert.equal(results.filter(result => !result.replayed).length,1);
   assert.equal((await pool.query('SELECT id FROM project_notification_outbox WHERE project_id=$1',[receipt.projectId])).rowCount,1);
-  const redis = { get: async () => JSON.stringify({ site: 'client', localId: user, expiresAt: Math.floor(Date.now()/1000)+3600 }), eval: async () => 1 } as unknown as Redis;
+  const redis = { get: async () => JSON.stringify({ site: 'client', localId: user, sessionVersion: 1, expiresAt: Math.floor(Date.now()/1000)+3600 }), eval: async () => 1 } as unknown as Redis;
   const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
+  registerAuthentication(app, pool, redis, 'client');
   t.after(() => app.close());
   await registerQuoteRequestRoutes(app,pool,redis);
   const headers = { authorization: 'Bearer test-token' };

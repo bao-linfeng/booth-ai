@@ -3,20 +3,15 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { listAiModels } from '../../../infra/ai-models.js';
-import { getSession } from '../../../infra/session.js';
+import { clientUserId, requirePrincipal } from '../../authentication.js';
+import { rateLimit } from '../../rate-limits.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { streamThemeJobEvents } from './events.js';
+import { getThemeJob, ownedThemeJob, selectThemeResult } from '../../../modules/generation/theme/queries.js';
 import { assertThemeSearch, createThemeJob, findCachedThemeJob, loadGenerationSnapshot, normalizeThemeInput, replayThemeRequest,
   themeCacheKey, themeCredits, type ThemeOfferData } from '../../../modules/generation/theme/service.js';
 
 const OFFER_TTL_SECONDS = 300; // 5 minutes
-
-async function requireClientSession(authorization: string | undefined, redis: Redis): Promise<string> {
-  const token = /^Bearer\s+(.+)$/i.exec(authorization ?? '')?.[1]?.trim();
-  const session = token ? await getSession(redis, token, 'client') : null;
-  if (!session) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
-  return session.localId;
-}
 
 async function loadDictionaryOptions(pool: pg.Pool): Promise<{ industries: { id: string; label: string }[]; styles: { id: string; label: string }[] }> {
   const result = await pool.query<{ type: string; id: string; label: string }>(
@@ -33,24 +28,20 @@ async function loadDictionaryOptions(pool: pg.Pool): Promise<{ industries: { id:
 
 export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>) {
   app.post<{ Params: { jobId: string } }>('/theme-jobs/:jobId/events-ticket', async request => {
-    const userId = await requireClientSession(request.headers.authorization, redis);
-    const owned = await pool.query('SELECT 1 FROM theme_jobs WHERE id = $1 AND user_id = $2', [request.params.jobId, userId]);
-    if (!owned.rows[0]) throw Object.assign(new Error('Theme job not found'), { statusCode: 404 });
+    const userId = clientUserId(request);
+    await ownedThemeJob(pool, userId, request.params.jobId);
     const ticket = randomUUID();
-    await redis.set(`theme-events-ticket:${ticket}`, JSON.stringify({ jobId: request.params.jobId, userId }), 'EX', 300);
+    await redis.set(`theme-events-ticket:${ticket}`, JSON.stringify({ jobId: request.params.jobId, userId, token: requirePrincipal(request, 'client').token }), 'EX', 300);
     return { code: 0, data: { ticket } };
   });
 
-  app.get<{ Params: { jobId: string }; Querystring: { ticket?: string } }>('/theme-jobs/:jobId/events', async (request, reply) => {
-    const ticket = request.query.ticket;
-    const raw = ticket ? await redis.get(`theme-events-ticket:${ticket}`) : null;
-    const ticketData = raw ? JSON.parse(raw) as { jobId: string; userId: string } : null;
-    if (!ticketData || ticketData.jobId !== request.params.jobId) {
-      reply.status(401);
-      return { error: { code: 'REQUEST_ERROR', message: 'Invalid events ticket', requestId: request.id } };
-    }
-    await redis.del(`theme-events-ticket:${ticket}`);
-    await streamThemeJobEvents(pool, redis, request.params.jobId, ticketData.userId, reply);
+  app.get<{ Params: { jobId: string }; Querystring: { ticket: string } }>('/theme-jobs/:jobId/events', {
+    config: { authentication: 'events', eventTicketPrefix: 'theme' },
+    schema: { querystring: { type: 'object', required: ['ticket'], additionalProperties: false, properties: { ticket: { type: 'string', format: 'uuid' } } } },
+  }, async (request, reply) => {
+    const userId = clientUserId(request);
+    await ownedThemeJob(pool, userId, request.params.jobId);
+    await streamThemeJobEvents(pool, redis, request.params.jobId, userId, reply);
   });
 
   app.get('/theme-models', { schema: { tags: ['AI 换主题'], summary: '可选择的图像模型及每张图积分' } }, async () => {
@@ -69,6 +60,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       searchId?: string;
     };
   }>('/theme-offers', {
+    preHandler: rateLimit(redis, 'generation'),
     schema: {
       tags: ['AI 换主题'],
       summary: '获取可生成能力及费用提议（API-092）',
@@ -97,7 +89,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       },
     },
   }, async request => {
-    const userId = await requireClientSession(request.headers.authorization, redis);
+    const userId = clientUserId(request);
 
     // Check if any enabled theme model with credentials is available
     const allModels = await listAiModels(pool);
@@ -175,6 +167,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       searchId?: string;
     };
   }>('/theme-jobs', {
+    preHandler: rateLimit(redis, 'generation'),
     schema: {
       tags: ['AI 换主题'],
       summary: '创建换主题生成任务（API-006）',
@@ -205,7 +198,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       },
     },
   }, async (request, reply) => {
-    const userId = await requireClientSession(request.headers.authorization, redis);
+    const userId = clientUserId(request);
     const { requestKey, offerId, schemeCode, sourceAssetId, input, requestedCount, cacheMode = 'reuse', searchId } = request.body;
 
     const parameters = { schemeCode, sourceAssetId, input: normalizeThemeInput(input), requestedCount, cacheMode, searchId };
@@ -238,41 +231,11 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
       },
     },
   }, async request => {
-    const userId = await requireClientSession(request.headers.authorization, redis);
+    const userId = clientUserId(request);
     const { jobId } = request.params;
 
-    const result = await pool.query<{
-      id: string; schemeCode: string; sourceAssetId: string; sourceObjectKey: string | null; status: string; phase: string | null;
-      requestedCount: number; usableCount: number; selectedResultId: string | null;
-      selectionRevision: number; unitCredits: number | null; input: unknown; cacheHit: boolean;
-      createdAt: string; updatedAt: string; searchId: string | null;
-    }>(
-       `SELECT id, scheme_code AS "schemeCode", source_asset_id AS "sourceAssetId",
-                COALESCE(generation_snapshot->'source'->>'objectKey',
-                  (SELECT av.object_key FROM asset_versions av WHERE av.asset_id = source_asset_id ORDER BY av.created_at DESC, av.id DESC LIMIT 1)) AS "sourceObjectKey",
-               status, phase,
-              requested_count AS "requestedCount", usable_count AS "usableCount",
-              selected_result_id AS "selectedResultId", selection_revision AS "selectionRevision",
-               unit_credits AS "unitCredits", cache_hit AS "cacheHit", input, created_at AS "createdAt", updated_at AS "updatedAt", search_id AS "searchId"
-       FROM theme_jobs WHERE id = $1 AND user_id = $2`,
-      [jobId, userId]
-    );
-
-    const job = result.rows[0];
-    if (!job) throw Object.assign(new Error('Theme job not found'), { statusCode: 404 });
-
-    const resultsQ = await pool.query<{
-      id: string; ordinal: number; width: number | null; height: number | null; objectKey: string;
-      }>(
-       `SELECT tjr.id, tjr.ordinal, tjr.width, tjr.height, av.object_key AS "objectKey"
-        FROM theme_job_results tjr
-         JOIN scheme_assets sa ON sa.id = tjr.asset_id
-           AND sa.source = 'theme_generation' AND sa.visibility = 'private' AND sa.owner_user_id = $2
-         JOIN asset_versions av ON av.id = tjr.asset_version_id AND av.asset_id = sa.id
-        WHERE tjr.job_id = $1 ORDER BY tjr.ordinal`,
-       [jobId, userId]
-     );
-    const results = await Promise.all(resultsQ.rows.map(async r => ({
+    const { job, results: rows } = await getThemeJob(pool, userId, jobId);
+    const results = await Promise.all(rows.map(async r => ({
       resultId: r.id,
       previewUrl: await storage.signDownload(r.objectKey, 900),
       width: r.width ?? 0,
@@ -329,71 +292,12 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
         },
       },
     },
-    async (request, reply) => {
-      const userId = await requireClientSession(request.headers.authorization, redis);
+    async request => {
+      const userId = clientUserId(request);
       const { jobId } = request.params;
       const { resultId, expectedRevision } = request.body;
 
-      const jobQ = await pool.query<{
-        id: string; schemeCode: string; status: string;
-        selectedResultId: string | null; selectionRevision: number;
-      }>(
-        `SELECT id, scheme_code AS "schemeCode", status, selected_result_id AS "selectedResultId", selection_revision AS "selectionRevision"
-         FROM theme_jobs WHERE id = $1 AND user_id = $2`,
-        [jobId, userId]
-      );
-      const job = jobQ.rows[0];
-      if (!job) {
-        reply.status(404);
-        return { error: { code: 'REQUEST_ERROR', reason: 'RESOURCE_NOT_FOUND', message: 'Theme job not found', requestId: request.id } };
-      }
-      if (!['succeeded', 'partially_succeeded'].includes(job.status)) {
-        reply.status(409);
-        return { error: { code: 'REQUEST_ERROR', reason: 'OPERATION_FORBIDDEN', message: 'Job is not in a succeeded state', requestId: request.id } };
-      }
-
-      if (job.selectedResultId === resultId) {
-        return {
-          code: 0,
-          data: { jobId, schemeCode: job.schemeCode, resultId, revision: job.selectionRevision, selectedAt: new Date().toISOString() },
-        };
-      }
-
-      if (job.selectionRevision !== expectedRevision) {
-        reply.status(409);
-        return { error: { code: 'REQUEST_ERROR', reason: 'SELECTION_CONFLICT', message: 'Selection revision conflict', requestId: request.id } };
-      }
-
-      const resultQ = await pool.query<{ id: string }>(
-        `SELECT id FROM theme_job_results WHERE id = $1 AND job_id = $2`,
-        [resultId, jobId]
-      );
-      if (!resultQ.rows[0]) {
-        reply.status(404);
-        return { error: { code: 'REQUEST_ERROR', reason: 'RESOURCE_NOT_FOUND', message: 'Result not found', requestId: request.id } };
-      }
-
-      const updated = await pool.query<{ selectionRevision: number; updatedAt: string }>(
-        `UPDATE theme_jobs
-         SET selected_result_id = $1, selection_revision = selection_revision + 1, updated_at = now()
-         WHERE id = $2 AND user_id = $3 AND selection_revision = $4
-         RETURNING selection_revision AS "selectionRevision", updated_at AS "updatedAt"`,
-        [resultId, jobId, userId, expectedRevision]
-      );
-      if (!updated.rows[0]) {
-        reply.status(409);
-        return { error: { code: 'REQUEST_ERROR', reason: 'SELECTION_CONFLICT', message: 'Concurrent selection conflict', requestId: request.id } };
-      }
-      return {
-        code: 0,
-        data: {
-          jobId,
-          schemeCode: job.schemeCode,
-          resultId,
-          revision: updated.rows[0].selectionRevision,
-          selectedAt: updated.rows[0].updatedAt,
-        },
-      };
+      return { code: 0, data: await selectThemeResult(pool, userId, jobId, resultId, expectedRevision) };
     }
   );
 }

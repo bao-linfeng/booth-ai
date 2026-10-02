@@ -9,6 +9,7 @@ import sharp from 'sharp';
 import { encryptCredential } from '../src/infra/ai-models.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerThemeModelRoutes } from '../src/http/client/theme-jobs/index.js';
+import { registerAuthentication } from '../src/http/authentication.js';
 import { processThemeJob } from '../src/modules/generation/theme/execution.js';
 
 test('theme result cache: actual SQL, provider calls, free reuse, isolation, refresh and invalidation',
@@ -48,6 +49,7 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     await pool.query(await readFile(new URL('../migrations/037_artwork_jobs.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/049_generation_recovery.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/050_asset_scope.sql', import.meta.url), 'utf8'));
+    await pool.query(await readFile(new URL('../migrations/051_account_session_versions.sql', import.meta.url), 'utf8'));
     assert.equal((await pool.query('SELECT asset_version_id FROM theme_job_results WHERE job_id=$1', [legacy])).rows[0].asset_version_id, legacyVersion);
     assert.equal((await pool.query('SELECT cache_key FROM theme_jobs WHERE id=$1', [legacy])).rows[0].cache_key, null);
     for (const [code, item] of [['industry', industry], ['style', style]]) {
@@ -63,11 +65,13 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
       `session:${createHash('sha256').update(token!).digest('hex').slice(0, 32)}`, id,
     ]));
     const redis = {
-      get: async (key: string) => sessionKeys.has(key) ? JSON.stringify({ site: 'client', localId: sessionKeys.get(key), expiresAt: Math.floor(Date.now() / 1000) + 3600 }) : offers.get(key) ?? null,
+      eval: async () => 1,
+      get: async (key: string) => sessionKeys.has(key) ? JSON.stringify({ site: 'client', localId: sessionKeys.get(key), sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }) : offers.get(key) ?? null,
       set: async (key: string, value: string) => { offers.set(key, value); return 'OK'; },
     } as unknown as Redis;
     const storage = { getBuffer: async () => image, putBuffer: async () => {}, signDownload: async (key: string) => `https://assets.example/${key}` } as unknown as ReturnType<typeof createStorage>;
     const app = Fastify();
+    registerAuthentication(app, pool, redis, 'client');
     await registerThemeModelRoutes(app, pool, redis, storage);
     t.after(() => app.close());
     const parameters = { schemeCode: 'S-1', sourceAssetId: source, input: { industryId: industry, styleId: style, brandColors: ['#aabbcc'], brandKeywords: ' brand ' }, requestedCount: 1, cacheMode: 'reuse' };

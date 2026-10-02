@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { getAdminIdFromRequest } from '../session.js';
+import { adminUserId } from '../../authentication.js';
 import { createReview, getSchemeReadiness, publishScheme, unpublishScheme, type CreateReviewInput } from '../../../modules/schemes/reviews.js';
 
 interface CodeParams { code: string }
@@ -40,10 +40,10 @@ export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.
       },
     },
   }, async request => {
-    return { code: 0, data: await createReview(pool, decodedCode(request.params as CodeParams), await getAdminIdFromRequest(request, redis), request.body as CreateReviewInput) };
+    return { code: 0, data: await createReview(pool, decodedCode(request.params as CodeParams), adminUserId(request), request.body as CreateReviewInput) };
   });
   app.post('/schemes/:code/publish', { schema: { tags: ['admin-reviews'], params: codeParams } }, async request => {
-    return { code: 0, data: await publishScheme(pool, decodedCode(request.params as CodeParams), await getAdminIdFromRequest(request, redis)) };
+    return { code: 0, data: await publishScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request)) };
   });
   app.post('/schemes/:code/unpublish', {
     schema: {
@@ -51,6 +51,6 @@ export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.
       body: { type: 'object', additionalProperties: false, properties: { reason: { type: 'string' } } },
     },
   }, async request => {
-    return { code: 0, data: await unpublishScheme(pool, decodedCode(request.params as CodeParams), await getAdminIdFromRequest(request, redis), (request.body as UnpublishBody | undefined)?.reason) };
+    return { code: 0, data: await unpublishScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request), (request.body as UnpublishBody | undefined)?.reason) };
   });
 }

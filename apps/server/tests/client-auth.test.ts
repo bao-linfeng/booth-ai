@@ -26,11 +26,13 @@ async function setup(t: TestContext) {
   const dependencies = {
     pool: { query: async (sql: string, values: unknown[] = []) => {
       queries.push({ sql, values });
-      if (sql.includes('INSERT INTO users')) return { rows: [{ id: 'local-user-id' }] };
+      if (sql.includes('INSERT INTO users')) return { rows: [{ id: 'local-user-id', enabled: true, sessionVersion: 1 }] };
+      if (sql.includes('FROM users WHERE id=')) return { rows: [{ enabled: true, roles: ['ROLE_USER'], sessionVersion: 1 }] };
       if (sql.startsWith('UPDATE selection_')) return { rows: [] };
       throw new Error('Unexpected query');
     } },
     redis: {
+      eval: async () => 1,
       set: async (key: string, value: string) => { sessions.set(key, value); return 'OK'; },
       get: async (key: string) => sessions.get(key) ?? null,
       del: async (key: string) => { sessions.delete(key); return 1; },

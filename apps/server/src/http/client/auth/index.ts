@@ -5,9 +5,12 @@ import type { Config } from '../../../config.js';
 import { destroySession } from '../../../infra/session.js';
 import { getProvidedVisitorId } from '../selection/identity.js';
 import { loginClient, syncClientSession } from '../../../modules/identity/client-service.js';
+import { authorizationToken } from '../../authentication.js';
+import { rateLimit } from '../../rate-limits.js';
 
 export async function registerClientAuthRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
   app.post('/auth/login', {
+    config: { authentication: 'public' }, onRequest: rateLimit(redis, 'login'),
     schema: {
       tags: ['client-auth'],
       body: { type: 'object', required: ['username', 'password'], additionalProperties: false, properties: { username: { type: 'string', minLength: 1 }, password: { type: 'string', minLength: 1 } } },
@@ -19,6 +22,7 @@ export async function registerClientAuthRoutes(app: FastifyInstance, config: Con
   });
 
   app.post('/auth/sync', {
+    config: { authentication: 'public' }, onRequest: rateLimit(redis, 'login'),
     schema: {
       tags: ['client-auth'],
       summary: '使用外部 token 同步用户并建立客户端会话',
@@ -30,8 +34,8 @@ export async function registerClientAuthRoutes(app: FastifyInstance, config: Con
     return { code: 0, message: 'ok', data };
   });
 
-  app.post('/auth/logout', async request => {
-    const token = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+  app.post('/auth/logout', { config: { authentication: 'public' } }, async request => {
+    const token = authorizationToken(request.headers.authorization);
     if (token) await destroySession(redis, token);
     return { code: 0 };
   });

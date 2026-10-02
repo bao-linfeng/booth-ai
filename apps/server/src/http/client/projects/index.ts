@@ -2,20 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import type { createStorage } from '../../../infra/storage.js';
-import { getSession } from '../../../infra/session.js';
-import { requireProjectUser } from '../quote-requests/index.js';
+import { clientUserId } from '../../authentication.js';
 import { getProject,listProjects,type ProjectRecord,type ProjectQuery } from '../../../modules/projects/repository.js';
 import { projectParams,queryProperties } from '../../../modules/projects/schema.js';
 import { bindProjectArtworks, type BindArtworkInput } from '../../../modules/projects/artwork-delivery.js';
 import { listUserSearches } from '../../../modules/selection-analytics/service.js';
 import { listSearchJobs } from '../../../modules/generation/search-jobs.js';
-
-async function requireClientSession(authorization: string | undefined, redis: Redis): Promise<string> {
-  const token = /^Bearer\s+(.+)$/i.exec(authorization ?? '')?.[1]?.trim();
-  const session = token ? await getSession(redis, token, 'client') : null;
-  if (!session) throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
-  return session.localId;
-}
 
 type SearchSnapshotItem = {
   code?: unknown;
@@ -59,11 +51,11 @@ export async function registerClientProjectRoutes(app:FastifyInstance,pool:pg.Po
   app.put<{Params:{projectId:string};Body:BindArtworkInput}>('/me/projects/:projectId/artworks',{schema:{params:projectParams,body:{type:'object',additionalProperties:false,
     required:['artworkJobId','requestKey','expectedRevision'],properties:{artworkJobId:{type:'string',format:'uuid'},requestKey:{type:'string',format:'uuid'},expectedRevision:{type:'integer',minimum:1}}}}},async(request,reply)=>{
     reply.header('Cache-Control','private, no-store');
-    return {code:0,data:await bindProjectArtworks(pool,await requireProjectUser(request.headers.authorization,pool,redis),request.params.projectId,request.body)};
+    return {code:0,data:await bindProjectArtworks(pool,clientUserId(request),request.params.projectId,request.body)};
   });
   app.get<{Querystring:ProjectQuery}>('/me/projects',{schema:{querystring:{type:'object',additionalProperties:false,properties:queryProperties}}},async(request,reply)=>{
     reply.header('Cache-Control','private, no-store');
-    const userId=await requireProjectUser(request.headers.authorization,pool,redis);
+    const userId=clientUserId(request);
     const result=await listProjects(pool,request.query,userId);
     return {code:0,data:{...result,items:result.items.map(project=>({projectId:project.projectId,projectNo:project.projectNo,schemeCode:project.schemeCode,sourceType:project.sourceType,
        exhibition:project.request.exhibition ?? null,status:project.status,createdAt:project.createdAt,updatedAt:project.updatedAt}))}};
@@ -72,7 +64,7 @@ export async function registerClientProjectRoutes(app:FastifyInstance,pool:pg.Po
     page:{type:'integer',minimum:1,default:1},pageSize:{type:'integer',minimum:1,maximum:50,default:20},
   }}}},async(request,reply)=>{
     reply.header('Cache-Control','private, no-store');
-    const userId=await requireClientSession(request.headers.authorization,redis);
+    const userId=clientUserId(request);
     const page=request.query.page ?? 1;
     const pageSize=request.query.pageSize ?? 20;
     const result=await listUserSearches(pool,userId,{page,pageSize});
@@ -104,7 +96,7 @@ export async function registerClientProjectRoutes(app:FastifyInstance,pool:pg.Po
   });
   app.get<{Params:{projectId:string}}>('/me/projects/:projectId',{schema:{params:projectParams}},async(request,reply)=>{
     reply.header('Cache-Control','private, no-store');
-    const userId=await requireProjectUser(request.headers.authorization,pool,redis);
+    const userId=clientUserId(request);
     const project=await getProject(pool,request.params.projectId,userId);
     const data=publicProject(project);
     const theme=project.schemeSnapshot?.selectedTheme;

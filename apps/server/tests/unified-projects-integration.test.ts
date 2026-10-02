@@ -9,6 +9,7 @@ import { assignProject,followUpProject,saveQuotation,quotationRevision } from '.
 import { getProject } from '../src/modules/projects/repository.js';
 import { emptyRequirement } from '../src/modules/selection/domain.js';
 import { registerClientProjectRoutes } from '../src/http/client/projects/index.js';
+import { registerAuthentication } from '../src/http/authentication.js';
 import { registerAdminProjectRoutes } from '../src/http/admin/projects/index.js';
 import { registerClientManualRequestRoutes } from '../src/http/client/manual-requests/index.js';
 import type { createStorage } from '../src/infra/storage.js';
@@ -58,12 +59,12 @@ test('unified projects: manual acceptance, assignment, immutable quotation, stat
   await assert.rejects(followUpProject(pool,id,admin,{requestKey:randomUUID(),expectedRevision:won.revision,contactMethod:'email',contactedAt:new Date().toISOString(),content:'直接回到待跟进',targetStatus:'pending'}),{reason:'INVALID_STATUS_TRANSITION'});
   const reopened=await followUpProject(pool,id,admin,{requestKey:randomUUID(),expectedRevision:won.revision,contactMethod:'email',contactedAt:new Date().toISOString(),content:'客户补充需求',targetStatus:'following',reopenReason:'客户追加服务需重新沟通'});
   assert.equal(reopened.status,'following');
-  const sessions:Record<string,unknown>={client:{site:'client',localId:user,expiresAt:Math.floor(Date.now()/1000)+3600},other:{site:'client',localId:other,expiresAt:Math.floor(Date.now()/1000)+3600},admin:{site:'admin',localId:admin,expiresAt:Math.floor(Date.now()/1000)+3600}};
+  const sessions:Record<string,unknown>={client:{site:'client',localId:user,sessionVersion:1,expiresAt:Math.floor(Date.now()/1000)+3600},other:{site:'client',localId:other,sessionVersion:1,expiresAt:Math.floor(Date.now()/1000)+3600},admin:{site:'admin',localId:admin,sessionVersion:1,expiresAt:Math.floor(Date.now()/1000)+3600}};
   let active='client';const redis={get:async()=>JSON.stringify(sessions[active]),del:async()=>1,eval:async()=>1} as unknown as Redis;
   const storage={signDownload:async()=>'/test-preview',signDownloadWithName:async()=>'/test-download'} as unknown as ReturnType<typeof createStorage>;
   const app=Fastify({ajv:{customOptions:{removeAdditional:false}}});t.after(()=>app.close());
-  await registerClientProjectRoutes(app,pool,redis,storage);await registerClientManualRequestRoutes(app,pool,redis);
-  await app.register(async adminRoutes=>registerAdminProjectRoutes(adminRoutes,pool,redis,storage),{prefix:'/admin'});
+  await app.register(async clientRoutes=>{registerAuthentication(clientRoutes,pool,redis,'client');await registerClientProjectRoutes(clientRoutes,pool,redis,storage);await registerClientManualRequestRoutes(clientRoutes,pool,redis);});
+  await app.register(async adminRoutes=>{registerAuthentication(adminRoutes,pool,redis,'admin');await registerAdminProjectRoutes(adminRoutes,pool,redis,storage);},{prefix:'/admin'});
   const headers={authorization:'Bearer test-token'};
   const replay=await app.inject({method:'POST',url:'/manual-requests',headers,payload:input});assert.equal(replay.statusCode,200);assert.equal(replay.json().data.projectId,id);
   assert.equal((await app.inject({method:'POST',url:'/manual-requests',payload:input})).statusCode,401);
