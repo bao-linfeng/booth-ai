@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import sharp from 'sharp';
+import sharp, { type Metadata } from 'sharp';
 import type { ActiveAiModel } from './ai-models.js';
 
 export const IMAGE_LIMITS = { maxBytes: 30 * 1024 * 1024, maxPixels: 40_000_000 };
@@ -127,15 +127,7 @@ export async function editImage(model: ActiveAiModel, reference: Buffer, prompt:
   }
   const metadata = await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels }).metadata();
   const mimeType = metadata.format === 'jpeg' ? 'image/jpeg' : metadata.format === 'webp' ? 'image/webp' : 'image/png';
-  if (model.provider === 'gemini') {
-    const body = await providerJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.model)}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': model.apiKey },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: reference.toString('base64') } }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }),
-    }, deadline, true, options.onProviderRequest) as { candidates?: { content?: { parts?: { inlineData?: { mimeType?: string; data?: string } }[] } }[] };
-    if (!Array.isArray(body?.candidates)) throw new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
-    return body.candidates.flatMap(candidate => Array.isArray(candidate?.content?.parts) ? candidate.content.parts.flatMap(part =>
-      typeof part?.inlineData?.data === 'string' ? [`data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`] : []) : []);
-  }
+  if (model.provider === 'gemini') return editGemini(model, reference, metadata, mimeType, prompt, deadline, options);
   if (model.provider !== 'openai') throw new ImageGenerationError('PROVIDER_UNSUPPORTED');
   const form = new FormData();
   form.set('model', model.model);
@@ -151,6 +143,51 @@ export async function editImage(model: ActiveAiModel, reference: Buffer, prompt:
   if (!Array.isArray(body?.data)) throw new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
   return body.data.flatMap(item => typeof item?.b64_json === 'string' && item.b64_json ? [`data:image/png;base64,${item.b64_json}`] :
     typeof item?.url === 'string' && item.url ? [item.url] : []);
+}
+
+// Gemini image models: https://ai.google.dev/gemini-api/docs/image-generation (generateContent stays fully supported).
+const GEMINI_ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] as const;
+// Inline request data is capped at 20 MB; base64 inflates by 4/3, so larger references are re-encoded first.
+const GEMINI_INLINE_REFERENCE_BYTES = 14 * 1024 * 1024;
+const GEMINI_BLOCKED_FINISH_REASONS = ['SAFETY', 'IMAGE_SAFETY', 'PROHIBITED_CONTENT', 'IMAGE_PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION', 'IMAGE_RECITATION'];
+
+type GeminiResponse = {
+  promptFeedback?: { blockReason?: string };
+  candidates?: { finishReason?: string; content?: { parts?: { thought?: boolean; inlineData?: { mimeType?: string; data?: string } }[] } }[];
+};
+
+export function geminiAspectRatio(width: number | undefined, height: number | undefined): string {
+  if (!width || !height) return '16:9';
+  const target = Math.log(width / height);
+  const distance = (ratio: string) => { const [w, h] = ratio.split(':').map(Number); return Math.abs(Math.log(w! / h!) - target); };
+  return GEMINI_ASPECT_RATIOS.reduce((best, ratio) => distance(ratio) < distance(best) ? ratio : best);
+}
+
+async function editGemini(model: ActiveAiModel, reference: Buffer, metadata: Metadata, mimeType: string, prompt: string,
+  deadline: Date, options: { artwork?: boolean; onProviderRequest?: ProviderRequestObserver }): Promise<string[]> {
+  let input = { data: reference, mimeType };
+  if (reference.length > GEMINI_INLINE_REFERENCE_BYTES) {
+    input = { mimeType: 'image/jpeg', data: await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels }).rotate()
+      .resize({ width: 3072, height: 3072, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer() };
+  }
+  const [width, height] = (metadata.orientation ?? 1) >= 5 ? [metadata.height, metadata.width] : [metadata.width, metadata.height];
+  const body = await providerJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.model)}:generateContent`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': model.apiKey },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: input.mimeType, data: input.data.toString('base64') } }] }],
+      // 2K is the smallest size whose 3:2 output clears the 1536x1024 artwork quality gate.
+      generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: options.artwork ? '3:2' : geminiAspectRatio(width, height), imageSize: '2K' } },
+    }),
+  }, deadline, true, options.onProviderRequest) as GeminiResponse;
+  if (body?.promptFeedback?.blockReason) throw new ImageGenerationError('PROVIDER_CONTENT_BLOCKED');
+  if (!Array.isArray(body?.candidates)) throw new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
+  // Thinking models may emit interim draft images marked `thought`; only final images are results.
+  const images = body.candidates.flatMap(candidate => (Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []).flatMap(part =>
+    !part?.thought && typeof part?.inlineData?.data === 'string' && part.inlineData.data
+      ? [`data:${['image/jpeg', 'image/webp'].includes(part.inlineData.mimeType ?? '') ? part.inlineData.mimeType : 'image/png'};base64,${part.inlineData.data}`] : []));
+  if (images.length) return images;
+  throw new ImageGenerationError(body.candidates.some(candidate => GEMINI_BLOCKED_FINISH_REASONS.includes(candidate?.finishReason ?? ''))
+    ? 'PROVIDER_CONTENT_BLOCKED' : 'PROVIDER_NO_IMAGE');
 }
 
 export async function pollWanx(model: ActiveAiModel, taskId: string, deadline: Date): Promise<string[]> {

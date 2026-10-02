@@ -82,4 +82,19 @@ test('artwork model updates target the purpose/provider pair and reject parser p
   const updated = queries.find(q => q.sql.startsWith('UPDATE ai_model_configs'))!;
   assert.match(updated.sql, /provider=\$6 AND purpose=\$7/); assert.equal(updated.values?.[6], 'artwork');
   await assert.rejects(updateAiModel(pool, 'qwen', { purpose: 'artwork', enabled: true, priority: 0, unitCredits: 10, expectedRevision: 2 }, 'admin', encryptionKey), { statusCode: 400 });
+  await assert.rejects(updateAiModel(pool, 'wanx', { purpose: 'artwork', enabled: true, priority: 0, unitCredits: 10, expectedRevision: 2 }, 'admin', encryptionKey), { statusCode: 400 });
+});
+
+test('gemini can serve artwork with the Nano Banana default model', async () => {
+  const rows = [{ ...initial(), purpose: 'artwork', provider: 'gemini', enabled: true, unitCredits: 8,
+    credentialCiphertext: encryptCredential(providerKey, 'gemini', encryptionKey) }, { ...initial(), enabled: true, unitCredits: 10,
+    credentialCiphertext: encryptCredential(providerKey, 'gemini', encryptionKey) }];
+  const client = { query: async (sql: string) => sql.startsWith('SELECT credential_ciphertext') ? { rows: [{ configured: true, revision: 1 }] } : { rows: [] },
+    release: () => {} };
+  const pool = { connect: async () => client, query: async () => ({ rows }) } as unknown as pg.Pool;
+  const saved = await updateAiModel(pool, 'gemini', { purpose: 'artwork', enabled: true, priority: 0, unitCredits: 8, expectedRevision: 1 }, 'admin', encryptionKey);
+  assert.equal(saved?.model, 'gemini-3.1-flash-image');
+  const [artwork] = await activeAiModels(pool, 'artwork', encryptionKey);
+  assert.deepEqual([artwork?.provider, artwork?.model, artwork?.apiKey], ['gemini', 'gemini-3.1-flash-image', providerKey]);
+  assert.equal((await activeAiModels(pool, 'theme', encryptionKey))[0]?.model, 'gemini-3.1-flash-image');
 });

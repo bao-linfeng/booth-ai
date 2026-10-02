@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { encryptCredential, listAiModels, modelDefinitions, type AiProvider, type AiPurpose } from '../../infra/ai-models.js';
+import { ARTWORK_PROVIDERS, encryptCredential, listAiModels, modelDefinitions, type AiProvider, type AiPurpose } from '../../infra/ai-models.js';
 import { writeAuditLog } from '../../infra/audit.js';
 
 export interface ModelUpdate {
@@ -14,7 +14,7 @@ export interface ModelUpdate {
 export async function updateAiModel(pool: pg.Pool, provider: AiProvider, input: ModelUpdate, adminId: string, encryptionKey: string) {
   const { enabled, priority, unitCredits, expectedRevision, apiKey, purpose } = input;
   if ((purpose === 'selection_parse') !== (modelDefinitions[provider].purpose === 'selection_parse') ||
-    (purpose === 'artwork' && provider !== 'openai') ||
+    (purpose === 'artwork' && !ARTWORK_PROVIDERS.includes(provider)) ||
     (enabled && purpose === 'selection_parse' && priority === 0) || (purpose !== 'selection_parse' && priority !== 0) ||
     (purpose !== 'selection_parse' && enabled && unitCredits === null) || (purpose === 'selection_parse' && unitCredits !== null) ||
     (apiKey !== undefined && apiKey !== null && (!apiKey.trim() || apiKey !== apiKey.trim()))) {

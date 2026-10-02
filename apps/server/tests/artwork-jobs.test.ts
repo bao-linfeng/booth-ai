@@ -73,6 +73,22 @@ test('default artwork snapshot freezes single-reference reconstruction and resol
   }
 });
 
+test('artwork snapshot freezes the configured gemini artwork model rather than theme models', async () => {
+  const source = { sourceAssetId: 'theme-asset', versionId: 'theme-version', objectKey: 'selected-theme.png', checksum: 'theme-checksum',
+    input: { industryId: 'industry', styleId: 'style', brandColors: [], brandKeywords: '' } };
+  const configured = { enabled: true, priority: 0, credentialCiphertext: Buffer.from('configured') };
+  const pool = { query: async (sql: string) => {
+    if (sql.includes('FROM theme_jobs')) return { rows: [source] };
+    if (sql.includes('FROM ai_model_configs')) return { rows: [{ ...configured, purpose: 'theme', provider: 'wanx', unitCredits: 1, revision: 9 },
+      { ...configured, purpose: 'artwork', provider: 'gemini', unitCredits: 6, revision: 3 }] };
+    if (sql.includes('FROM dictionary_items')) return { rows: [] };
+    if (sql.includes('FROM prompt_templates')) return { rows: [] };
+    throw new Error(`Unexpected query: ${sql}`);
+  } } as unknown as pg.Pool;
+  const snapshot = await loadArtworkSnapshot(pool, 'user', { schemeCode: 'SCHEME', themeJobId: 'theme-job', resultId: 'theme-result', selectionRevision: 1 });
+  assert.deepEqual(snapshot.model, { provider: 'gemini', model: 'gemini-3.1-flash-image', revision: 3, unitCredits: 6 });
+});
+
 test('artwork acceptance converts actual JPEG pixels to PNG and rejects low resolution, corrupt and oversized content', async () => {
   const jpeg = await sharp({ create: { width: 1536, height: 1024, channels: 3, background: '#345678' } }).jpeg().toBuffer();
   const image = await normalizeArtworkImage(jpeg);

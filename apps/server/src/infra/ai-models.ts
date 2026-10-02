@@ -7,10 +7,18 @@ export type AiPurpose = 'selection_parse' | 'theme' | 'artwork';
 export const modelDefinitions = {
   qwen: { purpose: 'selection_parse', model: 'qwen-plus' },
   deepseek: { purpose: 'selection_parse', model: 'deepseek-v4-flash' },
-  gemini: { purpose: 'theme', model: 'gemini-2.5-flash-image' },
+  gemini: { purpose: 'theme', model: 'gemini-3.1-flash-image' },
   wanx: { purpose: 'theme', model: 'wanx2.1-imageedit' },
   openai: { purpose: 'theme', model: 'gpt-image-2.5-sunburst' },
 } as const;
+
+// Four-view artwork requires >= 1536x1024 output; only adapters that can request that resolution are allowed.
+export const ARTWORK_PROVIDERS: readonly AiProvider[] = ['openai', 'gemini'];
+const artworkModels: Partial<Record<AiProvider, string>> = { openai: 'gpt-image-1.5' };
+
+export function modelName(purpose: AiPurpose, provider: AiProvider): string {
+  return (purpose === 'artwork' ? artworkModels[provider] : undefined) ?? modelDefinitions[provider].model;
+}
 
 export interface AiModelConfig {
   purpose: AiPurpose;
@@ -57,7 +65,7 @@ const query = 'SELECT purpose, provider, enabled, priority, unit_credits AS "uni
 
 export async function listAiModels(pool: pg.Pool): Promise<AiModelConfig[]> {
   const result = await pool.query<AiModelRow>(query);
-  return result.rows.map(({ credentialCiphertext, ...row }) => ({ ...row, model: row.purpose === 'artwork' && row.provider === 'openai' ? 'gpt-image-1.5' : modelDefinitions[row.provider].model,
+  return result.rows.map(({ credentialCiphertext, ...row }) => ({ ...row, model: modelName(row.purpose, row.provider),
     credentialConfigured: credentialCiphertext !== null }));
 }
 
@@ -66,7 +74,7 @@ export async function activeAiModels(pool: pg.Pool, purpose: AiPurpose, encrypti
   return result.rows.filter(row => row.purpose === purpose && row.enabled && row.credentialCiphertext !== null &&
     (purpose === 'selection_parse' || row.unitCredits !== null)).map(row => {
     const { credentialCiphertext, ...config } = row;
-    return { ...config, model: config.purpose === 'artwork' && config.provider === 'openai' ? 'gpt-image-1.5' : modelDefinitions[row.provider].model, credentialConfigured: true,
+    return { ...config, model: modelName(config.purpose, config.provider), credentialConfigured: true,
       apiKey: decryptCredential(credentialCiphertext!, row.provider, encryptionKey) };
   }).sort((a, b) => a.priority - b.priority);
 }

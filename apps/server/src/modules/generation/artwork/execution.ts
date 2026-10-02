@@ -68,7 +68,7 @@ export async function processArtworkJob(
         if (!url) {
           if (!modelsLoaded) {
             model = (await activeAiModels(database, 'artwork', config.aiModelEncryptionKey)).find(m =>
-              m.provider === 'openai' && m.provider === snapshot.model.provider && m.model === snapshot.model.model && m.revision === snapshot.model.revision);
+              m.provider === snapshot.model.provider && m.model === snapshot.model.model && m.revision === snapshot.model.revision);
             modelsLoaded = true;
           }
           if (!model) { await failDirection(database, jobId, lease, direction, 'MODEL_UNAVAILABLE', publish); continue; }
