@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Requirement } from '../client/selection/domain.js';
+import type { Requirement } from '../selection/domain.js';
 
 export const currencyScales: Record<string, number> = { CNY: 2, USD: 2, EUR: 2, GBP: 2, HKD: 2, JPY: 0, KRW: 0, KWD: 3 };
 export const scopeCodes = ['materials', 'graphics', 'transport', 'installation', 'other'];

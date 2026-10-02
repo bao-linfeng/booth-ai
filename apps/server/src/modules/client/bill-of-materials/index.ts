@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { bomError, getBom } from '../../admin/bill-of-materials/service.js';
-import { exportBomWorkbook } from '../../admin/bill-of-materials/workbook.js';
+import { bomError, getBom } from '../../schemes/bill-of-materials/service.js';
+import { exportBomWorkbook } from '../../schemes/bill-of-materials/workbook.js';
 
 interface CodeParams { code: string }
 interface DownloadQuery { revision: string }

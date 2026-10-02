@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { emptyRequirement, type Catalog } from '../src/modules/client/selection/domain.js';
-import { mergeExtraction, parseWithModels, requestExtraction } from '../src/modules/client/selection/llm.js';
-import { matchSchemes } from '../src/modules/client/selection/match.js';
+import { emptyRequirement, type Catalog } from '../src/modules/selection/domain.js';
+import { mergeExtraction, parseWithModels, requestExtraction } from '../src/modules/selection/llm.js';
+import { matchSchemes } from '../src/modules/selection/match.js';
 import type { ActiveAiModel } from '../src/infra/ai-models.js';
 
 const catalog: Catalog = {

@@ -4,7 +4,7 @@ import type pg from 'pg';
 import type { Config } from '../../../config.js';
 import { checkAdminRole, fetchExternalUserDetail } from '../../../infra/external-auth.js';
 import { decryptJwt, destroySession, getSession } from '../../../infra/session.js';
-import { toCurrentUser } from '../../client/auth/service.js';
+import { toCurrentUser } from '../../identity/service.js';
 import { syncAdmin } from '../auth/index.js';
 
 function authorizationToken(authorization: string | undefined): string | null {

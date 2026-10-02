@@ -3,7 +3,7 @@ import type { FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import { getSession } from '../../infra/session.js';
-import type { MatchDiagnostics, MatchItem, Requirement } from '../client/selection/domain.js';
+import type { MatchDiagnostics, MatchItem, Requirement } from '../selection/domain.js';
 
 const visitorPattern = /^[a-zA-Z0-9_-]{16,128}$/;
 

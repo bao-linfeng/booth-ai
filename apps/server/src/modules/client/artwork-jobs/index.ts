@@ -7,7 +7,7 @@ import { requireProjectUser } from '../quote-requests/index.js';
 import { projectError } from '../../projects/domain.js';
 import { streamArtworkJobEvents } from './events.js';
 import { ARTWORK_QUALITY, artworkArchive, artworkFiles, assertThemeSelection, createArtworkJob, getArtworkJob,
-  loadArtworkSnapshot, ownedArtworkJob, replayArtworkRequest, type ArtworkContext, type ArtworkOffer } from './service.js';
+  loadArtworkSnapshot, ownedArtworkJob, replayArtworkRequest, type ArtworkContext, type ArtworkOffer } from '../../generation/artwork/service.js';
 
 const uuid = { type: 'string', format: 'uuid' };
 const contextProperties = { schemeCode: { type: 'string', minLength: 1, maxLength: 200 }, themeJobId: uuid, resultId: uuid, selectionRevision: { type: 'integer', minimum: 1 } };

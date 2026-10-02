@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import ExcelJS from 'exceljs';
-import { canonicalDecimal, quantityFor, type BomRecord } from '../src/modules/admin/bill-of-materials/service.js';
-import { exportBomWorkbook, parseBomWorkbook } from '../src/modules/admin/bill-of-materials/workbook.js';
+import { canonicalDecimal, quantityFor, type BomRecord } from '../src/modules/schemes/bill-of-materials/service.js';
+import { exportBomWorkbook, parseBomWorkbook } from '../src/modules/schemes/bill-of-materials/workbook.js';
 
 test('decimal conversion is exact and rejects unrepresentable fractions', () => {
   assert.equal(canonicalDecimal('1.000000'), '1');

@@ -1,9 +1,9 @@
 import type pg from 'pg';
-import { buildSelectionMessages, extractionInstruction, SELECTION_FIXED_INSTRUCTIONS } from '../../client/selection/prompt.js';
-import { loadCatalog } from '../../client/selection/repository.js';
-import { buildThemePrompt, DEFAULT_THEME_BODY, THEME_FIXED_INSTRUCTIONS } from '../../client/theme-jobs/prompt.js';
-import { normalizeThemeInput } from '../../client/theme-jobs/service.js';
-import { ARTWORK_FIXED_INSTRUCTIONS, buildArtworkPrompts, DEFAULT_ARTWORK_BODY } from '../../client/artwork-jobs/service.js';
+import { buildSelectionMessages, extractionInstruction, SELECTION_FIXED_INSTRUCTIONS } from '../../selection/prompt.js';
+import { loadCatalog } from '../../selection/repository.js';
+import { buildThemePrompt, DEFAULT_THEME_BODY, THEME_FIXED_INSTRUCTIONS } from '../../generation/theme/prompt.js';
+import { normalizeThemeInput } from '../../generation/theme/service.js';
+import { ARTWORK_FIXED_INSTRUCTIONS, buildArtworkPrompts, DEFAULT_ARTWORK_BODY } from '../../generation/artwork/service.js';
 import { inspectPrompt, PROMPT_DEFAULT_VERSION, type PromptPurpose } from '../../prompts/template.js';
 
 const brandVariables = [

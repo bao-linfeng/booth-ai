@@ -7,7 +7,7 @@ import type { createStorage } from '../../../infra/storage.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
 import { digest, projectError } from '../../projects/domain.js';
 import type { AssetSnapshot } from '../../projects/snapshot.js';
-import type { ThemeInput } from '../theme-jobs/service.js';
+import type { ThemeInput } from '../theme/service.js';
 import { renderPrompt } from '../../prompts/template.js';
 import { lockCreditUser, reserveJobCredits } from '../../credits/service.js';
 

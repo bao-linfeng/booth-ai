@@ -146,7 +146,7 @@ test('prompt template routes expose definitions, preview real builders, and isol
     purpose: 'theme', body, sample: { industryId, styleId, brandColors: ['#123456'], brandKeywords: '品牌' },
   } });
   assert.equal(preview.statusCode, 200, preview.body);
-  assert.equal(preview.json().data.messages[0].content, (await import('../src/modules/client/theme-jobs/prompt.js')).buildThemePrompt(
+  assert.equal(preview.json().data.messages[0].content, (await import('../src/modules/generation/theme/prompt.js')).buildThemePrompt(
     { industryId, styleId, brandColors: ['#123456'], brandKeywords: '品牌' }, '医疗', '现代', body,
   ));
 

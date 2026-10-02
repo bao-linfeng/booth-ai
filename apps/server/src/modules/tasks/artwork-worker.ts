@@ -5,7 +5,7 @@ import type { Config } from '../../config.js';
 import { activeAiModels, type ActiveAiModel } from '../../infra/ai-models.js';
 import { transaction } from '../../infra/database.js';
 import type { createStorage } from '../../infra/storage.js';
-import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, artworkFiles, completeArtworkFiles, type ArtworkSnapshot, type Direction } from '../client/artwork-jobs/service.js';
+import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, artworkFiles, completeArtworkFiles, type ArtworkSnapshot, type Direction } from '../generation/artwork/service.js';
 import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../credits/service.js';
 
 type ArtworkConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;

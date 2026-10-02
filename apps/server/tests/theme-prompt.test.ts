@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildThemePrompt } from '../src/modules/client/theme-jobs/prompt.js';
+import { buildThemePrompt } from '../src/modules/generation/theme/prompt.js';
 
 const input = { industryId: 'industry-id', styleId: 'style-id', brandColors: ['#123456', '#ABCDEF'],
   brandKeywords: '灵通新能源，主墙展示储能产品，不要树叶，标语“绿色未来”' };

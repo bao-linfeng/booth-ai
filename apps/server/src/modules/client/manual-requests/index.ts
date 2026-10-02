@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
-import { requirementSchema } from '../selection/domain.js';
-import { quoteSchema, text } from '../quote-requests/schema.js';
+import { requirementSchema } from '../../selection/domain.js';
+import { quoteSchema } from '../quote-requests/schema.js';
+import { text } from '../../projects/schema.js';
 import { requireProjectUser } from '../quote-requests/index.js';
 import { createManualProject } from '../../projects/service.js';
 import { projectError, type ManualInput } from '../../projects/domain.js';

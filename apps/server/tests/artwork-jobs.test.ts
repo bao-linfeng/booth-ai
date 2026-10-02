@@ -5,7 +5,7 @@ import type { Queue } from 'bullmq';
 import sharp from 'sharp';
 import { normalizeArtworkImage } from '../src/modules/tasks/artwork-worker.js';
 import { dispatchArtworkOutbox } from '../src/modules/tasks/artwork-outbox.js';
-import { DIRECTIONS, DIRECTION_LABELS, loadArtworkSnapshot } from '../src/modules/client/artwork-jobs/service.js';
+import { DIRECTIONS, DIRECTION_LABELS, loadArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
 
 test('default artwork snapshot freezes single-reference reconstruction and resolves each requested camera direction', async () => {
   const source = { sourceAssetId: 'theme-asset', versionId: 'theme-version', objectKey: 'selected-theme.png', checksum: 'theme-checksum',

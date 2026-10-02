@@ -9,7 +9,7 @@ import { createManualProject, createQuoteRequest } from '../src/modules/projects
 import { linkProjectScheme, type SchemeLinkInput } from '../src/modules/projects/admin-service.js';
 import { getProject } from '../src/modules/projects/repository.js';
 import type { ManualInput, QuoteInput } from '../src/modules/projects/domain.js';
-import { emptyRequirement } from '../src/modules/client/selection/domain.js';
+import { emptyRequirement } from '../src/modules/selection/domain.js';
 import { listDeliverables, signDeliverable } from '../src/modules/client/schemes/service.js';
 
 test('quote transaction: concurrent retries, immutable snapshots, revision conflict and rollback', { skip: !process.env.PROJECT_TEST_DATABASE_URL }, async t => {

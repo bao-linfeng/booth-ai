@@ -7,7 +7,7 @@ import type { Redis } from 'ioredis';
 import { createManualProject } from '../src/modules/projects/service.js';
 import { assignProject,followUpProject,saveQuotation,quotationRevision } from '../src/modules/projects/admin-service.js';
 import { getProject } from '../src/modules/projects/repository.js';
-import { emptyRequirement } from '../src/modules/client/selection/domain.js';
+import { emptyRequirement } from '../src/modules/selection/domain.js';
 import { registerClientProjectRoutes } from '../src/modules/client/projects/index.js';
 import { registerAdminProjectRoutes } from '../src/modules/admin/projects/index.js';
 import { registerClientManualRequestRoutes } from '../src/modules/client/manual-requests/index.js';

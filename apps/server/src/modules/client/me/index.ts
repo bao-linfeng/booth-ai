@@ -4,7 +4,8 @@ import type pg from 'pg';
 import type { Config } from '../../../config.js';
 import { fetchExternalUserDetail } from '../../../infra/external-auth.js';
 import { decryptJwt, destroySession, getSession } from '../../../infra/session.js';
-import { syncClientUser, toCurrentUser } from '../auth/service.js';
+import { syncClientUser } from '../auth/service.js';
+import { toCurrentUser } from '../../identity/service.js';
 
 function authorizationToken(authorization: string | undefined): string | null {
   const match = authorization?.match(/^Bearer\s+(.+)$/i);

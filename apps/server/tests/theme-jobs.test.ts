@@ -6,7 +6,7 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { registerThemeModelRoutes } from '../src/modules/client/theme-jobs/index.js';
 import type { createStorage } from '../src/infra/storage.js';
-import { themeCacheKey, normalizeThemeInput, type GenerationSnapshot, type ThemeParameters, type ThemeOfferData } from '../src/modules/client/theme-jobs/service.js';
+import { themeCacheKey, normalizeThemeInput, type GenerationSnapshot, type ThemeParameters, type ThemeOfferData } from '../src/modules/generation/theme/service.js';
 
 const jobId = '00000000-0000-4000-8000-000000000001';
 const resultId = '00000000-0000-4000-8000-000000000002';

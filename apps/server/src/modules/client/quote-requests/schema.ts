@@ -1,9 +1,7 @@
-import { requirementSchema } from '../selection/domain.js';
+import { requirementSchema } from '../../selection/domain.js';
 import { currencyScales, scopeCodes } from '../../projects/domain.js';
+import { keySchema, revisionSchema, text } from '../../projects/schema.js';
 
-export const text = (maxLength: number, minLength = 0) => ({ type: 'string', minLength, maxLength, ...(minLength ? { pattern: '\\S' } : {}) });
-export const keySchema = { type: 'string', minLength: 8, maxLength: 128, pattern: '^[a-zA-Z0-9_-]+$' };
-export const revisionSchema = { type: 'integer', minimum: 1 };
 export const quoteSchema = { type: 'object', additionalProperties: false,
   required: ['requestKey','schemeCode','entryPoint','exhibition','scopeCodes','materialBudget','customerType','contact'], properties: {
     requestKey: keySchema, schemeCode: text(200,1), schemeRevision: revisionSchema, bomRevision: revisionSchema, drawingRevision: revisionSchema, artworkRevision: revisionSchema,

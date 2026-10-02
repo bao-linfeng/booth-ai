@@ -10,7 +10,7 @@ import JSZip from 'jszip';
 import { encryptCredential } from '../src/infra/ai-models.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerArtworkJobRoutes } from '../src/modules/client/artwork-jobs/index.js';
-import { artworkArchive, artworkFiles, getArtworkJob, readyArtworkFiles, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot } from '../src/modules/client/artwork-jobs/service.js';
+import { artworkArchive, artworkFiles, getArtworkJob, readyArtworkFiles, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
 import { processArtworkJob, settleArtworkJob } from '../src/modules/tasks/artwork-worker.js';
 import { bindProjectArtworks } from '../src/modules/projects/artwork-delivery.js';
 import { createQuoteRequest } from '../src/modules/projects/service.js';

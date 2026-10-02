@@ -9,8 +9,8 @@ import { activeAiModels, type ActiveAiModel } from '../../infra/ai-models.js';
 import { transaction } from '../../infra/database.js';
 import { getActivePromptTemplate } from '../prompts/service.js';
 import type { createStorage } from '../../infra/storage.js';
-import { normalizeThemeInput, type GenerationSnapshot, type ThemeInput } from '../client/theme-jobs/service.js';
-import { buildThemePrompt } from '../client/theme-jobs/prompt.js';
+import { normalizeThemeInput, type GenerationSnapshot, type ThemeInput } from '../generation/theme/service.js';
+import { buildThemePrompt } from '../generation/theme/prompt.js';
 import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../credits/service.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;

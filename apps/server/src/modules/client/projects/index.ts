@@ -5,7 +5,7 @@ import type { createStorage } from '../../../infra/storage.js';
 import { getSession } from '../../../infra/session.js';
 import { requireProjectUser } from '../quote-requests/index.js';
 import { getProject,listProjects,type ProjectRecord,type ProjectQuery } from '../../projects/repository.js';
-import { projectParams,queryProperties } from '../../admin/projects/schema.js';
+import { projectParams,queryProperties } from '../../projects/schema.js';
 import { bindProjectArtworks, type BindArtworkInput } from '../../projects/artwork-delivery.js';
 import { listUserSearches } from '../../selection-analytics/service.js';
 import { listSearchJobs } from './search-jobs.js';

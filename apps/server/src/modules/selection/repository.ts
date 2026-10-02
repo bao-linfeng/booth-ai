@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { createHash } from 'node:crypto';
-import type { createStorage } from '../../../infra/storage.js';
+import type { createStorage } from '../../infra/storage.js';
 import { rulesVersion, type BoothSpace, type Candidate, type Catalog, type MatchDiagnostics, type Option } from './domain.js';
 
 interface CandidateRow {

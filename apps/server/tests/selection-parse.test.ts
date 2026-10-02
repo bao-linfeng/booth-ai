@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { emptyRequirement, type Catalog } from '../src/modules/client/selection/domain.js';
-import { parseRequirement } from '../src/modules/client/selection/parse.js';
+import { emptyRequirement, type Catalog } from '../src/modules/selection/domain.js';
+import { parseRequirement } from '../src/modules/selection/parse.js';
 
 const catalog: Catalog = {
   dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] },

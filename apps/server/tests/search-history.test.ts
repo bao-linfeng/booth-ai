@@ -8,7 +8,7 @@ import pg from 'pg';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerClientProjectRoutes } from '../src/modules/client/projects/index.js';
 import { listSearchJobs } from '../src/modules/client/projects/search-jobs.js';
-import { assertThemeSearch, themeRequestHash, type ThemeParameters } from '../src/modules/client/theme-jobs/service.js';
+import { assertThemeSearch, themeRequestHash, type ThemeParameters } from '../src/modules/generation/theme/service.js';
 
 const storage = { signDownload: async (key: string) => `https://assets.example/${key}` } as ReturnType<typeof createStorage>;
 

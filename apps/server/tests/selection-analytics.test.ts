@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { emptyRequirement } from '../src/modules/client/selection/domain.js';
+import { emptyRequirement } from '../src/modules/selection/domain.js';
 import { extractDemandTerms } from '../src/modules/selection-analytics/service.js';
 
 test('demand terms combine explicit keywords and Chinese or latin input terms without duplicates', () => {

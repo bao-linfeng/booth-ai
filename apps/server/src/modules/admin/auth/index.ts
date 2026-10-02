@@ -4,7 +4,7 @@ import type pg from 'pg';
 import type { Config } from '../../../config.js';
 import { checkAdminRole, fetchExternalUserDetail, loginExternal, type ExternalUserDetail } from '../../../infra/external-auth.js';
 import { createSession, destroySession, encryptJwt } from '../../../infra/session.js';
-import { jwtExpiresAt, toCurrentUser, type CurrentUser } from '../../client/auth/service.js';
+import { jwtExpiresAt, toCurrentUser, type CurrentUser } from '../../identity/service.js';
 
 interface LocalIdRow {
   id: string;

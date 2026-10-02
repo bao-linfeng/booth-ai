@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { emptyRequirement, type Candidate } from '../src/modules/client/selection/domain.js';
-import { matchSchemes } from '../src/modules/client/selection/match.js';
+import { emptyRequirement, type Candidate } from '../src/modules/selection/domain.js';
+import { matchSchemes } from '../src/modules/selection/match.js';
 
 const candidate: Candidate = {
   code: 'BOOTH-1',

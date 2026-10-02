@@ -3,8 +3,8 @@ import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
 import { digest, normalizeQuote, normalizeManual, projectError, type ManualInput, type QuoteInput, type Receipt } from './domain.js';
 import { captureScheme } from './snapshot.js';
-import { loadCatalog } from '../client/selection/repository.js';
-import { validateRequirement } from '../client/selection/domain.js';
+import { loadCatalog } from '../selection/repository.js';
+import { validateRequirement } from '../selection/domain.js';
 
 export async function defaultAssignee(client: pg.PoolClient): Promise<string> {
   const row = (await client.query<{ id: string }>(`SELECT id FROM admins WHERE enabled AND 'ROLE_ADMIN'=ANY(roles)

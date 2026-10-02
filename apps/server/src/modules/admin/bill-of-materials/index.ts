@@ -8,8 +8,8 @@ import { decryptJwt, destroySession, getSession } from '../../../infra/session.j
 import { checkAdminRole, fetchExternalUserDetail } from '../../../infra/external-auth.js';
 import type { Config } from '../../../config.js';
 import { syncAdmin } from '../auth/index.js';
-import { assertImportBaseline, bomError, createBomImport, createOrReplaceBomFromImport, deleteBom, deleteBomItem, getBom, listBoms, submitBomVerification, updateBomItems, type BomItemInput, type BomVerificationInput } from './service.js';
-import { exportBomWorkbook, parseBomWorkbook } from './workbook.js';
+import { assertImportBaseline, bomError, createBomImport, createOrReplaceBomFromImport, deleteBom, deleteBomItem, getBom, listBoms, submitBomVerification, updateBomItems, type BomItemInput, type BomVerificationInput } from '../../schemes/bill-of-materials/service.js';
+import { exportBomWorkbook, parseBomWorkbook } from '../../schemes/bill-of-materials/workbook.js';
 
 interface CodeParams { code: string }
 interface ImportParams extends CodeParams { importId: string }

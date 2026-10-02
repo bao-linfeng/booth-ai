@@ -1,5 +1,7 @@
-import { keySchema, revisionSchema, text } from '../../client/quote-requests/schema.js';
-import { currencyScales } from '../../projects/domain.js';
+import { currencyScales } from './domain.js';
+export const text = (maxLength: number, minLength = 0) => ({ type: 'string', minLength, maxLength, ...(minLength ? { pattern: '\\S' } : {}) });
+export const keySchema = { type: 'string', minLength: 8, maxLength: 128, pattern: '^[a-zA-Z0-9_-]+$' };
+export const revisionSchema = { type: 'integer', minimum: 1 };
 export const uuid={type:'string',format:'uuid'};
 export const projectParams={type:'object',additionalProperties:false,required:['projectId'],properties:{projectId:uuid}};
 export const statuses=['pending','following','quoted','won','lost','closed'];

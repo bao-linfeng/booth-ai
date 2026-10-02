@@ -1,10 +1,10 @@
 import type pg from 'pg';
-import { getBom } from '../admin/bill-of-materials/service.js';
+import { getBom } from '../schemes/bill-of-materials/service.js';
 import { projectError, type QuoteInput } from './domain.js';
-import { loadCandidatePool, loadCatalog } from '../client/selection/repository.js';
-import { matchSchemes } from '../client/selection/match.js';
-import { isEmpty, validateRequirement } from '../client/selection/domain.js';
-import { readyArtworkFiles } from '../client/artwork-jobs/service.js';
+import { loadCandidatePool, loadCatalog } from '../selection/repository.js';
+import { matchSchemes } from '../selection/match.js';
+import { isEmpty, validateRequirement } from '../selection/domain.js';
+import { readyArtworkFiles } from '../generation/artwork/service.js';
 
 export interface AssetSnapshot {
   assetId: string; versionId: string; type: string; name: string; revision: number; objectKey: string;

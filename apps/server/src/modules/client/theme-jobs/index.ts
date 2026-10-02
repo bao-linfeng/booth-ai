@@ -7,7 +7,7 @@ import { getSession } from '../../../infra/session.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { streamThemeJobEvents } from './events.js';
 import { assertThemeSearch, createThemeJob, findCachedThemeJob, loadGenerationSnapshot, normalizeThemeInput, replayThemeRequest,
-  themeCacheKey, themeCredits, type ThemeOfferData } from './service.js';
+  themeCacheKey, themeCredits, type ThemeOfferData } from '../../generation/theme/service.js';
 
 const OFFER_TTL_SECONDS = 300; // 5 minutes
 

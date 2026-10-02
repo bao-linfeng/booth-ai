@@ -1,4 +1,4 @@
-import type { ActiveAiModel } from '../../../infra/ai-models.js';
+import type { ActiveAiModel } from '../../infra/ai-models.js';
 import { emptyRequirement, validateRequirement, type Catalog, type Requirement } from './domain.js';
 import { parseRequirement } from './parse.js';
 import { buildSelectionMessages } from './prompt.js';

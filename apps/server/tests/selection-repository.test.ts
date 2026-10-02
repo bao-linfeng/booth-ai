@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type pg from 'pg';
-import { emptyRequirement, type Catalog } from '../src/modules/client/selection/domain.js';
-import { matchSchemes } from '../src/modules/client/selection/match.js';
-import { loadCandidatePool } from '../src/modules/client/selection/repository.js';
+import { emptyRequirement, type Catalog } from '../src/modules/selection/domain.js';
+import { matchSchemes } from '../src/modules/selection/match.js';
+import { loadCandidatePool } from '../src/modules/selection/repository.js';
 
 test('public pool diagnoses checklist and asset exclusions even when no candidates can be loaded', async () => {
   const rows = [

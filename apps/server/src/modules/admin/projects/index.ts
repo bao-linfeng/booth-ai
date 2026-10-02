@@ -8,7 +8,7 @@ import { getProject,listProjects,projectEvents,type ProjectQuery } from '../../p
 import { quotationWorkbook } from '../../projects/quotation-workbook.js';
 import { projectError } from '../../projects/domain.js';
 import type { QuotationInput } from '../../projects/quotation.js';
-import { assignmentSchema,followUpSchema,linkSchema,projectParams,queryProperties,quotationSchema,uuid } from './schema.js';
+import { assignmentSchema,followUpSchema,linkSchema,projectParams,queryProperties,quotationSchema,uuid } from '../../projects/schema.js';
 
 export async function registerAdminProjectRoutes(app:FastifyInstance,pool:pg.Pool,redis:Redis,storage:ReturnType<typeof createStorage>) {
   await app.register(async routes=>{
