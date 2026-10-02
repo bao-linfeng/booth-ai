@@ -9,16 +9,19 @@ import { join } from 'node:path';
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const MARKER = join(ROOT, '.claude', '.server-deploy-fingerprint');
 const PATHS = ['apps/server', 'infra/compose.dev.yaml'];
+// 文档改动不影响运行中的 dev 栈，不计入指纹
+const isDoc = file => file.toLowerCase().endsWith('.md');
 
 const git = (...args) => execFileSync('git', ['-C', ROOT, ...args], { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 });
 
 function fingerprint() {
   const hash = createHash('sha256');
-  for (const path of PATHS) {
-    hash.update(git('rev-parse', `HEAD:${path}`));
+  const tracked = git('ls-tree', '-r', '-z', 'HEAD', '--', ...PATHS).toString('utf8').split('\0').filter(Boolean);
+  for (const entry of tracked) {
+    if (!isDoc(entry)) hash.update(entry);
   }
-  hash.update(git('diff', 'HEAD', '--binary', '--', ...PATHS));
-  const untracked = git('ls-files', '-o', '--exclude-standard', '-z', '--', ...PATHS).toString('utf8').split('\0').filter(Boolean);
+  hash.update(git('diff', 'HEAD', '--binary', '--', ...PATHS, ':(exclude,glob)**/*.md', ':(exclude,glob)**/*.MD'));
+  const untracked = git('ls-files', '-o', '--exclude-standard', '-z', '--', ...PATHS).toString('utf8').split('\0').filter(file => file && !isDoc(file));
   for (const file of untracked.sort()) {
     hash.update(file);
     hash.update(readFileSync(join(ROOT, file)));

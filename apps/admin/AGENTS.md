@@ -2,6 +2,8 @@
 
 这是独立于仓库根目录的 pnpm + Turborepo monorepo。**所有命令必须在 `apps/admin/` 下执行，不要从仓库根目录调用。**
 
+跨项目信息（环境初始化、端口、前后端契约、全局约定）见根目录 [`AGENTS.md`](../../AGENTS.md)；此文件仅记录 admin 专属内容。
+
 ---
 
 ## 结构一览
@@ -93,6 +95,11 @@ apps/web-antd/src/
   - **样式与 DOM**：`cn`（Tailwind 类名合并）、`getPopupContainer`、`triggerWindowResize`
   - **缓存管理**：`StorageManager` 及各种 Storage Driver
   - **业务辅助**：`findMenuByPath`, `generateMenus`, `generateRoutesFrontend`, `generateRoutesBackend`
+
+### 偏好配置
+
+- 应用覆写入口：`apps/web-antd/src/preferences.ts`（`defineOverridesPreferences` 只传需要修改的字段，其余沿用框架默认；改后需清缓存才生效）。项目自定义偏好项通过同文件的 `definePreferencesExtension` 扩展。
+- 全部字段及中文说明见类型定义 `packages/@core/preferences/src/types.ts`（`Preferences` 及 `AppPreferences`、`ThemePreferences` 等子接口），默认值见同目录 `config.ts`。不要在文档中另行维护字段表。
 
 ### 包引用别名
 

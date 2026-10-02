@@ -1,13 +1,24 @@
 # AGENTS.md — apps/client（参展商前端）
 
 参展商公众端。Vue 3.5 + Vite 6 + Tailwind CSS 3 + Shadcn-Vue（Radix Vue）。
-命令见根目录 `AGENTS.md`；此文件仅补充 client 专属内容。
+跨项目信息（环境初始化、端口、前后端契约、全局约定）见根目录 [`AGENTS.md`](../../AGENTS.md)；此文件仅记录 client 专属内容。
 
-## 注意事项
+## 命令（包管理器：pnpm）
 
-- **无独立 lint / test 脚本**；类型验证唯一入口是 `pnpm build`（内含 `vue-tsc --noEmit`）。
-- 额外脚本：`pnpm build:prod`（等同 `pnpm build --mode production`，显式指定生产模式）。
-- **无后端 proxy**，vite.config.ts 未配置 proxy；API 地址由 `VITE_` 环境变量控制。
+```powershell
+pnpm dev          # 开发服务器（http://localhost:5173）
+pnpm build        # vue-tsc 类型检查 + 生产构建
+pnpm build:prod   # 同上，显式 --mode production
+pnpm preview      # 预览构建产物
+```
+
+- **无独立 lint / test 脚本**；类型验证唯一入口是 `pnpm build`（内含 `vue-tsc --noEmit`），非平凡改动后必须跑。
+
+## 后端对接
+
+- 开发时 `vite.config.ts` 把 `/api` 代理到 `http://localhost:3000`（本仓库 `apps/server`）。
+- `src/lib/api-client.ts` 区分两类请求：`apiFetch` 访问本平台 API（`VITE_API_BASE_URL`，默认空串即同源走代理）；`lingtongFetch` / `lingtongPublicFetch` 访问灵通企业 API（`VITE_LINGTONG_API_URL`，默认 `https://api.lingtong.net.cn`，用于 SSO 登录等）。
+- 业务接口封装在 `src/services/api/`，页面不直接拼 HTTP 请求。
 
 ---
 
@@ -60,7 +71,7 @@
 
 - 在 `types/env.d.ts` 中声明类型（`ImportMetaEnv`），新增变量必须在此文件补类型。
 - 变量必须以 `VITE_` 前缀开头，客户端代码通过 `import.meta.env.VITE_*` 访问。
-- 当前已声明：`VITE_APP_TITLE`。
+- 当前已声明：`VITE_APP_TITLE`、`VITE_API_BASE_URL`、`VITE_LINGTONG_API_URL`。
 
 ---
 

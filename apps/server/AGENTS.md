@@ -1,6 +1,17 @@
 # AGENTS.md — apps/server
 
-通用约定见根目录 [`AGENTS.md`](../../AGENTS.md)。本文件只记录该包独有的高信号事实。
+跨项目信息（环境初始化、端口、前后端契约、全局约定）见根目录 [`AGENTS.md`](../../AGENTS.md)。本文件只记录该包独有的高信号事实。
+
+## 关键架构文档
+
+深入修改前先读对应文档：
+
+- [`docs/server-module-boundaries.md`](../../docs/server-module-boundaries.md) — 模块职责与依赖规则（`tests/module-boundaries.test.ts` 用 AST 静态检查强制执行，反向依赖会导致测试失败）
+- [`docs/server-authentication.md`](../../docs/server-authentication.md) — 认证体系：`http/authentication.ts` 统一建立请求级 principal，`modules/identity/principal.ts` 校验账户与 Session 版本
+- [`docs/credit-invariants.md`](../../docs/credit-invariants.md) — 积分账本不变量（预占、结算、对账）
+- [`docs/theme-outbox-recovery.md`](../../docs/theme-outbox-recovery.md) — 生成任务 Outbox 恢复机制
+- [`docs/asset-scope.md`](../../docs/asset-scope.md) — 方案基线资产与用户生成素材的作用域隔离
+- [`docs/worker-observability.md`](../../docs/worker-observability.md) — Worker 调度隔离、健康状态、指标、链路追踪与项目通知投递
 
 ---
 
@@ -27,25 +38,17 @@ npm run smoke          # E2E 冒烟（需 Postgres + Redis + Silo S3 全部在�
 
 ---
 
-## 容器重建规则
+## 改动后必须重新部署 dev 栈
 
-**修改 `apps/server/src/` 下的任何源码后，必须重建并重启 API/Worker 容器，否则容器内跑的仍是旧代码。**
+**改完 `apps/server`（代码或迁移）必须重新部署 dev 栈，无需询问**（在仓库根目录执行）：
 
 ```powershell
-# 重建 API 容器（最常用）
-docker compose --env-file .env -f infra/compose.dev.yaml build api
-docker compose --env-file .env -f infra/compose.dev.yaml up -d api
-
-# 重建 Worker 容器
-docker compose --env-file .env -f infra/compose.dev.yaml build worker
-docker compose --env-file .env -f infra/compose.dev.yaml up -d worker
-
-# 同时重建两者
-docker compose --env-file .env -f infra/compose.dev.yaml build api worker
-docker compose --env-file .env -f infra/compose.dev.yaml up -d api worker
+docker compose --env-file .env -f infra/compose.dev.yaml up -d --build
 ```
 
-> 容器 `STATUS` 显示 `healthy` 只说明进程在跑，**不代表代码是最新的**。
+然后验证并汇报：`schema_migrations` 最新版本、`curl localhost:3000/health/ready`、worker 的 `/tmp/worker-status.json` 与日志。
+
+原因：`src`/`migrations` 虽以只读方式挂载并由 `tsx watch` 运行，但 Windows bind mount 下文件变更事件不可靠、热重载常不生效；新迁移只在 `migrate` 服务重跑时执行；依赖/Dockerfile 变更必须重建镜像。容器 `healthy` 只说明进程在跑，**不代表代码是最新的**。仅改测试或文档时可跳过，但需说明。
 
 ---
 
@@ -132,39 +135,22 @@ GET  /api/v1/admin/me                → 管理端当前用户信息
 
 ---
 
-## 数据库 Schema（当前）
-
-**`foundation_tasks`**
-- `id` uuid PK，`request_key` text UNIQUE（幂等键），`kind` text CHECK(`system.echo`)
-- `status` text DEFAULT `'pending'` CHECK(`pending|running|succeeded|failed`)
-- `payload` jsonb，`result` jsonb nullable，`error_code` text nullable
-
-**`foundation_outbox`**
-- `id` uuid PK，`task_id` uuid UNIQUE FK → `foundation_tasks(id)` ON DELETE CASCADE
-- `published_at` timestamptz nullable（null = 待分发）
-- 索引：`foundation_outbox_pending_idx ON (created_at) WHERE published_at IS NULL`
-
-**`schema_migrations`**（由 migrate.ts 自动创建）
-- `version` text PK，`checksum` text，`applied_at` timestamptz
-
----
-
 ## 迁移规则
 
 - 文件在 `migrations/`，命名格式：`^\d+_.+\.sql$`，按字母序执行
 - **已执行的文件禁止修改**（SHA-256 校验和，改了会抛错）
 - 新迁移只能追加新文件
-- 当前：`001_foundation.sql`
+- 当前 schema 以 `migrations/` 下文件为准，不在文档中维护表结构
 
 ---
 
 ## 队列 / Outbox 约束
 
-- 队列名：`booth-foundation`，Job 类型：`system.echo`
+- 队列定义在 `src/infra/queue.ts`：`booth-foundation`、`booth-theme`、`booth-artwork`
 - `jobId` = `taskId`（BullMQ 去重，重试幂等）
 - Task 写入 + Outbox 写入必须在**同一事务**内
 - **调用 AI/外部 API 时不得持有 DB 锁**
-- Worker 健康文件：成功迭代写 `/tmp/worker-ready`，Redis 断连或分发失败时删除
+- Worker 健康文件：成功迭代写 `/tmp/worker-ready`（compose healthcheck 依赖其 mtime），Redis 断连或分发失败时删除；详细状态写 `/tmp/worker-status.json`
 
 ---
 
@@ -179,11 +165,23 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 
 ---
 
-## S3 双端点
+## 环境变量
 
-- `S3_ENDPOINT`：容器内部调用（如 `http://silo:9000`）
-- `S3_PUBLIC_ENDPOINT`：仅用于 `getSignedUrl`，暴露给浏览器
-- **禁止将容器内部 hostname 通过 presigned URL 传给前端**
+`config.ts` 解析与校验，失败时进程退出且只报字段名、不回显值。
+
+| 变量 | 说明 |
+|------|------|
+| `DATABASE_URL` | PostgreSQL URI（`postgres://` 或 `postgresql://`） |
+| `REDIS_URL` | Redis URI（`redis://` 或 `rediss://`） |
+| `CORS_ORIGINS` | 逗号分隔的允许来源 |
+| `S3_ENDPOINT` | S3 内部端点（如 `http://silo:9000`），仅容器内调用 |
+| `S3_PUBLIC_ENDPOINT` | S3 公开端点，仅用于 `getSignedUrl` 生成给浏览器的 presigned URL |
+| `S3_REGION` | 默认 `us-east-1` |
+| `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Bucket 与凭据 |
+
+可选：`NODE_ENV`（默认 `development`）、`HOST`（默认 `0.0.0.0`）、`PORT`（默认 `3000`）、`LOG_LEVEL`（默认 `info`）、`PROJECT_NOTIFICATION_WEBHOOK_URL` / `PROJECT_NOTIFICATION_WEBHOOK_SECRET`（见 `docs/worker-observability.md`）。
+
+日志：Fastify 已关闭请求日志（`disableRequestLogging: true`），headers 中 `authorization`/`cookie` 已脱敏。
 
 ---
 
@@ -192,17 +190,8 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - Runner：Node 原生 `node:test`，**不是 Jest/Vitest**
 - `tests/app.test.ts`：`fastify.inject()` 路由测试，无需外部服务
 - `npm run smoke`：需要 Postgres 17、Redis 7.4、Silo S3 全部运行
+- `*-integration.test.ts` 及部分 DB 测试在环境变量缺失时会 `skip`（`npm test` 与 Docker `check` 默认都不设置），**测试通过不代表它们跑过**。按需设置 `PROJECT_` / `THEME_` / `CREDIT_` / `ARTWORK_` / `ASSET_` / `BOM_` / `PROMPT_TEMPLATE_` + `TEST_DATABASE_URL`，以及 `THEME_TEST_REDIS_URL`
 - 修改核心逻辑后必须确保 `npm run check && npm test` 通过
-
----
-
-## 错误响应格式
-
-所有错误统一格式，不得泄露内部细节：
-
-```json
-{ "error": { "code": "VALIDATION_ERROR|REQUEST_ERROR|INTERNAL_ERROR", "message": "...", "requestId": "..." } }
-```
 
 ---
 
@@ -211,5 +200,6 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - 新增业务路由：在对应 `src/http/{admin|client|su}/` 子目录实现，注册到 Fastify（参考 app.ts 的 plugin 模式）
 - Controller 保持薄：只做解析和响应，业务逻辑放 service 层
 - 共享业务放 `src/modules/` 领域模块，禁止导入 HTTP 门户、Fastify 或 Worker 调度实现；`infra/` 禁止反向导入业务模块
+- `src/modules/{admin,client,su}/` 只剩重构遗留的空目录，不要往里放代码；按业务领域放入对应模块
 - `tests/module-boundaries.test.ts` 检查依赖边界，详见 [`docs/server-module-boundaries.md`](../../docs/server-module-boundaries.md)
 - 新 Job 类型：在 `src/infra/queue.ts` 追加 `TASK_NAME` 常量，Worker 在 `src/worker.ts` 注册处理器
