@@ -201,6 +201,26 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     await assert.rejects(processArtworkJob(pool, retryId, config, retryStorage), /Storage outage/);
     assert.equal(calls, beforeRetry + 1); await processArtworkJob(pool, retryId, config, retryStorage); assert.equal(calls, beforeRetry + 4);
     assert.equal((await getArtworkJob(pool, storage, user, retryId)).deliveryStatus, 'ready');
+    const providerFetch = globalThis.fetch;
+    const downloadId = await accept(await submission()); const beforeDownload = calls;
+    let downloadUnavailable = true;
+    globalThis.fetch = (async (input, init) => {
+      if (!String(input).startsWith('https://api.openai.com/')) {
+        if (downloadUnavailable) throw new Error('temporary download failure');
+        return new Response(new Uint8Array(jpeg));
+      }
+      calls++;
+      assert.ok(init?.signal);
+      prompts.push(String((init?.body as FormData).get('prompt')));
+      return Response.json({ data: [{ url: 'https://assets.openai.com/image.png' }] });
+    }) as typeof fetch;
+    await assert.rejects(processArtworkJob(pool, downloadId, config, storage), /IMAGE_DOWNLOAD_UNAVAILABLE/);
+    assert.equal((await pool.query("SELECT status FROM artwork_job_directions WHERE job_id=$1 AND direction='front'", [downloadId])).rows[0].status, 'generated');
+    downloadUnavailable = false;
+    await processArtworkJob(pool, downloadId, config, storage, async () => { throw new Error('notification outage'); });
+    assert.equal(calls, beforeDownload + 4);
+    assert.equal((await getArtworkJob(pool, storage, user, downloadId)).deliveryStatus, 'ready');
+    globalThis.fetch = providerFetch;
     const uncertainId = await accept(await submission());
     const historicalPrompt = '历史任务：{{directionLabel}}正交立面，只生成{{directionLabel}}。';
     await pool.query(`UPDATE artwork_jobs SET generation_snapshot=(generation_snapshot-'directionPrompts') || $2::jsonb WHERE id=$1`,

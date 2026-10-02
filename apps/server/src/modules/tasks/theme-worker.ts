@@ -1,406 +1,233 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type pg from 'pg';
 import sharp from 'sharp';
 import type { Config } from '../../config.js';
-import { activeAiModels, type ActiveAiModel } from '../../infra/ai-models.js';
+import { activeAiModels } from '../../infra/ai-models.js';
 import { transaction } from '../../infra/database.js';
 import { getActivePromptTemplate } from '../prompts/service.js';
 import type { createStorage } from '../../infra/storage.js';
 import { normalizeThemeInput, type GenerationSnapshot, type ThemeInput } from '../generation/theme/service.js';
 import { buildThemePrompt } from '../generation/theme/prompt.js';
 import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../credits/service.js';
+import { claimGeneration, publishGeneration, refreshGeneration } from './generation-execution.js';
+import { downloadImage, editImage, IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage, pollWanx } from './image-provider.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
 type ThemeJob = { requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string; snapshot: GenerationSnapshot | null };
-type UploadedResult = {
-  resultId: string;
-  assetId: string;
-  versionId: string;
-  objectKey: string;
-  checksum: string;
-  byteSize: number;
-  mimeType: string;
-  ordinal: number;
-  previewUrl: string;
-};
+type ProviderAttempt = { id: string; provider: string; model: string; revision: number; status: string; taskId: string | null };
+type Publish = (jobId: string, event: unknown) => Promise<void>;
 
-async function fetchSourceImageUrls(database: pg.Pool, sourceAssetId: string, config: ThemeConfig, objectKey?: string): Promise<{ internal: string; public: string }> {
-  const result = objectKey ? { rows: [{ objectKey }] } : await database.query<{ objectKey: string }>(
+async function themeSource(database: pg.Pool, job: ThemeJob, storage: ReturnType<typeof createStorage>) {
+  const key = job.snapshot?.source.objectKey ?? (await database.query<{ objectKey: string }>(
     `SELECT v.object_key AS "objectKey" FROM scheme_assets a
      JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
-     WHERE a.id = $1 AND a.is_active = true`, [sourceAssetId]
-  );
-  const key = result.rows[0]?.objectKey;
-  if (!key) throw new Error('Theme source image not found');
-  const options = {
-    region: config.s3.region, forcePathStyle: true,
-    credentials: { accessKeyId: config.s3.accessKeyId, secretAccessKey: config.s3.secretAccessKey },
-  };
-  const internalClient = new S3Client({ ...options, endpoint: config.s3.endpoint });
-  const publicClient = new S3Client({ ...options, endpoint: config.s3.publicEndpoint });
-  try {
-    const command = new GetObjectCommand({ Bucket: config.s3.bucket, Key: key });
-    const [internal, publicUrl] = await Promise.all([
-      getSignedUrl(internalClient, command, { expiresIn: 900 }),
-      getSignedUrl(publicClient, command, { expiresIn: 900 }),
-    ]);
-    return { internal, public: publicUrl };
-  } finally {
-    internalClient.destroy();
-    publicClient.destroy();
+     WHERE a.id = $1 AND a.is_active = true`, [job.sourceAssetId],
+  )).rows[0]?.objectKey;
+  if (!key) throw new ImageGenerationError('THEME_SOURCE_UNAVAILABLE');
+  const reference = await storage.getBuffer(key, IMAGE_LIMITS.maxBytes);
+  await normalizeGeneratedImage(reference);
+  if (job.snapshot?.source.checksum && createHash('sha256').update(reference).digest('hex') !== job.snapshot.source.checksum) {
+    throw new ImageGenerationError('THEME_SOURCE_INTEGRITY_INVALID');
   }
-}
-
-async function sourceImage(url: string): Promise<{ bytes: ArrayBuffer; mimeType: string }> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Unable to read theme source image');
-  return { bytes: await response.arrayBuffer(), mimeType: response.headers.get('content-type')?.split(';')[0] ?? 'image/png' };
-}
-
-async function generatedImage(url: string): Promise<{ bytes: Buffer; mimeType: string }> {
-  const match = /^data:([^;,]+);base64,(.+)$/.exec(url);
-  const mimeType = match?.[1];
-  const encoded = match?.[2];
-  if (mimeType && encoded) return { bytes: Buffer.from(encoded, 'base64'), mimeType };
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Unable to read generated theme image');
-  return { bytes: Buffer.from(await response.arrayBuffer()), mimeType: response.headers.get('content-type')?.split(';')[0] ?? 'image/png' };
-}
-
-async function fetchMaskBuffer(database: pg.Pool, sourceAssetId: string, config: ThemeConfig, objectKey?: string): Promise<Buffer | null> {
-  const result = objectKey ? { rows: [{ objectKey }] } : await database.query<{ objectKey: string }>(
-    `SELECT v.object_key AS "objectKey"
-     FROM scheme_assets a
+  let maskKey = job.snapshot?.mask?.objectKey;
+  if (!job.snapshot) maskKey = (await database.query<{ objectKey: string }>(
+    `SELECT v.object_key AS "objectKey" FROM scheme_assets a
      JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
-     WHERE a.related_asset_id = $1 AND a.type = 'mask' AND a.is_active = true
-     LIMIT 1`,
-    [sourceAssetId]
-  );
-  const key = result.rows[0]?.objectKey;
-  if (!key) return null;
-
-  const options = {
-    region: config.s3.region, forcePathStyle: true,
-    credentials: { accessKeyId: config.s3.accessKeyId, secretAccessKey: config.s3.secretAccessKey },
-  };
-  const internalClient = new S3Client({ ...options, endpoint: config.s3.endpoint });
-  try {
-    const command = new GetObjectCommand({ Bucket: config.s3.bucket, Key: key });
-    const signedUrl = await getSignedUrl(internalClient, command, { expiresIn: 900 });
-    const resp = await fetch(signedUrl);
-    if (!resp.ok) return null;
-    const bytes = Buffer.from(await resp.arrayBuffer());
-    const converted = await sharp(bytes)
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-    const { data, info } = converted;
+     WHERE a.related_asset_id = $1 AND a.type = 'mask' AND a.is_active = true LIMIT 1`, [job.sourceAssetId],
+  )).rows[0]?.objectKey;
+  let mask: Buffer | undefined;
+  if (maskKey) {
+    const bytes = await storage.getBuffer(maskKey, IMAGE_LIMITS.maxBytes);
+    if (job.snapshot?.mask?.checksum && createHash('sha256').update(bytes).digest('hex') !== job.snapshot.mask.checksum) {
+      throw new ImageGenerationError('THEME_MASK_INTEGRITY_INVALID');
+    }
+    const normalized = await normalizeGeneratedImage(bytes);
+    const { data, info } = await sharp(normalized.bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     for (let i = 0; i < info.width * info.height; i++) {
-      const r = data[i * 4]!;
-      const g = data[i * 4 + 1]!;
-      const b = data[i * 4 + 2]!;
-      const isMagenta = r > 200 && g < 60 && b > 200;
-      data[i * 4 + 3] = isMagenta ? 0 : 255;
+      data[i * 4 + 3] = data[i * 4]! > 200 && data[i * 4 + 1]! < 60 && data[i * 4 + 2]! > 200 ? 0 : 255;
     }
-    return await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
-      .png()
-      .toBuffer();
-  } catch {
-    return null;
-  } finally {
-    internalClient.destroy();
+    mask = await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
   }
+  return { reference, mask, sourceUrl: await storage.signDownload(key, 900) };
 }
 
-async function generateWithOpenAI(model: ActiveAiModel, sourceImageUrl: string, prompt: string, count: number, maskBuffer?: Buffer): Promise<string[]> {
-  const image = await sourceImage(sourceImageUrl);
-  const form = new FormData();
-  form.set('model', model.model);
-  form.set('image', new Blob([image.bytes], { type: image.mimeType }), 'source.png');
-  form.set('prompt', prompt);
-  form.set('n', String(count));
-  if (maskBuffer) {
-    const maskBytes = new Uint8Array(maskBuffer);
-    form.set('mask', new Blob([maskBytes], { type: 'image/png' }), 'mask.png');
-  }
-  form.set('size', '1792x1024');
-  const response = await fetch('https://api.openai.com/v1/images/edits', {
-    method: 'POST', headers: { Authorization: `Bearer ${model.apiKey}` }, body: form,
-  });
-  if (!response.ok) {
-    const detail = (await response.text()).slice(0, 500);
-    throw new Error(`OpenAI image edit failed (${response.status}): ${detail}`);
-  }
-  const body = await response.json() as { data?: { b64_json?: string; url?: string }[] };
-  return body.data?.flatMap(item => {
-    if (item.b64_json) return [`data:image/png;base64,${item.b64_json}`];
-    return item.url ? [item.url] : [];
-  }) ?? [];
-}
-
-async function generateWithGemini(model: ActiveAiModel, sourceImageUrl: string, prompt: string, count: number): Promise<string[]> {
-  const image = await sourceImage(sourceImageUrl);
-  const base64 = Buffer.from(image.bytes).toString('base64');
-  const urls: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.model)}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': model.apiKey },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: image.mimeType, data: base64 } }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }),
-    });
-    if (!response.ok) {
-      if (urls.length > 0) break;
-      throw new Error(`Gemini image edit failed (${response.status})`);
-    }
-    const body = await response.json() as { candidates?: { content?: { parts?: { inlineData?: { mimeType?: string; data?: string } }[] } }[] };
-    const images = body.candidates?.flatMap(candidate => candidate.content?.parts?.flatMap(part =>
-      part.inlineData?.data ? [`data:${part.inlineData.mimeType ?? 'image/png'};base64,${part.inlineData.data}`] : []) ?? []) ?? [];
-    if (images.length === 0) {
-      if (urls.length > 0) break;
-      throw new Error('Gemini returned no image');
-    }
-    urls.push(...images.slice(0, count - urls.length));
-  }
-  return urls;
-}
-
-async function generateWithWanx(model: ActiveAiModel, sourceImageUrl: string, prompt: string, count: number): Promise<string[]> {
-  const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/image2image/image-synthesis', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json', 'X-DashScope-Async': 'enable' },
-    body: JSON.stringify({ model: model.model, input: { function: 'description_edit', prompt, base_image_url: sourceImageUrl }, parameters: { n: count } }),
-  });
-  if (!response.ok) throw new Error(`Wanx image edit submission failed (${response.status})`);
-  const submitted = await response.json() as { output?: { task_id?: string } };
-  const taskId = submitted.output?.task_id;
-  if (!taskId) throw new Error('Wanx returned no task ID');
-  for (let i = 0; i < 60; i++) {
-    await delay(2000);
-    const poll = await fetch(`https://dashscope.aliyuncs.com/api/v1/tasks/${encodeURIComponent(taskId)}`, {
-      headers: { Authorization: `Bearer ${model.apiKey}` },
-    });
-    if (!poll.ok) throw new Error(`Wanx task polling failed (${poll.status})`);
-    const body = await poll.json() as { output?: { task_status?: string; results?: { url?: string }[] } };
-    if (body.output?.task_status === 'SUCCEEDED') return body.output.results?.flatMap(item => item.url ? [item.url] : []) ?? [];
-    if (body.output?.task_status === 'FAILED' || body.output?.task_status === 'CANCELED') throw new Error('Wanx image edit failed');
-  }
-  throw new Error('Wanx image edit timed out');
-}
-
-export async function failThemeJob(database: pg.Pool, jobId: string): Promise<void> {
+async function persistGenerated(database: pg.Pool, jobId: string, lease: string, attemptId: string, urls: string[], count: number) {
   await transaction(database, async client => {
-    const job = await lockCreditJob(client, { kind: 'theme', id: jobId });
-    if (!job || job.status === 'succeeded' || job.status === 'partially_succeeded') return;
-    await client.query(
-      `UPDATE theme_jobs SET status = 'failed', phase = NULL, updated_at = now()
-       WHERE id = $1 RETURNING id`, [jobId],
-    );
-    await releaseJobCredits(client, { kind: 'theme', id: jobId });
+    const owner = await client.query("SELECT id FROM theme_jobs WHERE id = $1 AND lease_token = $2 AND status = 'running' FOR UPDATE", [jobId, lease]);
+    if (!owner.rows[0]) throw new ImageGenerationError('GENERATION_LEASE_LOST_OR_EXPIRED');
+    const saved = await client.query<{ ordinal: number }>('SELECT ordinal FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId]);
+    const occupied = new Set(saved.rows.map(row => row.ordinal));
+    let ordinal = 1;
+    for (const url of urls.slice(0, Math.max(0, count - occupied.size))) {
+      while (occupied.has(ordinal)) ordinal++;
+      await client.query('INSERT INTO theme_job_generated_urls (job_id, ordinal, url) VALUES ($1, $2, $3)', [jobId, ordinal, url]);
+      occupied.add(ordinal++);
+    }
+    await client.query("UPDATE theme_job_provider_attempts SET status = 'succeeded', updated_at = now() WHERE id = $1", [attemptId]);
+    await client.query("UPDATE theme_jobs SET phase = 'result_persisted', updated_at = now() WHERE id = $1", [jobId]);
   });
 }
 
-export async function processThemeJob(
-  database: pg.Pool,
-  jobId: string,
-  config: ThemeConfig,
-  storage?: ReturnType<typeof createStorage>,
-  publish: (jobId: string, event: unknown) => Promise<void> = async () => {},
-): Promise<void> {
-  const assetStorage = storage ?? {
-    putBuffer: async () => {},
-    signDownload: async (key: string) => `stored://${key}`,
-  } as unknown as ReturnType<typeof createStorage>;
-  const job = (await database.query<ThemeJob>(
-    `SELECT requested_count AS "requestedCount", source_asset_id AS "sourceAssetId", scheme_code AS "schemeCode", input,
-             unit_credits AS "unitCredits", user_id AS "userId", status, generation_snapshot AS snapshot FROM theme_jobs WHERE id = $1`, [jobId]
-  )).rows[0];
-  if (!job) throw new Error(`Theme job ${jobId} not found`);
-  const lease = randomUUID();
-  const started = await transaction(database, async client => {
-    const current = await lockCreditJob(client, { kind: 'theme', id: jobId });
-    if (!current || terminalCreditJob(current.status)) return false;
-    const claimed = await client.query(`UPDATE theme_jobs SET lease_token = $2, lease_until = now() + interval '15 minutes',
-      status = 'running', phase = CASE WHEN EXISTS (SELECT 1 FROM theme_job_generated_urls WHERE job_id = $1)
-        THEN 'result_persisted' ELSE 'provider_submitting' END, updated_at = now()
-      WHERE id = $1 AND (lease_until IS NULL OR lease_until < now())`, [jobId, lease]);
-    if (!claimed.rowCount) return false;
-    return true;
-  });
-  if (!started) return;
-  try {
-  await publish(jobId, { status: 'running' }).catch(() => {});
-
-  const urls: string[] = [];
-  const savedUrls = await database.query<{ ordinal: number; url: string }>(
-    'SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId],
-  );
-  if (savedUrls.rows.length < job.requestedCount) try {
-    let prompt = job.snapshot?.prompt;
-    if (prompt === undefined) {
-      const labels = await database.query<{ id: string; label: string }>(
-        `SELECT i.id::text AS id, i.item_label AS label FROM dictionary_items i
-         WHERE i.id IN ($1, $2)`, [job.input.industryId, job.input.styleId]
-      );
-      const industryLabel = labels.rows.find(row => row.id === job.input.industryId)?.label;
-      const styleLabel = labels.rows.find(row => row.id === job.input.styleId)?.label;
-      if (!industryLabel || !styleLabel) throw new Error('Theme dictionary labels not found');
-      const template = await getActivePromptTemplate(database, 'theme', job.input.industryId, job.input.styleId);
-      prompt = buildThemePrompt(normalizeThemeInput(job.input), industryLabel, styleLabel, template?.body);
-    }
-    const maskBuffer = job.snapshot && !job.snapshot.mask ? null :
-      await fetchMaskBuffer(database, job.sourceAssetId, config, job.snapshot?.mask?.objectKey);
-    if (job.snapshot?.mask && !maskBuffer) throw new Error('Theme snapshot mask unavailable');
-    const activeModels = await activeAiModels(database, 'theme', config.aiModelEncryptionKey);
-    const models = job.snapshot ? job.snapshot.models.flatMap(snapshot => {
-      const model = activeModels.find(active => active.provider === snapshot.provider && active.model === snapshot.model && active.revision === snapshot.revision);
-      return model ? [model] : [];
-    }) : activeModels;
-    const imageUrls = await fetchSourceImageUrls(database, job.sourceAssetId, config, job.snapshot?.source.objectKey);
-    for (const model of models) {
-      for (let attempt = 0; attempt < 3 && savedUrls.rows.length + urls.length < job.requestedCount; attempt++) {
-        try {
-          await database.query(`UPDATE theme_jobs SET lease_until = now() + interval '15 minutes', phase = 'provider_submitting', updated_at = now()
-            WHERE id = $1 AND lease_token = $2`, [jobId, lease]);
-          const remaining = job.requestedCount - savedUrls.rows.length - urls.length;
-          let generated: string[];
-          switch (model.provider) {
-            case 'openai': generated = await generateWithOpenAI(model, imageUrls.internal, prompt, remaining, maskBuffer ?? undefined); break;
-            case 'gemini': generated = await generateWithGemini(model, imageUrls.internal, prompt, remaining); break;
-            case 'wanx': generated = await generateWithWanx(model, imageUrls.public, prompt, remaining); break;
-            default: continue;
-          }
-          urls.push(...generated.slice(0, remaining).filter(Boolean));
-          if (urls.length) break;
-          if (generated.length === 0) throw new Error('Image provider returned no images');
-          if (urls.length === job.requestedCount) break;
-        } catch (error) {
-          console.error(`Theme job ${jobId} provider ${model.provider} attempt ${attempt + 1} failed`, error);
-        }
-      }
-      if (savedUrls.rows.length + urls.length >= job.requestedCount || urls.length > 0) break;
-    }
-  } catch (error) {
-    console.error(`Theme job ${jobId} failed before settlement`, error);
-  }
-
-  if (urls.length > 0) {
-    await transaction(database, async client => {
-      const owner = await client.query('SELECT id FROM theme_jobs WHERE id = $1 AND lease_token = $2 FOR UPDATE', [jobId, lease]);
-      if (!owner.rows[0]) throw new Error('Theme lease lost');
-      const persisted = await client.query<{ ordinal: number }>('SELECT ordinal FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId]);
-      const occupied = new Set(persisted.rows.map(row => row.ordinal));
-      let ordinal = 1;
-      for (const url of urls) {
-        while (occupied.has(ordinal)) ordinal++;
-        await client.query(
-          `INSERT INTO theme_job_generated_urls (job_id, ordinal, url) VALUES ($1, $2, $3) ON CONFLICT (job_id, ordinal) DO NOTHING`,
-          [jobId, ordinal, url]
-        );
-        occupied.add(ordinal++);
-      }
-    });
-    await database.query(`UPDATE theme_jobs SET phase = 'result_persisted', lease_until = now() + interval '15 minutes', updated_at = now()
-      WHERE id = $1 AND lease_token = $2`, [jobId, lease]);
-  }
-
-  const persistedUrlsResult = await database.query<{ ordinal: number; url: string }>(
-    `SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal`,
-    [jobId]
-  );
-  const settleUrls = persistedUrlsResult.rows.length > 0
-    ? persistedUrlsResult.rows.map(r => r.url)
-    : urls;
-
-  if (settleUrls.length === 0) {
-    const failed = await transaction(database, async client => {
-      const current = await lockCreditJob(client, { kind: 'theme', id: jobId });
-      if (!current || terminalCreditJob(current.status) || current.leaseToken !== lease) return false;
-      await settleJobCredits(client, { kind: 'theme', id: jobId }, 0);
-      await client.query(`UPDATE theme_jobs SET status = 'failed', phase = NULL, usable_count = 0, lease_token = NULL, lease_until = NULL, updated_at = now() WHERE id = $1`, [jobId]);
-      return true;
-    });
-    if (failed) await publish(jobId, { status: 'failed', results: [] }).catch(() => {});
+async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, lease: string, deadline: Date,
+  config: ThemeConfig, storage: ReturnType<typeof createStorage>) {
+  const saved = await database.query<{ ordinal: number; url: string }>('SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId]);
+  const attempts = (await database.query<ProviderAttempt>(`SELECT id, provider, model, revision, status, provider_task_id AS "taskId"
+    FROM theme_job_provider_attempts WHERE job_id = $1 ORDER BY created_at, id`, [jobId])).rows;
+  const unresolved = attempts.find(attempt => attempt.status === 'waiting' || attempt.status === 'submitting' || attempt.status === 'unknown');
+  if (unresolved?.status === 'submitting') {
+    await database.query("UPDATE theme_job_provider_attempts SET status = 'unknown', reason = 'PROVIDER_OUTCOME_UNKNOWN', updated_at = now() WHERE id = $1", [unresolved.id]);
     return;
   }
-
-  const alreadySettled = await database.query<{ status: string }>(
-    `SELECT status FROM theme_jobs WHERE id = $1`,
-    [jobId],
-  );
-  if (alreadySettled.rows[0] && terminalCreditJob(alreadySettled.rows[0].status)) return;
-
-  const uploadedResults: UploadedResult[] = [];
-  for (const [index, url] of settleUrls.entries()) {
-    const existing = await database.query<UploadedResult>(`SELECT r.id AS "resultId", r.asset_id AS "assetId", v.id AS "versionId",
-      v.object_key AS "objectKey", v.checksum, v.byte_size AS "byteSize", v.mime_type AS "mimeType", r.ordinal,
-      r.preview_url AS "previewUrl" FROM theme_job_results r JOIN asset_versions v ON v.id = r.asset_version_id
-      WHERE r.job_id = $1 AND r.ordinal = $2`, [jobId, index + 1]);
-    if (existing.rows[0]) { uploadedResults.push(existing.rows[0]); continue; }
-    const resultId = randomUUID();
-    const assetId = randomUUID();
-    const image = await generatedImage(url);
-    const objectKey = `theme-results/${jobId}/${assetId}.png`;
-    const checksum = createHash('sha256').update(image.bytes).digest('hex');
-    await assetStorage.putBuffer(objectKey, image.bytes, image.mimeType);
-    await database.query(`UPDATE theme_jobs SET phase = 'result_persisting', lease_until = now() + interval '15 minutes', updated_at = now()
-      WHERE id = $1 AND lease_token = $2`, [jobId, lease]);
-    uploadedResults.push({
-      resultId,
-      assetId,
-      versionId: randomUUID(),
-      objectKey,
-      checksum,
-      byteSize: image.bytes.byteLength,
-      mimeType: image.mimeType,
-      ordinal: index + 1,
-      previewUrl: await assetStorage.signDownload(objectKey, 900),
-    });
-  }
-
-  await publish(jobId, { status: 'settling', phase: 'credit_settling' }).catch(() => {});
-  const settled = await transaction(database, async client => {
-    const currentJob = await lockCreditJob(client, { kind: 'theme', id: jobId });
-    if (!currentJob || terminalCreditJob(currentJob.status) || currentJob.leaseToken !== lease) return false;
-    await client.query(
-      `UPDATE theme_jobs SET status = 'settling', phase = 'credit_settling', updated_at = now() WHERE id = $1 AND lease_token = $2`,
-      [jobId, lease],
-    );
-    for (const result of uploadedResults) {
-      await client.query(
-        `INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, metadata)
-         SELECT $1, s.id, 'artwork', $2, $3, $4
-         FROM schemes s WHERE s.code = $5`,
-        [result.assetId, `AI 换主题结果 ${result.ordinal}`, result.ordinal - 1, JSON.stringify({ themeJobId: jobId }), job.schemeCode],
-      );
-      await client.query(
-        `INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
-        [result.versionId, result.assetId, result.objectKey, `${result.assetId}.png`, result.mimeType, result.byteSize, result.checksum],
-      );
-      await client.query(
-        `INSERT INTO theme_job_results (id, job_id, ordinal, asset_id, preview_url, asset_version_id)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [result.resultId, jobId, result.ordinal, result.assetId, result.previewUrl, result.versionId],
-      );
+  if (unresolved?.status === 'unknown') return;
+  if (saved.rows.length && !unresolved) return;
+  if (attempts.some(attempt => attempt.status === 'succeeded') && !unresolved) return;
+  const activeModels = await activeAiModels(database, 'theme', config.aiModelEncryptionKey);
+  if (unresolved?.status === 'waiting' && unresolved.taskId) {
+    const model = activeModels.find(model => model.provider === unresolved.provider && model.model === unresolved.model && model.revision === unresolved.revision);
+    if (!model) throw new ImageGenerationError('MODEL_UNAVAILABLE', true);
+    await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'provider_waiting');
+    try {
+      const urls = await pollWanx(model, unresolved.taskId, deadline);
+      await persistGenerated(database, jobId, lease, unresolved.id, urls, job.requestedCount);
+    } catch (error) {
+      if (!(error instanceof ImageGenerationError) || error.retryable) throw error;
+      await database.query("UPDATE theme_job_provider_attempts SET status = 'failed', reason = $2, updated_at = now() WHERE id = $1", [unresolved.id, error.code]);
     }
-    const usableCount = uploadedResults.length;
-    if (currentJob.unitCredits === null) throw new Error('Theme job has no unit credit price');
-    await settleJobCredits(client, { kind: 'theme', id: jobId }, usableCount * currentJob.unitCredits);
-    await client.query(
-      `UPDATE theme_jobs SET status = $1, phase = NULL, usable_count = $2, updated_at = now() WHERE id = $3`,
-      [usableCount === currentJob.requestedCount ? 'succeeded' : 'partially_succeeded', usableCount, jobId],
-    );
-    await client.query('UPDATE theme_jobs SET lease_token = NULL, lease_until = NULL WHERE id = $1', [jobId]);
-    return true;
+    return;
+  }
+  const models = job.snapshot ? job.snapshot.models.flatMap(snapshot => {
+    const model = activeModels.find(active => active.provider === snapshot.provider && active.model === snapshot.model && active.revision === snapshot.revision);
+    return model ? [model] : [];
+  }) : activeModels;
+  if (!models.length) return;
+  let prompt = job.snapshot?.prompt;
+  if (prompt === undefined) {
+    const labels = await database.query<{ id: string; label: string }>('SELECT id::text AS id, item_label AS label FROM dictionary_items WHERE id IN ($1, $2)', [job.input.industryId, job.input.styleId]);
+    const industry = labels.rows.find(row => row.id === job.input.industryId)?.label;
+    const style = labels.rows.find(row => row.id === job.input.styleId)?.label;
+    if (!industry || !style) throw new ImageGenerationError('THEME_DICTIONARY_UNAVAILABLE');
+    const template = await getActivePromptTemplate(database, 'theme', job.input.industryId, job.input.styleId);
+    prompt = buildThemePrompt(normalizeThemeInput(job.input), industry, style, template?.body);
+  }
+  const source = await themeSource(database, job, storage);
+  let collected = 0;
+  for (const model of models) {
+    const prior = attempts.filter(attempt => attempt.provider === model.provider && attempt.model === model.model && attempt.revision === model.revision).length;
+    for (let index = prior; index < 3; index++) {
+      await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'provider_submitting');
+      const attemptId = randomUUID();
+      await transaction(database, async client => {
+        const owner = await client.query("SELECT id FROM theme_jobs WHERE id = $1 AND lease_token = $2 AND status = 'running' FOR UPDATE", [jobId, lease]);
+        if (!owner.rows[0]) throw new ImageGenerationError('GENERATION_LEASE_LOST_OR_EXPIRED');
+        await client.query(`INSERT INTO theme_job_provider_attempts(id, job_id, provider, model, revision, status)
+          VALUES($1, $2, $3, $4, $5, 'submitting')`, [attemptId, jobId, model.provider, model.model, model.revision]);
+      });
+      let urls: string[];
+      let submitted = false;
+      try {
+        urls = await editImage(model, source.reference, prompt, model.provider === 'gemini' ? 1 : job.requestedCount,
+          deadline, { ...source, onSubmitted: async taskId => {
+            submitted = true;
+            await database.query("UPDATE theme_job_provider_attempts SET status = 'waiting', provider_task_id = $2, updated_at = now() WHERE id = $1", [attemptId, taskId]);
+          } });
+      } catch (error) {
+        if (submitted) {
+          if (error instanceof ImageGenerationError && !error.retryable && !error.outcomeUnknown && error.code === 'PROVIDER_GENERATION_FAILED') {
+            await database.query("UPDATE theme_job_provider_attempts SET status = 'failed', reason = $2, updated_at = now() WHERE id = $1", [attemptId, error.code]);
+            return;
+          }
+          throw error;
+        }
+        const classified = error instanceof ImageGenerationError ? error : new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
+        await database.query('UPDATE theme_job_provider_attempts SET status = $2, reason = $3, updated_at = now() WHERE id = $1',
+          [attemptId, classified.outcomeUnknown ? 'unknown' : 'failed', classified.code]);
+        console.error('Theme provider attempt failed', { jobId, provider: model.provider, code: classified.code });
+        if (classified.outcomeUnknown || collected > 0) return;
+        if (!classified.retryable) break;
+        if (index < 2) await delay(2000 * 2 ** index);
+        continue;
+      }
+      await persistGenerated(database, jobId, lease, attemptId, urls, job.requestedCount);
+      if (urls.length) {
+        collected += urls.length;
+        if (model.provider === 'gemini' && collected < job.requestedCount) {
+          index--;
+          continue;
+        }
+        return;
+      }
+      return;
+    }
+  }
+}
+
+export async function settleThemeJob(database: pg.Pool, jobId: string, lease?: string, publish: Publish = async () => {}) {
+  const event = await transaction(database, async client => {
+    const job = await lockCreditJob(client, { kind: 'theme', id: jobId });
+    if (!job || terminalCreditJob(job.status)) return;
+    if (lease ? job.leaseToken !== lease : job.leaseUntil && new Date(job.leaseUntil).getTime() > Date.now()) throw new ImageGenerationError('GENERATION_LEASE_BUSY', true);
+    const results = await client.query<{ resultId: string; previewUrl: string }>('SELECT id AS "resultId", preview_url AS "previewUrl" FROM theme_job_results WHERE job_id = $1 ORDER BY ordinal', [jobId]);
+    const usable = results.rows.length;
+    await client.query(`UPDATE theme_job_provider_attempts SET status = 'unknown', reason = COALESCE(reason, 'PROVIDER_OUTCOME_UNKNOWN'),
+      updated_at = now() WHERE job_id = $1 AND status IN ('submitting', 'waiting')`, [jobId]);
+    if (usable) {
+      if (job.unitCredits === null) throw new Error('Theme job price missing');
+      await settleJobCredits(client, { kind: 'theme', id: jobId }, usable * job.unitCredits);
+    }
+    const status = usable === job.requestedCount ? 'succeeded' : usable ? 'partially_succeeded' : 'failed';
+    await client.query('UPDATE theme_jobs SET status = $1, phase = NULL, usable_count = $2, lease_token = NULL, lease_until = NULL, updated_at = now() WHERE id = $3', [status, usable, jobId]);
+    if (!usable) await releaseJobCredits(client, { kind: 'theme', id: jobId });
+    return { status, results: results.rows };
   });
-  if (!settled) return;
-  const usableCount = uploadedResults.length;
-  await publish(jobId, {
-    status: usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded',
-    results: uploadedResults.map(result => ({ resultId: result.resultId, previewUrl: result.previewUrl })),
-  }).catch(() => {});
+  if (event) await publishGeneration(publish, jobId, event);
+}
+
+export async function processThemeJob(database: pg.Pool, jobId: string, config: ThemeConfig,
+  storage?: ReturnType<typeof createStorage>, publish: Publish = async () => {}): Promise<void> {
+  if (!storage) throw new Error('Theme storage required');
+  const claim = await claimGeneration(database, { kind: 'theme', id: jobId });
+  if (!claim) return;
+  const { lease, deadline } = claim;
+  try {
+    const job = (await database.query<ThemeJob>(`SELECT requested_count AS "requestedCount", source_asset_id AS "sourceAssetId", scheme_code AS "schemeCode", input,
+      unit_credits AS "unitCredits", user_id AS "userId", status, generation_snapshot AS snapshot FROM theme_jobs WHERE id = $1`, [jobId])).rows[0];
+    if (!job) throw new Error('Theme job not found');
+    if (deadline.getTime() <= Date.now()) { await settleThemeJob(database, jobId, lease, publish); return; }
+    await publishGeneration(publish, jobId, { status: 'running' });
+    await generateTheme(database, jobId, job, lease, deadline, config, storage);
+    const saved = await database.query<{ ordinal: number; url: string }>('SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId]);
+    for (const { ordinal, url } of saved.rows) {
+      const existing = await database.query('SELECT id FROM theme_job_results WHERE job_id = $1 AND ordinal = $2', [jobId, ordinal]);
+      if (existing.rows[0]) continue;
+      await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'result_validating');
+      let image: Awaited<ReturnType<typeof normalizeGeneratedImage>>;
+      try { image = await normalizeGeneratedImage(await downloadImage(url, deadline)); }
+      catch (error) {
+        if (!(error instanceof ImageGenerationError) || error.retryable) throw error;
+        console.error('Theme result rejected', { jobId, ordinal, code: error.code });
+        continue;
+      }
+      await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'result_persisting');
+      const assetId = randomUUID(); const versionId = randomUUID(); const resultId = randomUUID();
+      const objectKey = `theme-results/${jobId}/${ordinal}.png`;
+      await storage.putBuffer(objectKey, image.bytes, 'image/png');
+      const previewUrl = await storage.signDownload(objectKey, 900);
+      await transaction(database, async client => {
+        const owner = await client.query("SELECT id FROM theme_jobs WHERE id = $1 AND lease_token = $2 AND status = 'running' FOR UPDATE", [jobId, lease]);
+        if (!owner.rows[0]) throw new ImageGenerationError('GENERATION_LEASE_LOST_OR_EXPIRED');
+        await client.query(`INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, metadata)
+          SELECT $1, id, 'artwork', $2, $3, $4 FROM schemes WHERE code = $5`,
+        [assetId, `AI 换主题结果 ${ordinal}`, ordinal - 1, JSON.stringify({ themeJobId: jobId }), job.schemeCode]);
+        await client.query(`INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, width_px, height_px)
+          VALUES ($1, $2, $3, $4, 'image/png', $5, $6, $7, $8)`,
+        [versionId, assetId, objectKey, `${ordinal}.png`, image.bytes.length, createHash('sha256').update(image.bytes).digest('hex'), image.width, image.height]);
+        await client.query(`INSERT INTO theme_job_results (id, job_id, ordinal, asset_id, preview_url, asset_version_id, width, height)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [resultId, jobId, ordinal, assetId, previewUrl, versionId, image.width, image.height]);
+      });
+    }
+    await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'credit_settling');
+    await settleThemeJob(database, jobId, lease, publish);
   } finally {
     await database.query('UPDATE theme_jobs SET lease_token = NULL, lease_until = NULL WHERE id = $1 AND lease_token = $2', [jobId, lease]);
   }

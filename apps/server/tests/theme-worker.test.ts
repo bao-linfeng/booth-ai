@@ -2,140 +2,130 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import type pg from 'pg';
+import sharp from 'sharp';
 import { encryptCredential, modelDefinitions } from '../src/infra/ai-models.js';
 import { processThemeJob } from '../src/modules/tasks/theme-worker.js';
 
 const encryptionKey = 'a'.repeat(64);
-const jobId = randomUUID();
-const userId = randomUUID();
-const industryId = randomUUID();
-const styleId = randomUUID();
-const config = {
-  aiModelEncryptionKey: encryptionKey,
-  s3: { endpoint: 'http://silo:9000', publicEndpoint: 'http://localhost:19000', region: 'us-east-1', bucket: 'booth-assets', accessKeyId: 'access', secretAccessKey: 'secret' },
-};
+const config = { aiModelEncryptionKey: encryptionKey, s3: { endpoint: 'http://silo:9000', publicEndpoint: 'http://localhost:19000',
+  region: 'us-east-1', bucket: 'booth-assets', accessKeyId: 'access', secretAccessKey: 'secret' } };
 
-test('theme worker generates real provider results and settles credits atomically', async t => {
+async function fixture(count = 2, prompt?: string) {
+  const jobId = randomUUID(); const userId = randomUUID(); const industryId = randomUUID(); const styleId = randomUUID();
+  const image = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
   const queries: { sql: string; params?: unknown[] }[] = [];
-  let leaseToken: string | null = null;
+  const urls: { ordinal: number; url: string }[] = [];
+  const results: { ordinal: number; resultId: string; previewUrl: string }[] = [];
+  const attempts: { id: string; status: string; provider: string; model: string; revision: number }[] = [];
+  let status = 'pending'; let leaseToken: string | null = null; let charged = false; let enabled = true;
+  const job = () => ({ requestedCount: count, sourceAssetId: randomUUID(), schemeCode: 'S-1',
+    input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status,
+    leaseToken, leaseUntil: null, snapshot: prompt === undefined ? null : { prompt, mask: null, source: { objectKey: 'pinned.png' },
+      models: [{ provider: 'openai', model: modelDefinitions.openai.model, revision: 1 }] } });
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
-    if (sql.includes('UPDATE theme_jobs SET lease_token')) leaseToken = String(params?.[1]);
-    if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
-    if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: params?.[0] === jobId ? 6 : 3, status: 'reserved' }] };
-    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 2, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status: 'pending', leaseToken }] };
-    if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
-    if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
-    if (sql.includes('FROM prompt_templates')) {
-      assert.deepEqual(params, ['theme', industryId, styleId]);
-      return { rows: [{ id: randomUUID(), purpose: 'theme', industryId, styleId,
-        body: '{{industryLabel}}/{{styleLabel}}/{{brandColors}}/{{brandKeywords}}', variables: [], enabled: true, revision: 1,
-        createdAt: new Date(), updatedAt: new Date() }] };
+    if (sql.startsWith('UPDATE theme_jobs SET lease_token = $2')) {
+      if (['succeeded', 'partially_succeeded', 'failed'].includes(status) || leaseToken) return { rows: [], rowCount: 0 };
+      leaseToken = String(params?.[1]); status = 'running';
+      return { rows: [{ deadline: new Date(Date.now() + 30 * 60_000) }], rowCount: 1 };
     }
-    if (sql.includes('FROM ai_model_configs')) return { rows: [{ purpose: 'theme', provider: 'openai', enabled: true, priority: 1, unitCredits: 3, revision: 1, credentialCiphertext: encryptCredential('api-key', 'openai', encryptionKey) }] };
-    if (sql.includes('FROM scheme_assets')) return { rows: [{ objectKey: 'source/image.png' }] };
-    return { rows: [], rowCount: 1 };
-  };
-  const pool = { query: run, connect: async () => ({ query: run, release: () => {} }) } as unknown as pg.Pool;
-  const oldFetch = globalThis.fetch;
-  const calls: string[] = [];
-  globalThis.fetch = async (input, init) => {
-    const url = String(input);
-    calls.push(url);
-    if (url.includes('silo:9000')) return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } });
-    assert.equal(url, 'https://api.openai.com/v1/images/edits');
-    assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer api-key');
-    const body = init?.body as FormData;
-    assert.equal(body.get('n'), '2');
-    const prompt = String(body.get('prompt'));
-    assert.ok(prompt.includes('科技/现代/红, 蓝/展会'));
-    assert.deepEqual(JSON.parse(prompt.split('\n')[2]!), {
-      行业: '科技', 风格: '现代', 品牌色: '红, 蓝', 品牌关键词及补充要求: '展会',
-    });
-    assert.match(prompt, /保持原图相机角度/);
-    assert.equal(body.has('response_format'), false);
-    return Response.json({ data: [{ b64_json: 'one' }, { b64_json: 'two' }] });
-  };
-  t.after(() => { globalThis.fetch = oldFetch; });
-
-  const stored: string[] = [];
-  await processThemeJob(pool, jobId, config, {
-    putBuffer: async (key: string) => { stored.push(key); },
-    signDownload: async (key: string) => `https://assets.example/${key}`,
-  } as never);
-  assert.equal(calls.length, 3);
-  const resultInserts = queries.filter(q => q.sql.includes('INSERT INTO theme_job_results'));
-  assert.equal(resultInserts.length, 2);
-   assert.equal(stored.length, 2);
-   assert.ok(resultInserts.every(query => query.params?.[3]));
-  const debit = queries.findIndex(q => q.sql.includes('INSERT INTO credit_transactions'));
-  const finish = queries.findIndex(q => q.sql.includes('UPDATE theme_jobs') && q.sql.includes('usable_count'));
-  const commit = queries.slice(finish).findIndex(q => q.sql === 'COMMIT') + finish;
-  const begin = queries.slice(0, debit).findLastIndex(q => q.sql === 'BEGIN');
-  assert.ok(begin >= 0 && begin < debit && debit < finish && finish < commit);
-  assert.deepEqual(queries[debit]?.params, [userId, -6, `theme_job:${jobId}`, jobId]);
-  assert.deepEqual(queries[finish]?.params, ['succeeded', 2, jobId]);
-});
-
-test('theme worker marks a job failed without charging when no model is enabled', async () => {
-  const queries: { sql: string; params?: unknown[] }[] = [];
-  let status = 'pending';
-  let leaseToken: string | null = null;
-  const run = async (sql: string, params?: unknown[]) => {
-    queries.push({ sql, params });
-    if (sql.includes('UPDATE theme_jobs SET lease_token')) leaseToken = String(params?.[1]);
-    if (sql.includes("UPDATE theme_jobs SET status = 'failed'")) status = 'failed';
+    if (sql.startsWith('UPDATE theme_jobs SET lease_token = NULL')) leaseToken = null;
+    if (sql.includes('UPDATE theme_jobs SET status = $1')) status = String(params?.[0]);
     if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
-    if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: 3, status: 'reserved' }] };
-    if (sql.includes('FROM credit_transactions')) return { rows: [] };
-    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId }, unitCredits: 3, userId, status, leaseToken }] };
+    if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: count * 3, status: 'reserved' }] };
+    if (sql.includes('FROM credit_transactions')) return { rows: charged ? [{ userId, amount: -results.length * 3, kind: 'theme_consume' }] : [] };
+    if (sql.includes('INSERT INTO credit_transactions')) charged = true;
+    if (sql.includes('FROM theme_jobs')) return { rows: [job()], rowCount: 1 };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
-    if (sql.includes('FROM ai_model_configs')) return { rows: [] };
+    if (sql.includes('FROM ai_model_configs')) return { rows: enabled ? [{ purpose: 'theme', provider: 'openai', enabled: true,
+      priority: 1, unitCredits: 3, revision: 1, credentialCiphertext: encryptCredential('api-key', 'openai', encryptionKey) }] : [] };
     if (sql.includes('FROM scheme_assets')) return { rows: [{ objectKey: 'source/image.png' }] };
+    if (sql.includes('FROM theme_job_generated_urls')) return { rows: [...urls] };
+    if (sql.includes('INSERT INTO theme_job_generated_urls')) urls.push({ ordinal: Number(params?.[1]), url: String(params?.[2]) });
+    if (sql.includes('FROM theme_job_provider_attempts')) return { rows: [...attempts] };
+    if (sql.includes('INSERT INTO theme_job_provider_attempts')) attempts.push({ id: String(params?.[0]), status: 'submitting',
+      provider: String(params?.[2]), model: String(params?.[3]), revision: Number(params?.[4]) });
+    if (sql.includes('UPDATE theme_job_provider_attempts')) {
+      const attempt = attempts.find(a => a.id === params?.[0]);
+      if (attempt) attempt.status = sql.includes("status = 'succeeded'") ? 'succeeded' : String(params?.[1]);
+    }
+    if (sql.includes('FROM theme_job_results')) return { rows: params?.length === 2 ? results.filter(r => r.ordinal === params[1]) : [...results] };
+    if (sql.includes('INSERT INTO theme_job_results')) results.push({ resultId: String(params?.[0]), ordinal: Number(params?.[2]), previewUrl: String(params?.[4]) });
     return { rows: [], rowCount: 1 };
   };
   const pool = { query: run, connect: async () => ({ query: run, release: () => {} }) } as unknown as pg.Pool;
-  await processThemeJob(pool, jobId, config);
-  assert.ok(!queries.some(q => q.sql.includes('INSERT INTO credit_transactions')));
-  const failedUpdate = queries.find(q => q.sql.includes("status = 'failed'") && q.sql.includes('theme_jobs'));
-  assert.ok(failedUpdate, 'theme job should be marked failed');
-  assert.ok(failedUpdate?.params?.includes(jobId));
+  const stored: string[] = [];
+  const storage = { getBuffer: async () => image, putBuffer: async (key: string) => { stored.push(key); },
+    signDownload: async (key: string) => `https://assets.example/${key}` };
+  return { jobId, userId, image, queries, urls, attempts, results, pool, storage, stored, state: () => status,
+    disableModel: () => { enabled = false; } };
+}
+
+test('theme worker persists generation, accepts real images and settles once despite notification failure', async t => {
+  const f = await fixture(); const oldFetch = globalThis.fetch; let calls = 0;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), 'https://api.openai.com/v1/images/edits');
+    assert.ok(init?.signal); assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer api-key');
+    const body = init?.body as FormData;
+    assert.equal(body.get('n'), '2'); assert.match(String(body.get('prompt')), /保持原图相机角度/);
+    calls++; return Response.json({ data: [1, 2].map(() => ({ b64_json: f.image.toString('base64') })) });
+  };
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never, async () => { throw new Error('Redis outage'); });
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+  assert.equal(calls, 1); assert.equal(f.state(), 'succeeded'); assert.equal(f.results.length, 2); assert.equal(f.stored.length, 2);
+  const charges = f.queries.filter(q => q.sql.includes('INSERT INTO credit_transactions'));
+  assert.equal(charges.length, 1); assert.deepEqual(charges[0]?.params, [f.userId, -6, `theme_job:${f.jobId}`, f.jobId]);
+  assert.ok(f.queries.findIndex(q => q.sql.includes('INSERT INTO theme_job_provider_attempts')) < f.queries.findIndex(q => q.sql.includes('INSERT INTO theme_job_generated_urls')));
 });
 
-test('theme worker sends the accepted snapshot prompt unchanged without rebuilding it', async t => {
-  const prompt = '已受理的提示词：主墙展示储能产品，品牌色 #123456，不要树叶。';
-  let providerCalls = 0;
-  let succeeded = false;
-  let leaseToken: string | null = null;
-  const run = async (sql: string, params?: unknown[]) => {
-    if (sql.includes('UPDATE theme_jobs SET lease_token')) leaseToken = String(params?.[1]);
-    if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
-    if (sql.includes('FROM credit_transactions')) return { rows: [] };
-    if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: 3, status: 'reserved' }] };
-    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1',
-      input: { industryId, styleId, brandKeywords: '受理后不同的输入' }, unitCredits: 3, userId, status: 'pending',
-       snapshot: { prompt, mask: null, source: { objectKey: 'pinned.png' },
-         models: [{ provider: 'openai', model: modelDefinitions.openai.model, revision: 1 }] }, leaseToken }] };
-    if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
-    if (sql.includes('FROM dictionary_items') || sql.includes('FROM prompt_templates')) throw new Error('Must use the accepted prompt');
-    if (sql.includes('FROM ai_model_configs')) return { rows: [{ purpose: 'theme', provider: 'openai',
-      enabled: true, priority: 1, unitCredits: 3, revision: 1, credentialCiphertext: encryptCredential('api-key', 'openai', encryptionKey) }] };
-    if (sql.includes('UPDATE theme_jobs') && params?.[0] === 'succeeded') succeeded = true;
-    return { rows: [], rowCount: 1 };
-  };
-  const pool = { query: run, connect: async () => ({ query: run, release: () => {} }) } as unknown as pg.Pool;
-  const oldFetch = globalThis.fetch;
-  globalThis.fetch = async (input, init) => {
-    if (String(input).includes('silo:9000')) return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } });
-    assert.equal(String(input), 'https://api.openai.com/v1/images/edits');
-    assert.equal((init?.body as FormData).get('prompt'), prompt);
-    providerCalls++;
-    return Response.json({ data: [{ b64_json: 'aW1hZ2U=' }] });
-  };
+test('theme storage retry with partial generation never submits again and skips already uploaded ordinals', async t => {
+  const f = await fixture(3); const oldFetch = globalThis.fetch; let calls = 0; let uploads = 0;
   t.after(() => { globalThis.fetch = oldFetch; });
-  await processThemeJob(pool, jobId, config);
-  assert.equal(providerCalls, 1);
-  assert.equal(succeeded, true);
+  globalThis.fetch = async () => { calls++; return Response.json({ data: [1, 2].map(() => ({ b64_json: f.image.toString('base64') })) }); };
+  const storage = { ...f.storage, putBuffer: async (key: string) => {
+    uploads++; if (uploads === 2) throw new Error('Storage outage'); await f.storage.putBuffer(key);
+  } };
+  await assert.rejects(processThemeJob(f.pool, f.jobId, config, storage as never), /Storage outage/);
+  assert.equal(f.results.length, 1); f.disableModel();
+  await processThemeJob(f.pool, f.jobId, config, storage as never);
+  assert.equal(calls, 1); assert.equal(uploads, 3); assert.equal(f.results.length, 2); assert.equal(f.state(), 'partially_succeeded');
+});
+
+test('theme outcome-unknown retry does not call a supplier', async t => {
+  const f = await fixture(1); f.attempts.push({ id: randomUUID(), provider: 'openai', model: modelDefinitions.openai.model, revision: 1, status: 'submitting' });
+  const oldFetch = globalThis.fetch; t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async () => assert.fail('Must not resubmit an uncertain request');
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+  assert.equal(f.state(), 'failed'); assert.ok(!f.queries.some(q => q.sql.includes('INSERT INTO credit_transactions')));
+});
+
+test('theme network failure records unknown outcome and never retries or switches models', async t => {
+  const f = await fixture(1); const original = globalThis.fetch; let calls = 0;
+  t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = async () => { calls++; throw new Error('provider network reset with secret details'); };
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+  assert.equal(calls, 1); assert.equal(f.attempts[0]?.status, 'unknown'); assert.equal(f.state(), 'failed');
+});
+
+test('theme worker fails without charging when no model is enabled', async () => {
+  const f = await fixture(1); f.disableModel();
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+  assert.equal(f.state(), 'failed'); assert.ok(!f.queries.some(q => q.sql.includes('INSERT INTO credit_transactions')));
+});
+
+test('theme worker sends the accepted prompt unchanged', async t => {
+  const prompt = '已受理的提示词：主墙展示储能产品，品牌色 #123456，不要树叶。';
+  const f = await fixture(1, prompt); const oldFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async (_input, init) => {
+    assert.equal((init?.body as FormData).get('prompt'), prompt);
+    return Response.json({ data: [{ b64_json: f.image.toString('base64') }] });
+  };
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+  assert.equal(f.state(), 'succeeded');
+  assert.ok(!f.queries.some(q => q.sql.includes('FROM dictionary_items') || q.sql.includes('FROM prompt_templates')));
 });

@@ -8,11 +8,12 @@ import { createStorage } from './infra/storage.js';
 import { createQueue, QUEUE_NAME, TASK_NAME, THEME_QUEUE_NAME, THEME_TASK_NAME, ARTWORK_QUEUE_NAME, ARTWORK_TASK_NAME } from './infra/queue.js';
 import { processEchoTask } from './modules/tasks/service.js';
 import { dispatchOutbox } from './modules/tasks/outbox.js';
-import { failThemeJob, processThemeJob } from './modules/tasks/theme-worker.js';
+import { settleThemeJob, processThemeJob } from './modules/tasks/theme-worker.js';
 import { dispatchThemeOutbox, reconcileThemeOutbox } from './modules/tasks/theme-outbox.js';
 import { processArtworkJob, settleArtworkJob } from './modules/tasks/artwork-worker.js';
 import { dispatchArtworkOutbox } from './modules/tasks/artwork-outbox.js';
 import { reconcileJobCredits } from './modules/credits/reconciliation.js';
+import { recoverGenerationJobs } from './modules/tasks/generation-recovery.js';
 
 const heartbeatPath = '/tmp/worker-ready';
 async function main() {
@@ -57,7 +58,7 @@ async function main() {
   themeWorker.on('error', () => console.error('Theme worker connection error'));
   themeWorker.on('failed', (job) => {
     if (!job?.id || job.attemptsMade < (job.opts.attempts ?? 1)) return;
-    void failThemeJob(database, job.id).catch(() => console.error('Unable to persist failed theme job status'));
+    void settleThemeJob(database, job.id).catch(() => console.error('Unable to settle failed theme job'));
   });
 
   const publishArtworkEvent = async (jobId: string, event: unknown) => {
@@ -84,6 +85,7 @@ async function main() {
     while (!stopping) {
       try {
         if (Date.now() >= nextThemeReconciliation) {
+          await recoverGenerationJobs(database, { theme: themeQueue, artwork: artworkQueue });
           const credits = await reconcileJobCredits(database, { theme: themeQueue, artwork: artworkQueue });
           if (credits.repaired || credits.issues.length) console.info('Credit reconciliation', credits);
           await reconcileThemeOutbox(database);

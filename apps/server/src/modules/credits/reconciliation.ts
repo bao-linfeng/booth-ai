@@ -2,7 +2,7 @@ import type pg from 'pg';
 import type { Queue } from 'bullmq';
 import { transaction } from '../../infra/database.js';
 import { THEME_TASK_NAME, ARTWORK_TASK_NAME } from '../../infra/queue.js';
-import { failThemeJob } from '../tasks/theme-worker.js';
+import { settleThemeJob } from '../tasks/theme-worker.js';
 import { settleArtworkJob } from '../tasks/artwork-worker.js';
 import { lockCreditJob, releaseJobCredits, reserveJobCredits, terminalCreditJob, type CreditJob } from './service.js';
 
@@ -94,11 +94,11 @@ export async function reconcileJobCredits(database: pg.Pool, queues: CreditQueue
         report.checked++;
         if (outcome.repaired) report.repaired++;
         if (outcome.reason) report.issues.push({ ...job, reason: outcome.reason });
-        if (candidate.stale && !terminalCreditJob(candidate.status)) {
+        if (candidate.stale && ['pending', 'queued'].includes(candidate.status)) {
           const queued = await queues[kind].getJob(job.id);
           const state = await queued?.getState();
           if (state === 'failed' || state === 'completed') {
-            if (kind === 'theme') await failThemeJob(database, job.id);
+            if (kind === 'theme') await settleThemeJob(database, job.id);
             else await settleArtworkJob(database, job.id);
           } else if (!queued) {
             await queues[kind].add(kind === 'theme' ? THEME_TASK_NAME : ARTWORK_TASK_NAME, { jobId: job.id }, {

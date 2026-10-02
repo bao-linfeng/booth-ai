@@ -6,14 +6,16 @@ import type { Queue } from 'bullmq';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
+import sharp from 'sharp';
 import { transaction } from '../src/infra/database.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { rechargeCredits } from '../src/modules/admin/credits/service.js';
 import { registerAdminCreditRoutes } from '../src/modules/admin/credits/index.js';
 import { reconcileJobCredits } from '../src/modules/credits/reconciliation.js';
 import { lockCreditUser, reserveJobCredits, releaseJobCredits, type CreditJob } from '../src/modules/credits/service.js';
-import { failThemeJob, processThemeJob } from '../src/modules/tasks/theme-worker.js';
+import { settleThemeJob, processThemeJob } from '../src/modules/tasks/theme-worker.js';
 import { settleArtworkJob } from '../src/modules/tasks/artwork-worker.js';
+import { recoverGenerationJobs } from '../src/modules/tasks/generation-recovery.js';
 
 test('credit invariants against PostgreSQL: rollback, concurrency, terminal recovery and recharge replay', {
   skip: !process.env.CREDIT_TEST_DATABASE_URL, timeout: 120_000,
@@ -49,7 +51,8 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     });
     return { kind, id };
   }
-  async function generated(task: CreditJob, count = 1, url = 'data:image/png;base64,aW1hZ2U=') {
+  const image = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
+  async function generated(task: CreditJob, count = 1, url = `data:image/png;base64,${image.toString('base64')}`) {
     for (let i = 1; i <= count; i++) await pool.query('INSERT INTO theme_job_generated_urls(job_id,ordinal,url) VALUES($1,$2,$3)', [task.id, i, url]);
   }
   async function state(task: CreditJob) {
@@ -70,6 +73,7 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
   async function reconcile() {
     await pool.query('UPDATE theme_jobs SET credit_checked_at=NULL');
     await pool.query('UPDATE artwork_jobs SET credit_checked_at=NULL');
+    await recoverGenerationJobs(pool, { theme: queue, artwork: queue });
     return reconcileJobCredits(pool, { theme: queue, artwork: queue });
   }
 
@@ -82,9 +86,11 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     try { await assert.rejects(run(task), /injected credit commit failure/); }
     finally { await pool.query('DROP TRIGGER reject_credit_commit ON theme_jobs'); }
     assert.deepEqual(await state(task), { status: 'running', usable: 0, reservation: 'reserved', charges: [] });
-    assert.equal((await pool.query('SELECT id FROM theme_job_results WHERE job_id=$1', [task.id])).rowCount, 0);
+    assert.equal((await pool.query('SELECT id FROM theme_job_results WHERE job_id=$1', [task.id])).rowCount, 2);
     await assert.rejects(job(owner), { statusCode: 402 });
-    await Promise.all([run(task), run(task)]);
+    const concurrent = await Promise.allSettled([run(task), run(task)]);
+    assert.ok(concurrent.some(result => result.status === 'fulfilled'));
+    assert.ok(concurrent.every(result => result.status === 'fulfilled' || /GENERATION_LEASE_BUSY/.test(String(result.reason))));
     await run(task);
     assert.deepEqual(await state(task), { status: 'succeeded', usable: 2, reservation: 'settled', charges: [-20] });
     assert.equal((await pool.query('SELECT id FROM theme_job_results WHERE job_id=$1', [task.id])).rowCount, 2);
@@ -118,35 +124,43 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     assert.ok(report.issues.some(issue => issue.id === old.id && issue.reason === 'RESERVATION_RESTORE_INSUFFICIENT_CREDITS'));
     await assert.rejects(run(old), /Active credit reservation required/);
     assert.deepEqual((await state(old)).charges, []);
-    await failThemeJob(pool, old.id);
+    await pool.query('DELETE FROM theme_job_results WHERE job_id=$1', [old.id]);
+    await settleThemeJob(pool, old.id);
   });
 
   await t.test('download/upload retry exhaustion atomically releases, even after a failed failure-handler commit', async () => {
     for (const failure of ['download', 'upload']) {
       const task = await job(await user());
-      await generated(task, 1, failure === 'download' ? 'invalid-generated-url' : undefined);
+      await generated(task, 1, failure === 'download' ? 'https://assets.openai.com/generated.png' : undefined);
+      const originalFetch = globalThis.fetch;
+      if (failure === 'download') globalThis.fetch = async () => { throw new Error('download outage'); };
       const failedStorage = { ...storage, putBuffer: async () => { throw new Error('upload failed'); } } as ReturnType<typeof createStorage>;
-      for (let i = 0; i < 3; i++) await assert.rejects(run(task, failedStorage));
+      try { for (let i = 0; i < 3; i++) await assert.rejects(run(task, failedStorage)); }
+      finally { globalThis.fetch = originalFetch; }
       assert.equal((await state(task)).reservation, 'reserved');
       await pool.query(`CREATE FUNCTION reject_failure_${failure}() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN IF NEW.status='failed' THEN RAISE EXCEPTION 'injected failure commit'; END IF; RETURN NEW; END $$;
         CREATE CONSTRAINT TRIGGER reject_failure AFTER UPDATE ON theme_jobs
         DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_failure_${failure}()`);
-      try { await assert.rejects(failThemeJob(pool, task.id), /injected failure commit/); }
+      try { await assert.rejects(settleThemeJob(pool, task.id), /injected failure commit/); }
       finally { await pool.query('DROP TRIGGER reject_failure ON theme_jobs'); }
       assert.equal((await state(task)).reservation, 'reserved');
-      await pool.query("UPDATE theme_jobs SET updated_at=now()-interval '16 minutes' WHERE id=$1", [task.id]);
+      await pool.query("UPDATE theme_jobs SET updated_at=now()-interval '31 minutes',execution_deadline=now()-interval '1 minute' WHERE id=$1", [task.id]);
       states.set(task.id, 'failed');
       await reconcile();
       assert.deepEqual(await state(task), { status: 'failed', usable: 0, reservation: 'released', charges: [] });
-      await Promise.all([failThemeJob(pool, task.id), run(task)]);
+      await Promise.all([settleThemeJob(pool, task.id), run(task)]);
       assert.equal((await state(task)).charges.length, 0);
     }
   });
 
-  await t.test('final failure racing an upload cannot be resurrected or charged', async () => {
+  await t.test('final failure cannot interrupt an active lease; expired ownership cannot be resurrected', async () => {
     const task = await job(await user()); await generated(task);
-    await run(task, { ...storage, putBuffer: async () => { await failThemeJob(pool, task.id); } } as ReturnType<typeof createStorage>);
+    await assert.rejects(run(task, { ...storage, putBuffer: async () => {
+      await assert.rejects(settleThemeJob(pool, task.id), /GENERATION_LEASE_BUSY/);
+      await pool.query("UPDATE theme_jobs SET lease_until=now()-interval '1 minute' WHERE id=$1", [task.id]);
+      await settleThemeJob(pool, task.id);
+    } } as ReturnType<typeof createStorage>), /GENERATION_LEASE_LOST_OR_EXPIRED/);
     assert.deepEqual(await state(task), { status: 'failed', usable: 0, reservation: 'released', charges: [] });
     assert.equal((await pool.query('SELECT id FROM theme_job_results WHERE job_id=$1', [task.id])).rowCount, 0);
   });
@@ -191,7 +205,7 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     }
     const orphan = await job(owner); await pool.query("UPDATE theme_jobs SET status='running',updated_at=now()-interval '16 minutes' WHERE id=$1", [orphan.id]);
     const exhausted = await job(owner, 'artwork', 4);
-    await pool.query("UPDATE artwork_jobs SET status='running',updated_at=now()-interval '16 minutes' WHERE id=$1", [exhausted.id]);
+    await pool.query("UPDATE artwork_jobs SET status='running',updated_at=now()-interval '31 minutes' WHERE id=$1", [exhausted.id]);
     states.set(exhausted.id, 'failed');
     const report = await reconcile();
     assert.ok(report.repaired >= 3);

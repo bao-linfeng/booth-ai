@@ -5,6 +5,7 @@ import test from 'node:test';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
+import sharp from 'sharp';
 import { encryptCredential } from '../src/infra/ai-models.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerThemeModelRoutes } from '../src/modules/client/theme-jobs/index.js';
@@ -26,6 +27,7 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
       '033_prompt_templates', '034_theme_result_assets', '038_credit_reservations_and_generated_urls', '039_credit_idempotency']) {
       await pool.query(await readFile(new URL(`../migrations/${name}.sql`, import.meta.url), 'utf8'));
     }
+    const image = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
     const user = randomUUID(); const other = randomUUID(); const scheme = randomUUID(); const source = randomUUID();
     const industry = randomUUID(); const style = randomUUID(); const template = randomUUID();
     for (const [index, id] of [user, other].entries()) {
@@ -33,7 +35,7 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     }
     await pool.query("INSERT INTO schemes(id,code,name,publish_status) VALUES ($1,'S-1','Test','published')", [scheme]);
     await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name) VALUES ($1,$2,'rendering','source')", [source, scheme]);
-    await pool.query("INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum) VALUES ($1,'source-v1.png','source.png','image/png',10,'source-hash')", [source]);
+    await pool.query("INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum) VALUES ($1,'source-v1.png','source.png','image/png',$2,$3)", [source, image.length, createHash('sha256').update(image).digest('hex')]);
     const legacy = randomUUID(); const legacyAsset = randomUUID();
     await pool.query("INSERT INTO theme_jobs(id,user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,status,usable_count) VALUES ($1,$2,'S-1',$3,'old','old','{}',1,'succeeded',1)", [legacy, user, source]);
     await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name) VALUES ($1,$2,'artwork','legacy')", [legacyAsset, scheme]);
@@ -43,6 +45,8 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     await pool.query(await readFile(new URL('../migrations/027_selection_analytics.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/044_theme_job_search.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/048_theme_worker_lease.sql', import.meta.url), 'utf8'));
+    await pool.query("CREATE TABLE artwork_jobs (id uuid PRIMARY KEY, status text, updated_at timestamptz DEFAULT now())");
+    await pool.query(await readFile(new URL('../migrations/049_generation_recovery.sql', import.meta.url), 'utf8'));
     assert.equal((await pool.query('SELECT asset_version_id FROM theme_job_results WHERE job_id=$1', [legacy])).rows[0].asset_version_id, legacyVersion);
     assert.equal((await pool.query('SELECT cache_key FROM theme_jobs WHERE id=$1', [legacy])).rows[0].cache_key, null);
     for (const [code, item] of [['industry', industry], ['style', style]]) {
@@ -61,7 +65,7 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
       get: async (key: string) => sessionKeys.has(key) ? JSON.stringify({ site: 'client', localId: sessionKeys.get(key), expiresAt: Math.floor(Date.now() / 1000) + 3600 }) : offers.get(key) ?? null,
       set: async (key: string, value: string) => { offers.set(key, value); return 'OK'; },
     } as unknown as Redis;
-    const storage = { putBuffer: async () => {}, signDownload: async (key: string) => `https://assets.example/${key}` } as unknown as ReturnType<typeof createStorage>;
+    const storage = { getBuffer: async () => image, putBuffer: async () => {}, signDownload: async (key: string) => `https://assets.example/${key}` } as unknown as ReturnType<typeof createStorage>;
     const app = Fastify();
     await registerThemeModelRoutes(app, pool, redis, storage);
     t.after(() => app.close());
@@ -89,11 +93,10 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     let providerCalls = 0;
     globalThis.fetch = async (input, init) => {
       const url = String(input);
-      if (url.includes('silo:9000')) return new Response(new Uint8Array([1, 2, 3]));
       assert.equal(url, 'https://api.openai.com/v1/images/edits');
       assert.equal((init?.body as FormData).get('prompt'), acceptedPrompt);
       providerCalls++;
-      return Response.json({ data: [{ b64_json: 'aW1hZ2U=' }] });
+      return Response.json({ data: [{ b64_json: image.toString('base64') }] });
     };
     t.after(() => { globalThis.fetch = originalFetch; });
     await processThemeJob(pool, jobId, { aiModelEncryptionKey: encryptionKey, s3: {

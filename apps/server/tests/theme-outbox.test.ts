@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { Queue } from 'bullmq';
 import type pg from 'pg';
 import { dispatchThemeOutbox } from '../src/modules/tasks/theme-outbox.js';
-import { failThemeJob } from '../src/modules/tasks/theme-worker.js';
+import { settleThemeJob } from '../src/modules/tasks/theme-worker.js';
 
 function dispatcherFixture(status = 'pending', failure?: 'add' | 'commit') {
   const events: string[] = [];
@@ -12,7 +12,7 @@ function dispatcherFixture(status = 'pending', failure?: 'add' | 'commit') {
   const queued = new Set<string>();
   let fail = failure;
   const database = { connect: async () => ({
-    query: async (sql: string) => {
+    query: async (sql: string, params?: unknown[]) => {
       if (sql === 'BEGIN') { events.push('begin'); working = { ...durable }; }
       else if (sql === 'COMMIT') {
         events.push('commit');
@@ -87,19 +87,19 @@ test('terminal theme failure releases reserved credits in the same transaction',
   const queries: string[] = [];
   let status = 'running';
   const database = { connect: async () => ({
-    query: async (sql: string) => {
+    query: async (sql: string, params?: unknown[]) => {
       queries.push(sql);
       if (sql.includes('SELECT user_id') && sql.includes('FROM theme_jobs') && !sql.includes('unit_credits')) return { rows: [{ userId: 'user-1' }] };
       if (sql.includes('FROM users')) return { rows: [{ id: 'user-1' }] };
       if (sql.includes('FOR UPDATE') && sql.includes('theme_jobs')) return { rows: [{ userId: 'user-1', status, unitCredits: 10,
         requestedCount: 1, usableCount: 0, cacheHit: false, leaseToken: null, leaseUntil: null }] };
-      if (sql.includes("SET status = 'failed'")) status = 'failed';
+      if (sql.includes('UPDATE theme_jobs SET status = $1')) status = String(params?.[0]);
       if (sql.includes('credit_transactions')) return { rows: [] };
       return { rows: [], rowCount: 1 };
     },
     release: () => {},
   }) } as unknown as pg.Pool;
-  await failThemeJob(database, 'job-1');
+  await settleThemeJob(database, 'job-1');
   assert.equal(queries[0], 'BEGIN');
   assert.ok(queries.some(query => /UPDATE theme_jobs/.test(query)));
   assert.ok(queries.some(query => /UPDATE credit_reservations/.test(query)));

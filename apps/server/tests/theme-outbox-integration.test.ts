@@ -9,7 +9,7 @@ import { Redis } from 'ioredis';
 import pg from 'pg';
 import { THEME_TASK_NAME } from '../src/infra/queue.js';
 import { dispatchThemeOutbox, reconcileThemeOutbox } from '../src/modules/tasks/theme-outbox.js';
-import { failThemeJob } from '../src/modules/tasks/theme-worker.js';
+import { settleThemeJob } from '../src/modules/tasks/theme-worker.js';
 
 test('theme outbox delivery and recovery against PostgreSQL and Redis', {
   skip: !process.env.THEME_TEST_DATABASE_URL || !process.env.THEME_TEST_REDIS_URL,
@@ -33,6 +33,9 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
     await database.query(await readFile(new URL(`../migrations/${migration}.sql`, import.meta.url), 'utf8'));
   }
   await database.query('ALTER TABLE theme_jobs ADD COLUMN cache_hit boolean NOT NULL DEFAULT false');
+  await database.query('ALTER TABLE theme_jobs ADD COLUMN generation_snapshot jsonb');
+  await database.query('CREATE TABLE artwork_jobs (id uuid PRIMARY KEY, status text, updated_at timestamptz DEFAULT now())');
+  await database.query(await readFile(new URL('../migrations/049_generation_recovery.sql', import.meta.url), 'utf8'));
   const userId = randomUUID();
   await database.query("INSERT INTO users(id, external_user_id, username) VALUES ($1, 1, 'outbox-test')", [userId]);
 
@@ -192,18 +195,18 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
       BEGIN RAISE EXCEPTION 'injected release failure'; END $$;
       CREATE TRIGGER reject_release BEFORE UPDATE ON credit_reservations
       FOR EACH ROW EXECUTE FUNCTION reject_release()`);
-    await assert.rejects(failThemeJob(database, id), /injected release failure/);
+    await assert.rejects(settleThemeJob(database, id), /injected release failure/);
     assert.equal((await state(id)).status, 'running');
     assert.equal((await state(id)).reservation, 'reserved');
     await database.query('DROP TRIGGER reject_release ON credit_reservations');
-    await failThemeJob(database, id);
-    await failThemeJob(database, id);
+    await settleThemeJob(database, id);
+    await settleThemeJob(database, id);
     assert.equal((await state(id)).status, 'failed');
     assert.equal((await state(id)).reservation, 'released');
     for (const status of ['succeeded', 'partially_succeeded']) {
       const success = await seed(status, 'picked');
       await database.query("UPDATE credit_reservations SET status = 'settled' WHERE theme_job_id = $1", [success]);
-      await failThemeJob(database, success);
+      await settleThemeJob(database, success);
       assert.equal((await state(success)).status, status);
       assert.equal((await state(success)).reservation, 'settled');
     }
