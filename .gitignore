@@ -22,3 +22,5 @@ apps/shadcn-vue-admin-main/
 .nitro/
 .eslintcache
 .stylelintcache
+
+.claude/.server-deploy-fingerprint
