@@ -10,8 +10,8 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { Config } from './config.js';
 import { createStorage } from './infra/storage.js';
-import { registerAdminModule } from './modules/admin/index.js';
-import { registerClientModule } from './modules/client/index.js';
+import { registerAdminModule } from './http/admin/index.js';
+import { registerClientModule } from './http/client/index.js';
 
 export interface HealthDependencies {
   database: () => Promise<unknown>;

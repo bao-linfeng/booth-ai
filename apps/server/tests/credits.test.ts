@@ -3,8 +3,8 @@ import test from 'node:test';
 import type pg from 'pg';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { getCreditBalance, signInForCredits } from '../src/modules/client/credits/service.js';
-import { getUserCreditBalance, listCreditTransactions, rechargeCredits } from '../src/modules/admin/credits/service.js';
+import { getCreditBalance, signInForCredits } from '../src/modules/credits/account-service.js';
+import { getUserCreditBalance, listCreditTransactions, rechargeCredits } from '../src/modules/credits/management-service.js';
 
 test('sign-in awards ten credits once, relying on the unique sign-in record', async () => {
   let balance = 0;

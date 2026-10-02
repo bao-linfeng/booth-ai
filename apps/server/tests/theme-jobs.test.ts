@@ -4,7 +4,7 @@ import test from 'node:test';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { registerThemeModelRoutes } from '../src/modules/client/theme-jobs/index.js';
+import { registerThemeModelRoutes } from '../src/http/client/theme-jobs/index.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { themeCacheKey, normalizeThemeInput, type GenerationSnapshot, type ThemeParameters, type ThemeOfferData } from '../src/modules/generation/theme/service.js';
 

@@ -7,13 +7,13 @@ import { createRedis, waitForRedis } from './infra/redis.js';
 import { createStorage } from './infra/storage.js';
 import { createQueue, QUEUE_NAME, TASK_NAME, THEME_QUEUE_NAME, THEME_TASK_NAME, ARTWORK_QUEUE_NAME, ARTWORK_TASK_NAME } from './infra/queue.js';
 import { processEchoTask } from './modules/tasks/service.js';
-import { dispatchOutbox } from './modules/tasks/outbox.js';
-import { settleThemeJob, processThemeJob } from './modules/tasks/theme-worker.js';
-import { dispatchThemeOutbox, reconcileThemeOutbox } from './modules/tasks/theme-outbox.js';
-import { processArtworkJob, settleArtworkJob } from './modules/tasks/artwork-worker.js';
-import { dispatchArtworkOutbox } from './modules/tasks/artwork-outbox.js';
+import { dispatchOutbox } from './workers/outbox.js';
+import { settleThemeJob, processThemeJob } from './modules/generation/theme/execution.js';
+import { dispatchThemeOutbox, reconcileThemeOutbox } from './workers/theme-outbox.js';
+import { processArtworkJob, settleArtworkJob } from './modules/generation/artwork/execution.js';
+import { dispatchArtworkOutbox } from './workers/artwork-outbox.js';
 import { reconcileJobCredits } from './modules/credits/reconciliation.js';
-import { recoverGenerationJobs } from './modules/tasks/generation-recovery.js';
+import { recoverGenerationJobs } from './workers/generation-recovery.js';
 
 const heartbeatPath = '/tmp/worker-ready';
 async function main() {

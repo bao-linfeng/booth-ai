@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import Fastify from 'fastify';
 import type pg from 'pg';
-import { registerClientBomRoutes } from '../src/modules/client/bill-of-materials/index.js';
+import { registerClientBomRoutes } from '../src/http/client/bill-of-materials/index.js';
 
 function createPool(published: boolean) {
   return { query: async (sql: string) => {

@@ -9,8 +9,8 @@ import { encryptCredential, modelDefinitions } from '../src/infra/ai-models.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { transaction } from '../src/infra/database.js';
 import { reserveJobCredits } from '../src/modules/credits/service.js';
-import { processThemeJob } from '../src/modules/tasks/theme-worker.js';
-import { recoverGenerationJobs } from '../src/modules/tasks/generation-recovery.js';
+import { processThemeJob } from '../src/modules/generation/theme/execution.js';
+import { recoverGenerationJobs } from '../src/workers/generation-recovery.js';
 
 test('generation recovery: durable submissions, partial uploads, lease exclusion, async polling and deadline settlement', {
   skip: !process.env.THEME_TEST_DATABASE_URL, timeout: 60_000,

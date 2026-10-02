@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { streamThemeJobEvents } from '../src/modules/client/theme-jobs/events.js';
+import { streamThemeJobEvents } from '../src/http/client/theme-jobs/events.js';
 
 const jobId = '00000000-0000-4000-8000-000000000001';
 const userId = '00000000-0000-4000-8000-000000000002';

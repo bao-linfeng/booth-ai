@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import sharp from 'sharp';
-import { downloadImage, editImage, IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage } from '../src/modules/tasks/image-provider.js';
+import { downloadImage, editImage, IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage } from '../src/infra/image-provider.js';
 import { modelDefinitions } from '../src/infra/ai-models.js';
 
 const deadline = () => new Date(Date.now() + 60_000);

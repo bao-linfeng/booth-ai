@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import pg from 'pg';
-import { dispatchThemeOutbox } from '../../src/modules/tasks/theme-outbox.js';
+import { dispatchThemeOutbox } from '../../src/workers/theme-outbox.js';
 
 const database = new pg.Pool({
   connectionString: process.env.THEME_TEST_DATABASE_URL,

@@ -7,7 +7,7 @@ import cors from '@fastify/cors';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { createStorage } from '../src/infra/storage.js';
-import { registerArtworkJobRoutes } from '../src/modules/client/artwork-jobs/index.js';
+import { registerArtworkJobRoutes } from '../src/http/client/artwork-jobs/index.js';
 
 const jobId = '00000000-0000-4000-8000-000000000001';
 const userId = '00000000-0000-4000-8000-000000000002';

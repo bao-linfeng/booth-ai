@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type pg from 'pg';
 import { activeAiModels, decryptCredential, encryptCredential, listAiModels } from '../src/infra/ai-models.js';
-import { updateAiModel } from '../src/modules/admin/ai-models/service.js';
+import { updateAiModel } from '../src/modules/generation/models.js';
 
 const encryptionKey = 'a'.repeat(64);
 const providerKey = 'private-test-key';

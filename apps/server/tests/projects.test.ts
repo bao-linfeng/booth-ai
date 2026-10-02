@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { digest, normalizeQuote, type QuoteInput } from '../src/modules/projects/domain.js';
-import { requireProjectUser } from '../src/modules/client/quote-requests/index.js';
-import { registerQuoteRequestRoutes } from '../src/modules/client/quote-requests/index.js';
+import { requireProjectUser } from '../src/http/client/quote-requests/index.js';
+import { registerQuoteRequestRoutes } from '../src/http/client/quote-requests/index.js';
 import { defaultAssignee } from '../src/modules/projects/service.js';
 import Fastify from 'fastify';
 import type pg from 'pg';

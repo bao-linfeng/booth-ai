@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type pg from 'pg';
-import { createReview, getSchemeReadiness, publishScheme, unpublishScheme } from '../src/modules/admin/reviews/service.js';
+import { createReview, getSchemeReadiness, publishScheme, unpublishScheme } from '../src/modules/schemes/reviews.js';
 
 const scheme = {
   id: 'scheme-id', code: 'S-1', revision: 2, publishStatus: 'draft',

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Queue } from 'bullmq';
 import type pg from 'pg';
-import { dispatchThemeOutbox } from '../src/modules/tasks/theme-outbox.js';
-import { settleThemeJob } from '../src/modules/tasks/theme-worker.js';
+import { dispatchThemeOutbox } from '../src/workers/theme-outbox.js';
+import { settleThemeJob } from '../src/modules/generation/theme/execution.js';
 
 function dispatcherFixture(status = 'pending', failure?: 'add' | 'commit') {
   const events: string[] = [];

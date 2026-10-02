@@ -137,6 +137,11 @@ services:
   check:
     <<: *server
     profiles: [tools]
+    volumes:
+      - ../apps/server/src:/app/src:ro
+      - ../apps/server/migrations:/app/migrations:ro
+      - ../apps/server/tests:/app/tests:ro
+      - ../docs/source:/docs/source:ro
     command: [/bin/sh, -ec, 'npm run check && npm run test && npm run build']
 
   smoke:

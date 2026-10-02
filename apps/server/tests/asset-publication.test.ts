@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type pg from 'pg';
-import { addAssetVersion, createAssetWithVersion, deleteAsset, updateAsset } from '../src/modules/admin/assets/service.js';
+import { addAssetVersion, createAssetWithVersion, deleteAsset, updateAsset } from '../src/modules/assets/service.js';
 
 test('new assets without an explicit sort order follow existing assets', async () => {
   let insertedValues: unknown[] | undefined;

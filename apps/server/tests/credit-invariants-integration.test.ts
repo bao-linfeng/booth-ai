@@ -9,13 +9,13 @@ import pg from 'pg';
 import sharp from 'sharp';
 import { transaction } from '../src/infra/database.js';
 import type { createStorage } from '../src/infra/storage.js';
-import { rechargeCredits } from '../src/modules/admin/credits/service.js';
-import { registerAdminCreditRoutes } from '../src/modules/admin/credits/index.js';
+import { rechargeCredits } from '../src/modules/credits/management-service.js';
+import { registerAdminCreditRoutes } from '../src/http/admin/credits/index.js';
 import { reconcileJobCredits } from '../src/modules/credits/reconciliation.js';
 import { lockCreditUser, reserveJobCredits, releaseJobCredits, type CreditJob } from '../src/modules/credits/service.js';
-import { settleThemeJob, processThemeJob } from '../src/modules/tasks/theme-worker.js';
-import { settleArtworkJob } from '../src/modules/tasks/artwork-worker.js';
-import { recoverGenerationJobs } from '../src/modules/tasks/generation-recovery.js';
+import { settleThemeJob, processThemeJob } from '../src/modules/generation/theme/execution.js';
+import { settleArtworkJob } from '../src/modules/generation/artwork/execution.js';
+import { recoverGenerationJobs } from '../src/workers/generation-recovery.js';
 
 test('credit invariants against PostgreSQL: rollback, concurrency, terminal recovery and recharge replay', {
   skip: !process.env.CREDIT_TEST_DATABASE_URL, timeout: 120_000,

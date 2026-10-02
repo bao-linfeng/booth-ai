@@ -4,7 +4,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { encryptJwt } from '../src/infra/session.js';
 import { encryptCredential } from '../src/infra/ai-models.js';
-import { registerAdminPromptTemplateRoutes } from '../src/modules/admin/prompt-templates/index.js';
+import { registerAdminPromptTemplateRoutes } from '../src/http/admin/prompt-templates/index.js';
 
 const env = {
   NODE_ENV: 'test', LOG_LEVEL: 'silent', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',

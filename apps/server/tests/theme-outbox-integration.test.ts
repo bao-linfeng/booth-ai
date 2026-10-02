@@ -8,8 +8,8 @@ import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import { THEME_TASK_NAME } from '../src/infra/queue.js';
-import { dispatchThemeOutbox, reconcileThemeOutbox } from '../src/modules/tasks/theme-outbox.js';
-import { settleThemeJob } from '../src/modules/tasks/theme-worker.js';
+import { dispatchThemeOutbox, reconcileThemeOutbox } from '../src/workers/theme-outbox.js';
+import { settleThemeJob } from '../src/modules/generation/theme/execution.js';
 
 test('theme outbox delivery and recovery against PostgreSQL and Redis', {
   skip: !process.env.THEME_TEST_DATABASE_URL || !process.env.THEME_TEST_REDIS_URL,

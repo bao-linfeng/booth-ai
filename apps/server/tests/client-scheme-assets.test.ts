@@ -8,7 +8,7 @@ import Fastify from 'fastify';
 import type { createStorage } from '../src/infra/storage.js';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { registerClientSchemeAssetRoutes } from '../src/modules/client/schemes/index.js';
+import { registerClientSchemeAssetRoutes } from '../src/http/client/schemes/index.js';
 
 const assetId = '123e4567-e89b-42d3-a456-426614174000';
 const originalContent = Buffer.from('%PDF-1.7\n报馆图原件');

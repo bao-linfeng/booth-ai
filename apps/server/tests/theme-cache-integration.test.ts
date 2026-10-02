@@ -8,8 +8,8 @@ import pg from 'pg';
 import sharp from 'sharp';
 import { encryptCredential } from '../src/infra/ai-models.js';
 import type { createStorage } from '../src/infra/storage.js';
-import { registerThemeModelRoutes } from '../src/modules/client/theme-jobs/index.js';
-import { processThemeJob } from '../src/modules/tasks/theme-worker.js';
+import { registerThemeModelRoutes } from '../src/http/client/theme-jobs/index.js';
+import { processThemeJob } from '../src/modules/generation/theme/execution.js';
 
 test('theme result cache: actual SQL, provider calls, free reuse, isolation, refresh and invalidation',
   { skip: !process.env.THEME_TEST_DATABASE_URL }, async t => {

@@ -24,6 +24,7 @@ test('migration 045 extends prompt templates in an isolated schema without chang
     }
 
     const admin = randomUUID();
+    await pool.query('INSERT INTO admins(id,external_user_id,username) VALUES ($1,1,$2)', [admin, 'migration-admin']);
     const industry = randomUUID();
     const style = randomUUID();
     const dictionaryIds = new Map<string, string>();
@@ -55,8 +56,8 @@ test('migration 045 extends prompt templates in an isolated schema without chang
 
     const filterId = randomUUID();
     await pool.query(
-      `INSERT INTO prompt_templates(id,purpose,body,variables,created_by,updated_by)
-       VALUES ($1,'filter','解析用户需求','{}',$2,$2)`, [filterId, admin],
+      `INSERT INTO prompt_templates(id,purpose,body,variables,created_by,updated_by,enabled)
+       VALUES ($1,'filter','解析用户需求','{}',$2,$2,true)`, [filterId, admin],
     );
     await assert.rejects(
       pool.query(
@@ -74,12 +75,12 @@ test('migration 045 extends prompt templates in an isolated schema without chang
     const parse = randomUUID();
     const attempt = randomUUID();
     await pool.query(
-      `INSERT INTO selection_attempts(id,visitor_id,input_text) VALUES ($1,'visitor',$2)`, [attempt, 'text'],
+      `INSERT INTO selection_attempts(id,visitor_id) VALUES ($1,'visitor')`, [attempt],
     );
     await pool.query(
       `INSERT INTO selection_parses(id,attempt_id,visitor_id,input_text,form_requirement,final_requirement,parser,degraded,
         field_sources,overrides,clarifications,unhandled_text,warnings,rules_version,dictionary_version,duration_ms,prompt_snapshot)
-       VALUES ($1,$2,'visitor','text','{}','{}','llm',false,'{}','{}','{}',ARRAY[]::text[],ARRAY[]::text[],'rules','dict',1,$3)`,
+       VALUES ($1,$2,'visitor','text','{}','{}','llm',false,'{}','[]','[]',ARRAY[]::text[],'[]','rules','dict',1,$3)`,
       [parse, attempt, JSON.stringify({ source: 'template', templateId: filterId, revision: 1 })],
     );
     const snapshot = await pool.query<{ prompt_snapshot: { source: string; templateId: string } }>(
@@ -89,8 +90,8 @@ test('migration 045 extends prompt templates in an isolated schema without chang
 
     await assert.rejects(
       pool.query(
-        `INSERT INTO prompt_templates(id,purpose,body,variables,created_by,updated_by)
-         VALUES ($1,'filter','另一个解析模板','{}',$2,$2)`, [randomUUID(), admin],
+        `INSERT INTO prompt_templates(id,purpose,body,variables,created_by,updated_by,enabled)
+         VALUES ($1,'filter','另一个解析模板','{}',$2,$2,true)`, [randomUUID(), admin],
       ),
       error => (error as { code?: string; constraint?: string }).code === '23505' &&
         (error as { constraint?: string }).constraint === 'prompt_templates_active_unique',

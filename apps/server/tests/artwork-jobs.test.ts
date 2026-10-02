@@ -3,8 +3,8 @@ import test from 'node:test';
 import type pg from 'pg';
 import type { Queue } from 'bullmq';
 import sharp from 'sharp';
-import { normalizeArtworkImage } from '../src/modules/tasks/artwork-worker.js';
-import { dispatchArtworkOutbox } from '../src/modules/tasks/artwork-outbox.js';
+import { normalizeArtworkImage } from '../src/modules/generation/artwork/execution.js';
+import { dispatchArtworkOutbox } from '../src/workers/artwork-outbox.js';
 import { DIRECTIONS, DIRECTION_LABELS, loadArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
 
 test('default artwork snapshot freezes single-reference reconstruction and resolves each requested camera direction', async () => {

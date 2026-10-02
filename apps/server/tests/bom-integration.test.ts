@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import pg from 'pg';
-import { addAssetVersion } from '../src/modules/admin/assets/service.js';
+import { addAssetVersion } from '../src/modules/assets/service.js';
 import { assertImportBaseline, createBomImport, createOrReplaceBomFromImport, deleteBom, deleteBomItem, getBom, listBoms, submitBomVerification, updateBomItems } from '../src/modules/schemes/bill-of-materials/service.js';
 
 test('BOM transactions preserve baseline, idempotency, measurement kinds and publication state', { skip: !process.env.BOM_TEST_DATABASE_URL }, async t => {

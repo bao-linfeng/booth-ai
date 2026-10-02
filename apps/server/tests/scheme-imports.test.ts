@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import type pg from 'pg';
-import { commitImport, previewImport } from '../src/modules/admin/scheme-imports/service.js';
-import type { ImportRow } from '../src/modules/admin/scheme-imports/service.js';
+import { commitImport, previewImport } from '../src/modules/schemes/imports.js';
+import type { ImportRow } from '../src/modules/schemes/imports.js';
 
 test('the scheme template preview stores JSON rows and summary for commit', async () => {
   const file = new URL('../../../docs/source/灵通展台方案打标模板.xlsx', import.meta.url);

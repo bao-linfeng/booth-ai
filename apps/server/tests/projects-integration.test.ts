@@ -4,13 +4,13 @@ import test from 'node:test';
 import pg from 'pg';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
-import { registerQuoteRequestRoutes } from '../src/modules/client/quote-requests/index.js';
+import { registerQuoteRequestRoutes } from '../src/http/client/quote-requests/index.js';
 import { createManualProject, createQuoteRequest } from '../src/modules/projects/service.js';
 import { linkProjectScheme, type SchemeLinkInput } from '../src/modules/projects/admin-service.js';
 import { getProject } from '../src/modules/projects/repository.js';
 import type { ManualInput, QuoteInput } from '../src/modules/projects/domain.js';
 import { emptyRequirement } from '../src/modules/selection/domain.js';
-import { listDeliverables, signDeliverable } from '../src/modules/client/schemes/service.js';
+import { listDeliverables, signDeliverable } from '../src/modules/assets/deliverables.js';
 
 test('quote transaction: concurrent retries, immutable snapshots, revision conflict and rollback', { skip: !process.env.PROJECT_TEST_DATABASE_URL }, async t => {
   const pool = new pg.Pool({ connectionString: process.env.PROJECT_TEST_DATABASE_URL });

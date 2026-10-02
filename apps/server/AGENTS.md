@@ -96,14 +96,15 @@ src/
 │   ├── database.ts      # pg.Pool（max:10, timeout:5s）+ transaction() helper
 │   ├── redis.ts         # createRedis(config, 'worker'|'request')，角色决定重试策略
 │   ├── storage.ts       # S3 双端点客户端 + getSignedUrl（公开端点专用）
-│   └── queue.ts         # Queue: 'booth-foundation'，Job: 'system.echo'
-├── modules/
-│   ├── tasks/
-│   │   ├── service.ts   # Foundation echo 任务提交（幂等：request_key UNIQUE）
-│   │   └── outbox.ts    # dispatchOutbox()：FOR UPDATE SKIP LOCKED，jobId = taskId
-│   ├── admin/           # /api/v1/admin/* 占位（全部为空 stub，待实现）
-│   ├── client/          # /api/v1/client/* 占位（全部为空 stub，待实现）
-│   └── su/              # /api/v1/su/* 占位（全部为空 stub，待实现）
+│   ├── queue.ts         # Foundation、主题、画稿队列定义
+│   └── image-provider.ts # 外部图像生成、轮询、下载与图像校验
+├── http/
+│   ├── admin/           # 管理端路由、校验、身份提取与响应映射
+│   ├── client/          # 参展商路由、校验、身份提取与响应映射
+│   └── su/              # SU HTTP 入口
+├── modules/             # identity / schemes / assets / selection / selection-analytics
+│                        # generation / prompts / credits / projects / tasks 业务模块
+├── workers/             # Outbox 分发、队列恢复与调度
 └── scripts/
     ├── migrate.ts       # advisory lock 19002401 + SHA-256 校验和，按文件名字母序执行
     ├── storage-init.ts  # S3 bucket 创建/校验，含指数退避
@@ -127,7 +128,7 @@ POST /api/v1/admin/auth/logout       → 管理端登出（清除 Redis session�
 GET  /api/v1/admin/me                → 管理端当前用户信息
 ```
 
-其余业务路由（`/api/v1/su/*` 及各模块子路由）均为空 stub，尚未注册。
+业务路由在 `http/client/index.ts`、`http/admin/index.ts` 中注册；上述仅列出基础认证路由。
 
 ---
 
@@ -207,6 +208,8 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 
 ## 模块开发规范
 
-- 新增业务路由：在对应 `src/modules/{admin|client|su}/` 子目录实现，注册到 Fastify（参考 app.ts 的 plugin 模式）
+- 新增业务路由：在对应 `src/http/{admin|client|su}/` 子目录实现，注册到 Fastify（参考 app.ts 的 plugin 模式）
 - Controller 保持薄：只做解析和响应，业务逻辑放 service 层
+- 共享业务放 `src/modules/` 领域模块，禁止导入 HTTP 门户、Fastify 或 Worker 调度实现；`infra/` 禁止反向导入业务模块
+- `tests/module-boundaries.test.ts` 检查依赖边界，详见 [`docs/server-module-boundaries.md`](../../docs/server-module-boundaries.md)
 - 新 Job 类型：在 `src/infra/queue.ts` 追加 `TASK_NAME` 常量，Worker 在 `src/worker.ts` 注册处理器

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { createScheme, updateScheme } from '../src/modules/admin/schemes/service.js';
-import { commitImport } from '../src/modules/admin/scheme-imports/service.js';
-import { validateSchemeDictionaryIds } from '../src/modules/admin/schemes/dictionary-ids.js';
+import { createScheme, updateScheme } from '../src/modules/schemes/service.js';
+import { commitImport } from '../src/modules/schemes/imports.js';
+import { validateSchemeDictionaryIds } from '../src/modules/schemes/dictionary-ids.js';
 
 const adminId = '00000000-0000-4000-8000-000000000001';
 
@@ -30,7 +30,7 @@ test('scheme CRUD rejects fractional millimeters and conflicting area before wri
 
 test('draft route schema excludes publication and verification writes', async () => {
   const { default: Fastify } = await import('fastify');
-  const { registerAdminSchemesRoutes } = await import('../src/modules/admin/schemes/index.js');
+  const { registerAdminSchemesRoutes } = await import('../src/http/admin/schemes/index.js');
   const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
   await registerAdminSchemesRoutes(app, { query: async () => { throw new Error('must not access database'); } } as unknown as pg.Pool, {} as Redis);
   try {

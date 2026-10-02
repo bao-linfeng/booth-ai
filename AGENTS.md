@@ -127,10 +127,10 @@ src/
 │   ├── redis.ts          # ioredis（worker role: maxRetriesPerRequest=null；request role: 快速失败）
 │   ├── storage.ts        # S3 双端点客户端 + presigned URL 生成
 │   └── queue.ts          # BullMQ 队列定义（booth-foundation）
-├── modules/              # 业务模块（admin / client / su / tasks）
-│   └── tasks/
-│       ├── service.ts    # Foundation echo 任务提交 + 幂等处理
-│       └── outbox.ts     # Outbox 轮询分发器
+├── http/                 # client / admin / su HTTP 路由、校验、响应映射
+├── modules/              # identity / schemes / assets / selection / selection-analytics
+│                         # generation / prompts / credits / projects / tasks 业务模块
+├── workers/              # Outbox 轮询分发与生成任务恢复调度
 └── scripts/              # 独立运维脚本
     ├── migrate.ts        # 迁移执行器（Postgres advisory lock 19002401）
     ├── storage-init.ts   # S3 bucket 初始化（含指数退避重试）
@@ -200,6 +200,7 @@ src/
 ## 代码约定
 
 - **后端**：Controller 保持薄，业务逻辑放 service/repository 层。
+- **后端依赖边界**：HTTP/Worker 调用业务模块；`modules/` 不得导入 `http/`、Fastify 或 Worker 调度实现。`infra/` 不得反向依赖业务模块。边界说明见 `docs/server-module-boundaries.md`。
 - **管理后台（`apps/admin`）**：通用工具类必须优先使用 `@vben/utils`，参考官方文档 [Vben Admin 工具文档](https://doc.vben.pro/guide/essentials/utils.html)。涵盖类型判断、日期处理、树结构操作、对象合并与差异对比（diff）、防抖节流、文件下载/转换等，严禁重复造轮子或随意引入第三方同类工具库。
 - **不写向后兼容 shim**：废弃接口直接删除（数据库 schema 变更除外，需迁移）。
 - 修改 `infra/`、`modules/`、`scripts/` 等核心逻辑时，必须同步更新或新增测试。

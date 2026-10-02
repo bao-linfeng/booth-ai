@@ -2,8 +2,8 @@ import type pg from 'pg';
 import type { Queue } from 'bullmq';
 import { transaction } from '../../infra/database.js';
 import { THEME_TASK_NAME, ARTWORK_TASK_NAME } from '../../infra/queue.js';
-import { settleThemeJob } from '../tasks/theme-worker.js';
-import { settleArtworkJob } from '../tasks/artwork-worker.js';
+import { settleThemeJob } from '../generation/theme/execution.js';
+import { settleArtworkJob } from '../generation/artwork/execution.js';
 import { lockCreditJob, releaseJobCredits, reserveJobCredits, terminalCreditJob, type CreditJob } from './service.js';
 
 type CreditQueues = Record<CreditJob['kind'], Pick<Queue, 'getJob' | 'add'>>;

@@ -4,7 +4,7 @@ import test from 'node:test';
 import type pg from 'pg';
 import sharp from 'sharp';
 import { encryptCredential, modelDefinitions } from '../src/infra/ai-models.js';
-import { processThemeJob } from '../src/modules/tasks/theme-worker.js';
+import { processThemeJob } from '../src/modules/generation/theme/execution.js';
 
 const encryptionKey = 'a'.repeat(64);
 const config = { aiModelEncryptionKey: encryptionKey, s3: { endpoint: 'http://silo:9000', publicEndpoint: 'http://localhost:19000',

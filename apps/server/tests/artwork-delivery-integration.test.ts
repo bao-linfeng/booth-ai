@@ -9,13 +9,13 @@ import sharp from 'sharp';
 import JSZip from 'jszip';
 import { encryptCredential } from '../src/infra/ai-models.js';
 import type { createStorage } from '../src/infra/storage.js';
-import { registerArtworkJobRoutes } from '../src/modules/client/artwork-jobs/index.js';
+import { registerArtworkJobRoutes } from '../src/http/client/artwork-jobs/index.js';
 import { artworkArchive, artworkFiles, getArtworkJob, readyArtworkFiles, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
-import { processArtworkJob, settleArtworkJob } from '../src/modules/tasks/artwork-worker.js';
+import { processArtworkJob, settleArtworkJob } from '../src/modules/generation/artwork/execution.js';
 import { bindProjectArtworks } from '../src/modules/projects/artwork-delivery.js';
 import { createQuoteRequest } from '../src/modules/projects/service.js';
-import { getGenerationJob, listGenerationJobs } from '../src/modules/admin/generation-jobs/service.js';
-import { listDeliverables } from '../src/modules/client/schemes/service.js';
+import { getGenerationJob, listGenerationJobs } from '../src/modules/generation/queries.js';
+import { listDeliverables } from '../src/modules/assets/deliverables.js';
 import type { QuoteInput } from '../src/modules/projects/domain.js';
 
 test('four-direction delivery: real SQL, reservations, provider recovery, ownership, PNG/ZIP and immutable projects',

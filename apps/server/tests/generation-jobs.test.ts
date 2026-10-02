@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import Fastify from 'fastify';
 import type pg from 'pg';
-import { registerAdminGenerationJobRoutes } from '../src/modules/admin/generation-jobs/index.js';
-import { getGenerationJob, listGenerationJobs } from '../src/modules/admin/generation-jobs/service.js';
+import { registerAdminGenerationJobRoutes } from '../src/http/admin/generation-jobs/index.js';
+import { getGenerationJob, listGenerationJobs } from '../src/modules/generation/queries.js';
 
 const jobId = '00000000-0000-4000-8000-000000000001';
 const userId = '00000000-0000-4000-8000-000000000002';
