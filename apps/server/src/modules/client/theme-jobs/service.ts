@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { listAiModels, type AiModelConfig } from '../../../infra/ai-models.js';
 import { transaction } from '../../../infra/database.js';
-import { getActivePromptTemplate } from '../../admin/prompt-templates/service.js';
+import { getActivePromptTemplate } from '../../prompts/service.js';
 import { buildThemePrompt } from './prompt.js';
 import { lockCreditUser, reserveJobCredits } from '../../credits/service.js';
 

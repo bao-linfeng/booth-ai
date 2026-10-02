@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type pg from 'pg';
-import { createPromptTemplate, getActivePromptTemplate, getPromptTemplate, listPromptTemplates, updatePromptTemplate } from '../src/modules/admin/prompt-templates/service.js';
+import { createPromptTemplate, getPromptTemplate, listPromptTemplates, updatePromptTemplate } from '../src/modules/admin/prompt-templates/service.js';
+import { getActivePromptTemplate } from '../src/modules/prompts/service.js';
 
 const id = '00000000-0000-0000-0000-000000000001';
 const adminId = '00000000-0000-0000-0000-000000000002';

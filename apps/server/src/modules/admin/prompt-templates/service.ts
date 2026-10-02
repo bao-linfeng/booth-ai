@@ -105,19 +105,6 @@ export async function updatePromptTemplate(pool: pg.Pool, id: string, input: Upd
   throw Object.assign(new Error('Prompt template revision conflict'), { statusCode: 409 });
 }
 
-export async function getActivePromptTemplate(pool: pg.Pool, purpose: PromptPurpose, industryId?: string | null, styleId?: string | null): Promise<PromptTemplate | null> {
-  const result = await pool.query<TemplateRow>(
-    `SELECT ${columns} FROM prompt_templates
-     WHERE purpose = $1 AND enabled = true
-       AND (industry_id = $2::uuid OR industry_id IS NULL)
-       AND (style_id = $3::uuid OR style_id IS NULL)
-     ORDER BY (industry_id IS NOT NULL)::int + (style_id IS NOT NULL)::int DESC,
-       (industry_id IS NOT NULL) DESC, id ASC LIMIT 1`,
-    [purpose, industryId ?? null, styleId ?? null]
-  );
-  return result.rows[0] ? toTemplate(result.rows[0]) : null;
-}
-
 async function validateTemplateScope(pool: pg.Pool, input: Pick<CreateTemplateInput, 'purpose' | 'industryId' | 'styleId'>) {
   if (input.purpose === 'filter' && (input.industryId || input.styleId)) {
     throw Object.assign(new Error('Selection templates must be global'), { statusCode: 400, reason: 'INVALID_PROMPT_SCOPE' });

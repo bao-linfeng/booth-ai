@@ -19,7 +19,7 @@ export async function lockCreditJob(client: pg.PoolClient, job: CreditJob): Prom
   return (await client.query<LockedCreditJob>(
     `SELECT user_id AS "userId", status, unit_credits AS "unitCredits", requested_count AS "requestedCount",
       usable_count AS "usableCount", ${job.kind === 'theme' ? 'cache_hit' : 'false'} AS "cacheHit",
-      ${job.kind === 'artwork' ? 'lease_token' : 'NULL::uuid'} AS "leaseToken",
+      lease_token AS "leaseToken",
       ${job.kind === 'artwork' ? 'lease_until' : 'NULL::timestamptz'} AS "leaseUntil"
      FROM ${job.kind}_jobs WHERE id = $1 FOR UPDATE`, [job.id],
   )).rows[0];

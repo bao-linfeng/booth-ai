@@ -17,11 +17,13 @@ const config = {
 
 test('theme worker generates real provider results and settles credits atomically', async t => {
   const queries: { sql: string; params?: unknown[] }[] = [];
+  let leaseToken: string | null = null;
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
+    if (sql.includes('UPDATE theme_jobs SET lease_token')) leaseToken = String(params?.[1]);
     if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
     if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: params?.[0] === jobId ? 6 : 3, status: 'reserved' }] };
-    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 2, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status: 'pending' }] };
+    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 2, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status: 'pending', leaseToken }] };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
     if (sql.includes('FROM prompt_templates')) {
@@ -78,13 +80,15 @@ test('theme worker generates real provider results and settles credits atomicall
 test('theme worker marks a job failed without charging when no model is enabled', async () => {
   const queries: { sql: string; params?: unknown[] }[] = [];
   let status = 'pending';
+  let leaseToken: string | null = null;
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
+    if (sql.includes('UPDATE theme_jobs SET lease_token')) leaseToken = String(params?.[1]);
     if (sql.includes("UPDATE theme_jobs SET status = 'failed'")) status = 'failed';
     if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
     if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: 3, status: 'reserved' }] };
     if (sql.includes('FROM credit_transactions')) return { rows: [] };
-    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId }, unitCredits: 3, userId, status }] };
+    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId }, unitCredits: 3, userId, status, leaseToken }] };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
@@ -104,14 +108,16 @@ test('theme worker sends the accepted snapshot prompt unchanged without rebuildi
   const prompt = '已受理的提示词：主墙展示储能产品，品牌色 #123456，不要树叶。';
   let providerCalls = 0;
   let succeeded = false;
+  let leaseToken: string | null = null;
   const run = async (sql: string, params?: unknown[]) => {
+    if (sql.includes('UPDATE theme_jobs SET lease_token')) leaseToken = String(params?.[1]);
     if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
     if (sql.includes('FROM credit_transactions')) return { rows: [] };
     if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: 3, status: 'reserved' }] };
     if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1',
       input: { industryId, styleId, brandKeywords: '受理后不同的输入' }, unitCredits: 3, userId, status: 'pending',
-      snapshot: { prompt, mask: null, source: { objectKey: 'pinned.png' },
-        models: [{ provider: 'openai', model: modelDefinitions.openai.model, revision: 1 }] } }] };
+       snapshot: { prompt, mask: null, source: { objectKey: 'pinned.png' },
+         models: [{ provider: 'openai', model: modelDefinitions.openai.model, revision: 1 }] }, leaseToken }] };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items') || sql.includes('FROM prompt_templates')) throw new Error('Must use the accepted prompt');
     if (sql.includes('FROM ai_model_configs')) return { rows: [{ purpose: 'theme', provider: 'openai',

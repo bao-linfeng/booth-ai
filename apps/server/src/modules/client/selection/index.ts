@@ -10,7 +10,7 @@ import { matchSchemes } from './match.js';
 import { parseRequirement } from './parse.js';
 import { activeAiModels, type ActiveAiModel } from '../../../infra/ai-models.js';
 import { parseWithModels } from './llm.js';
-import { getActivePromptTemplate } from '../../admin/prompt-templates/service.js';
+import { getActivePromptTemplate } from '../../prompts/service.js';
 import { PROMPT_DEFAULT_VERSION } from '../../prompts/template.js';
 import { buildSelectionMessages } from './prompt.js';
 import { deliverableAvailability } from '../schemes/service.js';

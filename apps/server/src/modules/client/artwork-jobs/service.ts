@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { listAiModels, type AiModelConfig } from '../../../infra/ai-models.js';
 import { transaction } from '../../../infra/database.js';
 import type { createStorage } from '../../../infra/storage.js';
-import { getActivePromptTemplate } from '../../admin/prompt-templates/service.js';
+import { getActivePromptTemplate } from '../../prompts/service.js';
 import { digest, projectError } from '../../projects/domain.js';
 import type { AssetSnapshot } from '../../projects/snapshot.js';
 import type { ThemeInput } from '../theme-jobs/service.js';
