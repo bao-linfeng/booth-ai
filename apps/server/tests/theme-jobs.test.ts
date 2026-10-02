@@ -18,6 +18,7 @@ type Query = (sql: string, params?: unknown[]) => { rows: unknown[]; rowCount?: 
 
 async function setup(query: Query) {
   const statements: string[] = [];
+  let created: Record<string, unknown> | undefined;
   const run = async (sql: string, params?: unknown[]) => {
     statements.push(sql);
     if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] };
@@ -28,7 +29,11 @@ async function setup(query: Query) {
     if (sql.includes('a.related_asset_id')) return { rows: [] };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: 'industry', label: '科技' }, { id: 'style', label: '现代' }] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
-    return query(sql, params);
+    if (sql.includes('FROM theme_jobs WHERE id = $1') && created) return { rows: [created] };
+    if (sql.includes('SELECT user_id AS "userId", reserved_amount')) return { rows: [] };
+    const result = query(sql, params);
+    if (sql.includes('INSERT INTO theme_jobs')) created = { ...result.rows[0] as Record<string, unknown>, userId };
+    return result;
   };
   const pool = {
     query: run,

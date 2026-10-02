@@ -11,6 +11,7 @@ import { getActivePromptTemplate } from '../admin/prompt-templates/service.js';
 import type { createStorage } from '../../infra/storage.js';
 import { normalizeThemeInput, type GenerationSnapshot, type ThemeInput } from '../client/theme-jobs/service.js';
 import { buildThemePrompt } from '../client/theme-jobs/prompt.js';
+import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../credits/service.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
 type ThemeJob = { requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string; snapshot: GenerationSnapshot | null };
@@ -190,15 +191,13 @@ async function generateWithWanx(model: ActiveAiModel, sourceImageUrl: string, pr
 
 export async function failThemeJob(database: pg.Pool, jobId: string): Promise<void> {
   await transaction(database, async client => {
-    const failed = await client.query(
-      `UPDATE theme_jobs SET status = 'failed', phase = NULL, updated_at = now()
-       WHERE id = $1 AND status NOT IN ('succeeded', 'partially_succeeded') RETURNING id`, [jobId],
-    );
-    if (failed.rowCount === 0) return;
+    const job = await lockCreditJob(client, { kind: 'theme', id: jobId });
+    if (!job || job.status === 'succeeded' || job.status === 'partially_succeeded') return;
     await client.query(
-      `UPDATE credit_reservations SET status = 'released', updated_at = now()
-       WHERE theme_job_id = $1 AND status = 'reserved'`, [jobId],
+      `UPDATE theme_jobs SET status = 'failed', phase = NULL, updated_at = now()
+       WHERE id = $1 RETURNING id`, [jobId],
     );
+    await releaseJobCredits(client, { kind: 'theme', id: jobId });
   });
 }
 
@@ -218,15 +217,20 @@ export async function processThemeJob(
              unit_credits AS "unitCredits", user_id AS "userId", status, generation_snapshot AS snapshot FROM theme_jobs WHERE id = $1`, [jobId]
   )).rows[0];
   if (!job) throw new Error(`Theme job ${jobId} not found`);
-  const started = await database.query(
-    `UPDATE theme_jobs SET status = 'running', phase = 'provider_submitting', updated_at = now()
-     WHERE id = $1 AND status IN ('pending', 'queued', 'running', 'settling') RETURNING id`, [jobId]
-  );
-  if (started.rowCount === 0) return;
-  await publish(jobId, { status: 'running', phase: 'provider_submitting' });
+  const started = await transaction(database, async client => {
+    const current = await lockCreditJob(client, { kind: 'theme', id: jobId });
+    if (!current || terminalCreditJob(current.status)) return false;
+    await client.query(`UPDATE theme_jobs SET status = 'running', phase = 'provider_submitting', updated_at = now() WHERE id = $1`, [jobId]);
+    return true;
+  });
+  if (!started) return;
+  await publish(jobId, { status: 'running', phase: 'provider_submitting' }).catch(() => {});
 
   const urls: string[] = [];
-  try {
+  const savedUrls = await database.query<{ ordinal: number; url: string }>(
+    'SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId],
+  );
+  if (savedUrls.rows.length === 0) try {
     let prompt = job.snapshot?.prompt;
     if (prompt === undefined) {
       const labels = await database.query<{ id: string; label: string }>(
@@ -292,8 +296,14 @@ export async function processThemeJob(
     : urls;
 
   if (settleUrls.length === 0) {
-    await failThemeJob(database, jobId);
-    await publish(jobId, { status: 'failed', results: [] });
+    const failed = await transaction(database, async client => {
+      const current = await lockCreditJob(client, { kind: 'theme', id: jobId });
+      if (!current || terminalCreditJob(current.status)) return false;
+      await settleJobCredits(client, { kind: 'theme', id: jobId }, 0);
+      await client.query(`UPDATE theme_jobs SET status = 'failed', phase = NULL, usable_count = 0, updated_at = now() WHERE id = $1`, [jobId]);
+      return true;
+    });
+    if (failed) await publish(jobId, { status: 'failed', results: [] }).catch(() => {});
     return;
   }
 
@@ -301,7 +311,7 @@ export async function processThemeJob(
     `SELECT status FROM theme_jobs WHERE id = $1`,
     [jobId],
   );
-  if (alreadySettled.rows[0]?.status === 'succeeded' || alreadySettled.rows[0]?.status === 'partially_succeeded') return;
+  if (alreadySettled.rows[0] && terminalCreditJob(alreadySettled.rows[0].status)) return;
 
   const uploadedResults: UploadedResult[] = [];
   for (const [index, url] of settleUrls.entries()) {
@@ -324,78 +334,45 @@ export async function processThemeJob(
     });
   }
 
-  await publish(jobId, { status: 'settling', phase: 'credit_settling' });
-  try {
-    await transaction(database, async client => {
-      const currentJob = await client.query<{ status: string }>(
-        `SELECT status FROM theme_jobs WHERE id = $1 FOR UPDATE`,
-        [jobId],
-      );
-      const currentStatus = currentJob.rows[0]?.status;
-      if (currentStatus === 'succeeded' || currentStatus === 'partially_succeeded') return;
-
+  await publish(jobId, { status: 'settling', phase: 'credit_settling' }).catch(() => {});
+  const settled = await transaction(database, async client => {
+    const currentJob = await lockCreditJob(client, { kind: 'theme', id: jobId });
+    if (!currentJob || terminalCreditJob(currentJob.status)) return false;
+    await client.query(
+      `UPDATE theme_jobs SET status = 'settling', phase = 'credit_settling', updated_at = now() WHERE id = $1`,
+      [jobId],
+    );
+    for (const result of uploadedResults) {
       await client.query(
-        `UPDATE theme_jobs SET status = 'settling', phase = 'credit_settling', updated_at = now() WHERE id = $1`,
-        [jobId],
-      );
-      for (const result of uploadedResults) {
-        await client.query(
-          `INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, metadata)
-           SELECT $1, s.id, 'artwork', $2, $3, $4
-           FROM schemes s WHERE s.code = $5
-           ON CONFLICT DO NOTHING`,
-          [result.assetId, `AI 换主题结果 ${result.ordinal}`, result.ordinal - 1, JSON.stringify({ themeJobId: jobId }), job.schemeCode],
-        );
-        await client.query(
-          `INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, now())
-           ON CONFLICT DO NOTHING`,
-           [result.versionId, result.assetId, result.objectKey, `${result.assetId}.png`, result.mimeType, result.byteSize, result.checksum],
-        );
-        await client.query(
-           `INSERT INTO theme_job_results (id, job_id, ordinal, asset_id, preview_url, asset_version_id)
-             VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (job_id, ordinal) DO NOTHING`,
-           [result.resultId, jobId, result.ordinal, result.assetId, result.previewUrl, result.versionId],
-        );
-      }
-      const usableCount = uploadedResults.length;
-      if (usableCount > 0) {
-        if (job.unitCredits === null) throw new Error('Theme job has no unit credit price');
-        const existingCharge = await client.query(
-          `SELECT id FROM credit_transactions WHERE theme_job_id = $1`,
-          [jobId],
-        );
-        if (!existingCharge.rows[0]) {
-          await client.query(
-            `INSERT INTO credit_transactions (user_id, kind, amount, note, theme_job_id)
-             VALUES ($1, 'theme_consume', $2, $3, $4)`,
-            [job.userId, -(usableCount * job.unitCredits), `theme_job:${jobId}`, jobId],
-          );
-        }
-      }
-      await client.query(
-        `UPDATE credit_reservations SET status = $1, updated_at = now()
-         WHERE theme_job_id = $2 AND status = 'reserved'`,
-        [usableCount > 0 ? 'settled' : 'released', jobId],
+        `INSERT INTO scheme_assets (id, scheme_id, type, name, sort_order, metadata)
+         SELECT $1, s.id, 'artwork', $2, $3, $4
+         FROM schemes s WHERE s.code = $5`,
+        [result.assetId, `AI 换主题结果 ${result.ordinal}`, result.ordinal - 1, JSON.stringify({ themeJobId: jobId }), job.schemeCode],
       );
       await client.query(
-        `UPDATE theme_jobs SET status = $1, phase = NULL, usable_count = $2, updated_at = now() WHERE id = $3`,
-        [usableCount === 0 ? 'failed' : usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded', usableCount, jobId]
+        `INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+        [result.versionId, result.assetId, result.objectKey, `${result.assetId}.png`, result.mimeType, result.byteSize, result.checksum],
       );
-    });
-  } catch (settleError) {
-    console.error(`Theme job ${jobId} settlement failed`, settleError);
-    await database.query(
-      `UPDATE credit_reservations SET status = 'released', updated_at = now()
-       WHERE theme_job_id = $1 AND status = 'reserved'`,
-      [jobId]
-    ).catch(() => {});
-    throw settleError;
-  }
+      await client.query(
+        `INSERT INTO theme_job_results (id, job_id, ordinal, asset_id, preview_url, asset_version_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [result.resultId, jobId, result.ordinal, result.assetId, result.previewUrl, result.versionId],
+      );
+    }
+    const usableCount = uploadedResults.length;
+    if (currentJob.unitCredits === null) throw new Error('Theme job has no unit credit price');
+    await settleJobCredits(client, { kind: 'theme', id: jobId }, usableCount * currentJob.unitCredits);
+    await client.query(
+      `UPDATE theme_jobs SET status = $1, phase = NULL, usable_count = $2, updated_at = now() WHERE id = $3`,
+      [usableCount === currentJob.requestedCount ? 'succeeded' : 'partially_succeeded', usableCount, jobId],
+    );
+    return true;
+  });
+  if (!settled) return;
   const usableCount = uploadedResults.length;
   await publish(jobId, {
-    status: usableCount === 0 ? 'failed' : usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded',
+    status: usableCount === job.requestedCount ? 'succeeded' : 'partially_succeeded',
     results: uploadedResults.map(result => ({ resultId: result.resultId, previewUrl: result.previewUrl })),
-  });
+  }).catch(() => {});
 }

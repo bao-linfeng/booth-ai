@@ -4,6 +4,7 @@ import { listAiModels, type AiModelConfig } from '../../../infra/ai-models.js';
 import { transaction } from '../../../infra/database.js';
 import { getActivePromptTemplate } from '../../admin/prompt-templates/service.js';
 import { buildThemePrompt } from './prompt.js';
+import { lockCreditUser, reserveJobCredits } from '../../credits/service.js';
 
 export type ThemeInput = { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
 export type ThemeParameters = {
@@ -148,7 +149,7 @@ export async function createThemeJob(pool: pg.Pool, userId: string, requestKey: 
   const cacheKey = themeCacheKey(userId, parameters, snapshot);
   if (cacheKey !== offer.cacheKey) throw Object.assign(new Error('Generation configuration changed; obtain a new offer'), { statusCode: 409, reason: 'OFFER_STALE' });
   return transaction(pool, async client => {
-    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    await lockCreditUser(client, userId);
     const replay = await replayThemeRequest(client, userId, requestKey, parameters);
     if (replay) return replay;
     const cachedJobId = parameters.cacheMode === 'reuse' ? await findCachedThemeJob(client, userId, cacheKey, parameters.requestedCount) : null;
@@ -156,14 +157,6 @@ export async function createThemeJob(pool: pg.Pool, userId: string, requestKey: 
       throw Object.assign(new Error('Cached result unavailable; obtain a new offer'), { statusCode: 409, reason: 'OFFER_STALE' });
     }
     const requiredCredits = cachedJobId ? 0 : offer.unitCredits * parameters.requestedCount;
-    if (!cachedJobId) {
-      const balance = (await client.query<{ availableBalance: number }>(
-        `SELECT (COALESCE(SUM(ct.amount), 0) - COALESCE(
-           (SELECT SUM(cr.reserved_amount) FROM credit_reservations cr WHERE cr.user_id = $1 AND cr.status = 'reserved'), 0
-         ))::integer AS "availableBalance" FROM credit_transactions ct WHERE ct.user_id = $1`, [userId],
-      )).rows[0]?.availableBalance ?? 0;
-      if (balance < requiredCredits) throw Object.assign(new Error('Insufficient credits for this request'), { statusCode: 402 });
-    }
     const job = (await client.query<JobSummary>(
       `INSERT INTO theme_jobs
        (user_id, scheme_code, source_asset_id, offer_id, request_key, input, requested_count, cache_mode, status,
@@ -187,7 +180,7 @@ export async function createThemeJob(pool: pg.Pool, userId: string, requestKey: 
       if (copied.rowCount !== parameters.requestedCount) throw Object.assign(new Error('Cached result unavailable'), { statusCode: 409, reason: 'OFFER_STALE' });
     } else {
       await client.query('INSERT INTO theme_job_outbox (job_id) VALUES ($1) ON CONFLICT DO NOTHING', [job.id]);
-      await client.query('INSERT INTO credit_reservations (user_id, theme_job_id, reserved_amount) VALUES ($1,$2,$3)', [userId, job.id, requiredCredits]);
+      await reserveJobCredits(client, { kind: 'theme', id: job.id }, userId, requiredCredits);
     }
     return submission(job, false);
   });

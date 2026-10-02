@@ -9,6 +9,7 @@ import { digest, projectError } from '../../projects/domain.js';
 import type { AssetSnapshot } from '../../projects/snapshot.js';
 import type { ThemeInput } from '../theme-jobs/service.js';
 import { renderPrompt } from '../../prompts/template.js';
+import { lockCreditUser, reserveJobCredits } from '../../credits/service.js';
 
 export const DIRECTIONS = ['front', 'back', 'left', 'right'] as const;
 export type Direction = typeof DIRECTIONS[number];
@@ -134,7 +135,7 @@ export async function createArtworkJob(pool: pg.Pool, userId: string, requestKey
   const snapshot = await loadArtworkSnapshot(pool, userId, context);
   if (digest(snapshot) !== digest(offer.snapshot)) throw projectError('OFFER_STALE');
   return transaction(pool, async client => {
-    await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [userId]);
+    await lockCreditUser(client, userId);
     const replay = await replayArtworkRequest(client, userId, requestKey, context);
     if (replay) return replay;
     await assertThemeSelection(client, userId, context, true);
@@ -145,10 +146,6 @@ export async function createArtworkJob(pool: pg.Pool, userId: string, requestKey
       const currentTemplate = await client.query('SELECT id FROM prompt_templates WHERE id=$1 AND revision=$2 AND enabled FOR SHARE', [snapshot.template.id, snapshot.template.revision]);
       if (!currentTemplate.rowCount) throw projectError('OFFER_STALE');
     }
-    const balance = (await client.query<{ availableBalance: number }>(`SELECT (COALESCE(SUM(amount),0)-COALESCE(
-      (SELECT SUM(reserved_amount) FROM credit_reservations WHERE user_id=$1 AND status='reserved'),0))::integer AS "availableBalance"
-      FROM credit_transactions WHERE user_id=$1`, [userId])).rows[0]?.availableBalance ?? 0;
-    if (balance < offer.unitCredits * 4) throw projectError('INSUFFICIENT_CREDITS', 402);
     const job = (await client.query<JobSummary>(`INSERT INTO artwork_jobs(user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,
       unit_credits,theme_job_id,theme_result_id,theme_selection_revision,request_hash,generation_snapshot,delivery_status)
       VALUES($1,$2,$3,$4,$5,$6,4,$7,$8,$9,$10,$11,$12,'pending')
@@ -157,7 +154,7 @@ export async function createArtworkJob(pool: pg.Pool, userId: string, requestKey
         context.themeJobId, context.resultId, context.selectionRevision, artworkHash(context), JSON.stringify(snapshot)])).rows[0];
     if (!job) throw new Error('Artwork task creation failed');
     for (const direction of DIRECTIONS) await client.query('INSERT INTO artwork_job_directions(job_id,direction) VALUES($1,$2)', [job.id, direction]);
-    await client.query('INSERT INTO credit_reservations(user_id,artwork_job_id,reserved_amount) VALUES($1,$2,$3)', [userId, job.id, offer.unitCredits * 4]);
+    await reserveJobCredits(client, { kind: 'artwork', id: job.id }, userId, offer.unitCredits * 4);
     await client.query('INSERT INTO artwork_job_outbox(job_id) VALUES($1)', [job.id]);
     return receipt(job, false);
   });

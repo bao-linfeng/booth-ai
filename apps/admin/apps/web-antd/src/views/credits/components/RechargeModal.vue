@@ -17,6 +17,10 @@ const emit = defineEmits(['reload']);
 
 const userOptions = ref<{ value: string; label: string }[]>([]);
 const userFetching = ref(false);
+let requestKey = crypto.randomUUID();
+let submitting = false;
+let attempted = false;
+let pendingRecharge: RechargeParams | undefined;
 
 const fetchUsers = async (keyword?: string) => {
   userFetching.value = true;
@@ -41,22 +45,35 @@ const debouncedFetchUsers = debounce(fetchUsers, 300);
 
 const [RechargeForm, formApi] = useVbenForm({
   handleSubmit: async (values: Record<string, any>) => {
+    if (submitting) return;
+    submitting = true;
+    attempted = true;
     try {
       modalApi.setState({ confirmLoading: true });
-      const payload: RechargeParams = {
+      pendingRecharge ??= {
+        requestKey,
         userId: values.userId,
         amount: values.amount,
         note: values.note,
       };
+      const payload = pendingRecharge;
+      if (payload.userId !== values.userId || payload.amount !== values.amount || payload.note !== values.note) {
+        message.error('上次充值尚未确认，请先按原参数重试');
+        return;
+      }
       await rechargeCreditApi(payload);
+      requestKey = crypto.randomUUID();
+      attempted = false;
+      pendingRecharge = undefined;
       message.success('充值成功');
       emit('reload');
       modalApi.close();
     } catch (error) {
       console.error(error);
       // HTTP request errors are generally handled by request interceptors, but we catch it just in case
-      message.error('充值失败');
+      message.error('充值未确认，请保持原参数重试');
     } finally {
+      submitting = false;
       modalApi.setState({ confirmLoading: false });
     }
   },
@@ -115,8 +132,9 @@ const [Modal, modalApi] = useVbenModal({
 });
 
 const open = () => {
+  if (submitting) return;
   modalApi.open();
-  formApi.resetForm();
+  if (!attempted) formApi.resetForm();
   fetchUsers();
 };
 

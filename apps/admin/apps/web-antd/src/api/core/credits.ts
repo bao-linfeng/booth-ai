@@ -33,6 +33,7 @@ export interface CreditListResult {
 }
 
 export interface RechargeParams {
+  requestKey: string;
   userId: string;
   amount: number;
   note?: string;

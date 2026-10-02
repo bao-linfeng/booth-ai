@@ -12,6 +12,7 @@ interface CreditListQuery {
 }
 
 interface RechargeBody {
+  requestKey: string;
   userId: string;
   amount: number;
   note?: string;
@@ -33,7 +34,8 @@ export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.P
   }) }));
 
   app.post<{ Body: RechargeBody }>('/credits/recharge', { schema: {
-    tags: ['admin-credits'], body: { type: 'object', additionalProperties: false, required: ['userId', 'amount'], properties: {
+    tags: ['admin-credits'], body: { type: 'object', additionalProperties: false, required: ['userId', 'amount', 'requestKey'], properties: {
+      requestKey: { type: 'string', minLength: 1, maxLength: 200, pattern: '\\S' },
       userId: userIdSchema, amount: { type: 'integer', minimum: 1, maximum: 2147483647 },
       note: { type: 'string' },
     } },

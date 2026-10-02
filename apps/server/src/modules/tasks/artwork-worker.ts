@@ -6,6 +6,7 @@ import { activeAiModels, type ActiveAiModel } from '../../infra/ai-models.js';
 import { transaction } from '../../infra/database.js';
 import type { createStorage } from '../../infra/storage.js';
 import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, artworkFiles, completeArtworkFiles, type ArtworkSnapshot, type Direction } from '../client/artwork-jobs/service.js';
+import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../credits/service.js';
 
 type ArtworkConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
 export type PublishArtworkEvent = (jobId: string, event: unknown) => Promise<void>;
@@ -180,20 +181,19 @@ async function failDirection(database: pg.Pool, jobId: string, direction: Direct
 
 export async function settleArtworkJob(database: pg.Pool, jobId: string, lease?: string, publish: PublishArtworkEvent = async () => {}) {
   const event = await transaction(database, async client => {
-    const job = (await client.query<ArtworkJob & { leaseToken: string | null; leaseUntil: Date | null }>(`SELECT user_id AS "userId",unit_credits AS "unitCredits",status,
-      lease_token AS "leaseToken",lease_until AS "leaseUntil" FROM artwork_jobs WHERE id=$1 FOR UPDATE`, [jobId])).rows[0];
-    if (!job || ['succeeded', 'partially_succeeded', 'failed'].includes(job.status)) return;
+    const job = await lockCreditJob(client, { kind: 'artwork', id: jobId });
+    if (!job || terminalCreditJob(job.status)) return;
     if (lease ? job.leaseToken !== lease : job.leaseUntil && new Date(job.leaseUntil).getTime() > Date.now()) throw new Error('Artwork lease busy');
     const files = await artworkFiles(client, jobId);
     const usable = files.length;
     if (usable && job.unitCredits === null) throw new Error('Artwork price missing');
-    if (usable) await client.query(`INSERT INTO credit_transactions(user_id,kind,amount,note,artwork_job_id)
-      VALUES($1,'artwork_consume',$2,$3,$4) ON CONFLICT DO NOTHING`, [job.userId, -usable * job.unitCredits!, `artwork_job:${jobId}`, jobId]);
-    await client.query("UPDATE credit_reservations SET status=$2,updated_at=now() WHERE artwork_job_id=$1 AND status='reserved'", [jobId, usable ? 'settled' : 'released']);
+    if (usable) await settleJobCredits(client, { kind: 'artwork', id: jobId }, usable * job.unitCredits!);
     await client.query("UPDATE artwork_job_directions SET status='failed',reason=COALESCE(reason,'PROCESSING_FAILED'),generated_url=NULL WHERE job_id=$1 AND status<>'succeeded'", [jobId]);
     const status = usable === 4 ? 'succeeded' : usable ? 'partially_succeeded' : 'failed';
     const deliveryStatus = completeArtworkFiles(files) ? 'ready' : 'incomplete';
-    await client.query(`UPDATE artwork_jobs SET status=$2,delivery_status=$3,usable_count=$4,phase=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
+    if (!usable) await client.query("UPDATE artwork_jobs SET status='failed',delivery_status=$2,usable_count=0,phase=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1", [jobId, deliveryStatus]);
+    if (!usable) await releaseJobCredits(client, { kind: 'artwork', id: jobId });
+    if (usable) await client.query(`UPDATE artwork_jobs SET status=$2,delivery_status=$3,usable_count=$4,phase=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
       [jobId, status, deliveryStatus, usable]);
     return { status, deliveryStatus, phase: null };
   });

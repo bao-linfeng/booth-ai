@@ -19,6 +19,8 @@ test('theme worker generates real provider results and settles credits atomicall
   const queries: { sql: string; params?: unknown[] }[] = [];
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
+    if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
+    if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: params?.[0] === jobId ? 6 : 3, status: 'reserved' }] };
     if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 2, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status: 'pending' }] };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
@@ -59,7 +61,6 @@ test('theme worker generates real provider results and settles credits atomicall
     putBuffer: async (key: string) => { stored.push(key); },
     signDownload: async (key: string) => `https://assets.example/${key}`,
   } as never);
-  console.log(queries.map((query, index) => `${index}: ${query.sql} params=${JSON.stringify(query.params)}`).join('\n'));
   assert.equal(calls.length, 3);
   const resultInserts = queries.filter(q => q.sql.includes('INSERT INTO theme_job_results'));
   assert.equal(resultInserts.length, 2);
@@ -76,9 +77,14 @@ test('theme worker generates real provider results and settles credits atomicall
 
 test('theme worker marks a job failed without charging when no model is enabled', async () => {
   const queries: { sql: string; params?: unknown[] }[] = [];
+  let status = 'pending';
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
-    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId }, unitCredits: 3, userId, status: 'pending' }] };
+    if (sql.includes("UPDATE theme_jobs SET status = 'failed'")) status = 'failed';
+    if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
+    if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: 3, status: 'reserved' }] };
+    if (sql.includes('FROM credit_transactions')) return { rows: [] };
+    if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1', input: { industryId, styleId }, unitCredits: 3, userId, status }] };
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
@@ -99,6 +105,9 @@ test('theme worker sends the accepted snapshot prompt unchanged without rebuildi
   let providerCalls = 0;
   let succeeded = false;
   const run = async (sql: string, params?: unknown[]) => {
+    if (sql.includes('FROM users')) return { rows: [{ id: userId }] };
+    if (sql.includes('FROM credit_transactions')) return { rows: [] };
+    if (sql.includes('FROM credit_reservations')) return { rows: [{ userId, amount: 3, status: 'reserved' }] };
     if (sql.includes('FROM theme_jobs')) return { rows: [{ requestedCount: 1, sourceAssetId: randomUUID(), schemeCode: 'S-1',
       input: { industryId, styleId, brandKeywords: '受理后不同的输入' }, unitCredits: 3, userId, status: 'pending',
       snapshot: { prompt, mask: null, source: { objectKey: 'pinned.png' },

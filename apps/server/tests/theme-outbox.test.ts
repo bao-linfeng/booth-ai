@@ -85,13 +85,23 @@ for (const status of ['running', 'settling', 'succeeded', 'partially_succeeded',
 
 test('terminal theme failure releases reserved credits in the same transaction', async () => {
   const queries: string[] = [];
+  let status = 'running';
   const database = { connect: async () => ({
-    query: async (sql: string) => { queries.push(sql); return { rows: [{ id: 'job-1' }], rowCount: 1 }; },
+    query: async (sql: string) => {
+      queries.push(sql);
+      if (sql.includes('SELECT user_id') && sql.includes('FROM theme_jobs') && !sql.includes('unit_credits')) return { rows: [{ userId: 'user-1' }] };
+      if (sql.includes('FROM users')) return { rows: [{ id: 'user-1' }] };
+      if (sql.includes('FOR UPDATE') && sql.includes('theme_jobs')) return { rows: [{ userId: 'user-1', status, unitCredits: 10,
+        requestedCount: 1, usableCount: 0, cacheHit: false, leaseToken: null, leaseUntil: null }] };
+      if (sql.includes("SET status = 'failed'")) status = 'failed';
+      if (sql.includes('credit_transactions')) return { rows: [] };
+      return { rows: [], rowCount: 1 };
+    },
     release: () => {},
   }) } as unknown as pg.Pool;
   await failThemeJob(database, 'job-1');
   assert.equal(queries[0], 'BEGIN');
-  assert.match(queries[1]!, /UPDATE theme_jobs/);
-  assert.match(queries[2]!, /UPDATE credit_reservations/);
-  assert.equal(queries[3], 'COMMIT');
+  assert.ok(queries.some(query => /UPDATE theme_jobs/.test(query)));
+  assert.ok(queries.some(query => /UPDATE credit_reservations/.test(query)));
+  assert.equal(queries.at(-1), 'COMMIT');
 });

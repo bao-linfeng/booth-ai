@@ -12,6 +12,7 @@ import { failThemeJob, processThemeJob } from './modules/tasks/theme-worker.js';
 import { dispatchThemeOutbox, reconcileThemeOutbox } from './modules/tasks/theme-outbox.js';
 import { processArtworkJob, settleArtworkJob } from './modules/tasks/artwork-worker.js';
 import { dispatchArtworkOutbox } from './modules/tasks/artwork-outbox.js';
+import { reconcileJobCredits } from './modules/credits/reconciliation.js';
 
 const heartbeatPath = '/tmp/worker-ready';
 async function main() {
@@ -63,13 +64,13 @@ async function main() {
     await producerRedis.publish(`artwork-job:${jobId}`, JSON.stringify(event));
   };
   const artworkWorker = new Worker(ARTWORK_QUEUE_NAME, async job => {
-    if (job.name !== ARTWORK_TASK_NAME || typeof job.data.jobId !== 'string') throw new Error('Invalid artwork job');
+    if (job.name !== ARTWORK_TASK_NAME || typeof job.data.jobId !== 'string' || job.data.jobId !== job.id) throw new Error('Invalid artwork job');
     return processArtworkJob(database, job.data.jobId, config, storage, publishArtworkEvent);
   }, { connection: consumerRedis, concurrency: 2 });
   artworkWorker.on('error', () => console.error('Artwork worker connection error'));
   artworkWorker.on('failed', (job) => {
-    if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
-    void settleArtworkJob(database, job.data.jobId, undefined, publishArtworkEvent).catch(() => console.error('Unable to settle failed artwork job'));
+    if (!job?.id || job.attemptsMade < (job.opts.attempts ?? 1)) return;
+    void settleArtworkJob(database, job.id, undefined, publishArtworkEvent).catch(() => console.error('Unable to settle failed artwork job'));
   });
 
   await worker.waitUntilReady();
@@ -83,6 +84,8 @@ async function main() {
     while (!stopping) {
       try {
         if (Date.now() >= nextThemeReconciliation) {
+          const credits = await reconcileJobCredits(database, { theme: themeQueue, artwork: artworkQueue });
+          if (credits.repaired || credits.issues.length) console.info('Credit reconciliation', credits);
           await reconcileThemeOutbox(database);
           nextThemeReconciliation = Date.now() + 60_000;
         }

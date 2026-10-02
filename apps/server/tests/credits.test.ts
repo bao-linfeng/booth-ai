@@ -25,25 +25,26 @@ test('sign-in awards ten credits once, relying on the unique sign-in record', as
 
 test('admin credit service validates recharge and filters transactions', async () => {
   const queries: { sql: string; args: unknown[] }[] = [];
-  const pool = { query: async (sql: string, args: unknown[]) => {
+  const run = async (sql: string, args: unknown[]) => {
     queries.push({ sql, args });
     if (sql.includes('count(*)')) return { rows: [{ total: '1' }] };
     if (sql.includes('user_credit_balances')) return { rows: [] };
     if (sql.includes('INSERT INTO credit_transactions')) return { rows: [{ id: 'transaction-id' }] };
-    if (sql.includes('SELECT') && sql.includes('FROM credit_transactions ct')) return { rows: [{ id: 'transaction-id', amount: 20, operatorId: 'admin-id' }] };
+    if (sql.includes('SELECT') && sql.includes('FROM credit_transactions ct')) return { rows: [{ id: 'transaction-id', userId: 'user-id', amount: 20, note: 'test', operatorId: 'admin-id' }] };
     return { rows: [{ id: 'transaction-id' }] };
-  } } as unknown as pg.Pool;
+  };
+  const pool = { query: run, connect: async () => ({ query: run, release: () => {} }) } as unknown as pg.Pool;
   const list = await listCreditTransactions(pool, { page: 2, pageSize: 5, userId: 'user-id', kind: 'recharge' });
   assert.equal(list.total, 1);
   assert.deepEqual(queries[0]?.args, ['user-id', 'recharge', 5, 5]);
   assert.deepEqual(queries[1]?.args, ['user-id', 'recharge']);
   assert.equal(await getUserCreditBalance(pool, 'user-id'), 0);
   for (const amount of [0, -1, 1.5, 2147483648]) {
-    await assert.rejects(rechargeCredits(pool, { userId: 'user-id', amount, operatorId: 'admin-id' }), { statusCode: 400, reason: 'INVALID_AMOUNT' });
+    await assert.rejects(rechargeCredits(pool, { userId: 'user-id', amount, operatorId: 'admin-id', requestKey: 'request' }), { statusCode: 400, reason: 'INVALID_AMOUNT' });
   }
-  const result = await rechargeCredits(pool, { userId: 'user-id', amount: 20, operatorId: 'admin-id', note: 'test' });
+  const result = await rechargeCredits(pool, { userId: 'user-id', amount: 20, operatorId: 'admin-id', note: 'test', requestKey: 'request' });
   assert.equal(result.operatorId, 'admin-id');
-  assert.deepEqual(queries.at(-2)?.args, ['user-id', 20, 'test', 'admin-id']);
+  assert.deepEqual(queries.find(q => q.sql.includes('INSERT INTO credit_transactions'))?.args, ['user-id', 20, 'test', 'admin-id', 'request']);
 });
 
 test('credit routes require a session; client and admin sessions cannot be exchanged', async t => {
@@ -64,7 +65,7 @@ test('credit routes require a session; client and admin sessions cannot be excha
     ['GET', '/api/v1/admin/credits/users/00000000-0000-0000-0000-000000000001/balance'],
   ] as const) {
     const response = await app.inject({ method, url, headers: { authorization: 'Bearer invalid' },
-      ...(url.endsWith('/recharge') ? { payload: { userId: '00000000-0000-0000-0000-000000000001', amount: 10 } } : {}) });
+      ...(url.endsWith('/recharge') ? { payload: { userId: '00000000-0000-0000-0000-000000000001', amount: 10, requestKey: 'request' } } : {}) });
     assert.equal(response.statusCode, 401, `${method} ${url}: ${response.body}`);
   }
 });
