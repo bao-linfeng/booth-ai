@@ -188,6 +188,20 @@ async function generateWithWanx(model: ActiveAiModel, sourceImageUrl: string, pr
   throw new Error('Wanx image edit timed out');
 }
 
+export async function failThemeJob(database: pg.Pool, jobId: string): Promise<void> {
+  await transaction(database, async client => {
+    const failed = await client.query(
+      `UPDATE theme_jobs SET status = 'failed', phase = NULL, updated_at = now()
+       WHERE id = $1 AND status NOT IN ('succeeded', 'partially_succeeded') RETURNING id`, [jobId],
+    );
+    if (failed.rowCount === 0) return;
+    await client.query(
+      `UPDATE credit_reservations SET status = 'released', updated_at = now()
+       WHERE theme_job_id = $1 AND status = 'reserved'`, [jobId],
+    );
+  });
+}
+
 export async function processThemeJob(
   database: pg.Pool,
   jobId: string,
@@ -278,16 +292,7 @@ export async function processThemeJob(
     : urls;
 
   if (settleUrls.length === 0) {
-    await database.query(
-      `UPDATE credit_reservations SET status = 'released', updated_at = now()
-       WHERE theme_job_id = $1 AND status = 'reserved'`,
-      [jobId],
-    );
-    await database.query(
-      `UPDATE theme_jobs SET status = 'failed', phase = NULL, usable_count = 0, updated_at = now()
-       WHERE id = $1 AND status NOT IN ('succeeded', 'partially_succeeded')`,
-      [jobId],
-    );
+    await failThemeJob(database, jobId);
     await publish(jobId, { status: 'failed', results: [] });
     return;
   }

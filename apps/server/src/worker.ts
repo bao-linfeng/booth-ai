@@ -8,8 +8,8 @@ import { createStorage } from './infra/storage.js';
 import { createQueue, QUEUE_NAME, TASK_NAME, THEME_QUEUE_NAME, THEME_TASK_NAME, ARTWORK_QUEUE_NAME, ARTWORK_TASK_NAME } from './infra/queue.js';
 import { processEchoTask } from './modules/tasks/service.js';
 import { dispatchOutbox } from './modules/tasks/outbox.js';
-import { processThemeJob } from './modules/tasks/theme-worker.js';
-import { dispatchThemeOutbox } from './modules/tasks/theme-outbox.js';
+import { failThemeJob, processThemeJob } from './modules/tasks/theme-worker.js';
+import { dispatchThemeOutbox, reconcileThemeOutbox } from './modules/tasks/theme-outbox.js';
 import { processArtworkJob, settleArtworkJob } from './modules/tasks/artwork-worker.js';
 import { dispatchArtworkOutbox } from './modules/tasks/artwork-outbox.js';
 
@@ -48,18 +48,15 @@ async function main() {
   });
 
   const themeWorker = new Worker(THEME_QUEUE_NAME, async job => {
-    if (job.name !== THEME_TASK_NAME || typeof job.data.jobId !== 'string') throw new Error('Invalid theme job');
+    if (job.name !== THEME_TASK_NAME || typeof job.data.jobId !== 'string' || job.data.jobId !== job.id) throw new Error('Invalid theme job');
     return processThemeJob(database, job.data.jobId, config, storage, async (jobId, event) => {
       await producerRedis.publish(`theme-job:${jobId}`, JSON.stringify(event));
     });
   }, { connection: consumerRedis, concurrency: 2 });
   themeWorker.on('error', () => console.error('Theme worker connection error'));
   themeWorker.on('failed', (job) => {
-    if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
-    void database.query(
-      `UPDATE theme_jobs SET status = 'failed', phase = NULL, updated_at = now() WHERE id = $1 AND status NOT IN ('succeeded', 'partially_succeeded', 'failed')`,
-      [job.data.jobId]
-    ).catch(() => console.error('Unable to persist failed theme job status'));
+    if (!job?.id || job.attemptsMade < (job.opts.attempts ?? 1)) return;
+    void failThemeJob(database, job.id).catch(() => console.error('Unable to persist failed theme job status'));
   });
 
   const publishArtworkEvent = async (jobId: string, event: unknown) => {
@@ -80,10 +77,15 @@ async function main() {
   await artworkWorker.waitUntilReady();
 
   let stopping = false;
+  let nextThemeReconciliation = 0;
   const controller = new AbortController();
   const loop = (async () => {
     while (!stopping) {
       try {
+        if (Date.now() >= nextThemeReconciliation) {
+          await reconcileThemeOutbox(database);
+          nextThemeReconciliation = Date.now() + 60_000;
+        }
         await dispatchOutbox(database, queue);
         await dispatchThemeOutbox(database, themeQueue);
         await dispatchArtworkOutbox(database, artworkQueue, publishArtworkEvent);

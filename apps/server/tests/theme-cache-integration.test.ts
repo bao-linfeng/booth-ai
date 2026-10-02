@@ -99,6 +99,14 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
       endpoint: 'http://silo:9000', publicEndpoint: 'http://localhost:19000', region: 'us-east-1', bucket: 'booth-assets', accessKeyId: 'test', secretAccessKey: 'test',
     } }, storage);
     assert.equal(providerCalls, 1);
+    const persistedResults = await pool.query('SELECT id FROM theme_job_results WHERE job_id=$1', [jobId]);
+    await processThemeJob(pool, jobId, { aiModelEncryptionKey: encryptionKey, s3: {
+      endpoint: 'http://silo:9000', publicEndpoint: 'http://localhost:19000', region: 'us-east-1', bucket: 'booth-assets', accessKeyId: 'test', secretAccessKey: 'test',
+    } }, storage);
+    assert.equal(providerCalls, 1, 'redelivery must not call the provider again');
+    assert.deepEqual((await pool.query('SELECT id FROM theme_job_results WHERE job_id=$1', [jobId])).rows, persistedResults.rows);
+    assert.equal((await pool.query('SELECT id FROM credit_transactions WHERE theme_job_id=$1', [jobId])).rowCount, 1);
+    assert.equal((await pool.query('SELECT status FROM credit_reservations WHERE theme_job_id=$1', [jobId])).rows[0].status, 'settled');
     await pool.query("UPDATE prompt_templates SET body='{{brandColors}}/{{brandKeywords}}' WHERE id=$1", [template]);
     assert.equal((await pool.query('SELECT sum(amount)::int AS balance FROM credit_transactions WHERE user_id=$1', [user])).rows[0].balance, 90);
     const normalized = { ...parameters, input: { ...parameters.input, brandColors: ['#AABBCC'], brandKeywords: 'brand' } };
