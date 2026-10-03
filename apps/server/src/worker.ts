@@ -15,7 +15,7 @@ import { dispatchThemeOutbox, reconcileThemeOutbox } from './workers/theme-outbo
 import { processArtworkJob, settleArtworkJob } from './modules/generation/artwork/execution.js';
 import { dispatchArtworkOutbox } from './workers/artwork-outbox.js';
 import { reconcileJobCredits } from './modules/credits/reconciliation.js';
-import { recoverGenerationJobs } from './workers/generation-recovery.js';
+import { recoverGenerationJobs, recoverPendingGenerationJobs } from './workers/generation-recovery.js';
 import { deliverProjectNotifications } from './workers/project-notifications.js';
 import { createScheduler, type ScheduledTask } from './workers/scheduler.js';
 import { collectWorkerMetrics, createJobStats } from './workers/metrics.js';
@@ -105,8 +105,9 @@ async function main() {
     { name: 'theme-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchThemeOutbox(database, themeQueue) },
     { name: 'artwork-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchArtworkOutbox(database, artworkQueue, publishArtworkEvent) },
     { name: 'generation-recovery', intervalMs: 60_000, staleAfterMs: 300_000, run: () => recoverGenerationJobs(database, generationQueues) },
+    { name: 'pending-generation-recovery', intervalMs: 60_000, staleAfterMs: 300_000, run: () => recoverPendingGenerationJobs(database, generationQueues) },
     { name: 'credit-reconciliation', intervalMs: 60_000, staleAfterMs: 300_000, run: async () => {
-      const credits = await reconcileJobCredits(database, generationQueues);
+      const credits = await reconcileJobCredits(database);
       if (credits.repaired || credits.issues.length) log.warn({ credits }, 'Credit reconciliation');
     } },
     { name: 'theme-outbox-reconciliation', intervalMs: 60_000, staleAfterMs: 300_000, run: () => reconcileThemeOutbox(database) },

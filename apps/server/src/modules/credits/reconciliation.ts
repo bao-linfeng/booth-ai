@@ -1,15 +1,10 @@
 import type pg from 'pg';
-import type { Queue } from 'bullmq';
 import { transaction } from '../../infra/database.js';
-import { THEME_TASK_NAME, ARTWORK_TASK_NAME } from '../../infra/queue.js';
-import { settleThemeJob } from '../generation/theme/execution.js';
-import { settleArtworkJob } from '../generation/artwork/execution.js';
 import { lockCreditJob, releaseJobCredits, reserveJobCredits, terminalCreditJob, type CreditJob } from './service.js';
 
-type CreditQueues = Record<CreditJob['kind'], Pick<Queue, 'getJob' | 'add'>>;
 type CreditIssue = CreditJob & { reason: string };
 
-export async function reconcileJobCredits(database: pg.Pool, queues: CreditQueues): Promise<{ checked: number; repaired: number; issues: CreditIssue[] }> {
+export async function reconcileJobCredits(database: pg.Pool): Promise<{ checked: number; repaired: number; issues: CreditIssue[] }> {
   const report = { checked: 0, repaired: 0, issues: [] as CreditIssue[] };
   for (const kind of ['theme', 'artwork'] as const) {
     const jobs = (await database.query<{ id: string; status: string; stale: boolean }>(
@@ -94,18 +89,6 @@ export async function reconcileJobCredits(database: pg.Pool, queues: CreditQueue
         report.checked++;
         if (outcome.repaired) report.repaired++;
         if (outcome.reason) report.issues.push({ ...job, reason: outcome.reason });
-        if (candidate.stale && ['pending', 'queued'].includes(candidate.status)) {
-          const queued = await queues[kind].getJob(job.id);
-          const state = await queued?.getState();
-          if (state === 'failed' || state === 'completed') {
-            if (kind === 'theme') await settleThemeJob(database, job.id);
-            else await settleArtworkJob(database, job.id);
-          } else if (!queued) {
-            await queues[kind].add(kind === 'theme' ? THEME_TASK_NAME : ARTWORK_TASK_NAME, { jobId: job.id }, {
-              jobId: job.id, attempts: 3, backoff: { type: 'exponential', delay: 2000 },
-            });
-          }
-        }
       } catch {
         report.issues.push({ ...job, reason: 'RECONCILIATION_FAILED' });
       }

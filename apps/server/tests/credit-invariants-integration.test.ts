@@ -16,7 +16,7 @@ import { reconcileJobCredits } from '../src/modules/credits/reconciliation.js';
 import { lockCreditUser, reserveJobCredits, releaseJobCredits, type CreditJob } from '../src/modules/credits/service.js';
 import { settleThemeJob, processThemeJob } from '../src/modules/generation/theme/execution.js';
 import { settleArtworkJob } from '../src/modules/generation/artwork/execution.js';
-import { recoverGenerationJobs } from '../src/workers/generation-recovery.js';
+import { recoverGenerationJobs, recoverPendingGenerationJobs } from '../src/workers/generation-recovery.js';
 
 test('credit invariants against PostgreSQL: rollback, concurrency, terminal recovery and recharge replay', {
   skip: !process.env.CREDIT_TEST_DATABASE_URL, timeout: 120_000,
@@ -75,7 +75,8 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     await pool.query('UPDATE theme_jobs SET credit_checked_at=NULL');
     await pool.query('UPDATE artwork_jobs SET credit_checked_at=NULL');
     await recoverGenerationJobs(pool, { theme: queue, artwork: queue });
-    return reconcileJobCredits(pool, { theme: queue, artwork: queue });
+    await recoverPendingGenerationJobs(pool, { theme: queue, artwork: queue });
+    return reconcileJobCredits(pool);
   }
 
   await t.test('failed COMMIT preserves the full hold, blocks competing spend, and retry charges exactly once', async () => {
@@ -217,7 +218,7 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     for (const task of retryable) assert.deepEqual(await state(task), { status: 'running', usable: 0, reservation: 'reserved', charges: [] });
     assert.ok(enqueued.includes(orphan.id));
     assert.deepEqual(await state(exhausted), { status: 'failed', usable: 0, reservation: 'released', charges: [] });
-    assert.equal((await reconcileJobCredits(pool, { theme: queue, artwork: queue })).checked, 0);
+    assert.equal((await reconcileJobCredits(pool)).checked, 0);
   });
 
   await t.test('zero-result terminal recovery rolls back atomically, then releases theme and artwork holds idempotently', async () => {

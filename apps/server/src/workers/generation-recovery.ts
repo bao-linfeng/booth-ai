@@ -26,3 +26,27 @@ export async function recoverGenerationJobs(database: pg.Pool, queues: Record<'t
     }
   }
 }
+
+export async function recoverPendingGenerationJobs(database: pg.Pool, queues: Record<'theme' | 'artwork', Pick<Queue, 'getJob' | 'add'>>) {
+  for (const kind of ['theme', 'artwork'] as const) {
+    const candidates = await database.query<{ id: string }>(`SELECT id FROM ${kind}_jobs
+      WHERE status IN ('pending', 'queued') AND updated_at < now() - interval '15 minutes'
+      ORDER BY updated_at, id LIMIT 100`);
+    for (const candidate of candidates.rows) {
+      try {
+        const queued = await queues[kind].getJob(candidate.id);
+        const state = await queued?.getState();
+        if (state === 'failed' || state === 'completed') {
+          if (kind === 'theme') await settleThemeJob(database, candidate.id);
+          else await settleArtworkJob(database, candidate.id);
+        } else if (!queued) {
+          await queues[kind].add(kind === 'theme' ? THEME_TASK_NAME : ARTWORK_TASK_NAME, { jobId: candidate.id }, {
+            jobId: candidate.id, attempts: 3, backoff: { type: 'exponential', delay: 2000 },
+          });
+        }
+      } catch {
+        // isolate per-candidate failures; continue scanning remaining candidates
+      }
+    }
+  }
+}
