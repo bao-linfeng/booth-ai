@@ -1,64 +1,14 @@
 import type { FastifyReply } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { waitForRedis } from '../../../infra/redis.js';
+import { streamJobEvents } from '../sse.js';
 
 export async function streamThemeJobEvents(pool: pg.Pool, redis: Redis, jobId: string, userId: string, reply: FastifyReply): Promise<void> {
-  const response = reply.raw;
-  const subscriber = redis.duplicate({ retryStrategy: null });
-  const channel = `theme-job:${jobId}`;
-  let streaming = false;
-  let closed = false;
-  let heartbeat: NodeJS.Timeout | undefined;
-
-  const onMessage = (messageChannel: string, message: string) => {
-    if (streaming && !closed && messageChannel === channel) response.write(`event: update\ndata: ${message}\n\n`);
-  };
-  const onUnavailable = () => {
-    if (streaming) response.destroy();
-  };
-  const cleanup = () => {
-    if (closed) return;
-    closed = true;
-    clearInterval(heartbeat);
-    subscriber.off('message', onMessage);
-    subscriber.off('error', onUnavailable);
-    subscriber.off('end', onUnavailable);
-    subscriber.disconnect();
-  };
-  response.once('close', cleanup);
-  subscriber.on('message', onMessage);
-  subscriber.on('error', onUnavailable);
-  subscriber.on('end', onUnavailable);
-
-  try {
-    await waitForRedis(subscriber);
-    await subscriber.subscribe(channel);
-    if (closed) return;
-    reply.hijack();
-    for (const [name, value] of Object.entries(reply.getHeaders())) {
-      if (value !== undefined) response.setHeader(name, value);
-    }
-    response.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-    streaming = true;
-    response.write(': connected\n\n');
-    heartbeat = setInterval(() => {
-      if (!closed) response.write(': heartbeat\n\n');
-    }, 15000);
-
+  await streamJobEvents(redis, `theme-job:${jobId}`, reply, async () => {
     const job = (await pool.query<{ status: string; phase: string | null }>(
       'SELECT status, phase FROM theme_jobs WHERE id = $1 AND user_id = $2', [jobId, userId],
     )).rows[0];
     if (!job) throw new Error('Theme job not found');
-    if (!closed) response.write(`event: update\ndata: ${JSON.stringify(job)}\n\n`);
-  } catch (error) {
-    cleanup();
-    if (streaming) response.destroy();
-    else throw error;
-  }
+    return job;
+  });
 }

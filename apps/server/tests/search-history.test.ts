@@ -6,7 +6,7 @@ import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
 import type { createStorage } from '../src/infra/storage.js';
-import { registerClientProjectRoutes } from '../src/http/client/projects/index.js';
+import { registerClientSearchRoutes } from '../src/http/client/searches/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';
 import { listSearchJobs } from '../src/modules/generation/search-jobs.js';
 import { assertThemeSearch, themeRequestHash, type ThemeParameters } from '../src/modules/generation/theme/service.js';
@@ -37,7 +37,7 @@ test('search history returns one inline theme and its artwork previews per searc
   const app = Fastify();
   registerAuthentication(app, pool, redis, 'client');
   t.after(() => app.close());
-  await registerClientProjectRoutes(app, pool, redis, storage);
+  await registerClientSearchRoutes(app, pool, redis, storage);
   const response = await app.inject({ url: '/me/searches', headers: { authorization: 'Bearer test' } });
   assert.equal(response.statusCode, 200);
   assert.equal(response.headers['cache-control'], 'private, no-store');
@@ -54,7 +54,7 @@ test('search history rejects unauthenticated requests before reading generation 
   const app = Fastify();
   t.after(() => app.close());
   const pool = { query: async () => { assert.fail('Unauthenticated request queried the database'); } } as unknown as pg.Pool;
-  await registerClientProjectRoutes(app, pool, { get: async () => null } as unknown as Redis, storage);
+  await registerClientSearchRoutes(app, pool, { get: async () => null } as unknown as Redis, storage);
   assert.equal((await app.inject({ url: '/me/searches' })).statusCode, 401);
 });
 
