@@ -3,7 +3,7 @@ import type pg from 'pg';
 import type { Config } from '../../config.js';
 import { fetchExternalUserDetail, loginExternal, type ExternalUserDetail } from '../../infra/external-auth.js';
 import { createSession, encryptJwt } from '../../infra/session.js';
-import { linkVisitorToUser } from '../selection-analytics/service.js';
+import { linkVisitorToUser } from '../selection-analytics/recording.js';
 import { jwtExpiresAt, toCurrentUser } from './service.js';
 
 interface LocalIdRow {

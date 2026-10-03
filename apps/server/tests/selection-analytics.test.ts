@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { emptyRequirement } from '../src/modules/selection/domain.js';
-import { extractDemandTerms } from '../src/modules/selection-analytics/service.js';
+import { extractDemandTerms } from '../src/modules/selection-analytics/recording.js';
 
 test('demand terms combine explicit keywords and Chinese or latin input terms without duplicates', () => {
   const requirement = { ...emptyRequirement(), keywords: ['储藏间', 'storage'] };

@@ -6,7 +6,7 @@ import { clientUserId } from '../../authentication.js';
 import { getProject,listProjects,type ProjectRecord,type ProjectQuery } from '../../../modules/projects/repository.js';
 import { projectParams,queryProperties } from '../../../modules/projects/schema.js';
 import { bindProjectArtworks, type BindArtworkInput } from '../../../modules/projects/artwork-delivery.js';
-import { listUserSearches } from '../../../modules/selection-analytics/service.js';
+import { listUserSearches } from '../../../modules/selection-analytics/queries.js';
 import { listSearchJobs } from '../../../modules/generation/search-jobs.js';
 
 type SearchSnapshotItem = {
