@@ -158,7 +158,7 @@ async function save(purpose: AiPurpose) {
 </script>
 
 <template>
-  <div class="grid gap-4 xl:grid-cols-3">
+  <div class="grid gap-4">
     <Card
       v-for="assignment in assignments"
       :key="assignment.purpose"
@@ -206,7 +206,7 @@ async function save(purpose: AiPurpose) {
             (value) =>
               (item.unitCredits = typeof value === 'number' ? value : null)
           "
-          class="w-28 shrink-0"
+          class="w-44 shrink-0"
           :min="1"
           :max="100000"
           :precision="0"
