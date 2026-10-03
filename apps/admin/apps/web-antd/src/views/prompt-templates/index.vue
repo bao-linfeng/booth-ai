@@ -5,7 +5,7 @@ import { onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Alert, Button, message, Tag, Tooltip } from 'ant-design-vue';
+import { Button, message, Tag, Tooltip } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { updatePromptTemplateApi } from '#/api/core/prompt-templates';
@@ -89,13 +89,6 @@ async function handleToggle(row: PromptTemplate) {
 </script>
 <template>
   <Page auto-content-height>
-    <Alert
-      class="mb-3"
-      type="info"
-      show-icon
-      message="三类业务独立配置；没有启用模板时自动使用服务端内置默认。"
-      description="图片业务匹配顺序：行业 + 风格 → 行业 → 风格 → 通用。新建模板默认停用；更新启用模板只影响新请求，已受理任务保留原提示词。"
-    />
     <Grid>
       <template #toolbar-actions>
         <Button type="primary" @click="handleCreate">新建模板</Button>

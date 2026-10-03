@@ -10,6 +10,8 @@ import {
   Layers3,
   Download,
   Loader2,
+  Eye,
+  X,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -68,7 +70,26 @@ const downloadingArchive = ref<SchemeAssetType | null>(null);
 const downloadBusy = computed(() => !!downloadingAsset.value || !!downloadingArchive.value);
 const previewAsset = ref<{ assetId: string; url: string; mimeType: string } | null>(null);
 const previewLoading = ref<string | null>(null);
+const assetUrlMap = ref<Map<string, string>>(new Map());
 let resourceRequest = 0;
+
+async function fetchAssetUrls(type: SchemeAssetType, items: SchemeDeliverable[]) {
+  if (!item.value?.code || preview.value) return;
+  const code = item.value.code;
+  
+  await Promise.all(items.filter(i => i.mimeType.startsWith('image/')).map(async (asset) => {
+    try {
+      const link = await getSchemeDownload(code, type, asset.assetId, true);
+      if (resourceItems.value.some(i => i.assetId === asset.assetId)) {
+        const newMap = new Map(assetUrlMap.value);
+        newMap.set(asset.assetId, link.downloadUrl);
+        assetUrlMap.value = newMap;
+      }
+    } catch {
+      // ignore
+    }
+  }));
+}
 
 async function toggleResource(type: SchemeAssetType) {
   if (activeResource.value === type) {
@@ -81,6 +102,7 @@ async function toggleResource(type: SchemeAssetType) {
   resourceItems.value = [];
   resourceRevision.value = '';
   downloadError.value = '';
+  assetUrlMap.value = new Map();
   await fetchResource(type);
 }
 
@@ -95,6 +117,7 @@ async function fetchResource(type: SchemeAssetType) {
     if (request === resourceRequest && activeResource.value === type && item.value?.code === code) {
       resourceItems.value = result.items;
       resourceRevision.value = result.revision;
+      fetchAssetUrls(type, result.items);
     }
   } catch {
     if (request === resourceRequest && activeResource.value === type) resourceError.value = '资料加载失败，请重试';
@@ -133,6 +156,7 @@ async function downloadAllResources(type: SchemeAssetType) {
       previewAsset.value = null;
       resourceItems.value = [];
       resourceRevision.value = '';
+      assetUrlMap.value = new Map();
       downloadError.value = '资料已更新，请确认刷新后的列表，再重新下载。';
       await fetchResource(type);
     } else if (response?.status === 413) {
@@ -145,6 +169,7 @@ async function downloadAllResources(type: SchemeAssetType) {
       previewAsset.value = null;
       resourceItems.value = [];
       resourceRevision.value = '';
+      assetUrlMap.value = new Map();
       downloadError.value = '方案或配套资料暂不可用，请刷新页面后重试。';
     } else {
       downloadError.value = '打包下载失败，可能有原件缺失或读取异常，请重试；持续失败请联系工作人员。';
@@ -590,20 +615,49 @@ onMounted(async () => {
                           </Button>
                           <p class="w-full text-xs text-muted-foreground">ZIP 打包下载，保留原文件名</p>
                         </div>
-                        <div v-for="asset in resourceItems" :key="asset.assetId" class="space-y-2 border-b py-2 last:border-0">
-                          <div class="flex items-center justify-between gap-2">
-                            <div class="min-w-0"><p class="truncate font-medium" :title="asset.name">{{ asset.name }}</p>
-                              <p class="truncate text-xs text-muted-foreground" :title="asset.originalFilename">{{ asset.originalFilename }}</p></div>
-                            <div class="flex shrink-0 gap-1">
-                              <Button v-if="asset.mimeType.startsWith('image/') || asset.mimeType === 'application/pdf'" size="sm" variant="outline" :disabled="!!previewLoading" @click="showResourcePreview(resource.type, asset)">{{ previewAsset?.assetId === asset.assetId ? '收起' : '预览' }}</Button>
-                              <Button size="sm" variant="outline" :disabled="downloadBusy" @click="downloadResource(resource.type, asset.assetId)">下载</Button>
+                        <div class="grid grid-cols-2 gap-4 pt-2 md:grid-cols-3">
+                          <div v-for="asset in resourceItems" :key="asset.assetId" class="group relative aspect-square overflow-hidden rounded-md border bg-muted/30">
+                            <div v-if="asset.mimeType.startsWith('image/')" class="absolute inset-0">
+                              <img v-if="assetUrlMap.has(asset.assetId)" :src="assetUrlMap.get(asset.assetId)" :alt="asset.name" class="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                              <div v-else class="flex h-full w-full items-center justify-center">
+                                <Loader2 class="size-6 animate-spin text-muted-foreground" />
+                              </div>
+                            </div>
+                            <div v-else class="absolute inset-0 flex h-full w-full items-center justify-center bg-muted/50">
+                              <FileText class="size-10 text-muted-foreground" />
+                            </div>
+                            
+                            <div class="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 backdrop-blur-[2px] transition-all group-hover:opacity-100">
+                              <Button v-if="asset.mimeType.startsWith('image/') || asset.mimeType === 'application/pdf'" 
+                                variant="ghost"
+                                size="icon"
+                                class="h-8 w-8 rounded-full text-white hover:bg-white/20 hover:text-white disabled:opacity-50"
+                                :disabled="!!previewLoading" 
+                                @click="showResourcePreview(resource.type, asset)" 
+                                title="预览">
+                                <Eye class="size-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost"
+                                size="icon"
+                                class="h-8 w-8 rounded-full text-white hover:bg-white/20 hover:text-white disabled:opacity-50"
+                                :disabled="downloadBusy" 
+                                @click="downloadResource(resource.type, asset.assetId)"
+                                title="下载">
+                                <Download class="size-4" />
+                              </Button>
                             </div>
                           </div>
-                          <template v-if="previewAsset?.assetId === asset.assetId">
-                            <img v-if="previewAsset.mimeType.startsWith('image/')" :src="previewAsset.url" :alt="asset.name" class="w-full rounded-md border object-contain" />
-                            <iframe v-else-if="previewAsset.mimeType === 'application/pdf'" :src="previewAsset.url" :title="asset.name" class="h-96 w-full rounded-md border" />
-                          </template>
                         </div>
+                        <Teleport to="body">
+                          <div v-if="previewAsset" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" @click.self="previewAsset = null">
+                            <button class="absolute right-4 top-4 text-white hover:text-white/80" @click="previewAsset = null">
+                              <X class="size-8" />
+                            </button>
+                            <img v-if="previewAsset.mimeType.startsWith('image/')" :src="previewAsset.url" class="max-h-[90vh] max-w-[90vw] object-contain" />
+                            <iframe v-else-if="previewAsset.mimeType === 'application/pdf'" :src="previewAsset.url" class="h-[90vh] w-[90vw] rounded-md bg-white shadow-2xl" />
+                          </div>
+                        </Teleport>
                       </template>
                     </template>
                   </div>
