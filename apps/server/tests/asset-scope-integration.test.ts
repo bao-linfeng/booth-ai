@@ -6,7 +6,8 @@ import pg from 'pg';
 import { getSchemeReadiness, publishScheme } from '../src/modules/schemes/reviews.js';
 import { loadCandidatePool, loadCatalog } from '../src/modules/selection/repository.js';
 import { deliverableAvailability, listDeliverables, signDeliverable } from '../src/modules/assets/deliverables.js';
-import { addAssetVersion, createAssetWithVersion, deleteAsset, getAsset, listAssets, listSchemeAssets, updateAsset } from '../src/modules/assets/service.js';
+import { addAssetVersion, createAssetWithVersion, deleteAsset, updateAsset } from '../src/modules/assets/service.js';
+import { getAsset, listAssets, listSchemeAssets } from '../src/modules/assets/queries.js';
 import { createQuoteRequest } from '../src/modules/projects/service.js';
 import type { QuoteInput } from '../src/modules/projects/domain.js';
 import { findCachedThemeJob, loadGenerationSnapshot } from '../src/modules/generation/theme/service.js';
@@ -147,11 +148,71 @@ test('asset scope migration and all baseline consumers isolate generated assets 
     await assert.rejects(addAssetVersion(pool, admin, code, artwork.id, version, 1), { statusCode: 404 });
     await assert.rejects(updateAsset(pool, admin, code, baseline.get('artwork')!.id, { relatedAssetId: theme.id }, 1), { statusCode: 400 });
     assert.equal((await pool.query('SELECT publish_status FROM schemes WHERE id=$1', [scheme])).rows[0]!.publish_status, 'published');
-    const created = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'artwork', name: 'public', metadata: { themeJobId: 'descriptive-only' } }, version);
+    const created = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'artwork', name: 'public', metadata: { artworkKey: 'public', themeJobId: 'descriptive-only' } }, version);
     assert.equal(created.sortOrder, 1);
     assert.deepEqual((await pool.query('SELECT source,owner_user_id,visibility FROM scheme_assets WHERE id=$1', [created.id])).rows[0],
       { source: 'scheme', owner_user_id: null, visibility: 'public' });
     assert.equal((await pool.query('SELECT publish_status FROM schemes WHERE id=$1', [scheme])).rows[0]!.publish_status, 'draft');
     assert.equal((await listSchemeAssets(pool, code)).length, 11);
+  });
+
+  await t.test('pair ordering, optimistic conflicts and publication invalidation share a transaction', async () => {
+    const renderingA = images[0]!.id;
+    const renderingB = images[1]!.id;
+    const maskA = (await pool.query<{ id: string }>("SELECT id FROM scheme_baseline_assets WHERE type='mask' AND related_asset_id=$1", [renderingA])).rows[0]!.id;
+    const maskB = (await pool.query<{ id: string }>("SELECT id FROM scheme_baseline_assets WHERE type='mask' AND related_asset_id=$1", [renderingB])).rows[0]!.id;
+    const ids = [renderingA, maskA, renderingB, maskB];
+    async function state() {
+      return (await pool.query('SELECT id,sort_order,revision,related_asset_id FROM scheme_baseline_assets WHERE id=ANY($1::uuid[]) ORDER BY id', [ids])).rows;
+    }
+    async function published() {
+      await pool.query("UPDATE schemes SET publish_status='published',verification_status='verified' WHERE id=$1", [scheme]);
+    }
+    async function publication() {
+      return (await pool.query('SELECT publish_status,verification_status,revision FROM schemes WHERE id=$1', [scheme])).rows[0]!;
+    }
+
+    await published();
+    const beforePublication = await publication();
+    await updateAsset(pool, admin, code, renderingA, { sortOrder: 1 }, 1);
+    for (const [id, order] of [[renderingA, 1], [maskA, 1], [renderingB, 0], [maskB, 0]] as const) {
+      const current = await getAsset(pool, code, id);
+      assert.equal(current.sortOrder, order);
+      assert.equal(current.revision, 2);
+    }
+    assert.deepEqual(await publication(), { publish_status: 'draft', verification_status: 'unverified', revision: beforePublication.revision + 1 });
+
+    await published();
+    const beforeConflict = await state();
+    const publishedState = await publication();
+    await assert.rejects(updateAsset(pool, admin, code, renderingA, { sortOrder: 0 }, 1), { statusCode: 409 });
+    assert.deepEqual(await state(), beforeConflict);
+    assert.deepEqual(await publication(), publishedState);
+    await assert.rejects(updateAsset(pool, admin, code, maskA, { relatedAssetId: renderingB }, 2), { statusCode: 409 });
+    assert.deepEqual(await state(), beforeConflict);
+    assert.deepEqual(await publication(), publishedState);
+
+    await updateAsset(pool, admin, code, maskA, { sortOrder: 0 }, 2);
+    for (const [id, order, revision] of [[renderingA, 0, 4], [maskA, 0, 3], [renderingB, 1, 3], [maskB, 1, 3]] as const) {
+      const current = await getAsset(pool, code, id);
+      assert.equal(current.sortOrder, order);
+      assert.equal(current.revision, revision);
+    }
+
+    const replacement = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'rendering', name: '新效果图', sortOrder: 7 },
+      { objectKey: 'replacement', originalFilename: 'replacement.png', mimeType: 'image/png', byteSize: 10, checksum: 'c'.repeat(64) });
+    await updateAsset(pool, admin, code, maskA, { relatedAssetId: replacement.id }, 3);
+    assert.equal((await getAsset(pool, code, maskA)).sortOrder, 0);
+    assert.equal((await getAsset(pool, code, replacement.id)).sortOrder, 7);
+    const pairedMask = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'mask', name: '新蒙版', relatedAssetId: renderingA },
+      { objectKey: 'mask', originalFilename: 'mask.png', mimeType: 'image/png', byteSize: 10, checksum: 'd'.repeat(64) });
+    assert.equal(pairedMask.sortOrder, 0);
+  });
+
+  await t.test('asset mutation services enforce metadata rules without changing rows on failure', async () => {
+    const artworkId = baseline.get('artwork')!.id;
+    const before = await getAsset(pool, code, artworkId);
+    await assert.rejects(updateAsset(pool, admin, code, artworkId, { metadata: { physicalWidth: 0 } }, before.revision), { statusCode: 400 });
+    assert.deepEqual(await getAsset(pool, code, artworkId), before);
   });
 });

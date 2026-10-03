@@ -44,6 +44,14 @@
 `submission.ts` 接收普通业务输入，先处理请求重放，再加载 offer 并调用事务服务校验和创建任务；已受理请求可在 offer 过期后重放。
 `service.ts` 保持 offer 归属/参数/快照校验及任务、Outbox、积分预占的事务边界，业务模块不依赖 HTTP 请求对象。
 
+## 资产管理入口
+
+`http/admin/assets` 保留路由 schema、multipart 读取与字段解析、身份提取和响应映射。
+`modules/assets/queries.ts` 负责公共基线资产及版本查询、SQL 列定义和结果映射；`types.ts` 定义资产输入与结果类型。
+`service.ts` 负责资产变更事务，`metadata.ts` 校验业务元数据，`pairing.ts` 负责效果图/蒙版配对及排序联动。
+`upload.ts` 负责文件检查、图片信息读取、摘要计算、存储写入、调用变更用例和落库失败后的存储补偿。
+资产变更持有方案行锁，并在同一事务客户端上调用方案模块的 `invalidatePublication()`，使发布失效与资产变更原子提交或回滚。
+
 ## 认证入口
 
 `http/authentication.ts` 统一建立请求级 principal，业务路由只提取身份；`modules/identity/principal.ts` 校验账户和 Session 版本，领域服务保留对象归属校验。认证、禁用、会话撤销和限流策略见 [server-authentication.md](./server-authentication.md)。

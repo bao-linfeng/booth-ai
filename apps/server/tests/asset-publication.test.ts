@@ -17,6 +17,7 @@ test('new assets without an explicit sort order follow existing assets', async (
       insertedValues = params;
       return { rows: [] };
     }
+    if (sql.includes('INSERT INTO asset_versions')) return { rows: [{ id: 'version-id', assetId: 'asset-id', objectKey: 'object', originalFilename: 'image.png', mimeType: 'image/png', byteSize: 1, checksum: 'hash', widthPx: 1600, heightPx: 900, pageCount: null, createdAt: new Date() }] };
     if (sql.includes('FROM scheme_baseline_assets sa')) return { rows: [asset] };
     return { rows: [], rowCount: 1 };
   };
