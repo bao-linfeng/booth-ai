@@ -3,7 +3,8 @@ import { apiFetch } from '@/lib/api-client';
 export interface ThemeModel {
   /** Admin-managed model id; listed in fallback order, the first one prices the offer. */
   id: string;
-  name: string;
+  /** Provider-side model id, shown as the model label. */
+  model: string;
   unitCredits: number;
   revision: number;
 }

@@ -21,14 +21,14 @@ export function decryptCredential(value: Buffer, scope: string, encryptionKey: s
 }
 
 interface AssignedRow {
-  id: string; name: string; kind: ModelKind; model: string; params: ModelParams; revision: number;
+  id: string; kind: ModelKind; model: string; params: ModelParams; revision: number;
   purpose: AiPurpose; position: number; unitCredits: number | null;
   protocol: ProviderProtocol; providerName: string; baseUrl: string;
   credentialCiphertext: Buffer; credentialScope: string;
 }
 
 // Usable = assigned, model and provider enabled, provider holds a key, and the protocol supports the purpose.
-const assignedQuery = `SELECT m.id, m.name, m.kind, m.model, m.params, m.revision, a.purpose, a.position, a.unit_credits AS "unitCredits",
+const assignedQuery = `SELECT m.id, m.kind, m.model, m.params, m.revision, a.purpose, a.position, a.unit_credits AS "unitCredits",
     p.protocol, p.name AS "providerName", p.base_url AS "baseUrl", p.credential_ciphertext AS "credentialCiphertext",
     p.credential_scope AS "credentialScope"
   FROM ai_model_assignments a

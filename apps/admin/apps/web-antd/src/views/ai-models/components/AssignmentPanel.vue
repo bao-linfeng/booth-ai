@@ -189,7 +189,7 @@ async function save(purpose: AiPurpose) {
           class="min-w-0 flex-1"
           :options="
             candidates(assignment.purpose).map((model) => ({
-              label: `${model.name} · ${model.provider.name}`,
+              label: `${model.model} · ${model.provider.name}`,
               value: model.id,
               disabled:
                 model.id !== item.modelId &&

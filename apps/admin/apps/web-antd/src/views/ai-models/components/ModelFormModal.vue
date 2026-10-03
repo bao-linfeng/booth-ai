@@ -13,15 +13,16 @@ import type {
 import { computed, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
+import { formatDateTime } from '@vben/utils';
 
 import { Alert, Button, Checkbox, message, Tag } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import {
   createAiModelApi,
-  discoverAiProviderModelsApi,
   KIND_LABELS,
   PURPOSE_LABELS,
+  refreshAiProviderCatalogApi,
   updateAiModelApi,
 } from '#/api/core/ai-models';
 
@@ -31,7 +32,6 @@ type FormValues = Record<string, unknown> & {
   enabled: boolean;
   kind: ModelKind;
   model: string;
-  name: string;
 };
 
 const props = defineProps<{ protocols: AiProtocol[] }>();
@@ -41,8 +41,9 @@ const PARAM_PREFIX = 'param__';
 const provider = ref<AiProviderRecord | null>(null);
 const editing = ref<AiModelRecord | null>(null);
 const kind = ref<ModelKind>('image');
-const discovered = ref<DiscoveredModel[]>([]);
-const discovering = ref(false);
+const catalog = ref<DiscoveredModel[]>([]);
+const catalogRefreshedAt = ref<null | string>(null);
+const refreshing = ref(false);
 const discoveryError = ref<null | string>(null);
 const showAllKinds = ref(false);
 
@@ -52,10 +53,21 @@ const protocol = computed(() =>
 const capability = computed(() =>
   protocol.value?.kinds.find((item) => item.kind === kind.value),
 );
+// Models already added under this provider are hidden; each provider holds a model id once.
+const addedModels = computed(
+  () =>
+    new Set(
+      (provider.value?.models ?? [])
+        .filter((item) => item.id !== editing.value?.id)
+        .map((item) => item.model),
+    ),
+);
 const modelOptions = computed(() =>
-  discovered.value
+  catalog.value
     .filter(
-      (item) => showAllKinds.value || !item.kind || item.kind === kind.value,
+      (item) =>
+        !addedModels.value.has(item.id) &&
+        (showAllKinds.value || !item.kind || item.kind === kind.value),
     )
     .map((item) => ({
       value: item.id,
@@ -112,17 +124,10 @@ function buildSchema(): VbenFormSchema<FormValues>[] {
       rules: 'required',
       componentProps: {
         options: modelOptions.value,
-        placeholder: '从拉取的列表中选择，或直接输入',
+        placeholder: '从模型目录中选择，或直接输入',
         filterOption: (input: string, option: { value: string }) =>
           option.value.toLowerCase().includes(input.toLowerCase()),
       },
-    },
-    {
-      component: 'Input',
-      fieldName: 'name',
-      label: '显示名称',
-      rules: 'required',
-      componentProps: { maxlength: 60, placeholder: '后台与客户端展示的名称' },
     },
     {
       component: 'Switch',
@@ -143,10 +148,6 @@ const [Form, formApi] = useVbenForm<FormValues>({
       kind.value = values.kind as ModelKind;
       refreshSchema();
     }
-    if (fieldsChanged.includes('model') && !values.name) {
-      const match = discovered.value.find((item) => item.id === values.model);
-      if (match) formApi.setFieldValue('name', match.name ?? match.id);
-    }
   },
   handleSubmit: async (values) => {
     modalApi.setState({ confirmLoading: true });
@@ -158,7 +159,6 @@ const [Form, formApi] = useVbenForm<FormValues>({
         ]),
       );
       const input = {
-        name: values.name.trim(),
         model: values.model.trim(),
         params,
         enabled: values.enabled,
@@ -207,18 +207,21 @@ function refreshModelOptions() {
   ]);
 }
 
-async function discover() {
+async function refreshCatalog() {
   if (!provider.value) return;
-  discovering.value = true;
+  refreshing.value = true;
   discoveryError.value = null;
   try {
-    discovered.value = await discoverAiProviderModelsApi(provider.value.id);
+    const result = await refreshAiProviderCatalogApi(provider.value.id);
+    catalog.value = result.models;
+    catalogRefreshedAt.value = result.refreshedAt;
     refreshModelOptions();
-    message.success(`获取到 ${discovered.value.length} 个模型`);
+    message.success(`模型目录已更新，共 ${result.models.length} 个`);
+    emit('reload');
   } catch (error) {
     discoveryError.value = discoveryErrorMessage(error);
   } finally {
-    discovering.value = false;
+    refreshing.value = false;
   }
 }
 
@@ -232,11 +235,14 @@ async function open(target: AiProviderRecord, model?: AiModelRecord) {
   editing.value = model ?? null;
   showAllKinds.value = false;
   discoveryError.value = null;
-  discovered.value = protocolOf(target.protocol)?.suggestedModels ?? [];
+  catalog.value = target.catalogRefreshedAt
+    ? target.modelCatalog
+    : (protocolOf(target.protocol)?.suggestedModels ?? []);
+  catalogRefreshedAt.value = target.catalogRefreshedAt;
   kind.value =
     model?.kind ?? protocolOf(target.protocol)?.kinds[0]?.kind ?? 'image';
   modalApi.setState({
-    title: model ? `编辑模型 · ${model.name}` : `为「${target.name}」添加模型`,
+    title: model ? `编辑模型 · ${model.model}` : `为「${target.name}」添加模型`,
   });
   modalApi.open();
   await formApi.resetForm();
@@ -244,7 +250,6 @@ async function open(target: AiProviderRecord, model?: AiModelRecord) {
   await formApi.setValues({
     kind: kind.value,
     model: model?.model ?? '',
-    name: model?.name ?? '',
     enabled: model?.enabled ?? true,
     ...Object.fromEntries(
       Object.entries(model?.params ?? {}).map(([key, value]) => [
@@ -269,11 +274,11 @@ defineExpose({ open });
     >
       <Button
         size="small"
-        :loading="discovering"
+        :loading="refreshing"
         :disabled="!provider?.credentialConfigured"
-        @click="discover"
+        @click="refreshCatalog"
       >
-        {{ protocol?.discoverable ? '从供应商拉取模型列表' : '载入推荐模型' }}
+        {{ protocol?.discoverable ? '刷新模型目录' : '载入推荐模型' }}
       </Button>
       <Checkbox :checked="showAllKinds" @change="toggleAllKinds">
         显示其他类型
@@ -285,8 +290,11 @@ defineExpose({ open });
         供应商未配置 API Key，无法拉取
       </span>
       <span v-else class="text-xs text-muted-foreground">
-        已载入 {{ discovered.length }} 个，按类型筛选后可选
-        {{ modelOptions.length }} 个
+        <template v-if="catalogRefreshedAt">
+          目录 {{ catalog.length }} 个（{{ formatDateTime(catalogRefreshedAt) }}
+          刷新），筛选后可选 {{ modelOptions.length }} 个
+        </template>
+        <template v-else>尚未刷新模型目录，可直接输入模型 ID</template>
       </span>
     </div>
     <Alert

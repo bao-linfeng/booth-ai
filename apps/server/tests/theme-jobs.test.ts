@@ -266,7 +266,7 @@ test('cached job detail returns not_charged and fresh signed URLs', async t => {
 
 test('cache fingerprint normalizes input and isolates all generation dependencies', () => {
   const snapshot: GenerationSnapshot = { source: { assetId: 'source', versionId: 'v1', objectKey: 'source.png', checksum: 'hash' }, mask: null,
-    template: null, models: [{ id: 'model', name: 'Image', model: 'image-model', revision: 1, position: 1, unitCredits: 10 }], prompt: 'prompt', pipelineRevision: 1 };
+    template: null, models: [{ id: 'model', model: 'image-model', revision: 1, position: 1, unitCredits: 10 }], prompt: 'prompt', pipelineRevision: 1 };
   const input: ThemeParameters = { ...parameters, input: { ...parameters.input, brandColors: ['#aabbcc', '#AABBCC'], brandKeywords: ' brand ' } };
   const key = themeCacheKey(userId, input, snapshot);
   assert.equal(key, themeCacheKey(userId, { ...input, input: { ...input.input, brandColors: ['#AABBCC'], brandKeywords: 'brand' } }, snapshot));

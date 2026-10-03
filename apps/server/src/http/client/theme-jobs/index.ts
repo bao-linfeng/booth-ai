@@ -46,7 +46,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
 
   app.get('/theme-models', { schema: { tags: ['AI 换主题'], summary: '可选择的图像模型及每张图积分' } }, async () => {
     const models = await assignedAiModels(pool, 'theme');
-    return { code: 0, data: models.map(({ id, name, unitCredits, revision }) => ({ id, name, unitCredits, revision })) };
+    return { code: 0, data: models.map(({ id, model, unitCredits, revision }) => ({ id, model, unitCredits, revision })) };
   });
 
   app.post<{

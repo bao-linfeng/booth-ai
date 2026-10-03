@@ -28,11 +28,10 @@ const [Grid, gridApi] = useVbenVxeGrid<AiModelRecord>({
     proxyConfig: { enabled: false },
     toolbarConfig: { enabled: false },
     rowConfig: { keyField: 'id' },
-    emptyText: '暂无模型，点击「添加模型」从供应商拉取',
+    emptyText: '暂无模型，点击「添加模型」从模型目录中选择',
     columns: [
-      { field: 'name', title: '显示名称', minWidth: 140 },
+      { field: 'model', title: '模型 ID', minWidth: 200 },
       { field: 'kind', title: '类型', width: 70, slots: { default: 'kind' } },
-      { field: 'model', title: '模型 ID', minWidth: 180 },
       {
         field: 'params',
         title: '参数',

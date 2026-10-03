@@ -10,8 +10,8 @@ import { Alert, Button, message } from 'ant-design-vue';
 import { useVbenForm } from '#/adapter/form';
 import {
   createAiProviderApi,
-  discoverAiProviderModelsApi,
   probeAiProviderApi,
+  refreshAiProviderCatalogApi,
   updateAiProviderApi,
 } from '#/api/core/ai-models';
 
@@ -107,13 +107,28 @@ const [Form, formApi] = useVbenForm<FormValues>({
         ...(values.apiKey?.trim() ? { apiKey: values.apiKey.trim() } : {}),
       };
       const target = editing.value;
-      await (target
-        ? updateAiProviderApi(target.id, {
-            ...input,
-            expectedRevision: target.revision,
-          })
-        : createAiProviderApi({ ...input, protocol: values.protocol }));
+      let id: string;
+      if (target) {
+        await updateAiProviderApi(target.id, {
+          ...input,
+          expectedRevision: target.revision,
+        });
+        id = target.id;
+      } else {
+        ({ id } = await createAiProviderApi({
+          ...input,
+          protocol: values.protocol,
+        }));
+      }
       message.success('供应商已保存');
+      // 新供应商、换了密钥或地址时目录需要重新拉取（改地址时服务端已清空旧目录）
+      const endpointChanged =
+        !target ||
+        Boolean(input.apiKey) ||
+        normalizedBaseUrl(values) !== target.baseUrl;
+      if (endpointChanged && (input.apiKey || target?.credentialConfigured)) {
+        await fillCatalog(id);
+      }
       emit('reload');
       modalApi.close();
     } finally {
@@ -127,6 +142,18 @@ const [Modal, modalApi] = useVbenModal({
     await formApi.validateAndSubmitForm();
   },
 });
+
+/** A new provider gets its first catalog right away; failures leave it for「刷新模型」. */
+async function fillCatalog(id: string) {
+  try {
+    const { models } = await refreshAiProviderCatalogApi(id);
+    message.success(`已保存 ${models.length} 个模型到模型目录`);
+  } catch (error) {
+    message.warning(
+      `模型目录未能获取：${discoveryErrorMessage(error)}，可稍后点击「刷新模型」重试`,
+    );
+  }
+}
 
 async function testConnection() {
   const values = await formApi.getValues();
@@ -150,14 +177,15 @@ async function testConnection() {
       editing.value &&
       normalizedBaseUrl(values) === editing.value.baseUrl
     ) {
-      // 未填新密钥且地址未改时用已保存的配置测试；已保存的密钥不会被发往表单中的新地址
-      models = await discoverAiProviderModelsApi(editing.value.id);
+      // 未填新密钥且地址未改时用已保存的配置测试，并顺带更新模型目录；已保存的密钥不会被发往表单中的新地址
+      models = (await refreshAiProviderCatalogApi(editing.value.id)).models;
+      emit('reload');
     } else {
       message.warning('修改了 Base URL，请同时填写 API Key 再测试');
       return;
     }
     testResult.value = protocolOf(values.protocol)?.discoverable
-      ? `连接成功，供应商返回 ${models.length} 个模型。保存供应商后，点击「添加模型 → 从供应商拉取模型列表」选择。`
+      ? `连接成功，供应商返回 ${models.length} 个模型。保存后存入模型目录，「添加模型」时从目录中选择。`
       : `该协议不提供模型列表，已载入 ${models.length} 个推荐型号，未验证远程连接或密钥。`;
   } catch (error) {
     testError.value = discoveryErrorMessage(error);

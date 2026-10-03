@@ -401,7 +401,7 @@ async function handleConfirm() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem v-for="m in themeModels" :key="m.id" :value="m.id">
-                      {{ m.name }} · {{ m.unitCredits }} 积分/张
+                      {{ m.model }} · {{ m.unitCredits }} 积分/张
                     </SelectItem>
                   </SelectContent>
                 </Select>

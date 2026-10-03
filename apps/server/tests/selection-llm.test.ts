@@ -13,7 +13,7 @@ const catalog: Catalog = {
   features: [], applicabilityQuestions: [],
 };
 const models: ActiveAiModel[] = ['qwen', 'deepseek'].map((name, index) =>
-  activeModel('openai', 'selection_parse', { name, model: name, position: index + 1, apiKey: 'test-key' }));
+  activeModel('openai', 'selection_parse', { model: name, position: index + 1, apiKey: 'test-key' }));
 
 const fullCatalog: Catalog = {
   ...catalog,
@@ -34,7 +34,7 @@ test('request sends the live sidebar dictionaries and structured extraction cont
   const signal = new AbortController().signal;
   t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit) => {
     const body = JSON.parse(String(init.body)) as {
-      messages: { role: string; content: string }[]; response_format: { type: string }; max_tokens: number;
+      messages: { role: string; content: string }[]; response_format: { type: string }; max_completion_tokens: number; max_tokens?: number;
     };
     assert.equal(init.signal, signal);
     assert.equal(body.response_format.type, 'json_object');
@@ -45,7 +45,8 @@ test('request sends the live sidebar dictionaries and structured extraction cont
     for (const group of ['boothSpaces', 'openingCounts', 'productSystems', 'styles', 'industries', 'budgetTiers', 'zones', 'features', 'applicabilityQuestions'] as const) {
       assert.deepEqual(input.dictionaries[group], fullCatalog[group]);
     }
-    assert.ok(body.max_tokens >= 2000);
+    assert.ok(body.max_completion_tokens >= 2000);
+    assert.equal(body.max_tokens, undefined);
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(raw) } }] }));
   });
   assert.deepEqual(await requestExtraction(models[0]!, '测试需求', fullCatalog, signal), raw);
@@ -203,8 +204,8 @@ test('conflicting scalar extraction and area do not silently override explicit d
 test('primary failure switches to backup and both failures degrade to rules', async () => {
   const calls: string[] = [];
   const result = await parseWithModels('简洁现代', emptyRequirement(), catalog, models, async model => {
-    calls.push(model.name);
-    if (model.name === 'qwen') throw new Error('timeout');
+    calls.push(model.model);
+    if (model.model === 'qwen') throw new Error('timeout');
     return { fields: { styleIds: { value: ['modern'], evidence: '简洁现代' } }, unhandledText: [] };
   });
   assert.deepEqual(calls, ['qwen', 'qwen', 'deepseek']);

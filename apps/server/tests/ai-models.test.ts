@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type pg from 'pg';
 import { activeAiModels, assignedAiModels, decryptCredential, encryptCredential } from '../src/infra/ai/config.js';
 import {
-  createProvider, discoverProviderModels, listAssignments, listProtocols, probeProviderModels, replaceAssignments, updateProvider,
+  createProvider, listAssignments, listProtocols, probeProviderModels, refreshProviderCatalog, replaceAssignments, updateProvider,
 } from '../src/modules/ai-models/service.js';
 import { assignedRow, testEncryptionKey as encryptionKey } from './ai-fixtures.js';
 
@@ -27,11 +27,11 @@ test('credentials are bound to their provider scope', () => {
 });
 
 test('only assignments whose protocol can serve the purpose are usable, and listings never carry secrets', async () => {
-  const rows = [assignedRow('openai', 'theme', { name: 'GPT' }), assignedRow('dashscope', 'artwork'),
+  const rows = [assignedRow('openai', 'theme', { model: 'gpt-image-test' }), assignedRow('dashscope', 'artwork'),
     assignedRow('gemini', 'theme', { unitCredits: null }), assignedRow('openai', 'selection_parse', { kind: 'image' })];
   const pool = { query: async () => ({ rows }) } as unknown as pg.Pool;
   const active = await activeAiModels(pool, 'theme', encryptionKey);
-  assert.deepEqual(active.map(model => model.name), ['GPT']);
+  assert.deepEqual(active.map(model => model.model), ['gpt-image-test']);
   assert.equal(active[0]?.apiKey, 'secret');
   const assigned = await assignedAiModels(pool, 'theme');
   assert.deepEqual(Object.keys(assigned[0]!).filter(key => /key|credential|baseUrl/i.test(key)), []);
@@ -131,14 +131,24 @@ test('model discovery lists provider models, classifies kinds and maps failures 
   assert.equal(requests[1]?.headers.get('x-goog-api-key'), providerKey);
   assert.deepEqual((await probeProviderModels({ protocol: 'dashscope', apiKey: providerKey })).map(model => model.id), ['wanx2.1-imageedit']);
   assert.equal(requests.length, 2, 'dashscope suggestions need no request');
-  const stored = { protocol: 'openai', baseUrl: 'https://relay.example.com/v1', ciphertext: encryptCredential(providerKey, 'p1', encryptionKey), scope: 'p1' };
-  const pool = { query: async () => ({ rows: [stored] }) } as unknown as pg.Pool;
+  const stored = { protocol: 'openai', baseUrl: 'https://relay.example.com/v1', ciphertext: encryptCredential(providerKey, 'p1', encryptionKey), scope: 'p1', revision: 2 };
+  const refreshedAt = new Date();
+  let saveMatches = true;
+  const { pool, queries } = recordingPool(sql => sql.startsWith('SELECT protocol') ? { rows: [stored] }
+    : sql.startsWith('UPDATE ai_providers') ? { rows: saveMatches ? [{ refreshedAt }] : [] } : { rows: [] });
   t.mock.method(dns.promises, 'lookup', async () => [{ address: '93.184.216.34', family: 4 }]);
-  await discoverProviderModels(pool, 'p1', encryptionKey);
+  const refreshed = await refreshProviderCatalog(pool, 'p1', 'admin', encryptionKey);
   assert.deepEqual([requests[2]?.url, requests[2]?.headers.get('authorization')], ['https://relay.example.com/v1/models', `Bearer ${providerKey}`]);
+  assert.equal(refreshed.refreshedAt, refreshedAt);
+  // The catalog is saved only if the provider still has the revision the listing was fetched with.
+  assert.deepEqual(queries.find(query => query.sql.startsWith('UPDATE ai_providers'))?.values, ['p1', 2, JSON.stringify(refreshed.models)]);
+  assert.ok(queries.some(query => query.sql.includes('admin_audit_logs')));
+  assert.equal(JSON.stringify(queries).includes(providerKey), false);
+  saveMatches = false;
+  await assert.rejects(refreshProviderCatalog(pool, 'p1', 'admin', encryptionKey), { statusCode: 409, reason: 'REVISION_CONFLICT' });
   t.mock.method(dns.promises, 'lookup', async () => [{ address: '10.0.0.8', family: 4 }]);
-  await assert.rejects(discoverProviderModels(pool, 'p1', encryptionKey), { reason: 'DISCOVERY_ENDPOINT_INVALID' });
-  assert.equal(requests.length, 3);
+  await assert.rejects(refreshProviderCatalog(pool, 'p1', 'admin', encryptionKey), { reason: 'DISCOVERY_ENDPOINT_INVALID' });
+  assert.equal(requests.length, 4);
   globalThis.fetch = async () => new Response('{"error":"bad key secret"}', { status: 401 });
   await assert.rejects(probeProviderModels({ protocol: 'openai', apiKey: providerKey }), (error: Error & { reason?: string }) =>
     error.reason === 'DISCOVERY_AUTH_FAILED' && !error.message.includes('secret'));

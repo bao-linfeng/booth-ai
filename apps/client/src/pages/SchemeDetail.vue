@@ -414,7 +414,7 @@ onMounted(async () => {
                      </SelectTrigger>
                      <SelectContent>
                        <SelectItem v-for="model in themeModels" :key="model.id" :value="model.id">
-                         {{ model.name }} · {{ model.unitCredits }} 积分/张
+                         {{ model.model }} · {{ model.unitCredits }} 积分/张
                        </SelectItem>
                      </SelectContent>
                    </Select>

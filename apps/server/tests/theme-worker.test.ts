@@ -23,7 +23,7 @@ async function fixture(count = 2, prompt?: string, protocol: ProviderProtocol = 
   const job = () => ({ requestedCount: count, sourceAssetId: randomUUID(), schemeCode: 'S-1',
     input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status,
     leaseToken, leaseUntil: null, snapshot: prompt === undefined ? null : { prompt, mask: null, source: { objectKey: 'pinned.png' },
-      models: [{ id: modelRow.id, name: modelRow.name, model: modelRow.model, revision: 1, position: 1, unitCredits: 3 }] } });
+      models: [{ id: modelRow.id, model: modelRow.model, revision: 1, position: 1, unitCredits: 3 }] } });
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
     if (sql.startsWith('UPDATE theme_jobs SET lease_token = $2')) {

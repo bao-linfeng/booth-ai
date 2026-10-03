@@ -6,7 +6,7 @@ import type { DiscoveredModel, ImageModelAdapter, ParamField, TextModelAdapter }
 // OpenAI and every service exposing the same REST surface (DeepSeek, DashScope compatible mode, relays).
 
 export const openAiChatParams: ParamField[] = [
-  { key: 'temperature', label: '温度', description: '0 表示输出最稳定', type: 'number', default: 0, min: 0, max: 2, step: 0.1 },
+  { key: 'temperature', label: '温度', description: '0 表示输出最稳定；GPT-5 及以上的推理模型只接受 1', type: 'number', default: 0, min: 0, max: 2, step: 0.1 },
   { key: 'jsonMode', label: 'JSON 模式', description: '供应商不支持 response_format 时关闭，仍会在提示词中要求 JSON', type: 'select', default: 'on',
     options: [{ label: '开启', value: 'on' }, { label: '关闭', value: 'off' }] },
 ];
@@ -17,7 +17,7 @@ export const openAiChat: TextModelAdapter = {
     const response = await fetch(`${model.baseUrl}/chat/completions`, {
       method: 'POST', signal, redirect: 'error',
       headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: model.model, temperature: Number(model.params.temperature ?? 0), max_tokens: maxTokens,
+      body: JSON.stringify({ model: model.model, temperature: Number(model.params.temperature ?? 0), max_completion_tokens: maxTokens,
         ...(json && model.params.jsonMode !== 'off' ? { response_format: { type: 'json_object' } } : {}), messages }),
     });
     if (!response.ok) throw new Error('Model unavailable');

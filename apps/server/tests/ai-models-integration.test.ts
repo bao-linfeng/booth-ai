@@ -49,16 +49,19 @@ test('AI model configuration: legacy migration, provider/model CRUD and purpose 
     await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,1,'test',ARRAY['ROLE_ADMIN'])", [admin]);
     const relay = await createProvider(pool, { name: 'Relay', protocol: 'openai', baseUrl: 'https://203.0.113.20/v1', apiKey: 'relay-key', enabled: true }, admin, encryptionKey);
     await assert.rejects(createProvider(pool, { name: 'relay ', protocol: 'openai', apiKey: 'k', enabled: true }, admin, encryptionKey), { statusCode: 409 });
-    const chat = await createModel(pool, { providerId: relay, name: 'Relay Chat', kind: 'text', model: 'gpt-test', params: { temperature: 0.2 }, enabled: true }, admin);
-    await assert.rejects(createModel(pool, { providerId: relay, name: 'Bad', kind: 'text', model: 'x', params: { temperature: 9 }, enabled: true }, admin),
+    const chat = await createModel(pool, { providerId: relay, kind: 'text', model: 'gpt-test', params: { temperature: 0.2 }, enabled: true }, admin);
+    await assert.rejects(createModel(pool, { providerId: relay, kind: 'text', model: 'x', params: { temperature: 9 }, enabled: true }, admin),
       { statusCode: 400, reason: 'PARAMS_INVALID' });
-    await assert.rejects(createModel(pool, { providerId: providers.find(p => p.protocol === 'gemini')!.id, name: 'Gemini Text', kind: 'text', model: 'g',
+    await assert.rejects(createModel(pool, { providerId: providers.find(p => p.protocol === 'gemini')!.id, kind: 'text', model: 'g',
       params: {}, enabled: true }, admin), { statusCode: 400, reason: 'KIND_UNSUPPORTED' });
     const parse = (await listAssignments(pool)).find(item => item.purpose === 'selection_parse')!;
     await replaceAssignments(pool, 'selection_parse', { expectedVersion: parse.version, items: [...parse.items, { modelId: chat, unitCredits: null }] }, admin);
     const parsers = await activeAiModels(pool, 'selection_parse', encryptionKey);
-    assert.deepEqual(parsers.map(model => [model.name, model.position, model.baseUrl, model.apiKey, model.params.temperature]),
-      [['DeepSeek V4 Flash', 1, 'https://api.deepseek.com', 'deepseek-key', 0], ['Relay Chat', 2, 'https://203.0.113.20/v1', 'relay-key', 0.2]]);
+    assert.deepEqual(parsers.map(model => [model.model, model.position, model.baseUrl, model.apiKey, model.params.temperature]),
+      [['deepseek-v4-flash', 1, 'https://api.deepseek.com', 'deepseek-key', 0], ['gpt-test', 2, 'https://203.0.113.20/v1', 'relay-key', 0.2]]);
+    // A provider holds each model id once; the same id may still exist under another provider.
+    await assert.rejects(createModel(pool, { providerId: relay, kind: 'text', model: 'gpt-test', params: {}, enabled: true }, admin),
+      { statusCode: 409, reason: 'MODEL_TAKEN' });
 
     // A single image model can serve theme and artwork at different prices.
     const gemini = providers.find(provider => provider.protocol === 'gemini')!.models[0]!;
@@ -68,14 +71,17 @@ test('AI model configuration: legacy migration, provider/model CRUD and purpose 
       [['gemini-3.1-flash-image', 12], ['gpt-image-1.5', 5]]);
     assert.deepEqual((await listProviders(pool)).flatMap(provider => provider.models).find(model => model.id === gemini.id)?.purposes, ['artwork', 'theme']);
 
-    await updateModel(pool, chat, { name: 'Relay Chat', model: 'gpt-test-2', params: {}, enabled: false, expectedRevision: 1 }, admin);
-    assert.deepEqual((await activeAiModels(pool, 'selection_parse', encryptionKey)).map(model => model.name), ['DeepSeek V4 Flash']);
-    await assert.rejects(updateModel(pool, chat, { name: 'Relay Chat', model: 'x', params: {}, enabled: true, expectedRevision: 1 }, admin), { statusCode: 409 });
+    await updateModel(pool, chat, { model: 'gpt-test-2', params: {}, enabled: false, expectedRevision: 1 }, admin);
+    assert.deepEqual((await activeAiModels(pool, 'selection_parse', encryptionKey)).map(model => model.model), ['deepseek-v4-flash']);
+    await assert.rejects(updateModel(pool, chat, { model: 'x', params: {}, enabled: true, expectedRevision: 1 }, admin), { statusCode: 409 });
     await assert.rejects(deleteModel(pool, chat, admin), { statusCode: 409, reason: 'MODEL_IN_USE' });
     await assert.rejects(deleteProvider(pool, relay, admin), { statusCode: 409, reason: 'PROVIDER_IN_USE' });
+    await pool.query(`UPDATE ai_providers SET model_catalog = '[{"id":"gpt-test"}]', catalog_refreshed_at = now() WHERE id = $1`, [relay]);
     await updateProvider(pool, relay, { name: 'Relay', baseUrl: 'https://203.0.113.20/v2', enabled: false, apiKey: null, expectedRevision: 1 }, admin, encryptionKey);
     const relayRow = (await listProviders(pool)).find(provider => provider.id === relay)!;
     assert.deepEqual([relayRow.baseUrl, relayRow.enabled, relayRow.credentialConfigured, relayRow.revision], ['https://203.0.113.20/v2', false, false, 2]);
+    // The saved catalog came from the old endpoint, so moving the provider clears it.
+    assert.deepEqual([relayRow.modelCatalog, relayRow.catalogRefreshedAt], [[], null]);
     const cleared = (await listAssignments(pool)).find(item => item.purpose === 'selection_parse')!;
     await replaceAssignments(pool, 'selection_parse', { expectedVersion: cleared.version, items: cleared.items.filter(item => item.modelId !== chat) }, admin);
     await deleteModel(pool, chat, admin);

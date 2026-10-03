@@ -7,7 +7,6 @@ export type ModelParams = Record<string, string | number>;
 /** A model assigned to a purpose, without secrets; safe for snapshots, offers and listings. */
 export interface AssignedAiModel {
   id: string;
-  name: string;
   kind: ModelKind;
   /** Model id sent to the provider. */
   model: string;

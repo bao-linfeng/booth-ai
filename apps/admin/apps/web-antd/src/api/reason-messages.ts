@@ -14,6 +14,7 @@ export const REASON_MESSAGES: Record<string, string> = {
     '拉取模型失败：API 服务器无法连接供应商，请检查 Base URL、服务器网络及代理配置',
   KIND_UNSUPPORTED: '该协议不支持此模型类型',
   MODEL_IN_USE: '模型仍被用途分配使用，请先在「用途分配」中移除',
+  MODEL_TAKEN: '该供应商下已添加过这个模型',
   NAME_TAKEN: '名称已存在',
   PARAMS_INVALID: '模型参数不合法',
   PROVIDER_IN_USE: '供应商下仍有模型，请先删除模型',

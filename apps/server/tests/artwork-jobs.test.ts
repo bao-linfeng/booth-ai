@@ -80,13 +80,13 @@ test('artwork snapshot freezes the first assigned model able to render artwork',
     if (sql.includes('FROM theme_jobs')) return { rows: [source] };
     // Rows come back in position order; a protocol that cannot render artwork is skipped even if assigned.
     if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('dashscope', 'artwork', { unitCredits: 1, revision: 9 }),
-      assignedRow('gemini', 'artwork', { id: 'gemini-model', name: 'Gemini Nano Banana', unitCredits: 6, revision: 3, position: 2 })] };
+      assignedRow('gemini', 'artwork', { id: 'gemini-model', unitCredits: 6, revision: 3, position: 2 })] };
     if (sql.includes('FROM dictionary_items')) return { rows: [] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
   } } as unknown as pg.Pool;
   const snapshot = await loadArtworkSnapshot(pool, 'user', { schemeCode: 'SCHEME', themeJobId: 'theme-job', resultId: 'theme-result', selectionRevision: 1 });
-  assert.deepEqual(snapshot.model, { id: 'gemini-model', name: 'Gemini Nano Banana', model: 'gemini-3.1-flash-image', revision: 3, unitCredits: 6 });
+  assert.deepEqual(snapshot.model, { id: 'gemini-model', model: 'gemini-3.1-flash-image', revision: 3, unitCredits: 6 });
 });
 
 test('artwork acceptance converts actual JPEG pixels to PNG and rejects low resolution, corrupt and oversized content', async () => {

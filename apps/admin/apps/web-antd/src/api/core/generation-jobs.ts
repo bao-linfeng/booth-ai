@@ -55,7 +55,7 @@ export interface GenerationJobDetail extends GenerationJob {
   directions?: { direction: string; status: string; reason: null | string }[];
   generationSnapshot?: {
     /** `id`/`name` are absent on jobs created before admin-managed models. */
-    model: { id?: string; model: string; name?: string; revision: number };
+    model: { id?: string; model: string; revision: number };
     prompt: string;
   };
   sourceAssetId: string;

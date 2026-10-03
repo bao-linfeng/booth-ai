@@ -43,8 +43,14 @@ export function createProviderGridOptions(
         slots: { default: 'modelCount' },
       },
       {
+        field: 'catalogRefreshedAt',
+        title: '模型目录',
+        width: 200,
+        slots: { default: 'catalog' },
+      },
+      {
         title: '操作',
-        width: 220,
+        width: 290,
         fixed: 'right',
         slots: { default: 'actions' },
       },

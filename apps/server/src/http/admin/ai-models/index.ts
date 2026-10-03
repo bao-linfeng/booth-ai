@@ -3,8 +3,8 @@ import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import { adminUserId } from '../../authentication.js';
 import {
-  AI_PURPOSES, createModel, createProvider, deleteModel, deleteProvider, discoverProviderModels, listAssignments, listProtocols,
-  listProviders, probeProviderModels, replaceAssignments, updateModel, updateProvider,
+  AI_PURPOSES, createModel, createProvider, deleteModel, deleteProvider, listAssignments, listProtocols,
+  listProviders, probeProviderModels, refreshProviderCatalog, replaceAssignments, updateModel, updateProvider,
   type AssignmentItem, type ModelInput, type ModelUpdate, type ProviderInput, type ProviderUpdate,
 } from '../../../modules/ai-models/service.js';
 import type { AiPurpose } from '../../../infra/ai/types.js';
@@ -40,8 +40,9 @@ export async function registerAdminAiModelRoutes(app: FastifyInstance, pool: pg.
     return { code: 0, data: null };
   });
 
-  app.get<{ Params: { id: string } }>('/ai-providers/:id/models', { schema: { tags, summary: '用已保存的地址和密钥实时拉取供应商模型列表', params: idParams } },
-    async request => ({ code: 0, data: await discoverProviderModels(pool, request.params.id, encryptionKey) }));
+  app.post<{ Params: { id: string } }>('/ai-providers/:id/catalog/refresh', { schema: { tags,
+    summary: '用已保存的地址和密钥实时拉取供应商模型列表，并保存为该供应商的模型目录', params: idParams } },
+  async request => ({ code: 0, data: await refreshProviderCatalog(pool, request.params.id, adminUserId(request), encryptionKey) }));
 
   app.post<{ Body: { protocol: string; baseUrl?: string | null; apiKey: string } }>('/ai-providers/probe', { schema: { tags,
     summary: '用未保存的表单值测试连接并拉取模型列表', body: { type: 'object', additionalProperties: false, required: ['protocol', 'apiKey'],
@@ -49,13 +50,13 @@ export async function registerAdminAiModelRoutes(app: FastifyInstance, pool: pg.
   async request => ({ code: 0, data: await probeProviderModels(request.body) }));
 
   app.post<{ Body: ModelInput }>('/ai-models', { schema: { tags, body: { type: 'object', additionalProperties: false,
-    required: ['providerId', 'name', 'kind', 'model', 'params', 'enabled'], properties: { providerId: { type: 'string', format: 'uuid' }, name,
+    required: ['providerId', 'kind', 'model', 'params', 'enabled'], properties: { providerId: { type: 'string', format: 'uuid' },
       kind: { type: 'string', enum: ['text', 'image'] }, model: modelId, params, enabled: { type: 'boolean' } } } } },
   async request => ({ code: 0, data: { id: await createModel(pool, request.body, adminUserId(request)) } }));
 
   app.put<{ Params: { id: string }; Body: ModelUpdate }>('/ai-models/:id', { schema: { tags, params: idParams, body: { type: 'object',
-    additionalProperties: false, required: ['name', 'model', 'params', 'enabled', 'expectedRevision'],
-    properties: { name, model: modelId, params, enabled: { type: 'boolean' }, expectedRevision: revision } } } },
+    additionalProperties: false, required: ['model', 'params', 'enabled', 'expectedRevision'],
+    properties: { model: modelId, params, enabled: { type: 'boolean' }, expectedRevision: revision } } } },
   async request => {
     await updateModel(pool, request.params.id, request.body, adminUserId(request));
     return { code: 0, data: null };

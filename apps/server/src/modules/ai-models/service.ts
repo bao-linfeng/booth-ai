@@ -35,8 +35,8 @@ function baseUrlFor(protocol: string, value: string | null | undefined) {
   }
 }
 
-function uniqueViolation(error: unknown, message: string): never {
-  if ((error as { code?: string }).code === '23505') throw requestError(message, 409, 'NAME_TAKEN');
+function uniqueViolation(error: unknown, message: string, reason = 'NAME_TAKEN'): never {
+  if ((error as { code?: string }).code === '23505') throw requestError(message, 409, reason);
   throw error;
 }
 
@@ -52,15 +52,17 @@ export function listProtocols() {
 }
 
 export async function listProviders(pool: Pick<pg.Pool, 'query'>) {
-  const providers = (await pool.query<{ id: string; name: string; protocol: string; baseUrl: string; credentialConfigured: boolean; enabled: boolean; revision: number }>(
-    `SELECT id, name, protocol, base_url AS "baseUrl", credential_ciphertext IS NOT NULL AS "credentialConfigured", enabled, revision
+  const providers = (await pool.query<{ id: string; name: string; protocol: string; baseUrl: string; credentialConfigured: boolean; enabled: boolean;
+    revision: number; modelCatalog: DiscoveredModel[]; catalogRefreshedAt: Date | null }>(
+    `SELECT id, name, protocol, base_url AS "baseUrl", credential_ciphertext IS NOT NULL AS "credentialConfigured", enabled, revision,
+       model_catalog AS "modelCatalog", catalog_refreshed_at AS "catalogRefreshedAt"
      FROM ai_providers ORDER BY created_at, id`)).rows;
-  const models = (await pool.query<{ id: string; providerId: string; name: string; kind: ModelKind; model: string; params: ModelParams;
+  const models = (await pool.query<{ id: string; providerId: string; kind: ModelKind; model: string; params: ModelParams;
     enabled: boolean; revision: number; purposes: AiPurpose[] }>(
-    `SELECT m.id, m.provider_id AS "providerId", m.name, m.kind, m.model, m.params, m.enabled, m.revision,
+    `SELECT m.id, m.provider_id AS "providerId", m.kind, m.model, m.params, m.enabled, m.revision,
        COALESCE(array_agg(a.purpose ORDER BY a.purpose) FILTER (WHERE a.purpose IS NOT NULL), '{}') AS purposes
      FROM ai_models m LEFT JOIN ai_model_assignments a ON a.model_id = m.id
-     GROUP BY m.id ORDER BY m.created_at, m.id`)).rows;
+     GROUP BY m.id ORDER BY m.model, m.id`)).rows;
   return providers.map(provider => ({ ...provider, models: models.filter(model => model.providerId === provider.id) }));
 }
 
@@ -98,8 +100,11 @@ export async function updateProvider(pool: pg.Pool, id: string, input: ProviderU
       throw requestError('API key required to enable the provider', 400, 'CREDENTIAL_REQUIRED');
     }
     try {
+      // A catalog listed from another endpoint would offer models the new one may not serve.
       await client.query(`UPDATE ai_providers SET name = $2, base_url = $3, enabled = $4,
-          credential_ciphertext = CASE WHEN $5::boolean THEN $6::bytea ELSE credential_ciphertext END, revision = revision + 1, updated_at = now()
+          credential_ciphertext = CASE WHEN $5::boolean THEN $6::bytea ELSE credential_ciphertext END,
+          model_catalog = CASE WHEN base_url = $3 THEN model_catalog ELSE '[]' END,
+          catalog_refreshed_at = CASE WHEN base_url = $3 THEN catalog_refreshed_at END, revision = revision + 1, updated_at = now()
         WHERE id = $1`, [id, name, baseUrl, input.enabled, apiKey !== undefined, apiKey ? encryptCredential(apiKey, current.scope, encryptionKey) : null]);
     } catch (error) { uniqueViolation(error, 'Provider name already exists'); }
     await writeAuditLog(client, { adminId, action: 'ai_provider.update', targetType: 'ai_provider', targetId: id,
@@ -133,13 +138,26 @@ async function discover(protocol: string, baseUrl: string, apiKey: string): Prom
   }
 }
 
-/** Lists provider models with the stored base URL and key; a stored key is never sent to a caller-chosen URL. */
-export async function discoverProviderModels(pool: Pick<pg.Pool, 'query'>, id: string, encryptionKey: string) {
-  const provider = (await pool.query<{ protocol: string; baseUrl: string; ciphertext: Buffer | null; scope: string }>(
-    'SELECT protocol, base_url AS "baseUrl", credential_ciphertext AS ciphertext, credential_scope AS scope FROM ai_providers WHERE id = $1', [id])).rows[0];
+/**
+ * Lists provider models with the stored base URL and key and saves them as the provider's model catalog.
+ * A stored key is never sent to a caller-chosen URL.
+ */
+export async function refreshProviderCatalog(pool: pg.Pool, id: string, adminId: string, encryptionKey: string) {
+  const provider = (await pool.query<{ protocol: string; baseUrl: string; ciphertext: Buffer | null; scope: string; revision: number }>(
+    `SELECT protocol, base_url AS "baseUrl", credential_ciphertext AS ciphertext, credential_scope AS scope, revision
+     FROM ai_providers WHERE id = $1`, [id])).rows[0];
   if (!provider) throw requestError('Provider not found', 404);
   if (!provider.ciphertext) throw requestError('Provider has no API key', 400, 'CREDENTIAL_REQUIRED');
-  return discover(provider.protocol, provider.baseUrl, decryptCredential(provider.ciphertext, provider.scope, encryptionKey));
+  const models = await discover(provider.protocol, provider.baseUrl, decryptCredential(provider.ciphertext, provider.scope, encryptionKey));
+  return transaction(pool, async client => {
+    // The listing took a network round trip; drop it if the provider was edited meanwhile.
+    const saved = (await client.query<{ refreshedAt: Date }>(`UPDATE ai_providers SET model_catalog = $3, catalog_refreshed_at = now()
+      WHERE id = $1 AND revision = $2 RETURNING catalog_refreshed_at AS "refreshedAt"`, [id, provider.revision, JSON.stringify(models)])).rows[0];
+    if (!saved) throw requestError('Provider changed', 409, 'REVISION_CONFLICT');
+    await writeAuditLog(client, { adminId, action: 'ai_provider.catalog_refresh', targetType: 'ai_provider', targetId: id,
+      detail: { modelCount: models.length } });
+    return { models, refreshedAt: saved.refreshedAt };
+  });
 }
 
 /** Connection test for an unsaved provider form; nothing is stored. */
@@ -159,11 +177,10 @@ function params(protocol: string, kind: ModelKind, input: Record<string, unknown
   }
 }
 
-export interface ModelInput { providerId: string; name: string; kind: ModelKind; model: string; params: Record<string, unknown>; enabled: boolean }
+export interface ModelInput { providerId: string; kind: ModelKind; model: string; params: Record<string, unknown>; enabled: boolean }
 
 export async function createModel(pool: pg.Pool, input: ModelInput, adminId: string) {
   const id = randomUUID();
-  const name = cleanName(input.name);
   const model = cleanModelId(input.model);
   await transaction(pool, async client => {
     const provider = (await client.query<{ protocol: string }>('SELECT protocol FROM ai_providers WHERE id = $1 FOR SHARE', [input.providerId])).rows[0];
@@ -171,19 +188,18 @@ export async function createModel(pool: pg.Pool, input: ModelInput, adminId: str
     if (!supportsKind(provider.protocol, input.kind)) throw requestError('Protocol does not support this model kind', 400, 'KIND_UNSUPPORTED');
     const normalized = params(provider.protocol, input.kind, input.params);
     try {
-      await client.query(`INSERT INTO ai_models (id, provider_id, name, kind, model, params, enabled) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id, input.providerId, name, input.kind, model, JSON.stringify(normalized), input.enabled]);
-    } catch (error) { uniqueViolation(error, 'Model name already exists'); }
+      await client.query(`INSERT INTO ai_models (id, provider_id, kind, model, params, enabled) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, input.providerId, input.kind, model, JSON.stringify(normalized), input.enabled]);
+    } catch (error) { uniqueViolation(error, 'Model already added to this provider', 'MODEL_TAKEN'); }
     await writeAuditLog(client, { adminId, action: 'ai_model.create', targetType: 'ai_model', targetId: id,
-      detail: { providerId: input.providerId, name, kind: input.kind, model, params: normalized, enabled: input.enabled } });
+      detail: { providerId: input.providerId, kind: input.kind, model, params: normalized, enabled: input.enabled } });
   });
   return id;
 }
 
-export interface ModelUpdate { name: string; model: string; params: Record<string, unknown>; enabled: boolean; expectedRevision: number }
+export interface ModelUpdate { model: string; params: Record<string, unknown>; enabled: boolean; expectedRevision: number }
 
 export async function updateModel(pool: pg.Pool, id: string, input: ModelUpdate, adminId: string) {
-  const name = cleanName(input.name);
   const model = cleanModelId(input.model);
   await transaction(pool, async client => {
     const current = (await client.query<{ revision: number; kind: ModelKind; protocol: string }>(
@@ -192,11 +208,11 @@ export async function updateModel(pool: pg.Pool, id: string, input: ModelUpdate,
     if (current.revision !== input.expectedRevision) throw requestError('Model changed', 409, 'REVISION_CONFLICT');
     const normalized = params(current.protocol, current.kind, input.params);
     try {
-      await client.query(`UPDATE ai_models SET name = $2, model = $3, params = $4, enabled = $5, revision = revision + 1, updated_at = now() WHERE id = $1`,
-        [id, name, model, JSON.stringify(normalized), input.enabled]);
-    } catch (error) { uniqueViolation(error, 'Model name already exists'); }
+      await client.query(`UPDATE ai_models SET model = $2, params = $3, enabled = $4, revision = revision + 1, updated_at = now() WHERE id = $1`,
+        [id, model, JSON.stringify(normalized), input.enabled]);
+    } catch (error) { uniqueViolation(error, 'Model already added to this provider', 'MODEL_TAKEN'); }
     await writeAuditLog(client, { adminId, action: 'ai_model.update', targetType: 'ai_model', targetId: id,
-      detail: { name, model, params: normalized, enabled: input.enabled, expectedRevision: input.expectedRevision } });
+      detail: { model, params: normalized, enabled: input.enabled, expectedRevision: input.expectedRevision } });
   });
 }
 

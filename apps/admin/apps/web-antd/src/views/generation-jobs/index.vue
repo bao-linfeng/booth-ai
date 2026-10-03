@@ -353,7 +353,6 @@ async function openDetail(id: string) {
               {{ direction.status }} {{ direction.reason }}
             </DescriptionsItem>
             <DescriptionsItem label="生成模型">
-              {{ detail.generationSnapshot?.model.name ?? '' }}
               {{ detail.generationSnapshot?.model.model }} / 修订
               {{ detail.generationSnapshot?.model.revision }}
             </DescriptionsItem>

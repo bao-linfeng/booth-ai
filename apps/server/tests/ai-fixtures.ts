@@ -17,7 +17,7 @@ const defaults: Record<ProviderProtocol, { baseUrl: string; model: Record<ModelK
 /** An in-memory model as returned by `activeAiModels`, for adapter and worker unit tests. */
 export function activeModel(protocol: ProviderProtocol, purpose: AiPurpose, overrides: Partial<ActiveAiModel> = {}): ActiveAiModel {
   const kind: ModelKind = purpose === 'selection_parse' ? 'text' : 'image';
-  return { id: randomUUID(), name: `${protocol} ${kind}`, kind, model: defaults[protocol].model[kind], params: defaults[protocol].params[kind],
+  return { id: randomUUID(), kind, model: defaults[protocol].model[kind], params: defaults[protocol].params[kind],
     revision: 1, purpose, position: 1, unitCredits: purpose === 'selection_parse' ? null : 3, protocol, providerName: protocol,
     baseUrl: defaults[protocol].baseUrl, apiKey: 'secret', ...overrides };
 }
@@ -37,8 +37,8 @@ export async function seedAiModel(pool: Pick<pg.Pool, 'query'>, input: { protoco
   await pool.query(`INSERT INTO ai_providers (id, name, protocol, base_url, credential_ciphertext, credential_scope) VALUES ($1::uuid, $2, $3, $4, $5, $1::text)`,
     [providerId, `provider ${providerId}`, input.protocol, defaults[input.protocol].baseUrl,
       encryptCredential(input.apiKey ?? 'test-key', providerId, input.encryptionKey ?? testEncryptionKey)]);
-  await pool.query('INSERT INTO ai_models (id, provider_id, name, kind, model, params) VALUES ($1, $2, $3, $4, $5, $6)',
-    [modelId, providerId, `model ${modelId}`, kind, input.model ?? defaults[input.protocol].model[kind], JSON.stringify(defaults[input.protocol].params[kind])]);
+  await pool.query('INSERT INTO ai_models (id, provider_id, kind, model, params) VALUES ($1, $2, $3, $4, $5)',
+    [modelId, providerId, kind, input.model ?? defaults[input.protocol].model[kind], JSON.stringify(defaults[input.protocol].params[kind])]);
   await pool.query('INSERT INTO ai_model_assignments (purpose, model_id, position, unit_credits) VALUES ($1, $2, $3, $4)',
     [input.purpose, modelId, input.position ?? 1, input.purpose === 'selection_parse' ? null : input.unitCredits ?? 3]);
   return modelId;

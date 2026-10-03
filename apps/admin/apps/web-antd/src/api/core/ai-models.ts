@@ -44,7 +44,6 @@ export interface AiProtocol {
 export interface AiModelRecord {
   id: string;
   providerId: string;
-  name: string;
   kind: ModelKind;
   model: string;
   params: ModelParams;
@@ -61,6 +60,9 @@ export interface AiProviderRecord {
   credentialConfigured: boolean;
   enabled: boolean;
   revision: number;
+  /** Last listing saved by「刷新模型」; empty until the first refresh or after the Base URL changes. */
+  modelCatalog: DiscoveredModel[];
+  catalogRefreshedAt: null | string;
   models: AiModelRecord[];
 }
 
@@ -84,7 +86,6 @@ export interface ProviderInput {
 }
 
 export interface ModelInput {
-  name: string;
   model: string;
   params: ModelParams;
   enabled: boolean;
@@ -115,10 +116,11 @@ export function deleteAiProviderApi(id: string) {
   return requestClient.delete(`/v1/admin/ai-providers/${id}`);
 }
 
-/** Lists models with the saved base URL and key. */
-export function discoverAiProviderModelsApi(id: string) {
-  return requestClient.get<DiscoveredModel[]>(
-    `/v1/admin/ai-providers/${id}/models`,
+/** Lists models with the saved base URL and key and stores them as the provider's catalog. */
+export function refreshAiProviderCatalogApi(id: string) {
+  return requestClient.post<{ models: DiscoveredModel[]; refreshedAt: string }>(
+    `/v1/admin/ai-providers/${id}/catalog/refresh`,
+    undefined,
     { timeout: 20_000 },
   );
 }

@@ -17,7 +17,7 @@ export type GenerationSnapshot = {
   source: AssetSnapshot;
   mask: AssetSnapshot | null;
   /** Assigned theme models in fallback order; workers only call a model whose id and revision still match. */
-  models: Pick<AssignedAiModel, 'id' | 'name' | 'model' | 'revision' | 'position' | 'unitCredits'>[];
+  models: Pick<AssignedAiModel, 'id' | 'model' | 'revision' | 'position' | 'unitCredits'>[];
   template: { id: string; revision: number; body: string } | null;
   prompt: string;
   pipelineRevision: number;
@@ -80,7 +80,7 @@ export async function loadGenerationSnapshot(pool: pg.Pool, parameters: ThemePar
   const styleLabel = labels.find(row => row.id === parameters.input.styleId)?.label;
   if (!industryLabel || !styleLabel) throw Object.assign(new Error('Theme dictionary options unavailable'), { statusCode: 409 });
   const models = (await assignedAiModels(pool, 'theme'))
-    .map(({ id, name, model, revision, position, unitCredits }) => ({ id, name, model, revision, position, unitCredits }));
+    .map(({ id, model, revision, position, unitCredits }) => ({ id, model, revision, position, unitCredits }));
   if (!models.length) throw Object.assign(new Error('Theme models unavailable'), { statusCode: 409, reason: 'MODEL_UNAVAILABLE' });
   const template = await getActivePromptTemplate(pool, 'theme', parameters.input.industryId, parameters.input.styleId);
   const input = normalizeThemeInput(parameters.input);

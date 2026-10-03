@@ -75,7 +75,7 @@ export type ArtworkSnapshot = {
   source: { assetId: string; versionId: string; objectKey: string; checksum: string };
   input: ThemeInput; prompt: string; template: { id: string; revision: number; body: string } | null;
   directionPrompts?: Record<Direction, string>;
-  model: Pick<AssignedAiModel, 'id' | 'name' | 'model' | 'revision' | 'unitCredits'>;
+  model: Pick<AssignedAiModel, 'id' | 'model' | 'revision' | 'unitCredits'>;
   quality: typeof ARTWORK_QUALITY; pipelineRevision: number;
 };
 export type ArtworkOffer = ArtworkContext & { userId: string; snapshot: ArtworkSnapshot; unitCredits: number; expiresAt: string };
@@ -130,7 +130,7 @@ export async function loadArtworkSnapshot(pool: pg.Pool, userId: string, context
   const { prompt, directionPrompts } = buildArtworkPrompts(selected.input, industryLabel, styleLabel, template?.body);
   return { source: { assetId: selected.sourceAssetId, versionId: selected.versionId, objectKey: selected.objectKey, checksum: selected.checksum }, input: selected.input,
     template: template ? { id: template.id, revision: template.revision, body: template.body } : null, prompt, directionPrompts,
-    model: { id: model.id, name: model.name, model: model.model, revision: model.revision, unitCredits: model.unitCredits }, quality: ARTWORK_QUALITY, pipelineRevision: 4 };
+    model: { id: model.id, model: model.model, revision: model.revision, unitCredits: model.unitCredits }, quality: ARTWORK_QUALITY, pipelineRevision: 4 };
 }
 export async function createArtworkJob(pool: pg.Pool, userId: string, requestKey: string, offerId: string, context: ArtworkContext, offer: ArtworkOffer,
   requestId: string | null = null) {
