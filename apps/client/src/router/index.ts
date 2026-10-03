@@ -62,7 +62,7 @@ export const routes: RouteRecordRaw[] = [
     name: 'Home',
     component: () => import('@/pages/Home.vue'),
     meta: {
-      title: 'Home',
+      title: 'AI 智选',
       icon: 'Home'
     }
   },

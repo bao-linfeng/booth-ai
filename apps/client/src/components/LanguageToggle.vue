@@ -46,9 +46,9 @@ function setLocale(lang: string) {
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button variant="ghost" size="sm" class="gap-1" aria-label="Switch language">
+      <Button variant="ghost" size="sm" class="gap-1 px-2 sm:px-3" aria-label="Switch language / 切换语言">
         <Languages class="h-4 w-4" />
-        <span class="text-xs font-medium">{{ currentLangAbbr }}</span>
+        <span class="hidden text-xs font-medium sm:inline">{{ currentLangAbbr }}</span>
         <span class="sr-only">Switch language</span>
       </Button>
     </DropdownMenuTrigger>

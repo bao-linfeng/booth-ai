@@ -2,78 +2,51 @@
 import { computed } from 'vue'
 import { RotateCcw, SlidersHorizontal } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
 import OptionSelect from './OptionSelect.vue'
+import RequirementField from './RequirementField.vue'
 import type { Catalog, Requirement } from './types'
 
 const props = defineProps<{ modelValue: Requirement; catalog: Catalog; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: Requirement]; reset: [] }>()
-const selectedBoothSpaceId = computed(() => {
-  const { lengthMm, widthMm, maxHeightMm } = props.modelValue
-  return props.catalog.boothSpaces.find(space => space.lengthMm === lengthMm && space.widthMm === widthMm && space.heightMm === maxHeightMm)?.id ?? null
-})
-const areaValue = computed(() => {
-  const { lengthMm, widthMm } = props.modelValue
-  return lengthMm && widthMm ? lengthMm * widthMm / 1_000_000 : null
-})
-function update<K extends keyof Requirement>(key: K, value: Requirement[K]) {
-  const next = { ...props.modelValue, [key]: value }
-  if (key === 'lengthMm' || key === 'widthMm') next.areaM2 = next.lengthMm && next.widthMm ? next.lengthMm * next.widthMm / 1000000 : null
-  emit('update:modelValue', next)
-}
-function updateBoothSpace(id: string | null) {
-  const space = props.catalog.boothSpaces.find(item => item.id === id)
-  if (!space) {
-    emit('update:modelValue', { ...props.modelValue, lengthMm: null, widthMm: null, maxHeightMm: null, areaM2: null })
-    return
-  }
-  emit('update:modelValue', {
-    ...props.modelValue,
-    lengthMm: space.lengthMm,
-    widthMm: space.widthMm,
-    maxHeightMm: space.heightMm,
-    areaM2: space.lengthMm * space.widthMm / 1_000_000,
-  })
-}
-function toggle(key: 'styleIds' | 'industryIds' | 'zoneIds' | 'featureIds', id: string) {
-  const current = props.modelValue[key]
-  update(key, current.includes(id) ? current.filter(item => item !== id) : [...current, id])
-}
-function answer(id: string, value: string | null) {
-  const answers = { ...props.modelValue.applicabilityAnswers }
-  if (value === null) delete answers[id]
-  else answers[id] = value === 'true'
-  update('applicabilityAnswers', answers)
+const commonSizes = computed(() => [...new Map(props.catalog.boothSpaces.map(space => {
+  const id = `${space.lengthMm}-${space.widthMm}`
+  return [id, { id, label: `${space.lengthMm / 1000} × ${space.widthMm / 1000} m`, lengthMm: space.lengthMm, widthMm: space.widthMm }]
+})).values()])
+const selectedSize = computed(() => commonSizes.value.find(size => size.lengthMm === props.modelValue.lengthMm && size.widthMm === props.modelValue.widthMm)?.id ?? null)
+const moreFields = ['productSystemId', 'budgetTierId', 'styleIds', 'industryIds', 'zoneIds', 'featureIds'] as const
+const moreCount = computed(() => moreFields.filter(field => {
+  const value = props.modelValue[field]
+  return Array.isArray(value) ? value.length > 0 : value !== null
+}).length)
+function selectSize(id: string | null) {
+  const size = commonSizes.value.find(item => item.id === id)
+  emit('update:modelValue', { ...props.modelValue, lengthMm: size?.lengthMm ?? null, widthMm: size?.widthMm ?? null, areaM2: size ? size.lengthMm * size.widthMm / 1_000_000 : null })
 }
 </script>
 
 <template>
-  <Card>
-    <CardHeader class="flex-row items-center justify-between space-y-0 pb-4">
-      <CardTitle class="flex items-center gap-2 text-base"><SlidersHorizontal class="size-4" />选型条件</CardTitle>
-      <Button variant="ghost" size="sm" :disabled="disabled" @click="emit('reset')"><RotateCcw class="mr-1 size-3.5" />重置</Button>
-    </CardHeader>
-    <CardContent class="space-y-6">
-      <fieldset :disabled="disabled" class="min-w-0 space-y-6">
-        <section class="space-y-4">
-           <h3 class="text-sm font-medium">展位空间</h3>
-           <div class="grid gap-4">
-              <div class="space-y-2"><Label>展位空间</Label><OptionSelect label="展位空间" placeholder="不限" :disabled="disabled" :model-value="selectedBoothSpaceId" :options="catalog.boothSpaces" @update:model-value="updateBoothSpace" /><p class="text-xs text-muted-foreground">长 × 宽 × 高，按已导入方案的真实组合选择</p></div>
-              <div class="space-y-2"><Label for="booth-area">面积 <span class="text-xs text-muted-foreground">/ ㎡</span></Label><Input id="booth-area" :model-value="areaValue === null ? '' : String(areaValue)" readonly aria-readonly="true" placeholder="选择展位空间后自动计算" /><p class="text-xs text-muted-foreground">根据所选长宽自动计算，不可修改</p></div>
-           </div>
-           <div class="space-y-2"><Label>开口面数</Label><OptionSelect label="开口面数" placeholder="暂不确定" :disabled="disabled" :model-value="modelValue.openingCount === null ? null : String(modelValue.openingCount)" :options="catalog.openingCounts" @update:model-value="update('openingCount', $event ? Number($event) : null)" /></div>
-        </section>
-        <Separator />
-         <section class="space-y-4"><h3 class="text-sm font-medium">体系与偏好</h3><div class="space-y-2"><Label>产品体系</Label><OptionSelect label="产品体系" :disabled="disabled" :model-value="modelValue.productSystemId" :options="catalog.productSystems" @update:model-value="update('productSystemId', $event)" /><p class="text-xs text-muted-foreground">指定体系后严格筛选</p></div>
-           <div v-for="group in ([{ key: 'styleIds', label: '设计风格', options: catalog.styles }, { key: 'industryIds', label: '适用行业', options: catalog.industries }, { key: 'zoneIds', label: '功能分区', options: catalog.zones }, { key: 'featureIds', label: '特色功能', options: catalog.features }] as const)" :key="group.key" class="space-y-2"><Label>{{ group.label }} <span class="font-normal text-muted-foreground">· 多选偏好</span></Label><div class="flex flex-wrap gap-2"><Button size="sm" :variant="modelValue[group.key].length ? 'outline' : 'secondary'" :aria-pressed="!modelValue[group.key].length" @click="update(group.key, [])">不限</Button><Button v-for="option in group.options" :key="option.id" size="sm" :variant="modelValue[group.key].includes(option.id) ? 'secondary' : 'outline'" :aria-pressed="modelValue[group.key].includes(option.id)" @click="toggle(group.key, option.id)">{{ option.label }}</Button></div></div>
-          <div class="space-y-2"><Label>材料购买预算</Label><OptionSelect label="材料购买预算" :disabled="disabled" :model-value="modelValue.budgetTierId" :options="catalog.budgetTiers" @update:model-value="update('budgetTierId', $event)" /><p class="text-xs leading-relaxed text-muted-foreground">仅材料购买预算，不含搭建、运输等费用，不代表实际报价。</p></div>
-        </section>
-        <Accordion v-if="catalog.applicabilityQuestions.length" type="single" collapsible><AccordionItem value="applicability" class="border-b-0"><AccordionTrigger class="text-sm">补充适用条件</AccordionTrigger><AccordionContent class="space-y-4"><div v-for="question in catalog.applicabilityQuestions" :key="question.id" class="space-y-2"><Label>{{ question.label }}</Label><OptionSelect :label="question.label" placeholder="暂不清楚" :disabled="disabled" :model-value="modelValue.applicabilityAnswers[question.id] === undefined ? null : String(modelValue.applicabilityAnswers[question.id])" :options="[{ id: 'true', label: '是' }, { id: 'false', label: '否' }]" @update:model-value="answer(question.id, $event)" /><p class="text-xs text-muted-foreground">{{ question.helpText }}</p></div></AccordionContent></AccordionItem></Accordion>
-      </fieldset>
-    </CardContent>
-  </Card>
+  <fieldset :disabled="disabled" class="min-w-0 space-y-5">
+    <legend class="sr-only">展位条件</legend>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h3 class="text-sm font-medium">展位条件 <span class="font-normal text-muted-foreground">· 选填</span></h3>
+      <div class="w-full sm:w-52"><OptionSelect label="常用尺寸" placeholder="不选常用尺寸" :disabled="disabled" :model-value="selectedSize" :options="commonSizes" @update:model-value="selectSize" /></div>
+    </div>
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <RequirementField v-for="field in (['lengthMm', 'widthMm', 'openingCount', 'maxHeightMm'] as const)" :id="`requirement-${field}`" :key="field" :field="field" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />
+    </div>
+    <p class="text-xs leading-relaxed text-muted-foreground"><span v-if="modelValue.areaM2">面积 {{ modelValue.areaM2 }} ㎡ · </span>长为左右跨度，宽为前后进深。限高按场馆规定独立填写，常用尺寸不会代填限高。</p>
+    <Accordion type="single" collapsible>
+      <AccordionItem value="more" class="border-b-0 border-t">
+        <AccordionTrigger class="text-sm hover:no-underline"><span class="flex items-center gap-2"><SlidersHorizontal class="size-4" />更多条件<span class="font-normal text-muted-foreground">{{ moreCount ? `已填 ${moreCount} 类` : '体系、风格、行业与预算' }}</span></span></AccordionTrigger>
+        <AccordionContent class="space-y-6 pt-2">
+          <div class="grid gap-6 sm:grid-cols-2">
+            <RequirementField v-for="field in moreFields" :id="`requirement-${field}`" :key="field" :field="field" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />
+          </div>
+          <p class="text-xs leading-relaxed text-muted-foreground">产品体系用于严格筛选；风格、行业、功能分区和材料预算用于排序。材料预算不含搭建、运输等费用，不代表实际报价。</p>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
+    <div class="flex justify-end"><Button type="button" variant="ghost" size="sm" :disabled="disabled" @click="emit('reset')"><RotateCcw class="mr-1 size-3.5" />重置全部需求</Button></div>
+  </fieldset>
 </template>

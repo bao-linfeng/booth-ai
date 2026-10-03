@@ -1,323 +1,141 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router'
-import { Navbar, NavbarBrand, NavbarLayer } from '@/components/sections/navbar'
-import { DarkMode } from '@/components/darkMode'
+import { ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { useMediaQuery } from '@vueuse/core'
+import { ArrowRight, FolderOpen, History, Menu, MessageSquare, Sparkles } from 'lucide-vue-next'
+import { Navbar, NavbarBrand } from '@/components/sections/navbar'
 import { ThemingSettings } from '@/components/theming'
-import { Home, ChevronsRight, AlignRight, Combine } from 'lucide-vue-next'
 import LanguageToggle from '@/components/LanguageToggle.vue'
-import UserAvatar from './UserAvatar.vue'
-import {
-  NavigationMenu,
-  NavigationMenuList,
-  NavigationMenuItem,
-  NavigationMenuTrigger,
-  NavigationMenuContent,
-  NavigationMenuLink,
-} from '@/components/ui/navigation-menu'
 import { Button } from '@/components/ui/button'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetTrigger,
-} from '@/components/ui/sheet'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
-import { defineAsyncComponent, ref, watch, onMounted } from 'vue'
-import { useCollecty } from '@/composables/useCollecty'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet'
+import { cn } from '@/lib/utils'
+import UserAvatar from './UserAvatar.vue'
 
-const router = useRouter()
-// const route = useRoute()
+const route = useRoute()
+const mobileMenuOpen = ref(false)
+const isDesktop = useMediaQuery('(min-width: 1024px)')
 
-const { collection } = useCollecty()
-const isButtonVisible = ref(false)
+const navigationItems = [
+  {
+    label: 'AI 智选',
+    to: '/ai-selection',
+    icon: Sparkles,
+    description: '描述需求，找到适合您的展台方案',
+    paths: ['/', '/ai-selection', '/schemes', '/theme-jobs', '/artwork-jobs'],
+  },
+  {
+    label: '检索记录',
+    to: '/my-searches',
+    icon: History,
+    description: '回看匹配方案与生成成果',
+    paths: ['/my-searches'],
+  },
+  {
+    label: '我的项目',
+    to: '/my-projects',
+    icon: FolderOpen,
+    description: '查看申请记录与项目进展',
+    paths: ['/my-projects'],
+  },
+]
 
-// Следим за изменениями в коллекции
-watch(() => collection.value, (newCollection) => {
-  isButtonVisible.value = newCollection.length > 0
-}, { immediate: true, deep: true })
-
-interface RouteChild {
-  name: string
-  path: string
-  title: string
-  description?: string
-  meta: {
-    icon?: string
-    title: string
-    description?: string
-  }
+function isActive(paths: string[]) {
+  return paths.some(path => route.path === path || route.path.startsWith(`${path}/`))
 }
 
-interface ParentRoute {
-  name: string
-  path: string
-  title: string
-  description?: string
-  children?: RouteChild[]
-}
-
-// Расширяем структуру маршрутов с правильной типизацией
-const parentRoutes = router.getRoutes()
-  .filter(route => route.meta?.isGroupParent)
-  .map(route => ({
-    name: String(route.name),
-    path: route.path,
-    title: route.meta?.title as string,
-    description: route.meta?.description as string,
-    children: route.children?.map(child => ({
-      name: String(child.name),
-      path: child.path,
-      title: child.meta?.title as string,
-      description: child.meta?.description as string,
-      meta: {
-        icon: child.meta?.icon as string,
-        title: child.meta?.title as string,
-        description: child.meta?.description as string
-      }
-    }))
-  })) as ParentRoute[]
-
-// Динамический импорт иконок из роутера
-const getIcon = (iconName?: string) => {
-  if (!iconName) return ChevronsRight
-  
-  return defineAsyncComponent({
-    loader: () => import('lucide-vue-next').then((mod: any) => mod[iconName]),
-    errorComponent: ChevronsRight
-  })
-}
-
-// Обновляем идентификаторы для доступности
-const sheetId = 'mobile-navigation'
-const menuDescription = 'Main navigation menu with all available sections and pages'
+watch(() => route.fullPath, () => { mobileMenuOpen.value = false })
+watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
 </script>
 
 <template>
-  <Navbar class="border-b-[0.5px] border-gradient shadow-glow h-[64px]" style="--navbar-height: 64px;">
-    <div class="flex container mx-auto px-2 md:px-4 lg:px-8">
-      <NavbarLayer position="start" class="flex-1">
-        <div class="flex items-center gap-6">
-          <NavbarBrand>
-            <img src="/logo.png" alt="Logo" class="h-8 w-auto object-contain" />
-          </NavbarBrand>
-          
-          <!-- Обновляем десктопную навигацию -->
-          <NavigationMenu class="hidden md:flex">
-            <NavigationMenuList>
-              <NavigationMenuItem v-for="parentRoute in parentRoutes" :key="parentRoute.path">
-                <NavigationMenuTrigger>{{ parentRoute.title }}</NavigationMenuTrigger>
-                <NavigationMenuContent>
-                  <ul class="grid w-[400px] gap-3 p-4 md:w-[500px] md:grid-cols-2 lg:w-[600px]">
-                    <li v-for="child in parentRoute.children" :key="child.path">
-                      <NavigationMenuLink as-child>
-                        <router-link
-                          :to="`${parentRoute.path}/${child.path}`"
-                          class="block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
-                        >
-                          <div class="text-sm font-medium leading-none">{{ child.title }}</div>
-                          <p v-if="child.description" class="line-clamp-2 text-sm leading-snug text-muted-foreground">
-                            {{ child.description }}
-                          </p>
-                        </router-link>
-                      </NavigationMenuLink>
-                    </li>
-                  </ul>
-                </NavigationMenuContent>
-              </NavigationMenuItem>
-            </NavigationMenuList>
-          </NavigationMenu>
-        </div>
-      </NavbarLayer>
+  <Navbar size="lg" class="border-border/80 bg-background/95">
+    <div class="flex w-full min-w-0 items-center justify-between gap-3">
+      <div class="flex min-w-0 items-center gap-8 xl:gap-12">
+        <NavbarBrand class="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="灵通 AI 展台首页">
+          <img src="/logo.png" alt="灵通" class="h-7 w-auto max-w-20 object-contain sm:h-8 sm:max-w-24" />
+          <span class="hidden border-l border-border pl-3 text-sm font-semibold tracking-wide sm:block">AI 展台</span>
+        </NavbarBrand>
 
-      <!-- Правая часть: кнопки -->
-      <NavbarLayer position="end" data-navbar-end>
-        <div class="flex items-center gap-1 md:gap-2">
-          
-          <Button 
-            v-if="isButtonVisible"
-            variant="default"
-            size="sm"
-            class="bg-primary text-white mr-2"
-            aria-label="Go to builder"
-            @click="router.push('/buildy')"
+        <nav aria-label="主导航" class="hidden h-16 items-center gap-6 lg:flex xl:gap-8">
+          <RouterLink
+            v-for="item in navigationItems"
+            :key="item.to"
+            :to="item.to"
+            :aria-current="isActive(item.paths) ? 'page' : undefined"
+            :class="cn(
+              'inline-flex h-full items-center whitespace-nowrap border-b-2 px-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+              isActive(item.paths) ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground',
+            )"
           >
-            <Combine :stroke-width="2.5" class="!w-3.5 !h-3.5" />
-            <span class="font-base">BuildY</span>
-          </Button>
-          
-          <LanguageToggle />
-          <DarkMode data-dark-mode />
-          <ThemingSettings />
-          <UserAvatar />
+            {{ item.label }}
+          </RouterLink>
+        </nav>
+      </div>
 
-        <!-- Мобильное меню -->
-        <Sheet>
+      <div class="flex shrink-0 items-center gap-1 sm:gap-2">
+        <Button variant="ghost" size="sm" as-child class="hidden lg:inline-flex">
+          <RouterLink
+            to="/manual-request"
+            :aria-current="route.path === '/manual-request' ? 'page' : undefined"
+            :class="cn(route.path === '/manual-request' && 'bg-accent text-accent-foreground')"
+          >
+            <MessageSquare class="mr-2 size-4" aria-hidden="true" />
+            联系顾问
+          </RouterLink>
+        </Button>
+        <span class="mx-1 hidden h-5 w-px bg-border lg:block" aria-hidden="true" />
+        <LanguageToggle />
+        <ThemingSettings />
+        <UserAvatar />
+
+        <Sheet v-model:open="mobileMenuOpen">
           <SheetTrigger as-child>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              class="md:hidden"
-              :aria-controls="sheetId"
-              aria-label="Open navigation menu"
-            >
-            <AlignRight class="!w-[1.5rem] !h-[1.5rem]" />
-              <span class="sr-only">Toggle menu</span>
+            <Button variant="ghost" size="icon" class="lg:hidden" aria-label="打开导航菜单">
+              <Menu class="size-5" aria-hidden="true" />
             </Button>
           </SheetTrigger>
-            
-            <SheetContent 
-              class="w-[300px] p-0 sheet-content border-r border-secondary-foreground/20 shadow-glow "
-              side="left"
-            >
-              <SheetHeader class="p-4 sheet-header border-b-[0.3px] border-gradient shadow-glow">
-                <SheetTitle class="flex items-center gap-2 text-base mb-2">
-                  <NavbarBrand>
-                    <img src="/logo.png" alt="Logo" class="h-7 w-auto object-contain" />
-                  </NavbarBrand>
-                </SheetTitle>
-                <SheetDescription class="text-sm text-muted-foreground">
-                  {{ menuDescription }}
-                </SheetDescription>
-              </SheetHeader>
-              
-              <ScrollArea class="h-[calc(100vh-80px)]">
-                <div class="p-4">
-                  <router-link 
-                    to="/" 
-                    class="flex items-center gap-2 px-2 py-1.5 text-sm font-medium rounded-md hover:bg-accent hover:text-accent-foreground"
-                    aria-label="Go to home page"
-                  >
-                    <Home class="h-4 w-4" />
-                    <span>Home</span>
-                  </router-link>
-                  
-                  <Separator class="my-4" />
-                  
-                  <Accordion 
-                    type="single" 
-                    collapsible
-                    class="w-full"
-                  >
-                    <AccordionItem 
-                      v-for="route in parentRoutes" 
-                      :key="route.path" 
-                      :value="route.path"
-                    >
-                      <AccordionTrigger 
-                        class="text-sm no-underline"
-                        :aria-label="`Toggle ${route.title} section`"
-                      >
-                        {{ route.title }}
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <div class="pl-1 py-2 space-y-1">
-                          <router-link
-                            v-for="child in route.children"
-                            :key="child.path"
-                            :to="`${route.path}/${child.path}`"
-                            class="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-accent hover:text-accent-foreground"
-                            :class="[
-                              route.path === $route.path ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'
-                            ]"
-                            :aria-label="`Go to ${child.title}`"
-                            :aria-current="route.path === $route.path ? 'page' : undefined"
-                          >
-                            <component 
-                              :is="getIcon(child.meta?.icon)" 
-                              class="h-4 w-4" 
-                              aria-hidden="true"
-                            />
-                            <div>
-                              <div>{{ child.title }}</div>
-                              <p 
-                                v-if="child.description" 
-                                class="text-xs text-muted-foreground line-clamp-1"
-                              >
-                                {{ child.description }}
-                              </p>
-                            </div>
-                          </router-link>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
+          <SheetContent side="left" class="flex w-[340px] max-w-[calc(100vw-24px)] flex-col gap-0 overflow-y-auto p-0">
+            <SheetHeader class="border-b px-6 pb-6 pt-8 text-left">
+              <SheetTitle>灵通 AI 展台</SheetTitle>
+              <SheetDescription>从方案选型到项目落地</SheetDescription>
+            </SheetHeader>
+            <nav aria-label="移动端主导航" class="space-y-2 p-4">
+              <RouterLink
+                v-for="item in navigationItems"
+                :key="item.to"
+                :to="item.to"
+                :aria-current="isActive(item.paths) ? 'page' : undefined"
+                :class="cn(
+                  'flex items-center gap-3 rounded-lg p-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  isActive(item.paths) ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-accent',
+                )"
+                @click="mobileMenuOpen = false"
+              >
+                <component :is="item.icon" class="size-5 shrink-0" aria-hidden="true" />
+                <div class="min-w-0 space-y-1">
+                  <div class="text-sm font-semibold">{{ item.label }}</div>
+                  <p class="text-xs leading-relaxed text-muted-foreground">{{ item.description }}</p>
                 </div>
-              </ScrollArea>
-            </SheetContent>
-          </Sheet>
-        </div>
-      </NavbarLayer>
+              </RouterLink>
+            </nav>
+            <div class="mx-4 mb-6 mt-auto border-t pt-4">
+              <RouterLink
+                to="/manual-request"
+                :aria-current="route.path === '/manual-request' ? 'page' : undefined"
+                :class="cn('flex items-center gap-3 rounded-lg p-3 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', route.path === '/manual-request' && 'bg-primary/10 text-primary')"
+                @click="mobileMenuOpen = false"
+              >
+                <MessageSquare class="size-5 shrink-0" aria-hidden="true" />
+                <div class="flex-1 space-y-1">
+                  <div class="text-sm font-semibold">联系顾问</div>
+                  <p class="text-xs text-muted-foreground">提交特殊需求，获取人工协助</p>
+                </div>
+                <ArrowRight class="size-4 shrink-0" aria-hidden="true" />
+              </RouterLink>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
     </div>
   </Navbar>
 </template>
-
-<style scoped>
-/* Активная ссылка */
-.router-link-active {
-  color: hsl(var(--primary));
-}
-
-/* Градиентная граница */
-.border-gradient {
-  border-image: linear-gradient(
-    to right,
-    hsl(var(--primary) / 0.1),
-    hsl(var(--primary) / 0.4),
-    hsl(var(--primary) / 0.1)
-  ) 1;
-}
-
-:global(.dark) .border-gradient {
-  border-image: linear-gradient(
-    to right,
-    hsl(var(--primary) / 0.2),
-    hsl(var(--primary) / 0.5),
-    hsl(var(--primary) / 0.2)
-  ) 1;
-}
-
-/* Тень с подсветкой */
-.shadow-glow {
-  box-shadow: 
-    0 1px 2px -1px hsl(var(--primary) / 0.1),
-    0 0 0 1px hsl(var(--primary) / 0.05),
-    0 1px 2px 0 hsl(var(--primary) / 0.05);
-}
-
-:global(.dark) .shadow-glow {
-  box-shadow: 
-    0 1px 2px -1px hsl(var(--primary) / 0.2),
-    0 0 0 1px hsl(var(--primary) / 0.1),
-    0 1px 2px 0 hsl(var(--primary) / 0.1);
-}
-
-/* Эффект при наведении */
-.shadow-glow:hover {
-  box-shadow: 
-    0 2px 4px -2px hsl(var(--primary) / 0.15),
-    0 0 0 1px hsl(var(--primary) / 0.1),
-    0 1px 3px 0 hsl(var(--primary) / 0.1);
-  transition: all 0.3s ease;
-}
-
-:global(.dark) .shadow-glow:hover {
-  box-shadow: 
-    0 2px 4px -2px hsl(var(--primary) / 0.25),
-    0 0 0 1px hsl(var(--primary) / 0.15),
-    0 1px 3px 0 hsl(var(--primary) / 0.15);
-}
-
-/* Разделители аккордеона */
-:deep([data-orientation="vertical"].border-b) {
-  border-bottom-color: hsl(var(--border) / 0.9) !important;
-}
-</style> 
