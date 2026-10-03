@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { getBom } from '../schemes/bill-of-materials/service.js';
+import { getBom } from '../schemes/bill-of-materials/repository.js';
 import { projectError, type QuoteInput } from './domain.js';
 import { loadCandidatePool, loadCatalog } from '../selection/repository.js';
 import { matchSchemes } from '../selection/match.js';

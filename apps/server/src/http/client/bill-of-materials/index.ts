@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { bomError, getBom } from '../../../modules/schemes/bill-of-materials/service.js';
+import { bomError } from '../../../modules/schemes/bill-of-materials/errors.js';
+import { getBom } from '../../../modules/schemes/bill-of-materials/repository.js';
 import { exportBomWorkbook } from '../../../modules/schemes/bill-of-materials/workbook.js';
 
 interface CodeParams { code: string }

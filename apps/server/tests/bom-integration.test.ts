@@ -3,7 +3,10 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import pg from 'pg';
 import { addAssetVersion } from '../src/modules/assets/service.js';
-import { assertImportBaseline, createBomImport, createOrReplaceBomFromImport, deleteBom, deleteBomItem, getBom, listBoms, submitBomVerification, updateBomItems } from '../src/modules/schemes/bill-of-materials/service.js';
+import { assertImportBaseline, createBomImport, createOrReplaceBomFromImport } from '../src/modules/schemes/bill-of-materials/imports.js';
+import { deleteBom, deleteBomItem, updateBomItems } from '../src/modules/schemes/bill-of-materials/items.js';
+import { getBom, listBoms } from '../src/modules/schemes/bill-of-materials/repository.js';
+import { submitBomVerification } from '../src/modules/schemes/bill-of-materials/verification.js';
 
 test('BOM transactions preserve baseline, idempotency, measurement kinds and publication state', { skip: !process.env.BOM_TEST_DATABASE_URL }, async t => {
   const pool = new pg.Pool({connectionString:process.env.BOM_TEST_DATABASE_URL});

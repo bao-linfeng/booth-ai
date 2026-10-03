@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
-import { quantityFor, type BomItemInput, type BomRecord, type MeasurementKind } from './service.js';
+import { quantityFor } from './quantity.js';
+import type { BomItemInput, BomRecord, MeasurementKind } from './types.js';
 
 export interface ImportIssue { code: string; sheet?: string; row?: number; field?: string; message: string }
 export interface ParsedBom { items: BomItemInput[]; errors: ImportIssue[]; warnings: ImportIssue[] }

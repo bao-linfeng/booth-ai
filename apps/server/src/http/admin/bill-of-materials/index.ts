@@ -6,7 +6,12 @@ import type pg from 'pg';
 import { createStorage } from '../../../infra/storage.js';
 import { adminUserId } from '../../authentication.js';
 import type { Config } from '../../../config.js';
-import { assertImportBaseline, bomError, createBomImport, createOrReplaceBomFromImport, deleteBom, deleteBomItem, getBom, listBoms, submitBomVerification, updateBomItems, type BomItemInput, type BomVerificationInput } from '../../../modules/schemes/bill-of-materials/service.js';
+import { bomError } from '../../../modules/schemes/bill-of-materials/errors.js';
+import { assertImportBaseline, createBomImport, createOrReplaceBomFromImport } from '../../../modules/schemes/bill-of-materials/imports.js';
+import { deleteBom, deleteBomItem, updateBomItems } from '../../../modules/schemes/bill-of-materials/items.js';
+import { getBom, listBoms } from '../../../modules/schemes/bill-of-materials/repository.js';
+import type { BomItemInput, BomVerificationInput } from '../../../modules/schemes/bill-of-materials/types.js';
+import { submitBomVerification } from '../../../modules/schemes/bill-of-materials/verification.js';
 import { exportBomWorkbook, parseBomWorkbook } from '../../../modules/schemes/bill-of-materials/workbook.js';
 
 interface CodeParams { code: string }
