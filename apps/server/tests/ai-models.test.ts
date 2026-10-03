@@ -146,3 +146,27 @@ test('model discovery lists provider models, classifies kinds and maps failures 
   await assert.rejects(probeProviderModels({ protocol: 'openai', apiKey: providerKey }), { reason: 'DISCOVERY_UNREACHABLE' });
   await assert.rejects(probeProviderModels({ protocol: 'openai', baseUrl: 'https://10.0.0.8/v1', apiKey: providerKey }), { reason: 'BASE_URL_INVALID' });
 });
+
+test('model discovery distinguishes header, connection and body timeouts from invalid responses without leaking credentials', async t => {
+  const timeout = new DOMException('provider echoed private-test-key', 'TimeoutError');
+  const fetchMock = t.mock.method(globalThis, 'fetch', async (): Promise<Response> => { throw timeout; });
+  const input = { protocol: 'openai', apiKey: providerKey };
+  const isSafeTimeout = (error: unknown) => {
+    const failure = error as Error & { reason?: string };
+    return failure.reason === 'DISCOVERY_TIMEOUT' && !failure.message.includes(providerKey);
+  };
+  await assert.rejects(probeProviderModels(input), isSafeTimeout);
+
+  fetchMock.mock.mockImplementation(async () => {
+    throw new TypeError('fetch failed', { cause: Object.assign(new Error('connection timeout'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) });
+  });
+  await assert.rejects(probeProviderModels(input), isSafeTimeout);
+
+  fetchMock.mock.mockImplementation(async () => new Response(new ReadableStream({
+    start(controller) { controller.error(timeout); },
+  })));
+  await assert.rejects(probeProviderModels(input), isSafeTimeout);
+
+  fetchMock.mock.mockImplementation(async () => new Response('{invalid json'));
+  await assert.rejects(probeProviderModels(input), { reason: 'DISCOVERY_BAD_RESPONSE' });
+});

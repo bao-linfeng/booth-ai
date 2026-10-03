@@ -14,7 +14,7 @@ import { computed, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
-import { Button, Checkbox, message, Tag } from 'ant-design-vue';
+import { Alert, Button, Checkbox, message, Tag } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import {
@@ -24,6 +24,8 @@ import {
   PURPOSE_LABELS,
   updateAiModelApi,
 } from '#/api/core/ai-models';
+
+import { discoveryErrorMessage } from '../discovery-error';
 
 type FormValues = Record<string, unknown> & {
   enabled: boolean;
@@ -41,6 +43,7 @@ const editing = ref<AiModelRecord | null>(null);
 const kind = ref<ModelKind>('image');
 const discovered = ref<DiscoveredModel[]>([]);
 const discovering = ref(false);
+const discoveryError = ref<null | string>(null);
 const showAllKinds = ref(false);
 
 const protocol = computed(() =>
@@ -207,10 +210,13 @@ function refreshModelOptions() {
 async function discover() {
   if (!provider.value) return;
   discovering.value = true;
+  discoveryError.value = null;
   try {
     discovered.value = await discoverAiProviderModelsApi(provider.value.id);
     refreshModelOptions();
     message.success(`获取到 ${discovered.value.length} 个模型`);
+  } catch (error) {
+    discoveryError.value = discoveryErrorMessage(error);
   } finally {
     discovering.value = false;
   }
@@ -225,6 +231,7 @@ async function open(target: AiProviderRecord, model?: AiModelRecord) {
   provider.value = target;
   editing.value = model ?? null;
   showAllKinds.value = false;
+  discoveryError.value = null;
   discovered.value = protocolOf(target.protocol)?.suggestedModels ?? [];
   kind.value =
     model?.kind ?? protocolOf(target.protocol)?.kinds[0]?.kind ?? 'image';
@@ -282,6 +289,14 @@ defineExpose({ open });
         {{ modelOptions.length }} 个
       </span>
     </div>
+    <Alert
+      v-if="discoveryError"
+      class="mb-4"
+      type="error"
+      show-icon
+      :message="discoveryError"
+      description="也可按供应商文档手动填写模型 ID；手动填写不会验证该模型是否可调用。"
+    />
     <Form />
     <div
       v-if="capability"

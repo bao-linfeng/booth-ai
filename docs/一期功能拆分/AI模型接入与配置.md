@@ -19,6 +19,22 @@
    - **添加模型**：在供应商下选择模型类型（文本/图像，取决于协议能力），点击「从供应商拉取模型列表」实时获取型号后选择（也可手动输入），填写显示名称；参数表单按“协议 + 类型”由服务端声明自动生成并在保存时校验。
 3. 「用途分配」标签页：为 AI 智选·需求解析、AI 换主题、四面平面素材分别选择模型并排序（第一个为主用）。图像用途在这里设置积分单价（换主题按张、四面素材按方向），同一个模型可以同时分配给换主题和四面素材并分别定价。未分配模型时该功能不可用（智选回退规则解析）。实际收费价格由后端费用 offer 冻结，不能以客户端显示数值直接扣费；具体规则见本平台自建积分模块（`credit_reservations` 预占扣费）。
 
+### 获取供应商模型列表
+
+列表请求由 API 服务器发起，使用所选协议、Base URL 和该供应商的 API Key；浏览器能访问供应商官网不代表 API 容器具备相同的网络或代理配置。
+
+| 供应商 | 接口协议 | Base URL | 列表请求 |
+|---|---|---|---|
+| OpenAI | OpenAI 及兼容接口 | `https://api.openai.com/v1`（可留空） | `GET /models`，Bearer 鉴权 |
+| DeepSeek | OpenAI 及兼容接口 | `https://api.deepseek.com` | `GET /models`，Bearer 鉴权 |
+| Gemini | Google Gemini | `https://generativelanguage.googleapis.com/v1beta`（可留空） | `GET /models?pageSize=1000`，`x-goog-api-key` 鉴权 |
+| OpenAI 兼容中转 | OpenAI 及兼容接口 | 供应商提供的 API 根路径，通常以 `/v1` 结尾 | 在 Base URL 后追加 `/models` |
+| DashScope 原生 | 阿里云 DashScope 原生接口 | `https://dashscope.aliyuncs.com/api/v1`（可留空） | 当前提供推荐型号，不执行远程连接或密钥验证 |
+
+「测试连接」只验证模型列表请求，不保存型号，也不保证列表中的每个型号都能执行图像编辑或文本生成。保存供应商后，点击该行的「添加模型 → 从供应商拉取模型列表」，在「模型 ID」中搜索选择，并保存为本平台使用的模型。若供应商未提供列表接口，可根据其文档手动填写模型 ID。
+
+前端对此请求等待 20 秒，服务端供应商请求限时 10 秒。超时提示需要检查服务器出站网络；鉴权失败需要检查 API Key 与权限；响应不合法需要检查 Base URL 的版本路径及是否支持列表接口。失败信息保留在弹窗内，方便修正后重试。
+
 智选在 2.8 秒预算内有限重试并尝试备用模型；模型异常、非法 JSON/字典 ID、伪造证据或字段冲突时降级规则解析或要求客户确认。请求输入仅传公开字典项与用户文字，不传内部方案、备注或凭据。
 
 ## 代码结构与扩展
@@ -41,7 +57,7 @@
 | `providers/*.ts` | 各协议实现：`openai`（Chat Completions、Images Edits、`GET /models`）、`gemini`（generateContent 图像、`GET /models`）、`dashscope`（万相异步任务 + 推荐模型） |
 | `config.ts` | 运行时读取分配给某用途的模型（`assignedAiModels` 不含密钥、`activeAiModels` 含解密后的密钥），凭据加解密 |
 | `endpoint.ts` | Base URL 校验：仅 https 公网地址，禁止账号/参数/内网与本机地址；非官方域名在每次请求前重新解析 DNS，拒绝解析到内网的地址 |
-| `discovery.ts` | 模型列表拉取（10 秒超时、禁止重定向、响应体上限），失败只返回 `AUTH_FAILED` / `UNREACHABLE` / `BAD_RESPONSE` / `ENDPOINT_INVALID` |
+| `discovery.ts` | 模型列表拉取（10 秒超时、禁止重定向、响应体上限），失败只返回 `AUTH_FAILED` / `TIMEOUT` / `UNREACHABLE` / `BAD_RESPONSE` / `ENDPOINT_INVALID`；管理端对此接口等待 20 秒，给服务端错误响应预留时间 |
 | `image.ts` | 图像通用能力：`ImageGenerationError` 分类、超时、受限下载、格式归一化、`providerJson` 请求封装 |
 
 管理接口在 `modules/ai-models/service.ts`（`/api/v1/admin/ai-protocols`、`ai-providers`、`ai-providers/:id/models`、`ai-providers/probe`、`ai-models`、`ai-model-assignments`）。拉取已保存供应商的模型时只使用已保存的地址和密钥，密钥不会被发往请求中携带的其他地址。

@@ -10,15 +10,7 @@ import { onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import {
-  Button,
-  message,
-  Modal,
-  Table,
-  TabPane,
-  Tabs,
-  Tag,
-} from 'ant-design-vue';
+import { Button, message, Modal, TabPane, Tabs, Tag } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
@@ -26,13 +18,12 @@ import {
   deleteAiProviderApi,
   getAiModelAssignmentsApi,
   getAiProtocolsApi,
-  KIND_LABELS,
-  PURPOSE_LABELS,
 } from '#/api/core/ai-models';
 
 import AssignmentPanel from './components/AssignmentPanel.vue';
 import ModelFormModal from './components/ModelFormModal.vue';
 import ProviderFormModal from './components/ProviderFormModal.vue';
+import ProviderModelsTable from './components/ProviderModelsTable.vue';
 import { createProviderGridOptions } from './options';
 
 const protocols = ref<AiProtocol[]>([]);
@@ -49,38 +40,8 @@ const [Grid, gridApi] = useVbenVxeGrid({
 const providerModalRef = ref<InstanceType<typeof ProviderFormModal>>();
 const modelModalRef = ref<InstanceType<typeof ModelFormModal>>();
 
-const modelColumns = [
-  { title: '显示名称', dataIndex: 'name', key: 'name' },
-  { title: '类型', dataIndex: 'kind', key: 'kind', width: 70 },
-  { title: '模型 ID', dataIndex: 'model', key: 'model' },
-  { title: '参数', dataIndex: 'params', key: 'params' },
-  { title: '用途', dataIndex: 'purposes', key: 'purposes' },
-  { title: '状态', dataIndex: 'enabled', key: 'enabled', width: 70 },
-  { title: '操作', key: 'actions', width: 130 },
-];
-
 function protocolLabel(id: string) {
   return protocols.value.find((item) => item.id === id)?.label ?? id;
-}
-
-function paramSummary(model: AiModelRecord, provider: AiProviderRecord) {
-  const fields =
-    protocols.value
-      .find((item) => item.id === provider.protocol)
-      ?.kinds.find((item) => item.kind === model.kind)?.params ?? [];
-  return (
-    fields
-      .map((field) => {
-        const value = model.params[field.key] ?? field.default;
-        const label =
-          field.type === 'select'
-            ? (field.options.find((option) => option.value === value)?.label ??
-              value)
-            : value;
-        return `${field.label}: ${label}`;
-      })
-      .join('，') || '—'
-  );
 }
 
 async function loadAssignments() {
@@ -128,7 +89,7 @@ onMounted(async () => {
 
 <template>
   <Page auto-content-height>
-    <Tabs v-model:active-key="activeTab" class="h-full">
+    <Tabs v-model:active-key="activeTab" class="ai-model-tabs h-full">
       <TabPane key="providers" tab="供应商与模型" class="h-full">
         <Grid>
           <template #toolbar-actions>
@@ -175,67 +136,16 @@ onMounted(async () => {
             </Button>
           </template>
           <template #models="{ row }">
-            <Table
-              :columns="modelColumns"
-              :data-source="row.models"
-              :pagination="false"
-              row-key="id"
-              size="small"
-              :locale="{ emptyText: '暂无模型，点击「添加模型」从供应商拉取' }"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'kind'">
-                  {{ KIND_LABELS[(record as AiModelRecord).kind] }}
-                </template>
-                <template v-else-if="column.key === 'model'">
-                  <code class="text-xs">{{ record.model }}</code>
-                </template>
-                <template v-else-if="column.key === 'params'">
-                  <span class="text-xs">{{
-                    paramSummary(record as AiModelRecord, row)
-                  }}</span>
-                </template>
-                <template v-else-if="column.key === 'purposes'">
-                  <Tag
-                    v-for="purpose in (record as AiModelRecord).purposes"
-                    :key="purpose"
-                    color="blue"
-                  >
-                    {{ PURPOSE_LABELS[purpose] }}
-                  </Tag>
-                  <span
-                    v-if="!record.purposes.length"
-                    class="text-xs text-muted-foreground"
-                    >未分配</span>
-                </template>
-                <template v-else-if="column.key === 'enabled'">
-                  <Tag :color="record.enabled ? 'success' : 'default'">
-                    {{ record.enabled ? '启用' : '停用' }}
-                  </Tag>
-                </template>
-                <template v-else-if="column.key === 'actions'">
-                  <Button
-                    type="link"
-                    size="small"
-                    @click="modelModalRef?.open(row, record as AiModelRecord)"
-                  >
-                    编辑
-                  </Button>
-                  <Button
-                    type="link"
-                    size="small"
-                    danger
-                    @click="confirmDeleteModel(record as AiModelRecord)"
-                  >
-                    删除
-                  </Button>
-                </template>
-              </template>
-            </Table>
+            <ProviderModelsTable
+              :provider="row"
+              :protocols="protocols"
+              @edit="modelModalRef?.open(row, $event)"
+              @delete="confirmDeleteModel"
+            />
           </template>
         </Grid>
       </TabPane>
-      <TabPane key="assignments" tab="用途分配">
+      <TabPane key="assignments" tab="用途分配" class="h-full overflow-y-auto">
         <AssignmentPanel
           :assignments="assignments"
           :protocols="protocols"
@@ -256,3 +166,9 @@ onMounted(async () => {
     />
   </Page>
 </template>
+
+<style scoped>
+.ai-model-tabs :deep(.ant-tabs-content) {
+  height: 100%;
+}
+</style>

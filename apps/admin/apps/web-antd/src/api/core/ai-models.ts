@@ -119,6 +119,7 @@ export function deleteAiProviderApi(id: string) {
 export function discoverAiProviderModelsApi(id: string) {
   return requestClient.get<DiscoveredModel[]>(
     `/v1/admin/ai-providers/${id}/models`,
+    { timeout: 20_000 },
   );
 }
 
@@ -131,6 +132,7 @@ export function probeAiProviderApi(input: {
   return requestClient.post<DiscoveredModel[]>(
     '/v1/admin/ai-providers/probe',
     input,
+    { timeout: 20_000 },
   );
 }
 

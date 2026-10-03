@@ -15,6 +15,8 @@ import {
   updateAiProviderApi,
 } from '#/api/core/ai-models';
 
+import { discoveryErrorMessage } from '../discovery-error';
+
 type FormValues = {
   apiKey?: string;
   baseUrl?: string;
@@ -29,6 +31,7 @@ const emit = defineEmits<{ reload: [] }>();
 const editing = ref<AiProviderRecord | null>(null);
 const testing = ref(false);
 const testResult = ref<null | string>(null);
+const testError = ref<null | string>(null);
 
 function protocolOf(id?: string) {
   return props.protocols.find((item) => item.id === id);
@@ -134,6 +137,7 @@ async function testConnection() {
   }
   testing.value = true;
   testResult.value = null;
+  testError.value = null;
   try {
     let models;
     if (apiKey) {
@@ -153,8 +157,10 @@ async function testConnection() {
       return;
     }
     testResult.value = protocolOf(values.protocol)?.discoverable
-      ? `连接成功，供应商返回 ${models.length} 个模型`
-      : `该协议不提供模型列表，可选推荐模型 ${models.length} 个`;
+      ? `连接成功，供应商返回 ${models.length} 个模型。保存供应商后，点击「添加模型 → 从供应商拉取模型列表」选择。`
+      : `该协议不提供模型列表，已载入 ${models.length} 个推荐型号，未验证远程连接或密钥。`;
+  } catch (error) {
+    testError.value = discoveryErrorMessage(error);
   } finally {
     testing.value = false;
   }
@@ -163,6 +169,7 @@ async function testConnection() {
 function open(provider?: AiProviderRecord) {
   editing.value = provider ?? null;
   testResult.value = null;
+  testError.value = null;
   modalApi.setState({
     title: provider ? `编辑供应商 · ${provider.name}` : '新建供应商',
   });
@@ -212,6 +219,13 @@ defineExpose({ open });
       <Button :loading="testing" @click="testConnection">测试连接</Button>
       <span class="text-xs text-muted-foreground">用当前填写的地址与密钥拉取模型列表，不会保存</span>
     </div>
+    <Alert
+      v-if="testError"
+      class="mt-3"
+      type="error"
+      show-icon
+      :message="testError"
+    />
     <Alert
       v-if="testResult"
       class="mt-3"
