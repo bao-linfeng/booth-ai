@@ -5,5 +5,14 @@
 @layer base {
   :root {
     --radius: 0.5rem;
+    --success: 152 64% 28%;
+    --warning: 32 88% 32%;
+    --info: 211 76% 39%;
   }
-} 
+
+  .dark {
+    --success: 152 58% 65%;
+    --warning: 38 92% 68%;
+    --info: 211 86% 73%;
+  }
+}

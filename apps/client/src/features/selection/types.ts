@@ -47,13 +47,14 @@ export interface Catalog {
 }
 
 export interface SchemeImage { assetId: string; url: string; thumbnailUrl: string; order: number; width: number; height: number }
+export type MatchType = 'direct' | 'reference' | 'random'
 export interface Specifications {
   lengthMm: number; widthMm: number; heightMm: number; areaM2: number
   openingCount: number; productSystemId: string; productSystemLabel: string
 }
 export interface MatchItem {
   code: string
-  matchType: 'direct' | 'reference' | 'random'
+  matchType: MatchType
   images: SchemeImage[]
   specifications: Specifications
   reasons: string[]
