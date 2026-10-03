@@ -13,16 +13,14 @@ export async function lockCreditUser(client: pg.PoolClient, userId: string): Pro
 }
 
 export async function lockCreditJob(client: pg.PoolClient, job: CreditJob): Promise<LockedCreditJob | undefined> {
-  const owner = (await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM ${job.kind}_jobs WHERE id = $1 FOR UPDATE`, [job.id])).rows[0];
-  if (!owner) return;
-  await lockCreditUser(client, owner.userId);
+  const peek = (await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM ${job.kind}_jobs WHERE id = $1`, [job.id])).rows[0];
+  if (!peek) return;
+  await lockCreditUser(client, peek.userId);
   return (await client.query<LockedCreditJob>(
     `SELECT user_id AS "userId", status, unit_credits AS "unitCredits", requested_count AS "requestedCount",
       usable_count AS "usableCount", ${job.kind === 'theme' ? 'cache_hit' : 'false'} AS "cacheHit",
-      lease_token AS "leaseToken",
-      lease_until AS "leaseUntil"
-     FROM ${job.kind}_jobs WHERE id = $1 FOR UPDATE`, [job.id],
-  )).rows[0];
+      lease_token AS "leaseToken", lease_until AS "leaseUntil"
+    FROM ${job.kind}_jobs WHERE id = $1 FOR UPDATE`, [job.id])).rows[0];
 }
 
 export async function reserveJobCredits(client: pg.PoolClient, job: CreditJob, userId: string, amount: number): Promise<void> {
