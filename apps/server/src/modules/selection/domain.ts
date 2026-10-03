@@ -36,6 +36,8 @@ export interface Requirement {
 }
 
 export interface Option { id: string; label: string; }
+/** 目录/匹配用到的适用条件问题摘要（管理端完整记录见 applicability-questions.ts）。 */
+export interface ApplicabilityQuestionSummary { id: string; label: string; helpText: string; }
 export interface BoothSpace { id: string; label: string; lengthMm: number; widthMm: number; heightMm: number; }
 
 export interface Catalog {
@@ -48,7 +50,7 @@ export interface Catalog {
   budgetTiers: Option[];
   zones: Option[];
   features: Option[];
-  applicabilityQuestions: { id: string; label: string; helpText: string; }[];
+  applicabilityQuestions: ApplicabilityQuestionSummary[];
 }
 
 export interface Specifications {

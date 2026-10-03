@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../infra/storage.js';
-import { rulesVersion, type BoothSpace, type Candidate, type CandidateImage, type Catalog, type MatchDiagnostics, type MatchItem, type Option, type PublicImage } from './domain.js';
+import { rulesVersion, type ApplicabilityQuestionSummary, type BoothSpace, type Candidate, type CandidateImage, type Catalog, type MatchDiagnostics, type MatchItem, type Option, type PublicImage } from './domain.js';
 
 interface CandidateRow {
   id: string;
@@ -58,7 +58,7 @@ export async function loadCatalog(pool: pg.Pool | pg.PoolClient): Promise<Catalo
     widthMm: row.widthMm,
     heightMm: row.heightMm,
   }));
-  const questionsResult = await pool.query<{ id: string; label: string; helpText: string }>(
+  const questionsResult = await pool.query<ApplicabilityQuestionSummary>(
     `SELECT id, label, help_text AS "helpText" FROM applicability_questions WHERE enabled ORDER BY sort_order, id`
   );
   

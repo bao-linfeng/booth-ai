@@ -1,9 +1,7 @@
 import type pg from 'pg';
+import type { ApplicabilityQuestionSummary } from './domain.js';
 
-export interface ApplicabilityQuestion {
-  id: string;
-  label: string;
-  helpText: string;
+export interface ApplicabilityQuestion extends ApplicabilityQuestionSummary {
   sortOrder: number;
   enabled: boolean;
   createdAt: string;
