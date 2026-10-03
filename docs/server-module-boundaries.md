@@ -37,6 +37,13 @@
 `modules/selection/service.ts` 编排字典加载、模型和提示词查询、需求解析、候选匹配以及流水记录。
 业务服务接收普通输入与 `SelectionIdentity`，无需 Fastify 请求对象即可调用与测试。
 
+## 生成入口
+
+`http/client/theme-jobs` 与 `http/client/artwork-jobs` 保留请求 schema、身份提取、限流、日志和 HTTP/SSE 响应映射。
+`modules/generation/{theme,artwork}/offers.ts` 负责生成能力、报价快照、积分报价和 Redis offer 存取（TTL 300 秒）。
+`submission.ts` 接收普通业务输入，先处理请求重放，再加载 offer 并调用事务服务校验和创建任务；已受理请求可在 offer 过期后重放。
+`service.ts` 保持 offer 归属/参数/快照校验及任务、Outbox、积分预占的事务边界，业务模块不依赖 HTTP 请求对象。
+
 ## 认证入口
 
 `http/authentication.ts` 统一建立请求级 principal，业务路由只提取身份；`modules/identity/principal.ts` 校验账户和 Session 版本，领域服务保留对象归属校验。认证、禁用、会话撤销和限流策略见 [server-authentication.md](./server-authentication.md)。

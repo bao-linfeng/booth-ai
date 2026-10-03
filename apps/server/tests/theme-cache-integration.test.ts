@@ -52,7 +52,7 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     await pool.query(await readFile(new URL('../migrations/050_asset_scope.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/051_account_session_versions.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/052_generation_observability.sql', import.meta.url), 'utf8'));
-    for (const name of ['054_gemini_artwork_model', '055_ai_model_catalog', '056_ai_providers_and_models']) {
+    for (const name of ['054_gemini_artwork_model', '055_ai_model_catalog', '056_ai_providers_and_models', '057_ai_model_identity_and_catalog']) {
       await pool.query(await readFile(new URL(`../migrations/${name}.sql`, import.meta.url), 'utf8'));
     }
     assert.equal((await pool.query('SELECT asset_version_id FROM theme_job_results WHERE job_id=$1', [legacy])).rows[0].asset_version_id, legacyVersion);

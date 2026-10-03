@@ -227,9 +227,27 @@ test('idempotent cache replay works after offer expiry and preserves free billin
   assert.equal(response.json().data.reusedRequest, true);
   assert.equal(response.json().data.cacheHit, true);
   assert.equal(response.json().data.credits.status, 'not_charged');
+  assert.equal(response.headers.location, `/api/v1/client/theme-jobs/${jobId}`);
   assert.equal(statements.filter(sql => !sql.includes('session_version')).length, 1);
   const conflict = await app.inject({ method: 'POST', url: '/theme-jobs', headers, payload: { ...parameters, input: { ...parameters.input, brandKeywords: 'different' }, offerId: 'expired', requestKey: '00000000-0000-4000-8000-000000000004' } });
   assert.equal(conflict.statusCode, 409);
+});
+
+test('theme submission preserves the expired offer HTTP response without creating a task', async t => {
+  const { app, statements } = await setup(sql => {
+    if (sql.includes('FROM theme_jobs WHERE')) return { rows: [] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  t.after(() => app.close());
+  const response = await app.inject({ method: 'POST', url: '/theme-jobs', headers,
+    payload: { ...parameters, offerId: 'expired', requestKey: '00000000-0000-4000-8000-000000000004' } });
+  assert.equal(response.statusCode, 409);
+  const { error } = response.json();
+  assert.equal(error.code, 'REQUEST_ERROR');
+  assert.equal(error.reason, 'OFFER_EXPIRED');
+  assert.equal(error.message, 'Offer expired or not found');
+  assert.equal(typeof error.requestId, 'string');
+  assert.ok(!statements.includes('BEGIN'));
 });
 
 test('a free offer becoming unavailable requires reconfirmation instead of charging', async t => {
