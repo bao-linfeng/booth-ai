@@ -6,8 +6,11 @@ import { transaction } from '../../../infra/database.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
 import { buildThemePrompt } from './prompt.js';
 import { lockCreditUser, reserveJobCredits } from '../../credits/service.js';
+import { normalizeThemeInput, type ThemeInput } from './domain.js';
 
-export type ThemeInput = { industryId: string; styleId: string; brandColors?: string[]; brandKeywords?: string };
+export type { ThemeInput } from './domain.js';
+export { normalizeThemeInput } from './domain.js';
+
 export type ThemeParameters = {
   schemeCode: string; sourceAssetId: string; input: ThemeInput; requestedCount: number; cacheMode: 'reuse' | 'refresh';
   searchId?: string;
@@ -31,15 +34,6 @@ type JobSummary = {
   unitCredits: number | null;
 };
 type Database = Pick<pg.Pool, 'query'>;
-
-export function normalizeThemeInput(input: ThemeInput): ThemeInput {
-  const brandKeywords = input.brandKeywords?.trim() ?? '';
-  if (/[\u0000-\u001f\u007f]/u.test(brandKeywords)) {
-    throw Object.assign(new Error('Brand keywords contain control characters'), { statusCode: 400 });
-  }
-  return { industryId: input.industryId, styleId: input.styleId,
-    brandColors: [...new Set((input.brandColors ?? []).map(color => color.toUpperCase()))], brandKeywords };
-}
 
 function hash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');

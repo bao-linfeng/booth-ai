@@ -1,6 +1,7 @@
 import type pg from 'pg';
+import { digest } from '../../../lib/digest.js';
+import { domainError as projectError } from '../../../lib/errors.js';
 import type { createStorage } from '../../../infra/storage.js';
-import { digest, projectError } from '../../projects/domain.js';
 import type { AssetSnapshot } from '../../projects/snapshot.js';
 import type { ThemeInput } from '../theme/service.js';
 import { ARTWORK_QUALITY, DIRECTIONS, type ArtworkContext, type ArtworkSnapshot, type Database, type Direction, type JobSummary } from './types.js';

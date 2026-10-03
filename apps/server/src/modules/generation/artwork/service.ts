@@ -1,8 +1,9 @@
 import type pg from 'pg';
 import { assignedAiModels } from '../../../infra/ai/config.js';
 import { transaction } from '../../../infra/database.js';
+import { digest } from '../../../lib/digest.js';
+import { domainError as projectError } from '../../../lib/errors.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
-import { digest, projectError } from '../../projects/domain.js';
 import { lockCreditUser, reserveJobCredits } from '../../credits/service.js';
 import { buildArtworkPrompts } from './prompt.js';
 import { artworkHash, assertThemeSelection, receipt } from './queries.js';

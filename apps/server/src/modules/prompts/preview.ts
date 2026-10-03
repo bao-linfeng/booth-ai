@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { buildSelectionMessages, extractionInstruction, SELECTION_FIXED_INSTRUCTIONS } from '../selection/prompt.js';
 import { loadCatalog } from '../selection/repository.js';
 import { buildThemePrompt, DEFAULT_THEME_BODY, THEME_FIXED_INSTRUCTIONS } from '../generation/theme/prompt.js';
-import { normalizeThemeInput } from '../generation/theme/service.js';
+import { normalizeThemeInput } from '../generation/theme/domain.js';
 import { ARTWORK_FIXED_INSTRUCTIONS, buildArtworkPrompts, DEFAULT_ARTWORK_BODY } from '../generation/artwork/prompt.js';
 import { inspectPrompt, PROMPT_DEFAULT_VERSION, type PromptPurpose } from './template.js';
 

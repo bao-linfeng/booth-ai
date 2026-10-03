@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import type { createStorage } from '../../../infra/storage.js';
+import { domainError as projectError } from '../../../lib/errors.js';
 import { storedZipStream } from '../../../infra/zip.js';
-import { projectError } from '../../projects/domain.js';
 import { artworkFiles, ownedArtworkJob, readyArtworkFiles, type ArtworkFile } from './queries.js';
 
 async function* verifiedArtwork(source: AsyncIterable<Uint8Array>, file: ArtworkFile) {

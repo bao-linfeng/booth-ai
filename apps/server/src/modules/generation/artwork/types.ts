@@ -3,7 +3,7 @@ import type { Config } from '../../../config.js';
 import type { AssignedAiModel } from '../../../infra/ai/types.js';
 import type { createStorage } from '../../../infra/storage.js';
 import type { Logger } from '../../../infra/logger.js';
-import type { ThemeInput } from '../theme/service.js';
+import type { ThemeInput } from '../theme/domain.js';
 
 export const DIRECTIONS = ['front', 'back', 'left', 'right'] as const;
 export type Direction = typeof DIRECTIONS[number];

@@ -1,9 +1,8 @@
 import ExcelJS from 'exceljs';
 import { quantityFor } from './quantity.js';
-import type { BomItemInput, BomRecord, MeasurementKind } from './types.js';
+import type { BomItemInput, BomRecord, MeasurementKind, ImportIssue, ParsedBom } from './types.js';
 
-export interface ImportIssue { code: string; sheet?: string; row?: number; field?: string; message: string }
-export interface ParsedBom { items: BomItemInput[]; errors: ImportIssue[]; warnings: ImportIssue[] }
+export type { ImportIssue, ParsedBom } from './types.js';
 
 const importHeaders = ['产品名称', '型号', '规格/mm', '数量', '计量类型', '单价/¥', '总价/¥', '重量合计/kg', 'ERP编码'];
 const exportHeaders = ['产品名称', '型号', '规格/mm', '数量', '单价/¥', '总价/¥', '重量合计/kg', 'ERP编码'];

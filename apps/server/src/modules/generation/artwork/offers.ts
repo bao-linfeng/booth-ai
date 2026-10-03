@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { projectError } from '../../projects/domain.js';
+import { domainError as projectError } from '../../../lib/errors.js';
 import { loadArtworkSnapshot } from './service.js';
 import { ARTWORK_QUALITY, type ArtworkContext, type ArtworkOffer } from './types.js';
 
