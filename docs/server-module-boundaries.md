@@ -52,6 +52,13 @@
 `upload.ts` 负责文件检查、图片信息读取、摘要计算、存储写入、调用变更用例和落库失败后的存储补偿。
 资产变更持有方案行锁，并在同一事务客户端上调用方案模块的 `invalidatePublication()`，使发布失效与资产变更原子提交或回滚。
 
+## 方案导入入口
+
+`http/admin/scheme-imports` 负责 multipart 读取、扩展名校验、身份提取和响应映射。
+`modules/schemes/imports/workbook.ts` 读取 Excel 并转换单元格与单位；`validation.ts` 负责行校验、字典标签解析和预览行还原。
+`preview.ts` 编排解析、行分类、重复方案版本快照与预览落库；`commit.ts` 负责幂等提交，并保持整批一个事务、每行一个 `SAVEPOINT` 的语义。
+提交时补齐的开口面数/展位尺寸字典项由 `generated-dictionaries.ts` 推导，经 `modules/selection/dictionaries.ts` 的 `ensureDictionaryItems()` 写入，导入模块不直接改写字典表。
+
 ## 认证入口
 
 `http/authentication.ts` 统一建立请求级 principal，业务路由只提取身份；`modules/identity/principal.ts` 校验账户和 Session 版本，领域服务保留对象归属校验。认证、禁用、会话撤销和限流策略见 [server-authentication.md](./server-authentication.md)。

@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
-import { commitImport, previewImport, type CommitImportOptions } from '../../../modules/schemes/imports.js';
+import { commitImport } from '../../../modules/schemes/imports/commit.js';
+import { previewImport } from '../../../modules/schemes/imports/preview.js';
+import type { CommitImportOptions } from '../../../modules/schemes/imports/types.js';
 
 interface ImportParams {
   importId: string;

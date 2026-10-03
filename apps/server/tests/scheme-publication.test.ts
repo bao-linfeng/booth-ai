@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { createScheme, updateScheme } from '../src/modules/schemes/service.js';
-import { commitImport } from '../src/modules/schemes/imports.js';
+import { commitImport } from '../src/modules/schemes/imports/commit.js';
 import { validateSchemeDictionaryIds } from '../src/modules/schemes/dictionary-ids.js';
 
 const adminId = '00000000-0000-4000-8000-000000000001';

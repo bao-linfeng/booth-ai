@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import type pg from 'pg';
-import { commitImport, previewImport } from '../src/modules/schemes/imports.js';
-import type { ImportRow } from '../src/modules/schemes/imports.js';
+import { commitImport } from '../src/modules/schemes/imports/commit.js';
+import { previewImport } from '../src/modules/schemes/imports/preview.js';
+import type { ImportRow } from '../src/modules/schemes/imports/types.js';
 
 test('the scheme template preview stores JSON rows and summary for commit', async () => {
   const file = new URL('../../../docs/source/灵通展台方案打标模板.xlsx', import.meta.url);
@@ -124,5 +125,48 @@ test('commit rejects duplicate rows when the preview revision is stale or missin
     { rowNumber: 2, code: 'S1', reason: '方案已被他人修改，请重新导入' },
     { rowNumber: 3, code: 'S2', reason: '预览数据缺少版本信息' },
   ]);
+  assert.deepEqual(JSON.parse(savedResult!), result);
+});
+
+test('commit isolates failing rows with savepoints and creates generated dictionary items for written rows', async () => {
+  const base: ImportRow = {
+    code: 'S1', name: 'Scheme', parentCode: null, widthMm: 3000, lengthMm: 6000, areaM2: 18,
+    heightMm: null, openingCount: 2, productSystemId: null, styleId: null, industryIds: null,
+    budgetTierId: null, zoneIds: null, featureIds: null, description: null, keywords: null,
+    verificationStatus: 'unverified', notes: null,
+  };
+  const queries: string[] = [];
+  const itemInserts: unknown[][] = [];
+  let savedResult: string | undefined;
+  const client = {
+    query: async (sql: string, params?: unknown[]) => {
+      queries.push(sql.trim().split('\n')[0]!.trim());
+      if (sql.includes('FROM scheme_imports')) return { rows: [{ status: 'pending', preview: [
+        { rowNumber: 2, code: 'S1', name: 'Scheme', status: 'valid', data: base },
+        { rowNumber: 3, code: 'S2', name: 'Scheme', status: 'valid', data: { ...base, code: 'S2', widthMm: 0.5 } },
+        { rowNumber: 4, code: 'S3', name: 'Scheme', status: 'valid', data: { ...base, code: 'S3', parentCode: 'MISSING' } },
+      ] }] };
+      if (sql.includes('INSERT INTO schemes') && params?.[0] === 'S3') throw new Error('violates foreign key constraint on parent_code');
+      if (sql.includes('INSERT INTO dictionary_items')) { itemInserts.push(params ?? []); return { rowCount: 1, rows: [] }; }
+      if (sql.includes('UPDATE scheme_imports')) savedResult = params?.[2] as string;
+      return { rows: [], rowCount: 1 };
+    },
+    release: () => {},
+  };
+  const pool = { connect: async () => client } as unknown as pg.Pool;
+
+  const result = await commitImport(pool, 'admin-1', 'import-1', { duplicateStrategy: 'skip' });
+  assert.equal(result.created, 1);
+  assert.deepEqual(result.failed, [
+    { rowNumber: 3, code: 'S2', reason: '尺寸无法精确表示为整数毫米' },
+    { rowNumber: 4, code: 'S3', reason: '母方案不存在' },
+  ]);
+  assert.equal(queries.filter(sql => sql === 'SAVEPOINT row_save').length, 3);
+  assert.equal(queries.filter(sql => sql === 'ROLLBACK TO SAVEPOINT row_save').length, 2);
+  // 仅已写入的 S1 参与字典生成：开口面数 2、展位长 6000、展位宽 3000、展位面积 18
+  assert.deepEqual(itemInserts.map(params => [params[0], params[1]]), [
+    ['opening_count', '2'], ['booth_length', '6000'], ['booth_width', '3000'], ['booth_area', '18'],
+  ]);
+  assert.equal(result.dictionaryItemsCreated, 4);
   assert.deepEqual(JSON.parse(savedResult!), result);
 });

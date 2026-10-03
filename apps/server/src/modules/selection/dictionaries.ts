@@ -224,3 +224,34 @@ export async function deleteDictionaryItem(pool: pg.Pool, itemId: string, dictio
     : await pool.query('DELETE FROM dictionary_items WHERE id = $1 AND dictionary_id = $2', [itemId, dictionaryId]);
   if (!result.rowCount) throw requestError('Dictionary item not found', 404);
 }
+
+export interface DictionarySeed {
+  code: string;
+  name: string;
+  type: string;
+}
+
+export interface DictionaryItemSeed {
+  value: string;
+  label: string;
+  sortOrder: number;
+}
+
+/** 幂等确保字典及条目存在；已有字典和条目保持原样，返回新增条目数。 */
+export async function ensureDictionaryItems(client: pg.PoolClient, dictionary: DictionarySeed, items: DictionaryItemSeed[]): Promise<number> {
+  await client.query(
+    'INSERT INTO dictionaries (code, name, type) VALUES ($1, $2, $3) ON CONFLICT (code) DO NOTHING',
+    [dictionary.code, dictionary.name, dictionary.type],
+  );
+  let created = 0;
+  for (const item of items) {
+    const result = await client.query(
+      `INSERT INTO dictionary_items (dictionary_id, item_value, item_label, sort_order)
+       SELECT id, $2, $3, $4 FROM dictionaries WHERE code = $1
+       ON CONFLICT (dictionary_id, item_value) DO NOTHING`,
+      [dictionary.code, item.value, item.label, item.sortOrder],
+    );
+    created += result.rowCount ?? 0;
+  }
+  return created;
+}
