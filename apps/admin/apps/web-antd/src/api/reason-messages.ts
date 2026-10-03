@@ -1,0 +1,18 @@
+/** 服务端 `error.reason` 的中文提示；未列出的原因回退到通用错误信息。 */
+export const REASON_MESSAGES: Record<string, string> = {
+  BASE_URL_INVALID:
+    '接口地址无效：必须是 https 公网地址，不能包含账号、参数或指向内网',
+  CREDENTIAL_REQUIRED: '需要先填写 API Key 才能启用或拉取模型',
+  CREDITS_INVALID: '图像用途需填写每单位积分，文本用途不计积分',
+  DISCOVERY_AUTH_FAILED: '拉取模型失败：API Key 无效或无权限',
+  DISCOVERY_BAD_RESPONSE: '拉取模型失败：供应商返回了无法识别的响应',
+  DISCOVERY_ENDPOINT_INVALID: '拉取模型失败：接口地址指向内网或不可用',
+  DISCOVERY_UNREACHABLE: '拉取模型失败：无法连接供应商，请检查地址和网络',
+  KIND_UNSUPPORTED: '该协议不支持此模型类型',
+  MODEL_IN_USE: '模型仍被用途分配使用，请先在「用途分配」中移除',
+  NAME_TAKEN: '名称已存在',
+  PARAMS_INVALID: '模型参数不合法',
+  PROVIDER_IN_USE: '供应商下仍有模型，请先删除模型',
+  PURPOSE_UNSUPPORTED: '所选模型不能用于该用途',
+  REVISION_CONFLICT: '配置已被他人修改，请刷新后重试',
+};

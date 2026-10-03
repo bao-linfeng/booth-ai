@@ -94,7 +94,7 @@ onMounted(async () => {
 
     themeModels.value = modelsRes
     if (modelsRes.length > 0) {
-      selectedModel.value = modelsRes[0].provider
+      selectedModel.value = modelsRes[0].id
     }
 
     if (selectedAssetId.value) {
@@ -400,8 +400,8 @@ async function handleConfirm() {
                     <SelectValue placeholder="加载中..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem v-for="m in themeModels" :key="m.provider" :value="m.provider">
-                      {{ m.label }} · {{ m.unitCredits }} 积分/张
+                    <SelectItem v-for="m in themeModels" :key="m.id" :value="m.id">
+                      {{ m.name }} · {{ m.unitCredits }} 积分/张
                     </SelectItem>
                   </SelectContent>
                 </Select>

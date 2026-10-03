@@ -39,15 +39,15 @@ const preview = computed(() => route.path.startsWith("/ai-selection/preview/"));
 const liveData = ref<SchemeDetail | null>(null);
 const errorState = ref(false);
 const themeModels = ref<ThemeModel[]>([]);
-const selectedThemeModel = ref<ThemeModel['provider'] | ''>('');
+const selectedThemeModel = ref<ThemeModel['id'] | ''>('');
 const themeModelsError = ref(false);
-const selectedThemePrice = computed(() => themeModels.value.find(model => model.provider === selectedThemeModel.value)?.unitCredits);
+const selectedThemePrice = computed(() => themeModels.value.find(model => model.id === selectedThemeModel.value)?.unitCredits);
 
 async function fetchThemeModels() {
   themeModelsError.value = false;
   try {
     themeModels.value = await getThemeModels();
-    selectedThemeModel.value = themeModels.value[0]?.provider ?? '';
+    selectedThemeModel.value = themeModels.value[0]?.id ?? '';
   } catch { themeModelsError.value = true; }
 }
 
@@ -413,8 +413,8 @@ onMounted(async () => {
                        <SelectValue placeholder="选择图像模型" />
                      </SelectTrigger>
                      <SelectContent>
-                       <SelectItem v-for="model in themeModels" :key="model.provider" :value="model.provider">
-                         {{ model.label }} · {{ model.unitCredits }} 积分/张
+                       <SelectItem v-for="model in themeModels" :key="model.id" :value="model.id">
+                         {{ model.name }} · {{ model.unitCredits }} 积分/张
                        </SelectItem>
                      </SelectContent>
                    </Select>

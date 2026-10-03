@@ -14,6 +14,7 @@
 | `apps/server/src/modules/selection-analytics` | 选型尝试、解析、检索流水与统计 |
 | `apps/server/src/modules/generation` | 主题与画稿任务、生成快照、执行与结算、任务查询 |
 | `apps/server/src/modules/prompts` | 提示词匹配、维护、渲染与预览 |
+| `apps/server/src/modules/ai-models` | AI 供应商、模型与用途分配的后台维护，模型列表拉取 |
 | `apps/server/src/modules/credits` | 签到充值、积分账本、预占结算与对账 |
 | `apps/server/src/modules/projects` | 询价、项目快照、报价与交付 |
 | `apps/server/src/modules/tasks` | Foundation echo 任务业务 |

@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import { normalizeArtworkImage } from '../src/modules/generation/artwork/execution.js';
 import { dispatchArtworkOutbox } from '../src/workers/artwork-outbox.js';
 import { DIRECTIONS, DIRECTION_LABELS, loadArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
+import { assignedRow } from './ai-fixtures.js';
 
 test('default artwork snapshot freezes single-reference reconstruction and resolves each requested camera direction', async () => {
   const source = { sourceAssetId: 'theme-asset', versionId: 'theme-version', objectKey: 'selected-theme.png', checksum: 'theme-checksum',
@@ -14,8 +15,7 @@ test('default artwork snapshot freezes single-reference reconstruction and resol
   const template = { id: 'template', revision: 3, body: '{{industryLabel}}/{{styleLabel}}/{{directionLabel}}', createdAt: new Date(), updatedAt: new Date() };
   const pool = { query: async (sql: string) => {
     if (sql.includes('FROM theme_jobs')) return { rows: [source] };
-    if (sql.includes('FROM ai_model_configs')) return { rows: [{ purpose: 'artwork', provider: 'openai', enabled: true,
-      priority: 1, unitCredits: 5, revision: 2, credentialCiphertext: Buffer.from('configured') }] };
+    if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('openai', 'artwork', { unitCredits: 5, revision: 2 })] };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: 'industry', label: '汽车' }, { id: 'style', label: '科技未来' }] };
     if (sql.includes('FROM prompt_templates')) return { rows: templateEnabled ? [template] : [] };
     throw new Error(`Unexpected query: ${sql}`);
@@ -73,20 +73,20 @@ test('default artwork snapshot freezes single-reference reconstruction and resol
   }
 });
 
-test('artwork snapshot freezes the configured gemini artwork model rather than theme models', async () => {
+test('artwork snapshot freezes the first assigned model able to render artwork', async () => {
   const source = { sourceAssetId: 'theme-asset', versionId: 'theme-version', objectKey: 'selected-theme.png', checksum: 'theme-checksum',
     input: { industryId: 'industry', styleId: 'style', brandColors: [], brandKeywords: '' } };
-  const configured = { enabled: true, priority: 0, credentialCiphertext: Buffer.from('configured') };
   const pool = { query: async (sql: string) => {
     if (sql.includes('FROM theme_jobs')) return { rows: [source] };
-    if (sql.includes('FROM ai_model_configs')) return { rows: [{ ...configured, purpose: 'theme', provider: 'wanx', unitCredits: 1, revision: 9 },
-      { ...configured, purpose: 'artwork', provider: 'gemini', unitCredits: 6, revision: 3 }] };
+    // Rows come back in position order; a protocol that cannot render artwork is skipped even if assigned.
+    if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('dashscope', 'artwork', { unitCredits: 1, revision: 9 }),
+      assignedRow('gemini', 'artwork', { id: 'gemini-model', name: 'Gemini Nano Banana', unitCredits: 6, revision: 3, position: 2 })] };
     if (sql.includes('FROM dictionary_items')) return { rows: [] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
   } } as unknown as pg.Pool;
   const snapshot = await loadArtworkSnapshot(pool, 'user', { schemeCode: 'SCHEME', themeJobId: 'theme-job', resultId: 'theme-result', selectionRevision: 1 });
-  assert.deepEqual(snapshot.model, { provider: 'gemini', model: 'gemini-3.1-flash-image', revision: 3, unitCredits: 6 });
+  assert.deepEqual(snapshot.model, { id: 'gemini-model', name: 'Gemini Nano Banana', model: 'gemini-3.1-flash-image', revision: 3, unitCredits: 6 });
 });
 
 test('artwork acceptance converts actual JPEG pixels to PNG and rejects low resolution, corrupt and oversized content', async () => {

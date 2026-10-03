@@ -1,15 +1,17 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { ImageGenerationError, providerJson, requestSignal } from '../image.js';
-import type { ActiveAiModel, ImageModelAdapter } from '../types.js';
+import { ImageGenerationError, providerEndpoint, providerJson, requestSignal } from '../image.js';
+import type { ActiveAiModel, DiscoveredModel, ImageModelAdapter } from '../types.js';
+
+// DashScope native API (通义万相). Text models on DashScope use its OpenAI-compatible mode instead.
 
 async function poll(model: ActiveAiModel, taskId: string, deadline: Date): Promise<string[]> {
+  const url = await providerEndpoint(model.baseUrl, `/tasks/${encodeURIComponent(taskId)}`);
   const pollDeadline = new Date(Math.min(deadline.getTime(), Date.now() + 180_000));
   for (let attempt = 0; attempt < 60; attempt++) {
     if (pollDeadline.getTime() <= Date.now()) throw new ImageGenerationError('PROVIDER_POLL_UNAVAILABLE', true);
     await delay(2000, undefined, { signal: requestSignal(pollDeadline, 180_000) });
-    const body = await providerJson(`https://dashscope.aliyuncs.com/api/v1/tasks/${encodeURIComponent(taskId)}`, {
-      headers: { Authorization: `Bearer ${model.apiKey}` },
-    }, pollDeadline, false) as { output?: { task_status?: string; results?: { url?: string }[] } };
+    const body = await providerJson(url, { headers: { Authorization: `Bearer ${model.apiKey}` } }, pollDeadline, false) as
+      { output?: { task_status?: string; results?: { url?: string }[] } };
     if (body?.output?.task_status === 'SUCCEEDED') {
       if (!Array.isArray(body.output.results)) throw new ImageGenerationError('PROVIDER_POLL_UNAVAILABLE', true);
       return body.output.results.flatMap(item => typeof item?.url === 'string' && item.url ? [item.url] : []);
@@ -24,7 +26,8 @@ export const wanxImage: ImageModelAdapter = {
   maxImagesPerRequest: 4,
   downloadHosts: ['aliyuncs.com'],
   async edit(model, { prompt, count, deadline, sourceUrl, onSubmitted, onProviderRequest }) {
-    const body = await providerJson('https://dashscope.aliyuncs.com/api/v1/services/aigc/image2image/image-synthesis', {
+    const url = await providerEndpoint(model.baseUrl, '/services/aigc/image2image/image-synthesis');
+    const body = await providerJson(url, {
       method: 'POST', headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json', 'X-DashScope-Async': 'enable' },
       body: JSON.stringify({ model: model.model, input: { function: 'description_edit', prompt, base_image_url: sourceUrl }, parameters: { n: count } }),
     }, deadline, true, onProviderRequest) as { output?: { task_id?: string } };
@@ -34,3 +37,6 @@ export const wanxImage: ImageModelAdapter = {
   },
   poll,
 };
+
+// The native API has no model listing endpoint; admins pick a suggestion or type a model id.
+export const dashScopeSuggestedModels: DiscoveredModel[] = [{ id: 'wanx2.1-imageedit', name: '通义万相 2.1 图像编辑', kind: 'image' }];

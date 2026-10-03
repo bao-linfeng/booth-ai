@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
-import { listAiModels } from '../../../infra/ai/config.js';
-import type { AiModelConfig } from '../../../infra/ai/types.js';
+import { assignedAiModels } from '../../../infra/ai/config.js';
+import type { AssignedAiModel } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
 import { buildThemePrompt } from './prompt.js';
@@ -16,7 +16,8 @@ export type AssetSnapshot = { assetId: string; versionId: string; objectKey: str
 export type GenerationSnapshot = {
   source: AssetSnapshot;
   mask: AssetSnapshot | null;
-  models: Pick<AiModelConfig, 'provider' | 'model' | 'revision' | 'priority' | 'unitCredits'>[];
+  /** Assigned theme models in fallback order; workers only call a model whose id and revision still match. */
+  models: Pick<AssignedAiModel, 'id' | 'name' | 'model' | 'revision' | 'position' | 'unitCredits'>[];
   template: { id: string; revision: number; body: string } | null;
   prompt: string;
   pipelineRevision: number;
@@ -78,9 +79,8 @@ export async function loadGenerationSnapshot(pool: pg.Pool, parameters: ThemePar
   const industryLabel = labels.find(row => row.id === parameters.input.industryId)?.label;
   const styleLabel = labels.find(row => row.id === parameters.input.styleId)?.label;
   if (!industryLabel || !styleLabel) throw Object.assign(new Error('Theme dictionary options unavailable'), { statusCode: 409 });
-  const models = (await listAiModels(pool)).filter(model => model.purpose === 'theme' && model.enabled && model.credentialConfigured && model.unitCredits !== null)
-    .sort((a, b) => a.priority - b.priority || a.provider.localeCompare(b.provider))
-    .map(({ provider, model, revision, priority, unitCredits }) => ({ provider, model, revision, priority, unitCredits }));
+  const models = (await assignedAiModels(pool, 'theme'))
+    .map(({ id, name, model, revision, position, unitCredits }) => ({ id, name, model, revision, position, unitCredits }));
   if (!models.length) throw Object.assign(new Error('Theme models unavailable'), { statusCode: 409, reason: 'MODEL_UNAVAILABLE' });
   const template = await getActivePromptTemplate(pool, 'theme', parameters.input.industryId, parameters.input.styleId);
   const input = normalizeThemeInput(parameters.input);

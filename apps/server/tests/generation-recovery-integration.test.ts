@@ -5,8 +5,7 @@ import test from 'node:test';
 import type { Queue } from 'bullmq';
 import pg from 'pg';
 import sharp from 'sharp';
-import { findModelDefinition } from '../src/infra/ai/catalog.js';
-import { encryptCredential } from '../src/infra/ai/config.js';
+import { seedAiModel } from './ai-fixtures.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { transaction } from '../src/infra/database.js';
 import { reserveJobCredits } from '../src/modules/credits/service.js';
@@ -34,17 +33,18 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
   await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name) VALUES($1,$2,'rendering','source')", [source, scheme]);
   const version = (await pool.query<{ id: string }>(`INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum)
     VALUES($1,'source.png','source.png','image/png',$2,$3) RETURNING id`, [source, image.length, checksum])).rows[0]!.id;
-  for (const provider of ['openai', 'wanx', 'gemini'] as const) await pool.query(`UPDATE ai_model_configs SET enabled=true,unit_credits=3,credential_ciphertext=$2
-    WHERE purpose='theme' AND provider=$1`, [provider, encryptCredential('secret-provider-key', provider, key)]);
+  const models = Object.fromEntries(await Promise.all((['openai', 'dashscope', 'gemini'] as const).map(async (protocol, index) =>
+    [protocol, await seedAiModel(pool, { protocol, purpose: 'theme', position: index + 1, apiKey: 'secret-provider-key', encryptionKey: key })] as const))) as
+    Record<'openai' | 'dashscope' | 'gemini', string>;
   const config = { aiModelEncryptionKey: key, s3: { endpoint: 'http://silo:9000', publicEndpoint: 'http://localhost:19000',
     region: 'us-east-1', bucket: 'booth-assets', accessKeyId: 'test', secretAccessKey: 'test' } };
   const storage = { getBuffer: async () => image, putBuffer: async () => {}, signDownload: async (objectKey: string) => `https://assets.example/${objectKey}` } as unknown as ReturnType<typeof createStorage>;
-  async function seed(count = 3, provider: 'openai' | 'wanx' | 'gemini' = 'openai') {
+  async function seed(count = 3, protocol: 'openai' | 'dashscope' | 'gemini' = 'openai') {
     const id = randomUUID();
     await transaction(pool, async client => {
       await client.query(`INSERT INTO theme_jobs(id,user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,unit_credits,generation_snapshot)
         VALUES($1::uuid,$2,'RECOVERY',$3,'offer',$1::text,'{}',$4,3,$5)`, [id, user, source, count, JSON.stringify({ prompt: 'frozen prompt', mask: null,
-        source: { assetId: source, versionId: version, objectKey: 'source.png', checksum }, models: [{ provider, model: findModelDefinition('theme', provider)!.model, revision: 1 }] })]);
+        source: { assetId: source, versionId: version, objectKey: 'source.png', checksum }, models: [{ id: models[protocol], revision: 1 }] })]);
       await reserveJobCredits(client, { kind: 'theme', id }, user, count * 3);
     });
     return id;
@@ -64,8 +64,8 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
     [{ width: 64, height: 64 }, { width: 64, height: 64 }]);
 
   const uncertain = await seed(1);
-  await pool.query(`INSERT INTO theme_job_provider_attempts(id,job_id,provider,model,revision,status)
-    VALUES($1,$2,'openai',$3,1,'submitting')`, [randomUUID(), uncertain, findModelDefinition('theme', 'openai')!.model]);
+  await pool.query(`INSERT INTO theme_job_provider_attempts(id,job_id,provider,model,revision,status,model_id)
+    VALUES($1,$2,'openai','gpt-image-1.5',1,'submitting',$3)`, [randomUUID(), uncertain, models.openai]);
   await processThemeJob(pool, uncertain, config, storage);
   assert.equal(calls, 1);
   assert.equal((await pool.query('SELECT status,reason FROM theme_job_provider_attempts WHERE job_id=$1', [uncertain])).rows[0].reason, 'PROVIDER_OUTCOME_UNKNOWN');
@@ -77,9 +77,9 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
   await assert.rejects(processThemeJob(pool, concurrent, config, storage), /GENERATION_LEASE_BUSY/); unblock(); await running;
   assert.equal(calls, 2);
 
-  const waiting = await seed(1, 'wanx');
-  await pool.query(`INSERT INTO theme_job_provider_attempts(id,job_id,provider,model,revision,status,provider_task_id)
-    VALUES($1,$2,'wanx',$3,1,'waiting','persisted-task')`, [randomUUID(), waiting, findModelDefinition('theme', 'wanx')!.model]);
+  const waiting = await seed(1, 'dashscope');
+  await pool.query(`INSERT INTO theme_job_provider_attempts(id,job_id,provider,model,revision,status,provider_task_id,model_id)
+    VALUES($1,$2,'dashscope','wanx2.1-imageedit',1,'waiting','persisted-task',$3)`, [randomUUID(), waiting, models.dashscope]);
   globalThis.fetch = async (input, init) => {
     assert.equal(String(input), 'https://dashscope.aliyuncs.com/api/v1/tasks/persisted-task'); assert.ok(init?.signal);
     return Response.json({ output: { task_status: 'SUCCEEDED', results: [{ url: `data:image/png;base64,${image.toString('base64')}` }] } });
@@ -113,7 +113,7 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
   assert.equal((await pool.query('SELECT status,usable_count FROM theme_jobs WHERE id=$1', [gemini])).rows[0].status, 'partially_succeeded');
   assert.equal((await pool.query('SELECT id FROM theme_job_generated_urls WHERE job_id=$1', [gemini])).rowCount, 1);
 
-  const submitted = await seed(1, 'wanx'); let submissions = 0; let pollUnavailable = true;
+  const submitted = await seed(1, 'dashscope'); let submissions = 0; let pollUnavailable = true;
   globalThis.fetch = async (input) => {
     if (String(input).includes('image-synthesis')) { submissions++; return Response.json({ output: { task_id: 'submitted-once' } }); }
     assert.equal(String(input), 'https://dashscope.aliyuncs.com/api/v1/tasks/submitted-once');

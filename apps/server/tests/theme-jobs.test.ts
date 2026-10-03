@@ -8,6 +8,7 @@ import { registerThemeModelRoutes } from '../src/http/client/theme-jobs/index.js
 import { registerAuthentication } from '../src/http/authentication.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { themeCacheKey, normalizeThemeInput, type GenerationSnapshot, type ThemeParameters, type ThemeOfferData } from '../src/modules/generation/theme/service.js';
+import { assignedRow } from './ai-fixtures.js';
 
 const jobId = '00000000-0000-4000-8000-000000000001';
 const resultId = '00000000-0000-4000-8000-000000000002';
@@ -24,8 +25,7 @@ async function setup(query: Query) {
     statements.push(sql);
     if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) return { rows: [] };
     if (sql.includes('session_version')) return { rows: [{ enabled: true, roles: [], sessionVersion: 1 }] };
-    if (sql.includes('FROM ai_model_configs')) return { rows: [{ purpose: 'theme', provider: 'openai', enabled: true,
-      priority: 1, unitCredits: 10, revision: 1, credentialCiphertext: Buffer.from('configured') }] };
+    if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('openai', 'theme', { id: 'theme-model', unitCredits: 10 })] };
     if (sql.includes('FROM dictionaries d')) return { rows: [{ type: 'industry', id: 'industry', label: '科技' }, { type: 'style', id: 'style', label: '现代' }] };
     if (sql.includes('FROM scheme_baseline_assets a JOIN schemes')) return { rows: [{ assetId: 'source', versionId: 'source-v1', objectKey: 'source.png', checksum: 'source-hash' }] };
     if (sql.includes('a.related_asset_id')) return { rows: [] };
@@ -266,7 +266,7 @@ test('cached job detail returns not_charged and fresh signed URLs', async t => {
 
 test('cache fingerprint normalizes input and isolates all generation dependencies', () => {
   const snapshot: GenerationSnapshot = { source: { assetId: 'source', versionId: 'v1', objectKey: 'source.png', checksum: 'hash' }, mask: null,
-    template: null, models: [{ provider: 'openai', model: 'image-model', revision: 1, priority: 1, unitCredits: 10 }], prompt: 'prompt', pipelineRevision: 1 };
+    template: null, models: [{ id: 'model', name: 'Image', model: 'image-model', revision: 1, position: 1, unitCredits: 10 }], prompt: 'prompt', pipelineRevision: 1 };
   const input: ThemeParameters = { ...parameters, input: { ...parameters.input, brandColors: ['#aabbcc', '#AABBCC'], brandKeywords: ' brand ' } };
   const key = themeCacheKey(userId, input, snapshot);
   assert.equal(key, themeCacheKey(userId, { ...input, input: { ...input.input, brandColors: ['#AABBCC'], brandKeywords: 'brand' } }, snapshot));

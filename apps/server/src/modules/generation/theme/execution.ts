@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type pg from 'pg';
 import sharp from 'sharp';
 import type { Config } from '../../../config.js';
-import { downloadGeneratedImage, imageAdapter } from '../../../infra/ai/catalog.js';
+import { downloadGeneratedImage, imageAdapter } from '../../../infra/ai/protocols.js';
 import { activeAiModels } from '../../../infra/ai/config.js';
 import { IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
 import { transaction } from '../../../infra/database.js';
@@ -17,7 +17,7 @@ import { logger, type Logger } from '../../../infra/logger.js';
 
 type ThemeConfig = Pick<Config, 'aiModelEncryptionKey' | 's3'>;
 type ThemeJob = { requestId: string | null; requestedCount: number; sourceAssetId: string; schemeCode: string; input: ThemeInput; unitCredits: number | null; userId: string; status: string; snapshot: GenerationSnapshot | null };
-type ProviderAttempt = { id: string; provider: string; model: string; revision: number; status: string; taskId: string | null };
+type ProviderAttempt = { id: string; modelId: string | null; revision: number; status: string; taskId: string | null };
 type Publish = (jobId: string, event: unknown) => Promise<void>;
 
 async function themeSource(database: pg.Pool, job: ThemeJob, storage: ReturnType<typeof createStorage>) {
@@ -74,7 +74,7 @@ async function persistGenerated(database: pg.Pool, jobId: string, lease: string,
 async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, lease: string, deadline: Date,
   config: ThemeConfig, storage: ReturnType<typeof createStorage>, log: Logger) {
   const saved = await database.query<{ ordinal: number; url: string }>('SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId]);
-  const attempts = (await database.query<ProviderAttempt>(`SELECT id, provider, model, revision, status, provider_task_id AS "taskId"
+  const attempts = (await database.query<ProviderAttempt>(`SELECT id, model_id AS "modelId", revision, status, provider_task_id AS "taskId"
     FROM theme_job_provider_attempts WHERE job_id = $1 ORDER BY created_at, id`, [jobId])).rows;
   const unresolved = attempts.find(attempt => attempt.status === 'waiting' || attempt.status === 'submitting' || attempt.status === 'unknown');
   if (unresolved?.status === 'submitting') {
@@ -86,7 +86,7 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
   if (attempts.some(attempt => attempt.status === 'succeeded') && !unresolved) return;
   const activeModels = await activeAiModels(database, 'theme', config.aiModelEncryptionKey);
   if (unresolved?.status === 'waiting' && unresolved.taskId) {
-    const model = activeModels.find(model => model.provider === unresolved.provider && model.model === unresolved.model && model.revision === unresolved.revision);
+    const model = activeModels.find(model => model.id === unresolved.modelId && model.revision === unresolved.revision);
     if (!model) throw new ImageGenerationError('MODEL_UNAVAILABLE', true);
     await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'provider_waiting');
     try {
@@ -101,7 +101,7 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
     return;
   }
   const models = job.snapshot ? job.snapshot.models.flatMap(snapshot => {
-    const model = activeModels.find(active => active.provider === snapshot.provider && active.model === snapshot.model && active.revision === snapshot.revision);
+    const model = activeModels.find(active => active.id === snapshot.id && active.revision === snapshot.revision);
     return model ? [model] : [];
   }) : activeModels;
   if (!models.length) return;
@@ -118,15 +118,15 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
   let collected = 0;
   for (const model of models) {
     const adapter = imageAdapter(model);
-    const prior = attempts.filter(attempt => attempt.provider === model.provider && attempt.model === model.model && attempt.revision === model.revision).length;
+    const prior = attempts.filter(attempt => attempt.modelId === model.id && attempt.revision === model.revision).length;
     for (let index = prior; index < 3; index++) {
       await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'provider_submitting');
       const attemptId = randomUUID();
       await transaction(database, async client => {
         const owner = await client.query("SELECT id FROM theme_jobs WHERE id = $1 AND lease_token = $2 AND status = 'running' FOR UPDATE", [jobId, lease]);
         if (!owner.rows[0]) throw new ImageGenerationError('GENERATION_LEASE_LOST_OR_EXPIRED');
-        await client.query(`INSERT INTO theme_job_provider_attempts(id, job_id, provider, model, revision, status)
-          VALUES($1, $2, $3, $4, $5, 'submitting')`, [attemptId, jobId, model.provider, model.model, model.revision]);
+        await client.query(`INSERT INTO theme_job_provider_attempts(id, job_id, provider, model, revision, status, model_id)
+          VALUES($1, $2, $3, $4, $5, 'submitting', $6)`, [attemptId, jobId, model.protocol, model.model, model.revision, model.id]);
       });
       let urls: string[];
       const count = Math.min(adapter.maxImagesPerRequest, job.requestedCount - collected);
@@ -151,14 +151,14 @@ async function generateTheme(database: pg.Pool, jobId: string, job: ThemeJob, le
         const classified = error instanceof ImageGenerationError ? error : new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
         await database.query('UPDATE theme_job_provider_attempts SET status = $2, reason = $3, updated_at = now() WHERE id = $1',
           [attemptId, classified.outcomeUnknown ? 'unknown' : 'failed', classified.code]);
-        log.warn({ attemptId, provider: model.provider, providerRequestId, code: classified.code }, 'Theme provider attempt failed');
+        log.warn({ attemptId, modelId: model.id, protocol: model.protocol, providerRequestId, code: classified.code }, 'Theme provider attempt failed');
         if (classified.outcomeUnknown || collected > 0) return;
         if (!classified.retryable) break;
         if (index < 2) await delay(2000 * 2 ** index);
         continue;
       }
       await persistGenerated(database, jobId, lease, attemptId, urls, job.requestedCount);
-      log.info({ attemptId, provider: model.provider, providerRequestId, images: urls.length }, 'Theme provider attempt completed');
+      log.info({ attemptId, modelId: model.id, protocol: model.protocol, providerRequestId, images: urls.length }, 'Theme provider attempt completed');
       if (urls.length) {
         collected += urls.length;
         // Providers capped below the requested count are called again for the remainder; short answers end the job.

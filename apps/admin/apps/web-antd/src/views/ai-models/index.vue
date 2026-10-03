@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import type { AiModelRecord } from '#/api/core/ai-models';
+import type {
+  AiModelRecord,
+  AiProtocol,
+  AiProviderRecord,
+  PurposeAssignment,
+} from '#/api/core/ai-models';
 
 import { onMounted, ref } from 'vue';
 
@@ -7,171 +12,247 @@ import { Page } from '@vben/common-ui';
 
 import {
   Button,
-  Card,
-  Input,
-  InputNumber,
   message,
-  Popconfirm,
-  Select,
-  Switch,
+  Modal,
+  Table,
+  TabPane,
+  Tabs,
   Tag,
 } from 'ant-design-vue';
 
-import { getAiModelsApi, updateAiModelApi } from '#/api/core/ai-models';
+import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import {
+  deleteAiModelApi,
+  deleteAiProviderApi,
+  getAiModelAssignmentsApi,
+  getAiProtocolsApi,
+  KIND_LABELS,
+  PURPOSE_LABELS,
+} from '#/api/core/ai-models';
 
-const models = ref<AiModelRecord[]>([]);
-const loading = ref(false);
-const saving = ref<null | string>(null);
-const keyDrafts = ref<Record<string, string>>({});
-const modelKey = (row: AiModelRecord) => `${row.purpose}:${row.provider}`;
+import AssignmentPanel from './components/AssignmentPanel.vue';
+import ModelFormModal from './components/ModelFormModal.vue';
+import ProviderFormModal from './components/ProviderFormModal.vue';
+import { createProviderGridOptions } from './options';
 
-async function load() {
-  loading.value = true;
-  try {
-    models.value = await getAiModelsApi();
-  } finally {
-    loading.value = false;
-  }
+const protocols = ref<AiProtocol[]>([]);
+const providers = ref<AiProviderRecord[]>([]);
+const assignments = ref<PurposeAssignment[]>([]);
+const activeTab = ref('providers');
+
+const [Grid, gridApi] = useVbenVxeGrid({
+  gridOptions: createProviderGridOptions((items) => {
+    providers.value = items;
+  }),
+});
+
+const providerModalRef = ref<InstanceType<typeof ProviderFormModal>>();
+const modelModalRef = ref<InstanceType<typeof ModelFormModal>>();
+
+const modelColumns = [
+  { title: '显示名称', dataIndex: 'name', key: 'name' },
+  { title: '类型', dataIndex: 'kind', key: 'kind', width: 70 },
+  { title: '模型 ID', dataIndex: 'model', key: 'model' },
+  { title: '参数', dataIndex: 'params', key: 'params' },
+  { title: '用途', dataIndex: 'purposes', key: 'purposes' },
+  { title: '状态', dataIndex: 'enabled', key: 'enabled', width: 70 },
+  { title: '操作', key: 'actions', width: 130 },
+];
+
+function protocolLabel(id: string) {
+  return protocols.value.find((item) => item.id === id)?.label ?? id;
 }
-async function save(row: AiModelRecord) {
-  saving.value = modelKey(row);
-  try {
-    await updateAiModelApi(row.provider, {
-      purpose: row.purpose,
-      enabled: row.enabled,
-      priority: row.priority,
-      unitCredits: row.unitCredits,
-      expectedRevision: row.revision,
-      ...(keyDrafts.value[modelKey(row)]?.trim()
-        ? { apiKey: keyDrafts.value[modelKey(row)]?.trim() }
-        : {}),
-    });
-    keyDrafts.value[modelKey(row)] = '';
-    message.success('配置已保存');
-    await load();
-  } catch {
-    await load();
-  } finally {
-    saving.value = null;
-  }
+
+function paramSummary(model: AiModelRecord, provider: AiProviderRecord) {
+  const fields =
+    protocols.value
+      .find((item) => item.id === provider.protocol)
+      ?.kinds.find((item) => item.kind === model.kind)?.params ?? [];
+  return (
+    fields
+      .map((field) => {
+        const value = model.params[field.key] ?? field.default;
+        const label =
+          field.type === 'select'
+            ? (field.options.find((option) => option.value === value)?.label ??
+              value)
+            : value;
+        return `${field.label}: ${label}`;
+      })
+      .join('，') || '—'
+  );
 }
-async function clearKey(row: AiModelRecord) {
-  saving.value = modelKey(row);
-  try {
-    await updateAiModelApi(row.provider, {
-      purpose: row.purpose,
-      enabled: false,
-      priority: row.priority,
-      unitCredits: row.unitCredits,
-      expectedRevision: row.revision,
-      apiKey: null,
-    });
-    keyDrafts.value[modelKey(row)] = '';
-    message.success('密钥已清除，模型已停用');
-    await load();
-  } catch {
-    await load();
-  } finally {
-    saving.value = null;
-  }
+
+async function loadAssignments() {
+  assignments.value = await getAiModelAssignmentsApi();
 }
-onMounted(load);
+
+async function reload() {
+  await Promise.all([gridApi.reload(), loadAssignments()]);
+}
+
+function confirmDeleteProvider(provider: AiProviderRecord) {
+  Modal.confirm({
+    title: `删除供应商「${provider.name}」？`,
+    content: '只能删除没有模型的供应商；已保存的密钥会一并删除。',
+    okType: 'danger',
+    onOk: async () => {
+      await deleteAiProviderApi(provider.id);
+      message.success('供应商已删除');
+      await reload();
+    },
+  });
+}
+
+function confirmDeleteModel(model: AiModelRecord) {
+  Modal.confirm({
+    title: `删除模型「${model.name}」？`,
+    content:
+      model.purposes.length > 0
+        ? '该模型仍被用途使用，需先在「用途分配」中移除。'
+        : '删除后不可恢复。',
+    okType: 'danger',
+    onOk: async () => {
+      await deleteAiModelApi(model.id);
+      message.success('模型已删除');
+      await reload();
+    },
+  });
+}
+
+onMounted(async () => {
+  protocols.value = await getAiProtocolsApi();
+  await loadAssignments();
+});
 </script>
 
 <template>
-  <Page
-    title="AI 模型配置"
-    description="智选解析按优先级调用主备模型；换主题模型及每张图的积分在客户端展示供用户选择。密钥在后台录入并加密保存。"
-  >
-    <div class="grid gap-5 lg:grid-cols-2">
-      <Card
-        v-for="purpose in ['selection_parse', 'theme', 'artwork'] as const"
-        :key="purpose"
-        :title="
-          purpose === 'artwork'
-            ? '四面平面素材 · 图像模型'
-            : purpose === 'theme'
-              ? 'AI 换主题 · 图像模型'
-              : 'AI 智选 · 解析模型'
-        "
-        :loading="loading"
-      >
-        <div
-          v-for="row in models.filter((item) => item.purpose === purpose)"
-          :key="row.provider"
-          class="mb-4 rounded-lg border p-4 last:mb-0"
-        >
-          <div class="mb-4 flex flex-wrap items-center gap-2">
-            <strong>{{ row.label }}</strong>
-            <Tag>{{ row.model }}</Tag>
-            <Tag :color="row.credentialConfigured ? 'success' : 'warning'">
-              {{ row.credentialConfigured ? '凭据已配置' : '缺少凭据' }}
-            </Tag>
-          </div>
-          <div class="mb-4 flex flex-wrap items-end gap-3">
-            <label class="w-full max-w-md">API Key（留空则保留已有密钥）
-              <Input.Password
-                v-model:value="keyDrafts[modelKey(row)]"
-                autocomplete="new-password"
-                placeholder="输入新密钥，保存后生效"
-                class="mt-1"
-              />
-            </label>
-            <Popconfirm
-              v-if="row.credentialConfigured"
-              title="清除密钥并停用此模型？"
-              @confirm="clearKey(row)"
-            >
-              <Button danger :disabled="saving === modelKey(row)">
-                清除密钥
-              </Button>
-            </Popconfirm>
-          </div>
-          <div class="flex flex-wrap items-center gap-4">
-            <label class="flex items-center gap-2">启用
-              <Switch
-                v-model:checked="row.enabled"
-                :disabled="
-                  !row.credentialConfigured && !keyDrafts[modelKey(row)]?.trim()
-                "
-            /></label>
-            <label
-              v-if="purpose === 'selection_parse'"
-              class="flex items-center gap-2"
-              >解析顺序
-              <Select
-                v-model:value="row.priority"
-                class="w-28"
-                :options="[
-                  { label: '不参与', value: 0 },
-                  { label: '主用', value: 1 },
-                  { label: '备用', value: 2 },
-                ]"
-            /></label>
-            <label v-else class="flex items-center gap-2">每张图积分
-              <InputNumber
-                :value="row.unitCredits ?? undefined"
-                :min="1"
-                :max="100000"
-                @update:value="
-                  (value) => {
-                    row.unitCredits = typeof value === 'number' ? value : null;
-                  }
-                "
-            /></label>
+  <Page auto-content-height>
+    <Tabs v-model:active-key="activeTab" class="h-full">
+      <TabPane key="providers" tab="供应商与模型" class="h-full">
+        <Grid>
+          <template #toolbar-actions>
             <Button
               type="primary"
-              :loading="saving === modelKey(row)"
-              @click="save(row)"
+              :disabled="!protocols.length"
+              @click="providerModalRef?.open()"
             >
-              保存
+              新建供应商
             </Button>
-          </div>
-          <p class="mt-3 text-xs text-muted-foreground">
-            保存后密钥不再显示 · 修订 {{ row.revision }}
-          </p>
-        </div>
-      </Card>
-    </div>
+          </template>
+          <template #protocol="{ row }">
+            {{ protocolLabel(row.protocol) }}
+          </template>
+          <template #credential="{ row }">
+            <Tag :color="row.credentialConfigured ? 'success' : 'warning'">
+              {{ row.credentialConfigured ? '已配置' : '缺少' }}
+            </Tag>
+          </template>
+          <template #enabled="{ row }">
+            <Tag :color="row.enabled ? 'success' : 'default'">
+              {{ row.enabled ? '启用' : '停用' }}
+            </Tag>
+          </template>
+          <template #modelCount="{ row }">{{ row.models.length }}</template>
+          <template #actions="{ row }">
+            <Button type="link" size="small" @click="modelModalRef?.open(row)">
+              添加模型
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              @click="providerModalRef?.open(row)"
+            >
+              编辑
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              danger
+              @click="confirmDeleteProvider(row)"
+            >
+              删除
+            </Button>
+          </template>
+          <template #models="{ row }">
+            <Table
+              :columns="modelColumns"
+              :data-source="row.models"
+              :pagination="false"
+              row-key="id"
+              size="small"
+              :locale="{ emptyText: '暂无模型，点击「添加模型」从供应商拉取' }"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'kind'">
+                  {{ KIND_LABELS[(record as AiModelRecord).kind] }}
+                </template>
+                <template v-else-if="column.key === 'model'">
+                  <code class="text-xs">{{ record.model }}</code>
+                </template>
+                <template v-else-if="column.key === 'params'">
+                  <span class="text-xs">{{
+                    paramSummary(record as AiModelRecord, row)
+                  }}</span>
+                </template>
+                <template v-else-if="column.key === 'purposes'">
+                  <Tag
+                    v-for="purpose in (record as AiModelRecord).purposes"
+                    :key="purpose"
+                    color="blue"
+                  >
+                    {{ PURPOSE_LABELS[purpose] }}
+                  </Tag>
+                  <span
+                    v-if="!record.purposes.length"
+                    class="text-xs text-muted-foreground"
+                    >未分配</span>
+                </template>
+                <template v-else-if="column.key === 'enabled'">
+                  <Tag :color="record.enabled ? 'success' : 'default'">
+                    {{ record.enabled ? '启用' : '停用' }}
+                  </Tag>
+                </template>
+                <template v-else-if="column.key === 'actions'">
+                  <Button
+                    type="link"
+                    size="small"
+                    @click="modelModalRef?.open(row, record as AiModelRecord)"
+                  >
+                    编辑
+                  </Button>
+                  <Button
+                    type="link"
+                    size="small"
+                    danger
+                    @click="confirmDeleteModel(record as AiModelRecord)"
+                  >
+                    删除
+                  </Button>
+                </template>
+              </template>
+            </Table>
+          </template>
+        </Grid>
+      </TabPane>
+      <TabPane key="assignments" tab="用途分配">
+        <AssignmentPanel
+          :assignments="assignments"
+          :protocols="protocols"
+          :providers="providers"
+          @reload="reload"
+        />
+      </TabPane>
+    </Tabs>
+    <ProviderFormModal
+      ref="providerModalRef"
+      :protocols="protocols"
+      @reload="reload"
+    />
+    <ModelFormModal
+      ref="modelModalRef"
+      :protocols="protocols"
+      @reload="reload"
+    />
   </Page>
 </template>

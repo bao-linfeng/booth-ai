@@ -3,26 +3,27 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import type pg from 'pg';
 import sharp from 'sharp';
-import { findModelDefinition } from '../src/infra/ai/catalog.js';
-import { encryptCredential } from '../src/infra/ai/config.js';
+import type { ProviderProtocol } from '../src/infra/ai/types.js';
+import { assignedRow } from './ai-fixtures.js';
 import { processThemeJob } from '../src/modules/generation/theme/execution.js';
 
 const encryptionKey = 'a'.repeat(64);
 const config = { aiModelEncryptionKey: encryptionKey, s3: { endpoint: 'http://silo:9000', publicEndpoint: 'http://localhost:19000',
   region: 'us-east-1', bucket: 'booth-assets', accessKeyId: 'access', secretAccessKey: 'secret' } };
 
-async function fixture(count = 2, prompt?: string, provider = 'openai') {
+async function fixture(count = 2, prompt?: string, protocol: ProviderProtocol = 'openai') {
   const jobId = randomUUID(); const userId = randomUUID(); const industryId = randomUUID(); const styleId = randomUUID();
   const image = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
   const queries: { sql: string; params?: unknown[] }[] = [];
   const urls: { ordinal: number; url: string }[] = [];
   const results: { ordinal: number; resultId: string; previewUrl: string }[] = [];
-  const attempts: { id: string; status: string; provider: string; model: string; revision: number }[] = [];
+  const attempts: { id: string; status: string; modelId: string; revision: number }[] = [];
+  const modelRow = assignedRow(protocol, 'theme', { id: randomUUID(), apiKey: 'api-key' }, encryptionKey);
   let status = 'pending'; let leaseToken: string | null = null; let charged = false; let enabled = true;
   const job = () => ({ requestedCount: count, sourceAssetId: randomUUID(), schemeCode: 'S-1',
     input: { industryId, styleId, brandColors: ['红', '蓝'], brandKeywords: '展会' }, unitCredits: 3, userId, status,
     leaseToken, leaseUntil: null, snapshot: prompt === undefined ? null : { prompt, mask: null, source: { objectKey: 'pinned.png' },
-      models: [{ provider: 'openai', model: findModelDefinition('theme', 'openai')!.model, revision: 1 }] } });
+      models: [{ id: modelRow.id, name: modelRow.name, model: modelRow.model, revision: 1, position: 1, unitCredits: 3 }] } });
   const run = async (sql: string, params?: unknown[]) => {
     queries.push({ sql, params });
     if (sql.startsWith('UPDATE theme_jobs SET lease_token = $2')) {
@@ -40,14 +41,13 @@ async function fixture(count = 2, prompt?: string, provider = 'openai') {
     if (sql.includes('RETURNING id')) return { rows: [{ id: jobId }], rowCount: 1 };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: industryId, label: '科技' }, { id: styleId, label: '现代' }] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
-    if (sql.includes('FROM ai_model_configs')) return { rows: enabled ? [{ purpose: 'theme', provider, enabled: true,
-      priority: 1, unitCredits: 3, revision: 1, credentialCiphertext: encryptCredential('api-key', provider, encryptionKey) }] : [] };
+    if (sql.includes('FROM ai_model_assignments')) return { rows: enabled ? [modelRow] : [] };
     if (sql.includes('FROM scheme_baseline_assets')) return { rows: [{ objectKey: 'source/image.png' }] };
     if (sql.includes('FROM theme_job_generated_urls')) return { rows: [...urls] };
     if (sql.includes('INSERT INTO theme_job_generated_urls')) urls.push({ ordinal: Number(params?.[1]), url: String(params?.[2]) });
     if (sql.includes('FROM theme_job_provider_attempts')) return { rows: [...attempts] };
     if (sql.includes('INSERT INTO theme_job_provider_attempts')) attempts.push({ id: String(params?.[0]), status: 'submitting',
-      provider: String(params?.[2]), model: String(params?.[3]), revision: Number(params?.[4]) });
+      modelId: String(params?.[5]), revision: Number(params?.[4]) });
     if (sql.includes('UPDATE theme_job_provider_attempts')) {
       const attempt = attempts.find(a => a.id === params?.[0]);
       if (attempt) attempt.status = sql.includes("status = 'succeeded'") ? 'succeeded' : String(params?.[1]);
@@ -60,7 +60,7 @@ async function fixture(count = 2, prompt?: string, provider = 'openai') {
   const stored: string[] = [];
   const storage = { getBuffer: async () => image, putBuffer: async (key: string) => { stored.push(key); },
     signDownload: async (key: string) => `https://assets.example/${key}` };
-  return { jobId, userId, image, queries, urls, attempts, results, pool, storage, stored, state: () => status,
+  return { jobId, userId, image, modelRow, queries, urls, attempts, results, pool, storage, stored, state: () => status,
     disableModel: () => { enabled = false; } };
 }
 
@@ -91,7 +91,7 @@ test('theme worker calls a single-image provider again until the requested count
   };
   await processThemeJob(f.pool, f.jobId, config, f.storage as never);
   assert.equal(calls, 2); assert.equal(f.state(), 'succeeded'); assert.equal(f.results.length, 2);
-  assert.deepEqual(f.attempts.map(attempt => [attempt.provider, attempt.status]), [['gemini', 'succeeded'], ['gemini', 'succeeded']]);
+  assert.deepEqual(f.attempts.map(attempt => [attempt.modelId, attempt.status]), [[f.modelRow.id, 'succeeded'], [f.modelRow.id, 'succeeded']]);
 });
 
 test('theme storage retry with partial generation never submits again and skips already uploaded ordinals', async t => {
@@ -108,7 +108,7 @@ test('theme storage retry with partial generation never submits again and skips 
 });
 
 test('theme outcome-unknown retry does not call a supplier', async t => {
-  const f = await fixture(1); f.attempts.push({ id: randomUUID(), provider: 'openai', model: findModelDefinition('theme', 'openai')!.model, revision: 1, status: 'submitting' });
+  const f = await fixture(1); f.attempts.push({ id: randomUUID(), modelId: f.modelRow.id, revision: 1, status: 'submitting' });
   const oldFetch = globalThis.fetch; t.after(() => { globalThis.fetch = oldFetch; });
   globalThis.fetch = async () => assert.fail('Must not resubmit an uncertain request');
   await processThemeJob(f.pool, f.jobId, config, f.storage as never);

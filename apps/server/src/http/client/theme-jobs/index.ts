@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
-import { listAiModels } from '../../../infra/ai/config.js';
+import { assignedAiModels } from '../../../infra/ai/config.js';
 import { clientUserId, requirePrincipal } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
 import type { createStorage } from '../../../infra/storage.js';
@@ -45,9 +45,8 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
   });
 
   app.get('/theme-models', { schema: { tags: ['AI 换主题'], summary: '可选择的图像模型及每张图积分' } }, async () => {
-    const models = (await listAiModels(pool)).filter(model => model.purpose === 'theme' && model.enabled &&
-      model.credentialConfigured && model.unitCredits !== null);
-    return { code: 0, data: models.map(({ provider, label, model, unitCredits, revision }) => ({ provider, label, model, unitCredits, revision })) };
+    const models = await assignedAiModels(pool, 'theme');
+    return { code: 0, data: models.map(({ id, name, unitCredits, revision }) => ({ id, name, unitCredits, revision })) };
   });
 
   app.post<{
@@ -91,10 +90,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
   }, async request => {
     const userId = clientUserId(request);
 
-    // Check if any enabled theme model with credentials is available
-    const allModels = await listAiModels(pool);
-    const availableModels = allModels.filter(m => m.purpose === 'theme' && m.enabled && m.credentialConfigured && m.unitCredits !== null);
-    const available = availableModels.length > 0;
+    const available = (await assignedAiModels(pool, 'theme')).length > 0;
 
     const blockedReasons: string[] = [];
     if (!available) blockedReasons.push('MODEL_UNAVAILABLE');

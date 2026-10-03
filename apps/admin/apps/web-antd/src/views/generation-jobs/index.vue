@@ -336,7 +336,9 @@ async function openDetail(id: string) {
         <div v-if="detail.jobType === 'artwork'" class="mt-4">
           <Descriptions bordered :column="1" size="small">
             <DescriptionsItem label="交付状态">
-              {{ detail.deliveryStatus === 'ready' ? '四方向齐全' : '尚不完整' }}
+              {{
+                detail.deliveryStatus === 'ready' ? '四方向齐全' : '尚不完整'
+              }}
             </DescriptionsItem>
             <DescriptionsItem label="主题结果">
               {{ detail.themeSelection?.themeJobId }} /
@@ -351,6 +353,7 @@ async function openDetail(id: string) {
               {{ direction.status }} {{ direction.reason }}
             </DescriptionsItem>
             <DescriptionsItem label="生成模型">
+              {{ detail.generationSnapshot?.model.name ?? '' }}
               {{ detail.generationSnapshot?.model.model }} / 修订
               {{ detail.generationSnapshot?.model.revision }}
             </DescriptionsItem>

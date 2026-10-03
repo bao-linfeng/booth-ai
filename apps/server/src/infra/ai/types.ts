@@ -1,21 +1,30 @@
 export type AiPurpose = 'selection_parse' | 'theme' | 'artwork';
 export type ImagePurpose = Exclude<AiPurpose, 'selection_parse'>;
-/** Provider ids are free-form; the catalog decides which (purpose, provider) pairs are usable. */
-export type AiProvider = string;
+export type ModelKind = 'text' | 'image';
+export type ProviderProtocol = 'openai' | 'gemini' | 'dashscope';
+export type ModelParams = Record<string, string | number>;
 
-export interface AiModelConfig {
-  purpose: AiPurpose;
-  provider: AiProvider;
-  label: string;
+/** A model assigned to a purpose, without secrets; safe for snapshots, offers and listings. */
+export interface AssignedAiModel {
+  id: string;
+  name: string;
+  kind: ModelKind;
+  /** Model id sent to the provider. */
   model: string;
-  credentialConfigured: boolean;
-  enabled: boolean;
-  priority: number;
-  unitCredits: number | null;
+  params: ModelParams;
+  /** Bumped on every model edit; snapshots pin it so edits invalidate offers and in-flight jobs. */
   revision: number;
+  purpose: AiPurpose;
+  /** 1-based order inside the purpose: primary first, then fallbacks. */
+  position: number;
+  /** Credits per image (theme) or per direction (artwork); null for text purposes. */
+  unitCredits: number | null;
+  protocol: ProviderProtocol;
+  providerName: string;
 }
 
-export interface ActiveAiModel extends AiModelConfig {
+export interface ActiveAiModel extends AssignedAiModel {
+  baseUrl: string;
   apiKey: string;
 }
 
@@ -58,7 +67,7 @@ export interface ChatMessage {
 export interface TextCompletionRequest {
   messages: ChatMessage[];
   maxTokens: number;
-  /** Ask the provider to emit a single JSON object. */
+  /** The caller needs a single JSON object; adapters request JSON mode when the model params allow it. */
   json?: boolean;
   signal: AbortSignal;
 }
@@ -67,3 +76,14 @@ export interface TextModelAdapter {
   /** Returns the raw assistant text; callers own parsing and validation. */
   complete(model: ActiveAiModel, request: TextCompletionRequest): Promise<string>;
 }
+
+export interface DiscoveredModel {
+  id: string;
+  name?: string;
+  /** Best-effort guess from the provider listing; admins can still pick another kind. */
+  kind?: ModelKind;
+}
+
+export type ParamField =
+  | { key: string; label: string; description?: string; type: 'number'; default: number; min: number; max: number; step?: number }
+  | { key: string; label: string; description?: string; type: 'select'; default: string; options: { label: string; value: string }[] };

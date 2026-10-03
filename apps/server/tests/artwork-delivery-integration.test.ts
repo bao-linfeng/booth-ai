@@ -8,7 +8,7 @@ import type { Redis } from 'ioredis';
 import pg from 'pg';
 import sharp from 'sharp';
 import JSZip from 'jszip';
-import { encryptCredential } from '../src/infra/ai/config.js';
+import { seedAiModel } from './ai-fixtures.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerArtworkJobRoutes } from '../src/http/client/artwork-jobs/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';
@@ -68,7 +68,7 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
       VALUES($1,$2,$3,$4,'test',$5,$6,1,'succeeded',1,$7,1)`, [themeJob, user, code, source, randomUUID(), JSON.stringify({ industryId: industry, styleId: style, brandColors: ['#123456'], brandKeywords: '统一品牌' }), result]);
     await pool.query('INSERT INTO theme_job_results(id,job_id,ordinal,asset_id,asset_version_id) VALUES($1,$2,1,$3,$4)', [result, themeJob, source, version]);
     const encryptionKey = 'a'.repeat(64);
-    await pool.query("UPDATE ai_model_configs SET enabled=true,unit_credits=10,credential_ciphertext=$1 WHERE purpose='artwork' AND provider='openai'", [encryptCredential('test-key', 'openai', encryptionKey)]);
+    await seedAiModel(pool, { protocol: 'openai', purpose: 'artwork', unitCredits: 10, encryptionKey });
     await pool.query("INSERT INTO credit_transactions(user_id,kind,amount) VALUES($1,'recharge',500)", [user]);
     const redisData = new Map<string, string>();
     for (const [token, id] of [['user', user], ['other', other]]) redisData.set(`session:${createHash('sha256').update(token!).digest('hex').slice(0, 32)}`, JSON.stringify({ site: 'client', localId: id, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }));

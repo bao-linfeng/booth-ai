@@ -1,6 +1,7 @@
 import sharp from 'sharp';
-import { IMAGE_LIMITS, ImageGenerationError, imageMimeType, providerJson } from '../image.js';
-import type { ImageModelAdapter } from '../types.js';
+import { fetchModelListing, ModelDiscoveryError } from '../discovery.js';
+import { IMAGE_LIMITS, ImageGenerationError, imageMimeType, providerEndpoint, providerJson } from '../image.js';
+import type { DiscoveredModel, ImageModelAdapter, ParamField } from '../types.js';
 
 // Gemini image models: https://ai.google.dev/gemini-api/docs/image-generation (generateContent stays fully supported).
 const ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] as const;
@@ -20,11 +21,17 @@ export function geminiAspectRatio(width: number | undefined, height: number | un
   return ASPECT_RATIOS.reduce((best, ratio) => distance(ratio) < distance(best) ? ratio : best);
 }
 
+// 1K is omitted: its 3:2 output (about 1264x848) misses the 1536x1024 artwork quality gate.
+export const geminiImageParams: ParamField[] = [
+  { key: 'imageSize', label: '输出分辨率', type: 'select', default: '2K', options: [{ label: '2K', value: '2K' }, { label: '4K', value: '4K' }] },
+];
+
 // One image per call; Gemini has no hard mask parameter, so the mask is ignored.
 export const geminiImage: ImageModelAdapter = {
   maxImagesPerRequest: 1,
   downloadHosts: ['googleusercontent.com'],
   async edit(model, { reference, prompt, deadline, onProviderRequest }) {
+    const url = await providerEndpoint(model.baseUrl, `/models/${encodeURIComponent(model.model)}:generateContent`);
     const metadata = await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels }).metadata();
     let input = { data: reference, mimeType: await imageMimeType(reference) };
     if (reference.length > INLINE_REFERENCE_BYTES) {
@@ -32,13 +39,12 @@ export const geminiImage: ImageModelAdapter = {
         .resize({ width: 3072, height: 3072, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer() };
     }
     const [width, height] = (metadata.orientation ?? 1) >= 5 ? [metadata.height, metadata.width] : [metadata.width, metadata.height];
-    const body = await providerJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.model)}:generateContent`, {
+    const body = await providerJson(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': model.apiKey },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: input.mimeType, data: input.data.toString('base64') } }] }],
-        // 2K is the smallest size whose 3:2 output clears the 1536x1024 artwork quality gate.
         generationConfig: { responseModalities: ['IMAGE'], imageConfig: {
-          aspectRatio: model.purpose === 'artwork' ? '3:2' : geminiAspectRatio(width, height), imageSize: '2K' } },
+          aspectRatio: model.purpose === 'artwork' ? '3:2' : geminiAspectRatio(width, height), imageSize: String(model.params.imageSize ?? '2K') } },
       }),
     }, deadline, true, onProviderRequest) as GeminiResponse;
     if (body?.promptFeedback?.blockReason) throw new ImageGenerationError('PROVIDER_CONTENT_BLOCKED');
@@ -52,3 +58,14 @@ export const geminiImage: ImageModelAdapter = {
       ? 'PROVIDER_CONTENT_BLOCKED' : 'PROVIDER_NO_IMAGE');
   },
 };
+
+export async function listGeminiModels(baseUrl: string, apiKey: string): Promise<DiscoveredModel[]> {
+  const body = await fetchModelListing(baseUrl, '/models?pageSize=1000', { 'x-goog-api-key': apiKey }) as
+    { models?: { name?: unknown; displayName?: unknown; supportedGenerationMethods?: unknown }[] };
+  if (!Array.isArray(body?.models)) throw new ModelDiscoveryError('BAD_RESPONSE');
+  return body.models.flatMap(item => {
+    const id = typeof item?.name === 'string' ? item.name.replace(/^models\//, '') : '';
+    if (!id || !Array.isArray(item.supportedGenerationMethods) || !item.supportedGenerationMethods.includes('generateContent')) return [];
+    return [{ id, ...(typeof item.displayName === 'string' ? { name: item.displayName } : {}), kind: /image/i.test(id) ? 'image' as const : 'text' as const }];
+  });
+}

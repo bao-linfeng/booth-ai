@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { assertPublicEndpoint } from './endpoint.js';
 import type { ProviderRequestObserver } from './types.js';
 
 export const IMAGE_LIMITS = { maxBytes: 30 * 1024 * 1024, maxPixels: 40_000_000 };
@@ -116,3 +117,10 @@ export async function providerJson(url: string, init: RequestInit, deadline: Dat
     throw new ImageGenerationError(submitting ? 'PROVIDER_OUTCOME_UNKNOWN' : 'PROVIDER_POLL_UNAVAILABLE', !submitting, submitting);
   }
 }
+
+/** Resolves a provider URL under an admin-configured base URL; refusal happens before anything is submitted. */
+export async function providerEndpoint(baseUrl: string, path: string): Promise<string> {
+  try { await assertPublicEndpoint(baseUrl); } catch { throw new ImageGenerationError('PROVIDER_ENDPOINT_INVALID'); }
+  return `${baseUrl}${path}`;
+}
+

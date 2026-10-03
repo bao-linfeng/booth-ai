@@ -48,7 +48,7 @@ PNG 下载和 ZIP 在响应前核实 SHA-256 及字节数，响应带 `Cache-Con
 - `/api/v1/admin/generation-jobs?jobType=artwork` 查询真实任务；不传类型时合并主题与素材任务分页。
 - 任务详情包含主题引用、四方向状态/原因、固定模型/模板/提示词、参考图及结果预览；详情访问写审计。
 - 模型配置增加 `purpose=artwork`。模型保存请求必须显式传用途，按 `purpose + provider` 定位，独立维护凭据和积分价。
-- 高清生成适配支持 OpenAI `gpt-image-1.5`（请求 `1536x1024 / high / png`）与 Gemini `gemini-3.1-flash-image`（`imageConfig: {aspectRatio: '3:2', imageSize: '2K'}`，1K 档的 3:2 输出达不到像素门槛）。两者配置均默认禁用，须在后台分别填写素材模型的凭据与单方向价格再启用；已有主题模型配置不自动用于素材。万相无法证明满足像素门槛，不开放为本链路模型。同时启用多个素材模型时，按 `priority` 再按 provider 名称排序取第一个（当前优先级固定为 0，即 Gemini 先于 OpenAI），任务快照冻结所选模型与修订，不做跨模型回退。可用的素材模型由服务端模型目录 `src/infra/ai/catalog.ts` 决定。
+- 高清生成适配支持 OpenAI Images（`1536x1024 / high / png`）与 Gemini（`imageConfig: {aspectRatio: '3:2', imageSize: '2K' 或 '4K'}`，1K 档的 3:2 输出达不到像素门槛）；万相无法证明满足像素门槛，协议层不允许分配给本用途。模型在后台「用途分配 → 四面平面素材」中选择并按方向定价，与换主题可共用同一模型、分别定价。只使用第一个可用模型，任务快照冻结模型 id 与修订，不做跨模型回退。
 - 新迁移 `041_artwork_delivery.sql` 扩展主题上下文、不可变结果版本、方向状态、Worker 租约、素材积分预占/幂等扣费及模型配置。保留旧任务数据；未绑定主题且未验收的旧结果不冒充合格四面套装。
 - 公共素材、匹配候选和项目标准素材快照均排除 `metadata.artworkJobId`，生成结果不会混入公共方案库或使公共方案审核失效。
 - 项目绑定固定四个 `asset_version_id`，已有项目引用阻止删除相应历史文件版本。后续资产替换不会改变任务或项目交付内容。

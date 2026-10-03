@@ -12,7 +12,7 @@
 - [`docs/theme-outbox-recovery.md`](../../docs/theme-outbox-recovery.md) — 生成任务 Outbox 恢复机制
 - [`docs/asset-scope.md`](../../docs/asset-scope.md) — 方案基线资产与用户生成素材的作用域隔离
 - [`docs/worker-observability.md`](../../docs/worker-observability.md) — Worker 调度隔离、健康状态、指标、链路追踪与项目通知投递
-- [`docs/一期功能拆分/AI模型接入与配置.md`](../../docs/一期功能拆分/AI模型接入与配置.md) — AI 模型目录、适配器约定与接入新模型步骤（只改 `src/infra/ai/`，业务代码不写 provider 分支）
+- [`docs/一期功能拆分/AI模型接入与配置.md`](../../docs/一期功能拆分/AI模型接入与配置.md) — AI 供应商/模型/用途分配三层配置、协议注册表与适配器约定（业务代码不写供应商分支）
 
 ---
 
@@ -101,7 +101,7 @@ src/
 │   ├── redis.ts         # createRedis(config, 'worker'|'request')，角色决定重试策略
 │   ├── storage.ts       # S3 双端点客户端 + getSignedUrl（公开端点专用）
 │   ├── queue.ts         # Foundation、主题、画稿队列定义
-│   └── ai/              # AI 模型目录 catalog.ts、配置与凭据 config.ts、图像通用能力 image.ts、providers/ 各提供商适配器
+│   └── ai/              # 协议注册表 protocols.ts、运行时配置与凭据 config.ts、Base URL 校验 endpoint.ts、providers/ 各协议适配器
 ├── http/
 │   ├── admin/           # 管理端路由、校验、身份提取与响应映射
 │   ├── client/          # 参展商路由、校验、身份提取与响应映射
@@ -191,7 +191,7 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - Runner：Node 原生 `node:test`，**不是 Jest/Vitest**
 - `tests/app.test.ts`：`fastify.inject()` 路由测试，无需外部服务
 - `npm run smoke`：需要 Postgres 17、Redis 7.4、Silo S3 全部运行
-- `*-integration.test.ts` 及部分 DB 测试在环境变量缺失时会 `skip`（`npm test` 与 Docker `check` 默认都不设置），**测试通过不代表它们跑过**。按需设置 `PROJECT_` / `THEME_` / `CREDIT_` / `ARTWORK_` / `ASSET_` / `BOM_` / `PROMPT_TEMPLATE_` + `TEST_DATABASE_URL`，以及 `THEME_TEST_REDIS_URL`
+- `*-integration.test.ts` 及部分 DB 测试在环境变量缺失时会 `skip`（`npm test` 与 Docker `check` 默认都不设置），**测试通过不代表它们跑过**。按需设置 `PROJECT_` / `THEME_` / `CREDIT_` / `ARTWORK_` / `ASSET_` / `BOM_` / `PROMPT_TEMPLATE_` / `AI_MODEL_` + `TEST_DATABASE_URL`，以及 `THEME_TEST_REDIS_URL`
 - 修改核心逻辑后必须确保 `npm run check && npm test` 通过
 
 ---

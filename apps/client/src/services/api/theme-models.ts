@@ -1,10 +1,9 @@
 import { apiFetch } from '@/lib/api-client';
 
 export interface ThemeModel {
-  provider: string;
-  /** Display name from the server model catalog. */
-  label: string;
-  model: string;
+  /** Admin-managed model id; listed in fallback order, the first one prices the offer. */
+  id: string;
+  name: string;
   unitCredits: number;
   revision: number;
 }

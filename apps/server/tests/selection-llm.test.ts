@@ -4,6 +4,7 @@ import { emptyRequirement, type Catalog } from '../src/modules/selection/domain.
 import { mergeExtraction, parseWithModels, requestExtraction } from '../src/modules/selection/llm.js';
 import { matchSchemes } from '../src/modules/selection/match.js';
 import type { ActiveAiModel } from '../src/infra/ai/types.js';
+import { activeModel } from './ai-fixtures.js';
 
 const catalog: Catalog = {
   dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] }, boothSpaces: [],
@@ -11,10 +12,8 @@ const catalog: Catalog = {
   styles: [{ id: 'modern', label: '现代简约' }], zones: [{ id: 'storage', label: '储藏间' }],
   features: [], applicabilityQuestions: [],
 };
-const models: ActiveAiModel[] = ['qwen', 'deepseek'].map((provider, index) => ({
-  purpose: 'selection_parse', provider, label: provider, model: provider,
-  apiKey: 'test-key', credentialConfigured: true, enabled: true, priority: index + 1, unitCredits: null, revision: 1,
-}));
+const models: ActiveAiModel[] = ['qwen', 'deepseek'].map((name, index) =>
+  activeModel('openai', 'selection_parse', { name, model: name, position: index + 1, apiKey: 'test-key' }));
 
 const fullCatalog: Catalog = {
   ...catalog,
@@ -204,8 +203,8 @@ test('conflicting scalar extraction and area do not silently override explicit d
 test('primary failure switches to backup and both failures degrade to rules', async () => {
   const calls: string[] = [];
   const result = await parseWithModels('简洁现代', emptyRequirement(), catalog, models, async model => {
-    calls.push(model.provider);
-    if (model.provider === 'qwen') throw new Error('timeout');
+    calls.push(model.name);
+    if (model.name === 'qwen') throw new Error('timeout');
     return { fields: { styleIds: { value: ['modern'], evidence: '简洁现代' } }, unhandledText: [] };
   });
   assert.deepEqual(calls, ['qwen', 'qwen', 'deepseek']);

@@ -6,7 +6,7 @@ import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
 import sharp from 'sharp';
-import { encryptCredential } from '../src/infra/ai/config.js';
+import { seedAiModel } from './ai-fixtures.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { registerThemeModelRoutes } from '../src/http/client/theme-jobs/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';
@@ -52,6 +52,9 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     await pool.query(await readFile(new URL('../migrations/050_asset_scope.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/051_account_session_versions.sql', import.meta.url), 'utf8'));
     await pool.query(await readFile(new URL('../migrations/052_generation_observability.sql', import.meta.url), 'utf8'));
+    for (const name of ['054_gemini_artwork_model', '055_ai_model_catalog', '056_ai_providers_and_models']) {
+      await pool.query(await readFile(new URL(`../migrations/${name}.sql`, import.meta.url), 'utf8'));
+    }
     assert.equal((await pool.query('SELECT asset_version_id FROM theme_job_results WHERE job_id=$1', [legacy])).rows[0].asset_version_id, legacyVersion);
     assert.equal((await pool.query('SELECT cache_key FROM theme_jobs WHERE id=$1', [legacy])).rows[0].cache_key, null);
     for (const [code, item] of [['industry', industry], ['style', style]]) {
@@ -59,7 +62,7 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
       await pool.query('INSERT INTO dictionary_items(id,dictionary_id,item_value,item_label) VALUES ($1,$2,$3,$3)', [item, dictionary, code]);
     }
     const encryptionKey = 'a'.repeat(64);
-    await pool.query("UPDATE ai_model_configs SET enabled=true,unit_credits=10,priority=1,credential_ciphertext=$1 WHERE provider='openai'", [encryptCredential('test-key', 'openai', encryptionKey)]);
+    const modelId = await seedAiModel(pool, { protocol: 'openai', purpose: 'theme', unitCredits: 10, encryptionKey });
     await pool.query("INSERT INTO prompt_templates(id,purpose,industry_id,style_id,body,enabled) VALUES ($1,'theme',$2,$3,'{{brandColors}}/{{brandKeywords}}',true)", [template, industry, style]);
     await pool.query("INSERT INTO credit_transactions(user_id,kind,amount) VALUES ($1,'recharge',100)", [user]);
     const offers = new Map<string, string>();
@@ -175,9 +178,9 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     assert.equal((await submit(staleOffer.id)).statusCode, 409);
     assert.equal((await offerFor()).cacheHit, false);
     await pool.query('UPDATE prompt_templates SET revision=revision-1 WHERE id=$1', [template]);
-    await pool.query("UPDATE ai_model_configs SET revision=revision+1 WHERE provider='openai'");
+    await pool.query('UPDATE ai_models SET revision=revision+1 WHERE id=$1', [modelId]);
     assert.equal((await offerFor()).cacheHit, false);
-    await pool.query("UPDATE ai_model_configs SET revision=revision-1 WHERE provider='openai'");
+    await pool.query('UPDATE ai_models SET revision=revision-1 WHERE id=$1', [modelId]);
     await pool.query("INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum) VALUES ($1,'source-v2.png','source.png','image/png',10,'changed-hash')", [source]);
     assert.equal((await offerFor()).cacheHit, false);
     const pinned = await app.inject({ method: 'GET', url: `/theme-jobs/${cachedId}`, headers: { authorization: 'Bearer user' } });

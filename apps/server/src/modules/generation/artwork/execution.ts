@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import type { Config } from '../../../config.js';
-import { downloadGeneratedImage, imageAdapter } from '../../../infra/ai/catalog.js';
+import { downloadGeneratedImage, imageAdapter } from '../../../infra/ai/protocols.js';
 import { activeAiModels } from '../../../infra/ai/config.js';
 import { ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
 import type { ActiveAiModel } from '../../../infra/ai/types.js';
@@ -70,7 +70,7 @@ export async function processArtworkJob(
         if (!url) {
           if (!modelsLoaded) {
             model = (await activeAiModels(database, 'artwork', config.aiModelEncryptionKey)).find(m =>
-              m.provider === snapshot.model.provider && m.model === snapshot.model.model && m.revision === snapshot.model.revision);
+              m.id === snapshot.model.id && m.revision === snapshot.model.revision);
             modelsLoaded = true;
           }
           if (!model) { await failDirection(database, jobId, lease, direction, 'MODEL_UNAVAILABLE', publish); continue; }
@@ -90,10 +90,10 @@ export async function processArtworkJob(
             } });
             url = generated[0] ?? null;
             if (!url) throw new ImageGenerationError('PROVIDER_NO_IMAGE');
-            log.info({ direction, provider: model.provider, providerRequestId }, 'Artwork provider request completed');
+            log.info({ direction, modelId: model.id, protocol: model.protocol, providerRequestId }, 'Artwork provider request completed');
           } catch (error) {
             const reason = error instanceof ImageGenerationError ? error.code : 'PROVIDER_OUTCOME_UNKNOWN';
-            log.warn({ direction, provider: model.provider, providerRequestId, code: reason }, 'Artwork provider request failed');
+            log.warn({ direction, modelId: model.id, protocol: model.protocol, providerRequestId, code: reason }, 'Artwork provider request failed');
             if (error instanceof ImageGenerationError && error.retryable && !error.outcomeUnknown) {
               await updateDirection(database, jobId, lease, direction, 'pending');
               throw error;

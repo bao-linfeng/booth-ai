@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
-import { listAiModels } from '../../../infra/ai/config.js';
-import type { AiModelConfig } from '../../../infra/ai/types.js';
+import { assignedAiModels } from '../../../infra/ai/config.js';
+import type { AssignedAiModel } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { storedZipStream } from '../../../infra/zip.js';
@@ -75,7 +75,7 @@ export type ArtworkSnapshot = {
   source: { assetId: string; versionId: string; objectKey: string; checksum: string };
   input: ThemeInput; prompt: string; template: { id: string; revision: number; body: string } | null;
   directionPrompts?: Record<Direction, string>;
-  model: Pick<AiModelConfig, 'provider' | 'model' | 'revision' | 'unitCredits'>;
+  model: Pick<AssignedAiModel, 'id' | 'name' | 'model' | 'revision' | 'unitCredits'>;
   quality: typeof ARTWORK_QUALITY; pipelineRevision: number;
 };
 export type ArtworkOffer = ArtworkContext & { userId: string; snapshot: ArtworkSnapshot; unitCredits: number; expiresAt: string };
@@ -119,8 +119,8 @@ export async function assertThemeSelection(database: Database, userId: string, c
 }
 export async function loadArtworkSnapshot(pool: pg.Pool, userId: string, context: ArtworkContext): Promise<ArtworkSnapshot> {
   const selected = await assertThemeSelection(pool, userId, context);
-  const model = (await listAiModels(pool)).filter(m => m.purpose === 'artwork' && m.enabled && m.credentialConfigured && m.unitCredits !== null && m.unitCredits > 0)
-    .sort((a, b) => a.priority - b.priority || a.provider.localeCompare(b.provider))[0];
+  // Artwork pins the primary assigned model; there is no cross-model fallback once the offer is made.
+  const model = (await assignedAiModels(pool, 'artwork'))[0];
   if (!model) throw projectError('MODEL_UNAVAILABLE');
   const labels = (await pool.query<{ id: string; label: string }>(`SELECT id::text AS id,item_label AS label FROM dictionary_items WHERE id=ANY($1::uuid[])`,
     [[selected.input.industryId, selected.input.styleId]])).rows;
@@ -130,7 +130,7 @@ export async function loadArtworkSnapshot(pool: pg.Pool, userId: string, context
   const { prompt, directionPrompts } = buildArtworkPrompts(selected.input, industryLabel, styleLabel, template?.body);
   return { source: { assetId: selected.sourceAssetId, versionId: selected.versionId, objectKey: selected.objectKey, checksum: selected.checksum }, input: selected.input,
     template: template ? { id: template.id, revision: template.revision, body: template.body } : null, prompt, directionPrompts,
-    model: { provider: model.provider, model: model.model, revision: model.revision, unitCredits: model.unitCredits }, quality: ARTWORK_QUALITY, pipelineRevision: 4 };
+    model: { id: model.id, name: model.name, model: model.model, revision: model.revision, unitCredits: model.unitCredits }, quality: ARTWORK_QUALITY, pipelineRevision: 4 };
 }
 export async function createArtworkJob(pool: pg.Pool, userId: string, requestKey: string, offerId: string, context: ArtworkContext, offer: ArtworkOffer,
   requestId: string | null = null) {
@@ -142,8 +142,9 @@ export async function createArtworkJob(pool: pg.Pool, userId: string, requestKey
     const replay = await replayArtworkRequest(client, userId, requestKey, context);
     if (replay) return replay;
     await assertThemeSelection(client, userId, context, true);
-    const currentModel = await client.query(`SELECT provider FROM ai_model_configs WHERE purpose='artwork' AND provider=$1
-      AND revision=$2 AND enabled AND credential_ciphertext IS NOT NULL AND unit_credits=$3 FOR SHARE`, [snapshot.model.provider, snapshot.model.revision, offer.unitCredits]);
+    const currentModel = await client.query(`SELECT 1 FROM ai_model_assignments a JOIN ai_models m ON m.id=a.model_id JOIN ai_providers p ON p.id=m.provider_id
+      WHERE a.purpose='artwork' AND a.model_id=$1 AND m.revision=$2 AND a.unit_credits=$3
+        AND m.enabled AND p.enabled AND p.credential_ciphertext IS NOT NULL FOR SHARE OF a, m`, [snapshot.model.id, snapshot.model.revision, offer.unitCredits]);
     if (!currentModel.rowCount) throw projectError('OFFER_STALE');
     if (snapshot.template) {
       const currentTemplate = await client.query('SELECT id FROM prompt_templates WHERE id=$1 AND revision=$2 AND enabled FOR SHARE', [snapshot.template.id, snapshot.template.revision]);

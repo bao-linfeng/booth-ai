@@ -1,4 +1,4 @@
-import { textAdapter } from '../../infra/ai/catalog.js';
+import { textAdapter } from '../../infra/ai/protocols.js';
 import type { ActiveAiModel } from '../../infra/ai/types.js';
 import { emptyRequirement, validateRequirement, type Catalog, type Requirement } from './domain.js';
 import { parseRequirement } from './parse.js';
