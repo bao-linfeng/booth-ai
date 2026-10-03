@@ -17,6 +17,7 @@ import { registerAdminAuditLogsRoutes } from './audit-logs/index.js';
 import { registerAdminAiModelRoutes } from './ai-models/index.js';
 import { registerAdminPromptTemplateRoutes } from './prompt-templates/index.js';
 import { registerAdminProjectRoutes } from './projects/index.js';
+import { registerAdminProjectNotificationRoutes } from './project-notifications/index.js';
 import { registerAdminSchemeSearchesRoutes } from './scheme-searches/index.js';
 import { registerAdminCreditRoutes } from './credits/index.js';
 import { registerAdminGenerationJobRoutes } from './generation-jobs/index.js';
@@ -37,6 +38,7 @@ export async function registerAdminModule(app: FastifyInstance, config: Config, 
     await registerAdminDictionariesRoutes(admin, pool);
     await registerAdminAuditLogsRoutes(admin, pool);
     await registerAdminProjectRoutes(admin, pool, redis, storage);
+    await registerAdminProjectNotificationRoutes(admin, pool);
     await registerAdminSchemeSearchesRoutes(admin, pool);
     await registerAdminAiModelRoutes(admin, pool, redis, config.aiModelEncryptionKey);
     await registerAdminPromptTemplateRoutes(admin, pool, redis);

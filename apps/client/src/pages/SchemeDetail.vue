@@ -627,25 +627,23 @@ onMounted(async () => {
                               <FileText class="size-10 text-muted-foreground" />
                             </div>
                             
-                            <div class="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 backdrop-blur-[2px] transition-all group-hover:opacity-100">
-                              <Button v-if="asset.mimeType.startsWith('image/') || asset.mimeType === 'application/pdf'" 
-                                variant="ghost"
-                                size="icon"
-                                class="h-8 w-8 rounded-full text-white hover:bg-white/20 hover:text-white disabled:opacity-50"
-                                :disabled="!!previewLoading" 
-                                @click="showResourcePreview(resource.type, asset)" 
-                                title="预览">
-                                <Eye class="size-4" />
-                              </Button>
-                              <Button 
-                                variant="ghost"
-                                size="icon"
-                                class="h-8 w-8 rounded-full text-white hover:bg-white/20 hover:text-white disabled:opacity-50"
-                                :disabled="downloadBusy" 
-                                @click="downloadResource(resource.type, asset.assetId)"
-                                title="下载">
-                                <Download class="size-4" />
-                              </Button>
+                            <div class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                              <div class="flex items-center gap-4">
+                                <button v-if="asset.mimeType.startsWith('image/') || asset.mimeType === 'application/pdf'" 
+                                  class="cursor-pointer text-white/80 transition-colors hover:text-white disabled:opacity-50"
+                                  :disabled="!!previewLoading" 
+                                  @click="showResourcePreview(resource.type, asset)" 
+                                  title="预览">
+                                  <Eye class="size-5" />
+                                </button>
+                                <button 
+                                  class="cursor-pointer text-white/80 transition-colors hover:text-white disabled:opacity-50"
+                                  :disabled="downloadBusy" 
+                                  @click="downloadResource(resource.type, asset.assetId)"
+                                  title="下载">
+                                  <Download class="size-5" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>

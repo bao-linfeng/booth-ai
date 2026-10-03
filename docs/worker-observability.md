@@ -64,3 +64,5 @@ API 与 Worker 统一使用 pino 结构化日志（`src/infra/logger.ts`）。�
 | `PROJECT_NOTIFICATION_WEBHOOK_SECRET` | 签名密钥，至少 32 字节；设置 URL 时必填 |
 
 请求头：`x-booth-event-id`、`x-booth-timestamp`、`x-booth-signature: sha256=HMAC_SHA256(secret, "<timestamp>.<body>")`。5xx / 408 / 429 / 网络错误记为 `NOTIFICATION_UNAVAILABLE`，其他非 2xx 记为 `NOTIFICATION_REJECTED`，两者都会按退避重试。确定正式渠道后，在 Worker 中替换发送函数即可，领取、重试与投递状态逻辑保持不变。
+
+管理后台站内信：同一张 Outbox 同时作为管理端通知收件箱（`GET /api/v1/admin/project-notifications`、`/:id`、`POST /:id/read`、`/read-all`，实现见 `src/modules/projects/notification-inbox.ts`）。已读状态按管理员记录在 `project_notification_reads`，与渠道投递状态（`delivered_at` / `failed_at`）互不影响；未配置通知渠道时，事件仍可在后台查看并标记已读。
