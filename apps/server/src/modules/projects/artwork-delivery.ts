@@ -3,7 +3,7 @@ import { transaction } from '../../infra/database.js';
 import { digest, projectError } from './domain.js';
 import type { MaterialsSnapshot, SchemeSnapshot } from './snapshot.js';
 import { operationReceipt, saveOperation } from './service.js';
-import { readyArtworkFiles } from '../generation/artwork/service.js';
+import { readyArtworkFiles } from '../generation/artwork/queries.js';
 
 export type BindArtworkInput = { artworkJobId: string; requestKey: string; expectedRevision: number };
 export async function bindProjectArtworks(pool: pg.Pool, userId: string, projectId: string, input: BindArtworkInput) {

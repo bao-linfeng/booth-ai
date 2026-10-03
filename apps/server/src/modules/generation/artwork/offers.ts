@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { projectError } from '../../projects/domain.js';
-import { ARTWORK_QUALITY, loadArtworkSnapshot, type ArtworkContext, type ArtworkOffer } from './service.js';
+import { loadArtworkSnapshot } from './service.js';
+import { ARTWORK_QUALITY, type ArtworkContext, type ArtworkOffer } from './types.js';
 
 const OFFER_TTL_SECONDS = 300;
 

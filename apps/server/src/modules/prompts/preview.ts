@@ -3,7 +3,7 @@ import { buildSelectionMessages, extractionInstruction, SELECTION_FIXED_INSTRUCT
 import { loadCatalog } from '../selection/repository.js';
 import { buildThemePrompt, DEFAULT_THEME_BODY, THEME_FIXED_INSTRUCTIONS } from '../generation/theme/prompt.js';
 import { normalizeThemeInput } from '../generation/theme/service.js';
-import { ARTWORK_FIXED_INSTRUCTIONS, buildArtworkPrompts, DEFAULT_ARTWORK_BODY } from '../generation/artwork/service.js';
+import { ARTWORK_FIXED_INSTRUCTIONS, buildArtworkPrompts, DEFAULT_ARTWORK_BODY } from '../generation/artwork/prompt.js';
 import { inspectPrompt, PROMPT_DEFAULT_VERSION, type PromptPurpose } from './template.js';
 
 const brandVariables = [

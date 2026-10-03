@@ -1,7 +1,8 @@
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { loadArtworkOffer } from './offers.js';
-import { createArtworkJob, replayArtworkRequest, type ArtworkContext } from './service.js';
+import { createArtworkJob, replayArtworkRequest } from './service.js';
+import type { ArtworkContext } from './types.js';
 
 export type ArtworkSubmissionInput = ArtworkContext & { requestKey: string; offerId: string };
 

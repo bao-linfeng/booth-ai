@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { ImageGenerationError } from '../../../infra/ai/image.js';
 import { transaction } from '../../../infra/database.js';
-import { artworkFiles, completeArtworkFiles } from './service.js';
+import { artworkFiles, completeArtworkFiles } from './queries.js';
 import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../../credits/service.js';
 import { claimGeneration, publishGeneration, refreshGeneration } from '../execution.js';
 import { logger } from '../../../infra/logger.js';

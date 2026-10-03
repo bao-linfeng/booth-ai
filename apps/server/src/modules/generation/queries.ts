@@ -1,5 +1,6 @@
 import type pg from 'pg';
-import { artworkFiles, DIRECTIONS, type ArtworkSnapshot } from './artwork/service.js';
+import { artworkFiles } from './artwork/queries.js';
+import { DIRECTIONS, type ArtworkSnapshot } from './artwork/types.js';
 
 export interface GenerationJobQuery {
   page?: number;

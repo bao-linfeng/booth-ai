@@ -6,7 +6,8 @@ import { createThemeOffer, loadThemeOffer, ThemeOfferExpiredError } from '../src
 import { submitThemeJob } from '../src/modules/generation/theme/submission.js';
 import { createArtworkOffer, loadArtworkOffer } from '../src/modules/generation/artwork/offers.js';
 import { submitArtworkJob } from '../src/modules/generation/artwork/submission.js';
-import { artworkHash, ARTWORK_QUALITY, type ArtworkOffer } from '../src/modules/generation/artwork/service.js';
+import { artworkHash } from '../src/modules/generation/artwork/queries.js';
+import { ARTWORK_QUALITY, type ArtworkOffer } from '../src/modules/generation/artwork/types.js';
 import { type ThemeOfferData } from '../src/modules/generation/theme/service.js';
 import { assignedRow } from './ai-fixtures.js';
 

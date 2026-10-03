@@ -6,10 +6,10 @@ import type { createStorage } from '../../../infra/storage.js';
 import { clientUserId, requirePrincipal } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
 import { streamArtworkJobEvents } from './events.js';
-import { artworkArchive, getArtworkJob,
-  ownedArtworkJob, type ArtworkContext } from '../../../modules/generation/artwork/service.js';
+import { getArtworkJob, listArtworkJobs, ownedArtworkJob } from '../../../modules/generation/artwork/queries.js';
+import type { ArtworkContext } from '../../../modules/generation/artwork/types.js';
 import { createArtworkOffer } from '../../../modules/generation/artwork/offers.js';
-import { downloadArtworkAsset, listArtworkJobs } from '../../../modules/generation/artwork/queries.js';
+import { artworkArchive, downloadArtworkAsset } from '../../../modules/generation/artwork/download.js';
 import { submitArtworkJob, type ArtworkSubmissionInput } from '../../../modules/generation/artwork/submission.js';
 import { artworkAssetSchema, artworkEventsSchema, artworkJobSchema, artworkListSchema, artworkOfferSchema, artworkSubmissionSchema } from './schema.js';
 

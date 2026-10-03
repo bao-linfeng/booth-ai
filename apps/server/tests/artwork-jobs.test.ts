@@ -5,7 +5,8 @@ import type { Queue } from 'bullmq';
 import sharp from 'sharp';
 import { normalizeArtworkImage } from '../src/modules/generation/artwork/image.js';
 import { dispatchArtworkOutbox } from '../src/workers/artwork-outbox.js';
-import { DIRECTIONS, DIRECTION_LABELS, loadArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
+import { loadArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
+import { DIRECTIONS, DIRECTION_LABELS } from '../src/modules/generation/artwork/types.js';
 import { assignedRow } from './ai-fixtures.js';
 
 test('default artwork snapshot freezes single-reference reconstruction and resolves each requested camera direction', async () => {

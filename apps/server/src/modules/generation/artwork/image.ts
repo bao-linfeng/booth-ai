@@ -1,5 +1,5 @@
 import { ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
-import { ARTWORK_QUALITY } from './service.js';
+import { ARTWORK_QUALITY } from './types.js';
 
 /** 按画稿质量门槛校验图片；通用的 `IMAGE_*` 错误码改写为 `ARTWORK_*`，写入方向失败原因。 */
 export async function normalizeArtworkImage(bytes: Buffer) {

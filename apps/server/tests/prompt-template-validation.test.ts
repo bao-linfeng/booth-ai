@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { assertPrompt, inspectPrompt, renderPrompt } from '../src/modules/prompts/template.js';
-import { buildArtworkPrompts } from '../src/modules/generation/artwork/service.js';
+import { buildArtworkPrompts } from '../src/modules/generation/artwork/prompt.js';
 
 test('prompt validation extracts supported variables and rejects unknown variables and empty bodies', () => {
   assert.deepEqual(inspectPrompt('theme', '{{industryLabel}} / {{brandColors}}'), {

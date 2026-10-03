@@ -4,7 +4,7 @@ import { projectError, type QuoteInput } from './domain.js';
 import { loadCandidatePool, loadCatalog } from '../selection/repository.js';
 import { matchSchemes } from '../selection/match.js';
 import { isEmpty, validateRequirement } from '../selection/domain.js';
-import { readyArtworkFiles } from '../generation/artwork/service.js';
+import { readyArtworkFiles } from '../generation/artwork/queries.js';
 import { loadAndEvaluate } from '../schemes/readiness.js';
 
 export interface AssetSnapshot {

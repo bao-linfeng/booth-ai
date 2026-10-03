@@ -5,7 +5,7 @@ import { activeAiModels } from '../../../infra/ai/config.js';
 import { ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
 import type { ActiveAiModel } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
-import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot, type Direction } from './service.js';
+import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot, type Direction } from './types.js';
 import type { ArtworkRun } from './types.js';
 import { normalizeArtworkImage } from './image.js';
 import { lockRunningLease, publishGeneration, refreshGeneration } from '../execution.js';
