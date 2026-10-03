@@ -97,7 +97,7 @@ test('asset scope migration and all baseline consumers isolate generated assets 
     assert.equal(ready.assets.rendering.count, 3);
     assert.equal(ready.assets.artwork.count, 1);
     await pool.query('UPDATE scheme_assets SET is_active=false WHERE id=$1', [baseline.get('artwork')!.id]);
-    assert.ok((await getSchemeReadiness(pool, code)).blockers.includes('缺少平面素材资产'));
+    assert.ok((await getSchemeReadiness(pool, code)).blockers.includes('MISSING_ARTWORK'));
     await pool.query('UPDATE scheme_assets SET is_active=true WHERE id=$1', [baseline.get('artwork')!.id]);
     assert.equal((await publishScheme(pool, code, admin)).publishStatus, 'published');
   });

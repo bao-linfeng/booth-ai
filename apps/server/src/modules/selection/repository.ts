@@ -135,7 +135,7 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
       || row.conditions?.status !== 'confirmed' || row.conditions?.labelsConfirmed !== true || !validRules;
     const incompleteAssets = !['model', 'checklist', 'rendering', 'mask', 'drawing', 'artwork'].every(type => bound.some(asset => asset.type === type))
       || images.length !== 3 || masks.length !== 3 || new Set(images.map(image => image.objectKey)).size !== 3 || new Set(images.map(image => image.order)).size !== 3
-      || images.some(image => !image.width || !image.height || image.width * 9 !== image.height * 16 || !/^image\/(png|jpeg|webp)$/.test(image.mime) || masks.filter(mask => mask.relatedAssetId === image.id && mask.order === image.order && mask.width === image.width && mask.height === image.height).length !== 1);
+      || images.some(image => !image.width || !image.height || image.width * 9 !== image.height * 16 || !/^image\/(png|jpeg|webp)$/.test(image.mime) || masks.filter(mask => mask.relatedAssetId === image.id && mask.order === image.order && mask.width === image.width && mask.height === image.height && /^image\/(png|jpeg|webp)$/.test(mask.mime)).length !== 1);
     if (!row.bomVerified) diagnostics.exclusions.unverifiedChecklist++;
     if (incompleteAssets) diagnostics.exclusions.incompleteAssets++;
     if (invalidData) diagnostics.exclusions.invalidData++;

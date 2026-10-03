@@ -2,7 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
-import { createReview, getSchemeReadiness, publishScheme, unpublishScheme, type CreateReviewInput } from '../../../modules/schemes/reviews.js';
+import { createReview, publishScheme, unpublishScheme, type CreateReviewInput } from '../../../modules/schemes/reviews.js';
+import { getSchemeReadiness, BLOCKER_MESSAGES, type SchemeReadiness } from '../../../modules/schemes/readiness.js';
+
+function mapReadinessResponse(readiness: SchemeReadiness) {
+  return {
+    ...readiness,
+    blockers: readiness.blockers.map(code => BLOCKER_MESSAGES[code]),
+    coreBlockers: readiness.coreBlockers.map(code => BLOCKER_MESSAGES[code]),
+    unknownApplicabilityQuestionIds: readiness.unknownApplicabilityQuestionIds,
+  };
+}
 
 interface CodeParams { code: string }
 interface UnpublishBody { reason?: string }
@@ -22,7 +32,7 @@ function decodedCode(params: CodeParams): string {
 
 export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
   app.get('/schemes/:code/readiness', { schema: { tags: ['admin-reviews'], params: codeParams } }, async request => {
-    return { code: 0, data: await getSchemeReadiness(pool, decodedCode(request.params as CodeParams)) };
+    return { code: 0, data: mapReadinessResponse(await getSchemeReadiness(pool, decodedCode(request.params as CodeParams))) };
   });
   app.post('/schemes/:code/reviews', {
     schema: {

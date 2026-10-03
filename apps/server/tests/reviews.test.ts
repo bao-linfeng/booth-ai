@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type pg from 'pg';
-import { createReview, getSchemeReadiness, publishScheme, unpublishScheme } from '../src/modules/schemes/reviews.js';
+import { createReview, publishScheme, unpublishScheme } from '../src/modules/schemes/reviews.js';
+import { getSchemeReadiness } from '../src/modules/schemes/readiness.js';
 
 const scheme = {
   id: 'scheme-id', code: 'S-1', revision: 2, publishStatus: 'draft',
@@ -46,11 +47,11 @@ test('readiness reports active asset counts, verification and blockers', async (
     throw new Error(`Unexpected query: ${sql}`);
   });
   const readiness = await getSchemeReadiness(pool, 'S-1');
-  assert.ok(readiness.blockers.includes('必须恰好有3张效果图'));
-  assert.ok(readiness.blockers.includes('必须恰好有3张蒙版'));
-  assert.ok(readiness.blockers.includes('缺少清单资产'));
-  assert.ok(readiness.blockers.includes('清单未核验'));
-  assert.ok(readiness.blockers.includes('缺少当前修订的整体审核通过记录'));
+  assert.ok(readiness.blockers.includes('RENDERING_COUNT'));
+  assert.ok(readiness.blockers.includes('MASK_COUNT'));
+  assert.ok(readiness.blockers.includes('MISSING_CHECKLIST'));
+  assert.ok(readiness.blockers.includes('BOM_NOT_VERIFIED'));
+  assert.ok(readiness.blockers.includes('NO_OVERALL_REVIEW'));
   assert.equal(readiness.assets.model.count, 1);
   assert.equal(readiness.assets.checklist.count, 0);
   assert.equal(readiness.assets.model.verified, false);
@@ -66,7 +67,7 @@ test('readiness requires a valid opening count without directions', async () => 
     throw new Error(`Unexpected query: ${sql}`);
   });
   const readiness = await getSchemeReadiness(pool, 'S-1');
-  assert.ok(readiness.blockers.includes('开口面数未核对'));
+  assert.ok(readiness.blockers.includes('OPENING_COUNT_INVALID'));
   assert.equal(readiness.canPublish, false);
 });
 
@@ -81,7 +82,7 @@ test('readiness requires masks to use the same sort order as their renderings', 
     throw new Error(`Unexpected query: ${sql}`);
   });
   const readiness = await getSchemeReadiness(pool, 'S-1');
-  assert.ok(readiness.blockers.includes('效果图与蒙版未逐一配对或图片规格不符'));
+  assert.ok(readiness.blockers.includes('RENDERING_MASK_MISMATCH'));
   assert.equal(readiness.canPublish, false);
 });
 
@@ -202,7 +203,8 @@ test('unconfigured applicability questions cannot be published as invisible cand
     throw new Error(`Unexpected query: ${sql}`);
   });
   const readiness = await getSchemeReadiness(pool, 'S-1');
-  assert.ok(readiness.blockers.some(b => b.includes('适用问题未在系统配置')));
+  assert.ok(readiness.blockers.includes('UNKNOWN_APPLICABILITY_QUESTIONS'));
+  assert.ok(readiness.unknownApplicabilityQuestionIds.includes('venue-restriction'));
   assert.equal(readiness.canPublish, false);
 });
 

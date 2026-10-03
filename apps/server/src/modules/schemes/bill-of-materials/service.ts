@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { transaction } from '../../../infra/database.js';
+import { invalidatePublication } from '../publication.js';
 import type { ParsedBom } from './workbook.js';
 
 export type BomStatus = 'pending_verification' | 'verified' | 'rejected';
@@ -41,8 +42,7 @@ function assertBomEditable(bom: BomRecord | null): void {
   if (bom?.status === 'verified') throw bomError('BOM_ALREADY_VERIFIED', 409);
 }
 async function unpublish(client: pg.PoolClient, scheme: SchemeRow, adminId: string): Promise<boolean> {
-  const result = await client.query("UPDATE schemes SET publish_status = 'draft', updated_by = $1, updated_at = now(), revision = revision + 1 WHERE id = $2 AND publish_status = 'published'", [adminId, scheme.id]);
-  return (result.rowCount ?? 0) > 0;
+  return invalidatePublication(client, scheme.id, adminId);
 }
 async function audit(client: pg.PoolClient, bomId: string, before: number, action: string, reason: string, adminId: string, summary: object): Promise<void> {
   await client.query('INSERT INTO bom_change_logs (bom_id, before_revision, after_revision, action, change_reason, admin_id, summary) VALUES ($1,$2,$3,$4,$5,$6,$7)', [bomId, before, before + 1, action, reason, adminId, JSON.stringify(summary)]);

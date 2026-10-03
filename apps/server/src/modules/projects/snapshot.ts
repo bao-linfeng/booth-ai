@@ -5,6 +5,7 @@ import { loadCandidatePool, loadCatalog } from '../selection/repository.js';
 import { matchSchemes } from '../selection/match.js';
 import { isEmpty, validateRequirement } from '../selection/domain.js';
 import { readyArtworkFiles } from '../generation/artwork/service.js';
+import { loadAndEvaluate } from '../schemes/readiness.js';
 
 export interface AssetSnapshot {
   assetId: string; versionId: string; type: string; name: string; revision: number; objectKey: string;
@@ -24,15 +25,36 @@ export interface MaterialsSnapshot {
   drawings: { status: string; revision: number | null; assets: AssetSnapshot[] };
   artworks: { status: string; revision: number | null; assets: AssetSnapshot[]; artworkJobId?: string; mappingStatus?: string };
 }
+
+interface SchemeQueryRow {
+  id: string; code: string; name: string; revision: number;
+  lengthMm: number; widthMm: number; heightMm: number; openingCount: number;
+  publishStatus: string; verificationStatus: string;
+  areaM2: string | null; productSystemId: string | null;
+  applicableConditions: Record<string, unknown> | null;
+}
+
 export async function captureScheme(client: pg.PoolClient, input: Pick<QuoteInput, 'schemeCode' | 'schemeRevision' | 'bomRevision' | 'drawingRevision' | 'artworkRevision' | 'artworkJobId' | 'themeSelection' | 'requirementContext'>, userId: string | null) {
-  const scheme = (await client.query<Omit<SchemeSnapshot, 'selectedTheme' | 'renderings'> & { id: string; publishStatus: string }>(
-    `SELECT id,code,name,revision,length_mm AS "lengthMm",width_mm AS "widthMm",height_mm AS "heightMm",opening_count AS "openingCount",publish_status AS "publishStatus"
+  const scheme = (await client.query<SchemeQueryRow>(
+    `SELECT id, code, name, revision,
+       length_mm AS "lengthMm", width_mm AS "widthMm", height_mm AS "heightMm",
+       opening_count AS "openingCount", publish_status AS "publishStatus",
+       verification_status AS "verificationStatus",
+       area_sqm::text AS "areaM2",
+       product_system_id::text AS "productSystemId",
+       applicable_conditions AS "applicableConditions"
      FROM schemes WHERE code=$1 FOR NO KEY UPDATE`, [input.schemeCode])).rows[0];
-  if (!scheme || scheme.publishStatus !== 'published') throw projectError('SCHEME_UNAVAILABLE');
+  if (!scheme) throw projectError('SCHEME_UNAVAILABLE');
   if (input.schemeRevision !== undefined && input.schemeRevision !== scheme.revision) throw projectError('SCHEME_REVISION_CHANGED');
+
+  // 用 readiness 做完整资格检查（含审核有效性）
+  const readiness = await loadAndEvaluate(client, scheme);
+  if (!readiness.canSelect) throw projectError('SCHEME_UNAVAILABLE');
+
+  // 加载候选池仅用于 requirementContext 匹配摘要
   const catalog = await loadCatalog(client);
-  const { candidates } = await loadCandidatePool(client,catalog,scheme.code);
-  if (!candidates.length) throw projectError('SCHEME_UNAVAILABLE');
+  const { candidates } = await loadCandidatePool(client, catalog, scheme.code);
+
   await client.query('SELECT id FROM scheme_boms WHERE scheme_id=$1 FOR UPDATE', [scheme.id]);
   const bom = await getBom(client, scheme.code);
   if (input.bomRevision !== undefined && (bom?.status !== 'verified' || bom.revision !== input.bomRevision)) throw projectError('BOM_REVISION_CHANGED');
@@ -40,6 +62,8 @@ export async function captureScheme(client: pg.PoolClient, input: Pick<QuoteInpu
     v.id AS "versionId",v.object_key AS "objectKey",v.checksum,v.original_filename AS filename,v.mime_type AS "mimeType"
     FROM scheme_baseline_assets a JOIN LATERAL (SELECT * FROM asset_versions WHERE asset_id=a.id ORDER BY created_at DESC,id DESC LIMIT 1) v ON true
     WHERE a.scheme_id=$1 AND a.is_active AND v.byte_size>0 ORDER BY a.sort_order,a.id`, [scheme.id])).rows;
+
+  // readiness.canSelect 已保证 BOM verified 和资产完整，此处仅做快照完整性断言
   if (!bom || bom.status !== 'verified' || !['model','checklist','rendering','mask','drawing','artwork'].every(type => assets.some(asset => asset.type === type))) throw projectError('SCHEME_UNAVAILABLE');
   if (input.themeSelection && input.artworkRevision !== undefined) throw projectError('INVALID_INPUT',400);
   if (input.artworkJobId && (!input.themeSelection || !userId)) throw projectError('INVALID_INPUT',400);

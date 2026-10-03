@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
+import { invalidatePublication } from '../schemes/publication.js';
 
 export type AssetType = 'model' | 'checklist' | 'rendering' | 'mask' | 'drawing' | 'artwork';
 
@@ -439,8 +440,7 @@ export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeC
 }
 
 async function invalidatePublishedScheme(client: pg.PoolClient, schemeId: string, adminId: string | null): Promise<void> {
-  await client.query(`UPDATE schemes SET publish_status='draft', verification_status='unverified', revision=revision+1,
-    updated_by=$2, updated_at=now() WHERE id=$1 AND publish_status='published'`, [schemeId, adminId]);
+  await invalidatePublication(client, schemeId, adminId);
 }
 
 export async function getAssetVersion(pool: pg.Pool, assetId: string, versionId: string): Promise<AssetVersion> {
