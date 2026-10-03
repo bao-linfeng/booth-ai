@@ -37,6 +37,12 @@ export async function refreshGeneration(database: pg.Pool, job: CreditJob, lease
   }
 }
 
+/** 在事务内锁定运行中的任务行，租约丢失或过期时抛错；所有 lease 持有者的写事务以此开头。 */
+export async function lockRunningLease(client: pg.PoolClient, job: CreditJob, lease: string) {
+  const owner = await client.query(`SELECT id FROM ${job.kind}_jobs WHERE id = $1 AND lease_token = $2 AND status = 'running' FOR UPDATE`, [job.id, lease]);
+  if (!owner.rows[0]) throw new ImageGenerationError('GENERATION_LEASE_LOST_OR_EXPIRED');
+}
+
 export async function publishGeneration(publish: (jobId: string, event: unknown) => Promise<void>, jobId: string, event: unknown) {
   try { await publish(jobId, event); } catch {}
 }

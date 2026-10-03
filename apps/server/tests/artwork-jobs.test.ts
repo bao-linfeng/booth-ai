@@ -3,7 +3,7 @@ import test from 'node:test';
 import type pg from 'pg';
 import type { Queue } from 'bullmq';
 import sharp from 'sharp';
-import { normalizeArtworkImage } from '../src/modules/generation/artwork/execution.js';
+import { normalizeArtworkImage } from '../src/modules/generation/artwork/image.js';
 import { dispatchArtworkOutbox } from '../src/workers/artwork-outbox.js';
 import { DIRECTIONS, DIRECTION_LABELS, loadArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
 import { assignedRow } from './ai-fixtures.js';

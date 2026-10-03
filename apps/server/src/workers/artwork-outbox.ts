@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import type { Queue } from 'bullmq';
 import { ARTWORK_TASK_NAME } from '../infra/queue.js';
-import type { PublishArtworkEvent } from '../modules/generation/artwork/execution.js';
+import type { PublishArtworkEvent } from '../modules/generation/artwork/types.js';
 
 export async function dispatchArtworkOutbox(database: pg.Pool, queue: Queue, publish: PublishArtworkEvent = async () => {}): Promise<void> {
   const client = await database.connect();
