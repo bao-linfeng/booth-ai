@@ -180,6 +180,36 @@ test('resource filenames, real Dialog preview, Escape/close, and trigger focus r
   } finally { await mounted.close() }
 })
 
+test('PDF preview uses a safe new-tab link without an iframe; Escape restores the resource trigger', async () => {
+  const pdf = { ...asset, mimeType: 'application/pdf', originalFilename: 'SC-6030 三视图.pdf' }
+  const link = { ...assetLink(pdf.originalFilename), downloadUrl: 'https://assets.example/drawing.pdf?signature=test-only&inline=true', mimeType: pdf.mimeType }
+  const mounted = await mount({ api: {
+    getSchemeDeliverables: async () => ({ schemeCode: detail.code, revision: 'assets-r1', items: [pdf] }),
+    getSchemeDownload: async () => link,
+  } })
+  try {
+    await selectTab(mounted.container, '图纸与素材')
+    button(mounted.container, '三视图').click(); await settle()
+    const trigger = mounted.container.querySelector('[aria-label="预览 SC-6030 三视图.pdf"]')
+    trigger.focus(); trigger.click(); await settle()
+    const dialog = document.querySelector('[role="dialog"]')
+    assert.ok(dialog); assert.equal(dialog.querySelector('iframe, embed, object'), null)
+    assert.match(dialog.textContent, /PDF 原件将在新标签页中打开/)
+    const anchor = dialog.querySelector('a')
+    assert.equal(anchor.href, link.downloadUrl)
+    assert.equal(anchor.target, '_blank')
+    assert.deepEqual(anchor.rel.split(/\s+/).sort(), ['noopener', 'noreferrer'])
+    assert.equal(anchor.hasAttribute('download'), false)
+    assert.deepEqual(mounted.calls.filter(call => call.name === 'getSchemeDownload').at(-1).args, ['SC-6030', 'drawings', 'drawing-1', true])
+    anchor.focus()
+    anchor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await settle()
+    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assert.equal(document.activeElement, trigger)
+    assert.deepEqual(downloads, [])
+  } finally { await mounted.close() }
+})
+
 test('archive revision invalidation refreshes files and requires another user download with the new revision', async () => {
   let listing = 0
   const refreshed = { ...asset, assetId: 'drawing-2', originalFilename: 'SC-6030 正视图修订版.png' }

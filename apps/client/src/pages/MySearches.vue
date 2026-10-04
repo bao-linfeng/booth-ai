@@ -131,7 +131,7 @@ onMounted(() => load())
           </Card>
 
           <div v-else class="space-y-4">
-            <Card v-for="record in list.items" :key="record.id" :data-record="record.id" class="shadow-none">
+            <Card v-for="record in list.items" :key="record.id" :data-record="record.id" class="shadow-sm">
               <CardContent class="space-y-4 p-4 sm:p-5">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div class="min-w-0 space-y-2">

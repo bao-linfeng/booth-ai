@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, watch } from "vue";
+import { useResizeObserver } from "@vueuse/core";
 import { useRoute } from "vue-router";
 import {
   ArrowLeft,
@@ -39,6 +40,11 @@ const bomDownloading = ref(false);
 const bomError = ref(false);
 const bomRevisionChanged = ref(false);
 const activeTab = ref('description');
+const shortcutBar = ref<HTMLElement | null>(null);
+const shortcutHeight = ref(0);
+useResizeObserver(shortcutBar, () => {
+  shortcutHeight.value = shortcutBar.value?.getBoundingClientRect().height ?? 0;
+});
 const showBom = computed(() => activeTab.value === 'bom');
 const activeResource = ref<SchemeAssetType | null>(null);
 const resourceItems = ref<SchemeDeliverable[]>([]);
@@ -363,7 +369,7 @@ onMounted(async () => {
 
 <template>
   <SelectionShell>
-    <main id="main-content" class="studio-page pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-12">
+    <main id="main-content" :style="{ '--scheme-actions-height': `${shortcutHeight}px` }" class="studio-page pb-[calc(var(--scheme-actions-height)+1.5rem)] md:pb-[calc(var(--scheme-actions-height)+1.5rem)] lg:pb-12">
       <header class="studio-header">
         <Button as-child variant="ghost" class="-ml-3">
           <RouterLink :to="preview ? '/ai-selection/preview' : '/ai-selection'"><ArrowLeft class="mr-2 size-4" aria-hidden="true" />返回 AI 智选</RouterLink>
@@ -534,16 +540,19 @@ onMounted(async () => {
             <template v-if="previewAsset">
               <p v-if="previewImageError" role="alert" class="py-12 text-center text-sm text-muted-foreground">图片加载失败，请关闭后重试或下载原文件。</p>
               <img v-else-if="previewAsset.mimeType.startsWith('image/')" :src="previewAsset.url" :alt="previewAsset.name" class="max-h-[65dvh] w-full object-contain" @error="previewImageError = true" />
-              <iframe v-else-if="previewAsset.mimeType === 'application/pdf'" :src="previewAsset.url" :title="previewAsset.name" class="h-[65dvh] w-full rounded border bg-muted" />
+              <div v-else-if="previewAsset.mimeType === 'application/pdf'" class="space-y-4 rounded-lg bg-muted/40 p-4">
+                <p class="text-sm leading-relaxed">PDF 原件将在新标签页中打开，可使用浏览器的阅读与下载功能。当前弹窗可按 Escape 关闭。</p>
+                <Button as-child variant="outline" class="h-auto min-h-11 max-w-full whitespace-normal"><a :href="previewAsset.url" target="_blank" rel="noopener noreferrer">新标签页查看 PDF 原件<ArrowUpRight class="size-4" aria-hidden="true" /></a></Button>
+              </div>
             </template>
           </DialogContent>
         </Dialog>
 
-        <div aria-label="方案快捷操作" class="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:hidden">
-          <div class="mx-auto flex max-w-2xl items-center gap-3">
-            <Button v-if="item.actions?.theme !== 'unavailable'" as-child variant="outline" class="shrink-0"><RouterLink :to="themeLocation">AI 换主题</RouterLink></Button>
-            <Button v-if="!preview" as-child class="min-w-0 flex-1"><RouterLink :to="quoteLocation">申请报价<ArrowUpRight class="ml-2 size-4" aria-hidden="true" /></RouterLink></Button>
-            <Button v-else disabled class="min-w-0 flex-1">示例不可报价</Button>
+        <div ref="shortcutBar" aria-label="方案快捷操作" class="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:hidden">
+          <div class="mx-auto flex max-w-2xl flex-wrap items-stretch gap-3">
+            <Button v-if="item.actions?.theme !== 'unavailable'" as-child variant="outline" class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3"><RouterLink :to="themeLocation">AI 换主题</RouterLink></Button>
+            <Button v-if="!preview" as-child class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3"><RouterLink :to="quoteLocation">申请报价<ArrowUpRight class="size-4" aria-hidden="true" /></RouterLink></Button>
+            <Button v-else disabled class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3">示例不可报价</Button>
           </div>
         </div>
       </template>

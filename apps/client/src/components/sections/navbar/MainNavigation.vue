@@ -48,8 +48,8 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
 </script>
 
 <template>
-  <Navbar size="lg" class="border-border/80 bg-background/95">
-    <div class="flex w-full min-w-0 items-center justify-between gap-3">
+  <Navbar size="lg" class="relative top-auto h-auto min-h-16 border-border/80 bg-background/95 py-2 lg:sticky lg:top-0 lg:py-0">
+    <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
       <div class="flex min-w-0 items-center gap-8 xl:gap-12">
         <NavbarBrand class="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="灵通 AI 展台首页">
           <img src="/logo.png" alt="灵通" class="h-7 w-auto max-w-20 object-contain sm:h-8 sm:max-w-24" />
@@ -72,7 +72,7 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
         </nav>
       </div>
 
-      <div class="flex shrink-0 items-center gap-1 sm:gap-2">
+      <div class="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 sm:gap-2">
         <Button variant="ghost" size="sm" as-child class="hidden lg:inline-flex">
           <RouterLink
             to="/manual-request"

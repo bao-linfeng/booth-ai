@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, nextTick, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowUpRight, Loader2, Sparkles, X, Plus, Palette } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -62,18 +62,14 @@ const confirmationTrigger = ref<HTMLElement | null>(null)
 const confirmation = ref<{ payload: ThemeJobSubmission; quote: NonNullable<ThemeOffer['offer']>; attempted: boolean } | null>(null)
 const formLocked = computed(() => isPreview.value || creatingJob.value || confirmDialogOpen.value)
 const invalidColors = computed(() => brandColors.value.some(color => !/^#[0-9a-f]{6}$/i.test(color)))
-const inputError = computed(() => {
-  if (invalidColors.value) return '品牌色请填写完整的六位色值，例如 #1A6B52。'
-  if (brandKeywords.value.length > limits.value.maxKeywordCharacters) return '品牌关键词超过字数限制，请精简后重试。'
-  return ''
-})
+const keywordError = computed(() => brandKeywords.value.length > limits.value.maxKeywordCharacters ? '品牌关键词超过字数限制，请精简后重试。' : '')
 const parameters = computed(() => ({
   schemeCode, sourceAssetId: selectedAssetId.value, searchId,
   input: { industryId: industryId.value, styleId: styleId.value, brandColors: [...brandColors.value], brandKeywords: brandKeywords.value },
   requestedCount: requestedCount.value, cacheMode: 'reuse' as const,
 }))
 const parameterKey = computed(() => JSON.stringify(parameters.value))
-const canFetchOffer = computed(() => !isPreview.value && isLoggedIn.value && !!selectedAssetId.value && !!industryId.value && !!styleId.value && !inputError.value)
+const canFetchOffer = computed(() => !isPreview.value && isLoggedIn.value && !!selectedAssetId.value && !!industryId.value && !!styleId.value && !invalidColors.value && !keywordError.value)
 const blockedReasonText = computed(() => {
   if (!themeOffer.value || themeOffer.value.available) return ''
   const reasons = themeOffer.value.blockedReasons
@@ -192,6 +188,15 @@ function addColor() {
   if (!formLocked.value && brandColors.value.length < limits.value.maxBrandColors) brandColors.value.push('#000000')
 }
 
+function removeColor(index: number) {
+  if (formLocked.value) return
+  brandColors.value.splice(index, 1)
+  void nextTick(() => {
+    const nextIndex = Math.min(index, brandColors.value.length - 1)
+    document.getElementById(nextIndex >= 0 ? `theme-color-${nextIndex}` : 'theme-add-color')?.focus()
+  })
+}
+
 function handleLogin() {
   void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } })
 }
@@ -295,7 +300,7 @@ function setDialogOpen(open: boolean) {
               :class="cn('min-w-0 overflow-hidden rounded-lg border-2 bg-muted/30 p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60', selectedAssetId === image.assetId ? 'border-primary' : 'border-transparent hover:border-border')"
               :aria-label="`选择视角 ${index + 1}`" :aria-pressed="selectedAssetId === image.assetId" :disabled="formLocked" @click="selectedAssetId = image.assetId">
               <img :src="image.thumbnailUrl || image.url" class="aspect-video w-full object-contain" :alt="`视角 ${index + 1}`" />
-              <span class="block py-1 text-xs">视角 {{ index + 1 }}</span>
+              <span class="block py-1 text-xs">视角 {{ index + 1 }}<span v-if="selectedAssetId === image.assetId" class="block font-medium">当前原图</span></span>
             </button>
           </div>
           <div class="flex items-start gap-3 border-t pt-5">
@@ -344,19 +349,22 @@ function setDialogOpen(open: boolean) {
               <div class="space-y-3">
                 <div class="flex items-center justify-between gap-2"><h3 class="text-sm font-medium">品牌色</h3><span class="text-xs text-muted-foreground">{{ brandColors.length }} / {{ limits.maxBrandColors }}</span></div>
                 <p v-if="!brandColors.length" class="text-sm text-muted-foreground">添加品牌主色，让视觉更贴近您的品牌。</p>
-                <div v-for="(color, index) in brandColors" :key="index" class="flex min-w-0 items-center gap-2">
-                  <input type="color" :value="/^#[0-9a-f]{6}$/i.test(color) ? color : '#000000'" :aria-label="`选择品牌色 ${index + 1}`" class="size-10 shrink-0 cursor-pointer rounded border bg-background p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @input="brandColors[index] = ($event.target as HTMLInputElement).value" />
-                  <Input v-model="brandColors[index]" :aria-label="`品牌色 ${index + 1} 色值`" :aria-invalid="!/^#[0-9a-f]{6}$/i.test(color)" :aria-describedby="invalidColors ? 'theme-input-error' : undefined" class="min-w-0 flex-1 font-mono uppercase" maxlength="7" />
-                  <Button variant="ghost" size="icon" class="shrink-0" :aria-label="`删除品牌色 ${index + 1}`" @click="brandColors.splice(index, 1)"><X class="size-4" /></Button>
+                <div v-for="(color, index) in brandColors" :key="index" class="min-w-0 space-y-2">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <input type="color" :value="/^#[0-9a-f]{6}$/i.test(color) ? color : '#000000'" :aria-label="`选择品牌色 ${index + 1}`" class="size-10 shrink-0 cursor-pointer rounded border bg-background p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @input="brandColors[index] = ($event.target as HTMLInputElement).value" />
+                    <Input :id="`theme-color-${index}`" v-model="brandColors[index]" :aria-label="`品牌色 ${index + 1} 色值`" :aria-invalid="!/^#[0-9a-f]{6}$/i.test(color)" :aria-describedby="!/^#[0-9a-f]{6}$/i.test(color) ? `theme-color-${index}-error` : undefined" class="min-w-0 flex-1 font-mono uppercase" maxlength="7" />
+                    <Button variant="ghost" size="icon" class="shrink-0" :aria-label="`删除品牌色 ${index + 1}`" @click="removeColor(index)"><X class="size-4" /></Button>
+                  </div>
+                  <p v-if="!/^#[0-9a-f]{6}$/i.test(color)" :id="`theme-color-${index}-error`" role="alert" class="text-sm text-destructive">品牌色 {{ index + 1 }} 请填写完整的六位色值，例如 #1A6B52。</p>
                 </div>
-                <Button v-if="brandColors.length < limits.maxBrandColors" variant="outline" size="sm" class="border-dashed" @click="addColor"><Plus class="mr-2 size-4" />添加品牌色</Button>
+                <Button v-if="brandColors.length < limits.maxBrandColors" id="theme-add-color" variant="outline" size="sm" class="border-dashed" @click="addColor"><Plus class="mr-2 size-4" />添加品牌色</Button>
               </div>
 
               <div class="space-y-2">
                 <div class="flex items-center justify-between gap-2"><label for="theme-keywords" class="text-sm font-medium">品牌关键词 <span class="font-normal text-muted-foreground">选填</span></label><span class="text-xs tabular-nums text-muted-foreground">{{ brandKeywords.length }} / {{ limits.maxKeywordCharacters }}</span></div>
-                <Textarea id="theme-keywords" v-model="brandKeywords" placeholder="例如：智能科技、绿色环保、简洁现代" class="resize-none" :maxlength="limits.maxKeywordCharacters" rows="3" />
+                <Textarea id="theme-keywords" v-model="brandKeywords" placeholder="例如：智能科技、绿色环保、简洁现代" class="resize-none" :maxlength="limits.maxKeywordCharacters" :aria-invalid="!!keywordError" :aria-describedby="keywordError ? 'theme-keywords-error' : undefined" rows="3" />
+                <p v-if="keywordError" id="theme-keywords-error" role="alert" class="text-sm text-destructive">{{ keywordError }}</p>
               </div>
-              <p v-if="inputError" id="theme-input-error" role="alert" class="text-sm text-destructive">{{ inputError }}</p>
 
               <div class="space-y-3 border-t pt-5">
                 <h3 class="text-sm font-medium">生成数量</h3>

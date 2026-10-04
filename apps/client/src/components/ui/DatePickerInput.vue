@@ -6,6 +6,8 @@ import { CalendarCell, CalendarCellTrigger, CalendarGrid, CalendarGridBody, Cale
 import { CalendarIcon } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 
+defineOptions({ inheritAttrs: false })
+
 const props = withDefaults(defineProps<{
   modelValue?: string
   placeholder?: string
@@ -57,7 +59,9 @@ function onSelect(val: DateValue | undefined) {
   <PopoverRoot v-model:open="open">
     <PopoverTrigger as-child :disabled="disabled">
       <button
+        v-bind="$attrs"
         type="button"
+        :aria-required="required || undefined"
         :disabled="disabled"
         :class="cn(
           'flex h-11 w-full min-w-0 items-center justify-between rounded-md border border-input bg-card px-3 py-2 text-sm transition-colors',

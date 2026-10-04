@@ -8,7 +8,7 @@ import ts from 'typescript'
 import { createServer, transformWithEsbuild } from 'vite'
 
 const window = new Window({ url: 'http://localhost/' })
-for (const name of ['window', 'document', 'navigator', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+for (const name of ['window', 'document', 'navigator', 'history', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   Object.defineProperty(globalThis, name, { configurable: true, value: name === 'window' ? window : ['getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame'].includes(name) ? window[name].bind(window) : window[name] })
 }
 registerTS(() => ts)
@@ -96,5 +96,25 @@ test('SchemeCard keeps applicability answers and multi-view gallery available', 
     view.click()
     await nextTick()
     assert.equal(view.getAttribute('aria-pressed'), 'true')
+    assert.match(view.textContent, /当前视角/)
+    assert.doesNotMatch(mounted.container.querySelector('[aria-label="查看第 1 张"]').textContent, /当前视角/)
+  } finally { mounted.close() }
+})
+
+test('gallery preview closes with Escape and restores the originating artwork button', async () => {
+  const mounted = mount()
+  try {
+    const trigger = mounted.container.querySelector('[aria-label="放大 SC-6030 第 1 张图片"]')
+    trigger.focus()
+    trigger.click()
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const dialog = document.querySelector('[role="dialog"]')
+    assert.ok(dialog)
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assert.equal(document.activeElement, trigger)
   } finally { mounted.close() }
 })

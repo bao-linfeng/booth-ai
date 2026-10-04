@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { parseDate } from '@internationalized/date'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, CheckCircle2, FileText, Loader2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -82,6 +83,31 @@ function persist() { sessionStorage.setItem(draftKey, JSON.stringify({ form, pen
 watch(form, persist, { deep: true })
 watch(originalDescription, persist)
 const frozen = computed(() => busy.value || pending.value !== null || pendingManual.value !== null)
+const validationAttempted = ref(false)
+const descriptionError = computed(() => validationAttempted.value && manual && !originalDescription.value.trim() ? '请填写原始需求。' : '')
+function dateError(value: string, label: string) {
+  if (!value) return `请选择${label}。`
+  try { if (parseDate(value).toString() === value) return '' } catch {}
+  return `${label}无效，请重新选择。`
+}
+const startDateError = computed(() => validationAttempted.value ? dateError(form.startDate, '开展日期') : '')
+const endDateError = computed(() => {
+  if (!validationAttempted.value) return ''
+  const invalid = dateError(form.endDate, '结束日期')
+  if (invalid) return invalid
+  return !startDateError.value && form.endDate < form.startDate ? '结束日期不能早于开展日期。' : ''
+})
+const scopeError = computed(() => validationAttempted.value && !form.scopeCodes.length ? '请至少选择一项需求范围。' : '')
+const scopeNotesError = computed(() => validationAttempted.value && form.scopeCodes.includes('other') && !form.scopeNotes.trim() ? '请补充其他需求范围的说明。' : '')
+const contactError = computed(() => validationAttempted.value && !form.email.trim() && !form.phone.trim() ? '请填写邮箱或电话，至少一项。' : '')
+
+function validateFields() {
+  validationAttempted.value = true
+  if (!descriptionError.value && !startDateError.value && !endDateError.value && !scopeError.value && !scopeNotesError.value && !contactError.value) return true
+  const selector = descriptionError.value ? '#request-description' : startDateError.value ? '#request-start-date' : endDateError.value ? '#request-end-date' : scopeError.value ? '#request-scopes button' : scopeNotesError.value ? '#scope' : '#email'
+  void nextTick(() => document.querySelector<HTMLElement>(selector)?.focus())
+  return false
+}
 
 interface DictItem { dictKey: string; dictValue: string; dictName: string }
 interface DictResponse { data: DictItem[] }
@@ -168,7 +194,7 @@ async function submit() {
   draftOwner.value = auth.currentUser?.id ?? null
   error.value = ''
   if (!pending.value) {
-    if (!form.scopeCodes.length || (!form.email.trim() && !form.phone.trim()) || (form.scopeCodes.includes('other') && !form.scopeNotes.trim())) { error.value = '请选择需求范围，并填写邮箱或电话；其他范围请补充说明。'; return }
+    if (!validateFields()) return
     const current = context.value!
     pending.value = { requestKey: crypto.randomUUID(), schemeCode: code, schemeRevision: current.schemeRevision,
       ...(current.bomRevision ? { bomRevision: current.bomRevision } : {}), ...(current.drawingRevision ? { drawingRevision: current.drawingRevision } : {}),
@@ -198,8 +224,9 @@ async function submitManual() {
   if (!auth.isLoggedIn) { login(); return }
   if (pendingManual.value && draftOwner.value !== (auth.currentUser?.id ?? null)) { pendingManual.value = null; error.value = '登录账户已变化，请重新确认。'; persist(); return }
   draftOwner.value = auth.currentUser?.id ?? null
+  error.value = ''
   if (!pendingManual.value) {
-    if (!originalDescription.value.trim() || !form.scopeCodes.length || (!form.email.trim() && !form.phone.trim())) { error.value = '请填写原始需求、需求范围及邮箱或电话。'; return }
+    if (!validateFields()) return
     pendingManual.value = { requestKey: crypto.randomUUID(), originalDescription: originalDescription.value, confirmedRequirements: confirmedRequirements.value,
       unresolvedQuestions: unresolvedQuestions.value, entryPoint: 'matching_results', exhibition: { name: form.exhibitionName, countryCode: form.countryCode.toUpperCase(), city: form.city, startDate: form.startDate, endDate: form.endDate },
       scopeCodes: [...form.scopeCodes], scopeNotes: form.scopeNotes, materialBudget: { currency: form.currency, amount: form.amount }, customerType: form.customerType, company: form.company,
@@ -236,7 +263,7 @@ async function submitManual() {
       <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
         <form class="space-y-5" @submit.prevent="submit">
           <fieldset :disabled="frozen" class="studio-panel min-w-0 divide-y">
-            <section v-if="manual"><CardHeader><CardTitle class="text-lg">需求描述</CardTitle></CardHeader><CardContent class="space-y-3"><Textarea v-model="originalDescription" required maxlength="5000" class="min-h-32" aria-label="原始需求描述" placeholder="描述展位尺寸、功能、风格和需要确认的问题" /><p v-for="question in unresolvedQuestions" :key="question" class="text-sm text-warning">待确认：{{ question }}</p><p class="text-sm text-muted-foreground">本次申请不指定方案；沟通确认后由管理人员关联并固定资料。</p></CardContent></section>
+            <section v-if="manual"><CardHeader><CardTitle class="text-lg">需求描述</CardTitle></CardHeader><CardContent class="space-y-3"><Textarea id="request-description" v-model="originalDescription" required maxlength="5000" class="min-h-32" aria-label="原始需求描述" :aria-invalid="!!descriptionError" :aria-describedby="descriptionError ? 'request-description-error' : undefined" placeholder="描述展位尺寸、功能、风格和需要确认的问题" /><p v-if="descriptionError" id="request-description-error" role="alert" class="text-sm text-destructive">{{ descriptionError }}</p><p v-for="question in unresolvedQuestions" :key="question" class="text-sm text-warning">待确认：{{ question }}</p><p class="text-sm text-muted-foreground">本次申请不指定方案；沟通确认后由管理人员关联并固定资料。</p></CardContent></section>
             <section><CardHeader><CardTitle class="text-lg">01 / 展会信息</CardTitle></CardHeader><CardContent class="grid gap-5 sm:grid-cols-2">
               <div class="space-y-2 sm:col-span-2"><Label for="exhibition">展会名称 *</Label><Input id="exhibition" v-model="form.exhibitionName" required maxlength="200" /></div>
               <!-- 国家代码 -->
@@ -286,12 +313,12 @@ async function submitManual() {
                   </SelectContent>
                 </Select>
               </div>
-              <div class="space-y-2"><Label>开展日期 *</Label><DatePickerInput v-model="form.startDate" placeholder="选择开展日期" required /></div>
-              <div class="space-y-2"><Label>结束日期 *</Label><DatePickerInput v-model="form.endDate" :min="form.startDate" placeholder="选择结束日期" required /></div>
+              <div class="space-y-2"><Label for="request-start-date">开展日期 *</Label><DatePickerInput id="request-start-date" v-model="form.startDate" placeholder="选择开展日期" required :aria-invalid="!!startDateError" :aria-describedby="startDateError ? 'request-start-date-error' : undefined" /><p v-if="startDateError" id="request-start-date-error" role="alert" class="text-sm text-destructive">{{ startDateError }}</p></div>
+              <div class="space-y-2"><Label for="request-end-date">结束日期 *</Label><DatePickerInput id="request-end-date" v-model="form.endDate" :min="form.startDate" placeholder="选择结束日期" required :aria-invalid="!!endDateError" :aria-describedby="endDateError ? 'request-end-date-error' : undefined" /><p v-if="endDateError" id="request-end-date-error" role="alert" class="text-sm text-destructive">{{ endDateError }}</p></div>
             </CardContent></section>
             <section><CardHeader><CardTitle class="text-lg">02 / 需求与材料预算</CardTitle></CardHeader><CardContent class="space-y-5">
-              <div class="flex flex-wrap gap-4"><label v-for="scope in scopes" :key="scope.code" class="flex items-center gap-2 text-sm cursor-pointer"><Checkbox :checked="form.scopeCodes.includes(scope.code)" @update:checked="(v) => { if (v) form.scopeCodes.push(scope.code); else form.scopeCodes = form.scopeCodes.filter(c => c !== scope.code) }" />{{ scope.label }}</label></div>
-              <div class="space-y-2"><Label for="scope">范围说明{{ form.scopeCodes.includes('other') ? ' *' : '' }}</Label><Textarea id="scope" v-model="form.scopeNotes" :required="form.scopeCodes.includes('other')" maxlength="2000" /></div>
+              <div class="space-y-2"><p id="request-scopes-label" class="text-sm font-medium">需求范围 *</p><div id="request-scopes" role="group" aria-labelledby="request-scopes-label" :aria-describedby="scopeError ? 'request-scopes-error' : undefined" class="flex flex-wrap gap-4"><label v-for="scope in scopes" :key="scope.code" class="flex items-center gap-2 text-sm cursor-pointer"><Checkbox :checked="form.scopeCodes.includes(scope.code)" :aria-invalid="!!scopeError" :aria-describedby="scopeError ? 'request-scopes-error' : undefined" @update:checked="(v) => { if (v) form.scopeCodes.push(scope.code); else form.scopeCodes = form.scopeCodes.filter(c => c !== scope.code) }" />{{ scope.label }}</label></div><p v-if="scopeError" id="request-scopes-error" role="alert" class="text-sm text-destructive">{{ scopeError }}</p></div>
+              <div class="space-y-2"><Label for="scope">范围说明{{ form.scopeCodes.includes('other') ? ' *' : '' }}</Label><Textarea id="scope" v-model="form.scopeNotes" :required="form.scopeCodes.includes('other')" maxlength="2000" :aria-invalid="!!scopeNotesError" :aria-describedby="scopeNotesError ? 'request-scope-notes-error' : undefined" /><p v-if="scopeNotesError" id="request-scope-notes-error" role="alert" class="text-sm text-destructive">{{ scopeNotesError }}</p></div>
               <div class="grid gap-4 sm:grid-cols-[120px_1fr]"><div class="space-y-2"><Label for="currency">币种 *</Label><Select :model-value="form.currency" @update:model-value="form.currency = $event"><SelectTrigger id="currency"><SelectValue placeholder="选择币种" /></SelectTrigger><SelectContent><SelectItem v-for="currency in ['CNY','USD','EUR','GBP','HKD','JPY','KRW','KWD']" :key="currency" :value="currency">{{ currency }}</SelectItem></SelectContent></Select></div><div class="space-y-2"><Label for="budget">材料购买预算 *</Label><Input id="budget" v-model="form.amount" required inputmode="decimal" pattern="(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,6})?" placeholder="如 30000" /></div></div>
               <p class="studio-note">预算仅用于需求沟通，不等于报价；运输、搭建及税费由人工另行确认。</p>
             </CardContent></section>
@@ -299,8 +326,9 @@ async function submitManual() {
               <div class="space-y-2"><Label for="customer-type">客户类型 *</Label><Select :model-value="form.customerType" @update:model-value="form.customerType = $event as 'company' | 'individual'"><SelectTrigger id="customer-type"><SelectValue placeholder="选择类型" /></SelectTrigger><SelectContent><SelectItem value="individual">个人</SelectItem><SelectItem value="company">企业</SelectItem></SelectContent></Select></div>
               <div class="space-y-2"><Label for="company">企业名称{{ form.customerType === 'company' ? ' *' : '' }}</Label><Input id="company" v-model="form.company" :required="form.customerType === 'company'" maxlength="200" /></div>
               <div class="space-y-2 sm:col-span-2"><Label for="contact">联系人 *</Label><Input id="contact" v-model="form.contactName" required maxlength="100" autocomplete="name" /></div>
-              <div class="space-y-2"><Label for="email">邮箱（与电话至少一项）</Label><Input id="email" v-model="form.email" type="email" maxlength="254" autocomplete="email" /></div>
-              <div class="space-y-2"><Label for="phone">电话（支持国际区号）</Label><Input id="phone" v-model="form.phone" type="tel" maxlength="30" autocomplete="tel" /></div>
+              <div class="space-y-2"><Label for="email">邮箱（与电话至少一项）</Label><Input id="email" v-model="form.email" type="email" maxlength="254" autocomplete="email" :aria-invalid="!!contactError" :aria-describedby="contactError ? 'request-contact-error' : undefined" /></div>
+              <div class="space-y-2"><Label for="phone">电话（支持国际区号）</Label><Input id="phone" v-model="form.phone" type="tel" maxlength="30" autocomplete="tel" :aria-invalid="!!contactError" :aria-describedby="contactError ? 'request-contact-error' : undefined" /></div>
+              <p v-if="contactError" id="request-contact-error" role="alert" class="text-sm text-destructive sm:col-span-2">{{ contactError }}</p>
               <div class="space-y-2 sm:col-span-2"><Label for="notes">补充说明</Label><Textarea id="notes" v-model="form.notes" maxlength="2000" /></div>
             </CardContent></section>
           </fieldset>

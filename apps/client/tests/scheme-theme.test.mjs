@@ -200,11 +200,17 @@ test('real Selects, keywords, native color input and source image are sent to of
     const expected = { ...initialParameters, sourceAssetId: 'side', input: { industryId: 'industry-energy', styleId: 'style-natural', brandColors: ['#1a6b52'], brandKeywords: '绿色环保' } }
     assert.deepEqual(callsTo(mounted, endpoints.offer).at(-1).body, expected)
     assert.equal(mounted.container.querySelector('[aria-label="选择视角 2"]').getAttribute('aria-pressed'), 'true')
+    assert.match(mounted.container.querySelector('[aria-label="选择视角 2"]').textContent, /当前原图/)
+    assert.doesNotMatch(mounted.container.querySelector('[aria-label="选择视角 1"]').textContent, /当前原图/)
     const colorText = mounted.container.querySelector('[aria-label="品牌色 1 色值"]')
     input(colorText, '#12zz00')
     await nextTick()
     assert.equal(colorText.getAttribute('aria-invalid'), 'true')
-    assert.match(mounted.container.querySelector('#theme-input-error').textContent, /六位色值/)
+    const colorError = mounted.container.querySelector('#theme-color-0-error')
+    assert.match(colorError.textContent, /品牌色 1.*六位色值/)
+    assert.equal(colorText.getAttribute('aria-describedby'), colorError.id)
+    assert.equal(colorText.parentElement.parentElement, colorError.parentElement)
+    assert.equal(colorText.value, '#12zz00')
     assert.doesNotMatch(costRegion(mounted).textContent, /最高锁定积分/)
     const count = callsTo(mounted, endpoints.offer).length
     await debounce()
@@ -218,8 +224,36 @@ test('real Selects, keywords, native color input and source image are sent to of
     assert.equal(remove.tagName, 'BUTTON')
     remove.click()
     await debounce()
-    assert.equal(mounted.container.querySelector('#theme-input-error'), null)
+    assert.equal(mounted.container.querySelector('#theme-color-0-error'), null)
+    assert.equal(document.activeElement, mounted.container.querySelector('#theme-add-color'))
     assert.deepEqual(callsTo(mounted, endpoints.offer).at(-1).body, { ...expected, input: { ...expected.input, brandColors: [] } })
+  } finally { await mounted.close() }
+})
+
+test('a refreshed keyword limit reports the error beside the field without discarding existing input', async () => {
+  const mounted = await mount({ handlers: { [endpoints.offer]: body => {
+    const result = offer('reduced-limit', body.requestedCount)
+    if (body.input.brandKeywords) result.limits.maxKeywordCharacters = 3
+    return result
+  } } })
+  try {
+    const keywords = mounted.container.querySelector('#theme-keywords')
+    input(keywords, '绿色环保品牌')
+    await debounce()
+    const error = mounted.container.querySelector('#theme-keywords-error')
+    assert.match(error.textContent, /关键词超过字数限制/)
+    assert.equal(keywords.getAttribute('aria-invalid'), 'true')
+    assert.equal(keywords.getAttribute('aria-describedby'), error.id)
+    assert.equal(keywords.parentElement, error.parentElement)
+    assert.equal(keywords.value, '绿色环保品牌')
+    assert.equal(button(mounted.container, '确认积分并生成').disabled, true)
+    assert.equal(callsTo(mounted, endpoints.job).length, 0)
+    input(keywords, '环保')
+    await debounce()
+    assert.equal(mounted.container.querySelector('#theme-keywords-error'), null)
+    assert.equal(keywords.getAttribute('aria-invalid'), 'false')
+    assert.equal(button(mounted.container, '确认积分并生成').disabled, false)
+    assert.equal(callsTo(mounted, endpoints.offer).at(-1).body.input.brandKeywords, '环保')
   } finally { await mounted.close() }
 })
 

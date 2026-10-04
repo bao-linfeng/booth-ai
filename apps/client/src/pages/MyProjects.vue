@@ -113,7 +113,7 @@ watch(() => route.params.projectId, () => { detail.value = undefined; list.value
       </Card>
 
       <template v-else>
-        <form v-if="!route.params.projectId" class="grid items-end gap-4 rounded-xl border p-5 sm:grid-cols-2 lg:grid-cols-5" @submit.prevent="load(1)">
+        <form v-if="!route.params.projectId" class="grid items-end gap-4 rounded-xl border bg-card p-5 sm:grid-cols-2 lg:grid-cols-5" @submit.prevent="load(1)">
           <div class="space-y-2"><Label for="project-number">项目编号</Label><Input id="project-number" v-model="filters.projectNo" maxlength="200" /></div>
           <div class="space-y-2"><Label for="exhibition-filter">展会名称</Label><Input id="exhibition-filter" v-model="filters.exhibitionName" maxlength="200" /></div>
           <div class="space-y-2">
@@ -156,7 +156,7 @@ watch(() => route.params.projectId, () => { detail.value = undefined; list.value
               <Button as-child><RouterLink to="/ai-selection">开始选方案</RouterLink></Button>
             </CardContent>
           </Card>
-          <RouterLink v-for="project in list.items" :key="project.projectId" :to="`/my-projects/${project.projectId}`" class="block space-y-4 rounded-xl border p-5 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <RouterLink v-for="project in list.items" :key="project.projectId" :to="`/my-projects/${project.projectId}`" class="block space-y-4 rounded-xl border bg-card p-5 transition-colors hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0 space-y-1">
                 <h2 class="break-words text-lg font-medium">{{ project.exhibition?.name ?? '历史人工需求' }}</h2>
