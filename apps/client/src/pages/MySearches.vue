@@ -1,51 +1,45 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { History, Search, ArrowRight, Image, Loader2, Palette, PanelsTopLeft } from 'lucide-vue-next'
+import { History, Search, ArrowRight, Image, Loader2, Palette, PanelsTopLeft, ChevronDown } from 'lucide-vue-next'
+import { cva } from 'class-variance-authority'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Pagination, PaginationList, PaginationPrev, PaginationNext } from '@/components/ui/pagination'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
+import { generationText, jobStatusLabels, jobTone, requirementSummary, summarizeGeneration } from '@/features/searches/summary'
 import { useAuthStore } from '@/stores/auth'
 import { getMySearches, type SearchPage, type SearchTheme, type SearchArtwork } from '@/services/api/searches'
-import { directionLabels, type Direction } from '@/services/api/artwork-jobs'
-import type { Requirement } from '@/features/selection/types'
+import { directionLabels } from '@/services/api/artwork-jobs'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
+const pageSize = 20
+const thumbnailLimit = 4
 const loading = ref(false)
 const error = ref('')
 const page = ref(1)
 const list = ref<SearchPage>()
+const expanded = ref<Record<string, boolean>>({})
 const expandedImage = ref<{ url: string; label: string }>()
-const directions: Direction[] = ['front', 'back', 'left', 'right']
 
 const formatDate = (isoStr: string) => new Date(isoStr).toLocaleString('zh-CN')
-const jobStatusLabels: Record<SearchTheme['status'], string> = {
-  pending: '等待生成',
-  queued: '排队中',
-  running: '生成中',
-  settling: '结算中',
-  succeeded: '已完成',
-  partially_succeeded: '部分完成',
-  failed: '生成失败',
-}
+const toneClass = cva('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium', {
+  variants: {
+    tone: {
+      done: 'border-success/25 bg-success/10 text-success',
+      active: 'border-info/25 bg-info/10 text-info',
+      failed: 'border-destructive/25 bg-destructive/10 text-destructive',
+    },
+  },
+})
 
 function getJobLabel(job: SearchTheme | SearchArtwork) {
   if ('deliveryStatus' in job && job.deliveryStatus === 'ready') return '四面齐全'
   return jobStatusLabels[job.status]
-}
-
-function artworkView(artwork: SearchArtwork | null, direction: Direction) {
-  return artwork?.views.find(view => view.direction === direction)
-}
-
-function expandArtwork(code: string, artwork: SearchArtwork | null, direction: Direction) {
-  const view = artworkView(artwork, direction)
-  if (view) expandedImage.value = { url: view.previewUrl, label: `${code} · ${directionLabels[direction]}视图` }
 }
 
 async function load(next = page.value) {
@@ -54,7 +48,8 @@ async function load(next = page.value) {
   error.value = ''
   page.value = next
   try {
-    list.value = await getMySearches({ page: next, pageSize: 20 })
+    list.value = await getMySearches({ page: next, pageSize })
+    expanded.value = {}
   } catch (failure: unknown) {
     error.value = '加载失败，请重试。'
   } finally {
@@ -64,6 +59,10 @@ async function load(next = page.value) {
 
 function login() {
   void router.push({ path: '/auth/sign-in', query: { redirect: '/my-searches' } })
+}
+
+function toggle(id: string) {
+  expanded.value = { ...expanded.value, [id]: !expanded.value[id] }
 }
 
 function getMatchVariant(matchType: string) {
@@ -78,28 +77,19 @@ function getMatchLabel(matchType: string) {
   return '随机推荐'
 }
 
-function generateChips(req: Requirement) {
-  const chips: string[] = []
-  if (req.lengthMm && req.widthMm) {
-    chips.push(`${req.lengthMm / 1000}×${req.widthMm / 1000} m`)
-  }
-  if (req.areaM2) {
-    chips.push(`${req.areaM2} ㎡`)
-  }
-  return chips
-}
+const detailLink = (code: string, searchId: string) => ({ path: `/schemes/${encodeURIComponent(code)}`, query: { searchId } })
 
 onMounted(() => load())
 </script>
 
 <template>
   <SelectionShell>
-    <main class="container mx-auto max-w-7xl space-y-6 px-4 py-8">
+    <main class="container mx-auto max-w-5xl space-y-6 px-4 py-8">
       <header class="flex flex-wrap items-center justify-between gap-4">
         <div class="space-y-2">
           <p class="text-sm text-primary flex items-center gap-2"><History class="w-4 h-4" /> 检索记录</p>
           <h1 class="text-3xl font-semibold">每次 AI 智选的检索结果</h1>
-          <p class="text-sm text-muted-foreground">查看匹配方案、AI 换主题与四面视图生成记录。</p>
+          <p class="text-sm text-muted-foreground">查看匹配方案、AI 换主题与四面素材的生成进度，展开记录可直接进入对应任务。</p>
         </div>
         <Button as-child>
           <RouterLink to="/ai-selection">重新检索<ArrowRight class="ml-2 size-4" /></RouterLink>
@@ -113,7 +103,7 @@ onMounted(() => load())
           <Button @click="login">去登录</Button>
         </CardContent>
       </Card>
-      
+
       <template v-else>
         <div v-if="loading && !list" role="status" class="flex items-center gap-3 p-6">
           <Loader2 class="size-5 animate-spin" />正在读取记录…
@@ -140,96 +130,111 @@ onMounted(() => load())
             </CardContent>
           </Card>
 
-          <div v-else class="space-y-6">
-            <Card v-for="record in list.items" :key="record.id" class="relative overflow-hidden group">
-              <CardHeader class="pb-3">
-                <div class="flex flex-wrap items-center gap-3">
-                  <CardTitle class="text-base">{{ formatDate(record.createdAt) }}</CardTitle>
-                  <Badge variant="secondary">{{ record.counts.direct }} 套直接采用 · {{ record.counts.reference }} 套参考</Badge>
+          <div v-else class="space-y-4">
+            <Card v-for="record in list.items" :key="record.id" :data-record="record.id" class="shadow-none">
+              <CardContent class="space-y-4 p-4 sm:p-5">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div class="min-w-0 space-y-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <Badge v-for="chip in requirementSummary(record.finalRequirement)" :key="chip" variant="outline">{{ chip }}</Badge>
+                      <span v-if="!requirementSummary(record.finalRequirement).length" class="text-sm text-muted-foreground">未填写尺寸条件</span>
+                    </div>
+                    <p v-if="record.inputText" class="line-clamp-2 break-words text-sm text-muted-foreground">“{{ record.inputText }}”</p>
+                  </div>
+                  <div class="space-y-1 text-xs text-muted-foreground sm:text-right">
+                    <p><time :datetime="record.createdAt">{{ formatDate(record.createdAt) }}</time></p>
+                    <p>{{ record.counts.direct }} 套直接采用 · {{ record.counts.reference }} 套参考</p>
+                  </div>
                 </div>
-                <div class="mt-3 flex flex-wrap gap-2">
-                  <Badge v-for="chip in generateChips(record.finalRequirement)" :key="chip" variant="outline">{{ chip }}</Badge>
+
+                <div v-if="record.items.length" class="flex flex-wrap items-center gap-3">
+                  <RouterLink
+                    v-for="item in record.items.slice(0, thumbnailLimit)" :key="item.code" :to="detailLink(item.code, record.id)"
+                    :aria-label="`查看方案 ${item.code}`"
+                    class="relative block h-16 w-24 shrink-0 overflow-hidden rounded-md border bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <img v-if="item.thumbnail" :src="item.thumbnail" :alt="item.code" class="h-full w-full object-contain" loading="lazy" />
+                    <Image v-else class="absolute inset-0 m-auto size-5 opacity-40" aria-hidden="true" />
+                    <span v-if="item.theme || item.artwork" class="absolute bottom-1 right-1 flex gap-1 rounded bg-background/90 px-1 py-0.5 text-primary">
+                      <Palette v-if="item.theme" class="size-3" aria-hidden="true" /><span v-if="item.theme" class="sr-only">已换主题</span>
+                      <PanelsTopLeft v-if="item.artwork" class="size-3" aria-hidden="true" /><span v-if="item.artwork" class="sr-only">已有四面素材</span>
+                    </span>
+                  </RouterLink>
+                  <span v-if="record.items.length > thumbnailLimit" class="text-sm text-muted-foreground">另有 {{ record.items.length - thumbnailLimit }} 套</span>
                 </div>
-                <CardDescription v-if="record.inputText" class="mt-2">
-                  "{{ record.inputText.length > 50 ? record.inputText.substring(0, 50) + '...' : record.inputText }}"
-                </CardDescription>
-              </CardHeader>
-              
-              <CardContent>
-                <div class="space-y-6">
-                  <Card v-for="item in record.items" :key="item.code" class="shadow-none">
-                    <CardContent class="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)]">
-                      <section class="min-w-0 space-y-3">
-                        <h3 class="text-sm font-medium">原始方案</h3>
-                        <figure class="relative aspect-[4/3] rounded-lg bg-muted/40">
-                          <Button v-if="item.thumbnail" variant="ghost" class="absolute inset-0 h-full w-full overflow-hidden rounded-lg p-0 hover:bg-muted/60" :aria-label="`放大 ${item.code} 原始方案`" @click="expandedImage = { url: item.thumbnail, label: `${item.code} · 原始方案` }">
-                            <img :src="item.thumbnail" :alt="item.code" class="h-full w-full object-contain" loading="lazy" />
-                          </Button>
-                          <span v-else class="absolute inset-0 flex items-center justify-center text-muted-foreground" role="img" :aria-label="`${item.code} 暂无原始方案图片`">
-                            <Image class="size-6 opacity-50" />
-                          </span>
-                          <Badge class="pointer-events-none absolute top-2 left-2 shadow-sm" :variant="getMatchVariant(item.matchType)">
-                            {{ getMatchLabel(item.matchType) }}
-                          </Badge>
-                        </figure>
+                <p v-else class="text-sm text-muted-foreground">本次检索没有可展示的方案。</p>
 
-                        <div class="flex flex-col gap-2">
-                          <span class="font-mono font-medium text-sm">{{ item.code }}</span>
-                          <p class="text-xs text-muted-foreground">
-                            {{ item.specifications.lengthMm / 1000 }} × {{ item.specifications.widthMm / 1000 }} m · {{ item.specifications.areaM2 }} ㎡ · 高 {{ item.specifications.heightMm / 1000 }} m
-                          </p>
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                  <p class="text-sm text-muted-foreground">{{ generationText(summarizeGeneration(record.items)) }}</p>
+                  <Button v-if="record.items.length" variant="ghost" size="sm" class="gap-1" :aria-expanded="!!expanded[record.id]" :aria-controls="`record-${record.id}`" @click="toggle(record.id)">
+                    {{ expanded[record.id] ? '收起成果' : `查看 ${record.items.length} 套方案的成果` }}
+                    <ChevronDown class="size-4 transition-transform" :class="{ 'rotate-180': expanded[record.id] }" aria-hidden="true" />
+                  </Button>
+                </div>
 
-                          <div class="pt-2">
-                            <Button variant="outline" size="sm" class="w-full justify-between" as-child>
-                              <RouterLink :to="{ path: `/schemes/${encodeURIComponent(item.code)}`, query: { searchId: record.id } }">
-                                查看详情<ArrowRight class="size-3" />
-                              </RouterLink>
-                            </Button>
-                          </div>
+                <ul v-if="expanded[record.id]" :id="`record-${record.id}`" class="divide-y rounded-lg border">
+                  <li v-for="item in record.items" :key="item.code" class="grid gap-3 p-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.4fr)] md:gap-5">
+                    <div class="flex min-w-0 gap-3">
+                      <Button v-if="item.thumbnail" variant="ghost" class="h-16 w-24 shrink-0 overflow-hidden rounded-md border bg-muted/40 p-0 hover:bg-muted/60" :aria-label="`放大 ${item.code} 原始方案`" @click="expandedImage = { url: item.thumbnail, label: `${item.code} · 原始方案` }">
+                        <img :src="item.thumbnail" :alt="item.code" class="h-full w-full object-contain" loading="lazy" />
+                      </Button>
+                      <span v-else class="flex h-16 w-24 shrink-0 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground" role="img" :aria-label="`${item.code} 暂无原始方案图片`"><Image class="size-5 opacity-50" /></span>
+                      <div class="min-w-0 space-y-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="font-mono text-sm font-medium">{{ item.code }}</span>
+                          <Badge :variant="getMatchVariant(item.matchType)">{{ getMatchLabel(item.matchType) }}</Badge>
                         </div>
-                      </section>
-                      <section class="min-w-0 space-y-3">
-                        <div class="flex items-center justify-between gap-2">
-                          <h3 class="flex items-center gap-2 text-sm font-medium"><Palette class="size-4 text-primary" />AI 换主题</h3>
-                          <Badge v-if="item.theme" variant="secondary" class="text-xs">{{ getJobLabel(item.theme) }}</Badge>
-                        </div>
-                        <Button v-if="item.theme?.previewUrl" variant="ghost" class="block aspect-[4/3] h-auto w-full overflow-hidden rounded-lg bg-muted/40 p-0 hover:bg-muted/60" :aria-label="`放大 ${item.code} AI 换主题效果`" @click="expandedImage = { url: item.theme.previewUrl, label: `${item.code} · AI 换主题` }">
+                        <p class="text-xs text-muted-foreground">
+                          {{ item.specifications.lengthMm / 1000 }} × {{ item.specifications.widthMm / 1000 }} m · {{ item.specifications.areaM2 }} ㎡ · 高 {{ item.specifications.heightMm / 1000 }} m
+                        </p>
+                        <RouterLink :to="detailLink(item.code, record.id)" class="inline-flex items-center gap-1 text-xs text-primary hover:underline">查看方案<ArrowRight class="size-3" aria-hidden="true" /></RouterLink>
+                      </div>
+                    </div>
+
+                    <div class="min-w-0 space-y-2 text-sm">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="flex items-center gap-1.5 font-medium"><Palette class="size-4 text-primary" aria-hidden="true" />AI 换主题</span>
+                        <span v-if="item.theme" :class="toneClass({ tone: jobTone(item.theme.status) })">{{ getJobLabel(item.theme) }}</span>
+                        <span v-else class="text-xs text-muted-foreground">未换主题</span>
+                      </div>
+                      <div v-if="item.theme" class="flex flex-wrap items-center gap-3">
+                        <Button v-if="item.theme.previewUrl" variant="ghost" class="h-12 w-16 overflow-hidden rounded-md border bg-muted/40 p-0 hover:bg-muted/60" :aria-label="`放大 ${item.code} AI 换主题效果`" @click="expandedImage = { url: item.theme.previewUrl, label: `${item.code} · AI 换主题` }">
                           <img :src="item.theme.previewUrl" :alt="`${item.code} 本次检索的换主题效果`" class="h-full w-full object-contain" loading="lazy" />
                         </Button>
-                        <Card v-else class="rounded-lg border-dashed shadow-none">
-                          <CardContent class="flex aspect-[4/3] flex-col items-center justify-center gap-2 p-0 text-xs text-muted-foreground">
-                            <Palette class="size-6 opacity-40" />{{ item.theme ? '本次任务暂无效果图' : '本次检索尚未换主题' }}
-                          </CardContent>
-                        </Card>
-                        <p v-if="item.theme" class="text-xs text-muted-foreground">{{ formatDate(item.theme.createdAt) }}</p>
-                      </section>
-                      <section class="min-w-0 space-y-3">
-                        <div class="flex items-center justify-between gap-2">
-                          <h3 class="flex items-center gap-2 text-sm font-medium"><PanelsTopLeft class="size-4 text-primary" />四面视图</h3>
-                          <Badge v-if="item.artwork" variant="secondary" class="text-xs">{{ getJobLabel(item.artwork) }}</Badge>
+                        <div class="space-y-1 text-xs text-muted-foreground">
+                          <p>{{ formatDate(item.theme.createdAt) }}</p>
+                          <RouterLink :to="`/theme-jobs/${encodeURIComponent(item.theme.jobId)}`" :aria-label="`查看 ${item.code} 换主题任务`" class="inline-flex items-center gap-1 text-primary hover:underline">查看任务<ArrowRight class="size-3" aria-hidden="true" /></RouterLink>
                         </div>
-                        <div class="grid grid-cols-2 gap-3">
-                          <figure v-for="direction in directions" :key="direction" class="min-w-0 space-y-1.5">
-                            <Button v-if="artworkView(item.artwork, direction)" variant="ghost" class="block aspect-[3/2] h-auto w-full overflow-hidden rounded-lg bg-muted/40 p-0 hover:bg-muted/60" :aria-label="`放大 ${item.code} ${directionLabels[direction]}视图`" @click="expandArtwork(item.code, item.artwork, direction)">
-                              <img :src="artworkView(item.artwork, direction)?.previewUrl" :alt="`${item.code} ${directionLabels[direction]}视图`" class="h-full w-full object-contain" loading="lazy" />
-                            </Button>
-                            <Card v-else class="rounded-lg border-dashed shadow-none">
-                              <CardContent class="flex aspect-[3/2] items-center justify-center p-0 text-xs text-muted-foreground">{{ item.artwork ? '暂无图片' : '尚未生成' }}</CardContent>
-                            </Card>
-                            <figcaption class="text-center text-xs text-muted-foreground">{{ directionLabels[direction] }}</figcaption>
-                          </figure>
+                      </div>
+                    </div>
+
+                    <div class="min-w-0 space-y-2 text-sm">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="flex items-center gap-1.5 font-medium"><PanelsTopLeft class="size-4 text-primary" aria-hidden="true" />四面素材</span>
+                        <span v-if="item.artwork" :class="toneClass({ tone: jobTone(item.artwork.status) })">{{ getJobLabel(item.artwork) }}</span>
+                        <span v-else class="text-xs text-muted-foreground">未生成四面素材</span>
+                      </div>
+                      <div v-if="item.artwork" class="space-y-2">
+                        <div v-if="item.artwork.views.length" class="flex flex-wrap gap-2">
+                          <Button v-for="view in item.artwork.views" :key="view.direction" variant="ghost" class="h-auto w-16 flex-col gap-1 p-0 hover:bg-transparent" :aria-label="`放大 ${item.code} ${directionLabels[view.direction]}视图`" @click="expandedImage = { url: view.previewUrl, label: `${item.code} · ${directionLabels[view.direction]}视图` }">
+                            <img :src="view.previewUrl" :alt="`${item.code} ${directionLabels[view.direction]}视图`" class="aspect-[3/2] w-full rounded-md border bg-muted/40 object-contain" loading="lazy" />
+                            <span class="text-xs font-normal text-muted-foreground">{{ directionLabels[view.direction] }}</span>
+                          </Button>
                         </div>
-                        <p v-if="item.artwork" class="text-xs text-muted-foreground">{{ formatDate(item.artwork.createdAt) }}</p>
-                      </section>
-                    </CardContent>
-                  </Card>
-                </div>
+                        <div class="space-y-1 text-xs text-muted-foreground">
+                          <p>{{ formatDate(item.artwork.createdAt) }}</p>
+                          <RouterLink :to="`/artwork-jobs/${encodeURIComponent(item.artwork.jobId)}`" :aria-label="`查看 ${item.code} 四面素材任务`" class="inline-flex items-center gap-1 text-primary hover:underline">查看任务<ArrowRight class="size-3" aria-hidden="true" /></RouterLink>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                </ul>
               </CardContent>
             </Card>
-            
+
             <div class="flex flex-wrap items-center justify-between gap-3">
               <span class="text-sm text-muted-foreground">共 {{ list.total }} 条记录 · 第 {{ page }} 页</span>
-              <Pagination :page="page" :total="list.total" :items-per-page="20" :disabled="loading" @update:page="load">
+              <Pagination :page="page" :total="list.total" :items-per-page="pageSize" :disabled="loading" @update:page="load">
                 <PaginationList class="flex gap-2">
                   <PaginationPrev class="w-auto px-3" aria-label="上一页">上一页</PaginationPrev>
                   <PaginationNext class="w-auto px-3" aria-label="下一页">下一页</PaginationNext>
@@ -243,7 +248,7 @@ onMounted(() => load())
     <Dialog :open="!!expandedImage" @update:open="value => { if (!value) expandedImage = undefined }">
       <DialogContent class="max-h-[90dvh] max-w-5xl overflow-y-auto">
         <DialogTitle>{{ expandedImage?.label }}</DialogTitle>
-        <DialogDescription>本次检索对应的方案效果，点击图片可在当前页放大查看。</DialogDescription>
+        <DialogDescription>本次检索中的方案与生成成果预览。</DialogDescription>
         <img v-if="expandedImage" :src="expandedImage.url" :alt="expandedImage.label" class="max-h-[75dvh] w-full object-contain" />
       </DialogContent>
     </Dialog>

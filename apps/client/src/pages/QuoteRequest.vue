@@ -19,6 +19,7 @@ import type { MatchItem, Requirement } from '@/features/selection/types'
 import { apiFetch, lingtongPublicFetch } from '@/lib/api-client'
 import type { SchemeDetail } from '@/features/selection/types'
 import { emptyRequirement } from '@/features/selection/types'
+import { scopeOptions as scopes } from '@/features/projects/labels'
 
 const route = useRoute()
 const router = useRouter()
@@ -81,7 +82,6 @@ function persist() { sessionStorage.setItem(draftKey, JSON.stringify({ form, pen
 watch(form, persist, { deep: true })
 watch(originalDescription, persist)
 const frozen = computed(() => busy.value || pending.value !== null || pendingManual.value !== null)
-const scopes = [{ code: 'materials', label: '材料采购' }, { code: 'graphics', label: '品牌画面' }, { code: 'transport', label: '运输' }, { code: 'installation', label: '搭建' }, { code: 'other', label: '其他' }]
 
 interface DictItem { dictKey: string; dictValue: string; dictName: string }
 interface DictResponse { data: DictItem[] }
