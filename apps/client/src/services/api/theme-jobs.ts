@@ -79,7 +79,7 @@ export async function getThemeOffer(
   return res.data
 }
 
-export async function createThemeJob(payload: {
+export interface ThemeJobSubmission {
   requestKey: string
   offerId: string
   schemeCode: string
@@ -88,7 +88,9 @@ export async function createThemeJob(payload: {
   requestedCount: number
   cacheMode: 'reuse' | 'refresh'
   searchId?: string
-}): Promise<{ jobId: string; status: string; pollAfterMs: number }> {
+}
+
+export async function createThemeJob(payload: ThemeJobSubmission): Promise<{ jobId: string; status: string; pollAfterMs: number }> {
   const res = await apiFetch<{ code: number; data: { jobId: string; status: string; pollAfterMs: number } }>(
     '/api/v1/client/theme-jobs',
     { method: 'POST', body: payload }
