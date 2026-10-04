@@ -93,9 +93,10 @@ onMounted(load);
             <Button
               :disabled="terminal"
               @click="operation?.open(project, 'assignment')"
+              v-access:code="['projects.write']"
             >
               改派
-</Button><Button @click="operation?.open(project, 'follow-up')">
+</Button><Button v-access:code="['projects.write']" @click="operation?.open(project, 'follow-up')">
               追加跟进
             </Button>
             <Button
@@ -104,6 +105,7 @@ onMounted(load);
               "
               :disabled="terminal"
               @click="operation?.open(project, 'scheme')"
+              v-access:code="['projects.write']"
             >
               确认关联方案
 </Button><Button @click="load">刷新项目</Button>

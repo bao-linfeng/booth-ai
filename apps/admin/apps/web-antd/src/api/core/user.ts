@@ -10,7 +10,7 @@ function mapToUserInfo(user: AdminCurrentUser): UserInfo {
     username: user.username,
     realName: user.nickname ?? user.username,
     avatar: user.avatarPath ?? '',
-    homePath: '/dashboard',
+    homePath: user.homePath,
     roles: user.roles,
     desc: '',
     token: '',

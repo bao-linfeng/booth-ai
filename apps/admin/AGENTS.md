@@ -200,8 +200,10 @@ views/<module>/list/
 
 ### 权限系统
 
-- 菜单/按钮权限由 `@vben/access` 包管理，access codes 从 `getAccessCodesApi()` 获取
-- 路由 meta 中的 `authority` 字段控制角色访问
+- 权限来源为本系统服务端 `GET /api/v1/admin/access`，返回 `permissions`、`routeNames`、`homePath`；外部角色权限不参与授权。
+- `router/guard.ts` 在导航时刷新权限，`router/authorized-routes.ts` 依据服务端路由名称白名单过滤菜单和路由。
+- 按钮复用 `@vben/access` 的 `v-access:code` / `hasAccessByCodes`，权限码与服务端目录一致；业务接口仍由服务端强制鉴权。
+- “用户运营 → 用户角色”配置本地授权；角色 ID/名称来自灵通用户系统，内置 `ROLE_ADMIN` 全权限且不可编辑。
 
 ### 提交规范
 

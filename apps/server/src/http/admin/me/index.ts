@@ -2,11 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { Config } from '../../../config.js';
-import { checkAdminRole, fetchExternalUserDetail } from '../../../infra/external-auth.js';
+import { fetchExternalUserDetail } from '../../../infra/external-auth.js';
 import { decryptJwt, destroySession } from '../../../infra/session.js';
 import { toCurrentUser } from '../../../modules/identity/service.js';
 import { syncAdmin } from '../../../modules/identity/admin-service.js';
 import { revokeAccountSessions } from '../../../modules/identity/principal.js';
+import { requireAdminAccess } from '../../../modules/identity/roles.js';
+import { accessSummary } from '../../../modules/identity/permissions.js';
 
 import { requirePrincipal } from '../../authentication.js';
 
@@ -29,9 +31,9 @@ export async function registerAdminMeRoutes(app: FastifyInstance, config: Config
     try {
       const detail = await fetchExternalUserDetail(config, session.username, externalJwt);
       if (detail.externalUserId !== session.externalUserId) throw authenticationError();
-      checkAdminRole(detail.roles);
+      const permissions = await requireAdminAccess(pool, detail.roles);
       const { id: localId } = await syncAdmin(pool, detail, false);
-      return { code: 0, message: 'ok', data: toCurrentUser(localId, detail, 'admin', session.loginSource) };
+      return { code: 0, message: 'ok', data: { ...toCurrentUser(localId, { ...detail, permissions }, 'admin', session.loginSource), homePath: accessSummary(permissions).homePath } };
     } catch (error) {
       const statusCode = (error as Partial<{ statusCode: number }>).statusCode;
       if (statusCode === 403 || statusCode === 401) {

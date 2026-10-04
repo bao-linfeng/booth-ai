@@ -91,7 +91,7 @@ async function handleToggle(row: PromptTemplate) {
   <Page auto-content-height>
     <Grid>
       <template #toolbar-actions>
-        <Button type="primary" @click="handleCreate">新建模板</Button>
+        <Button v-access:code="['prompts.write']" type="primary" @click="handleCreate">新建模板</Button>
       </template>
 
       <!-- 列插槽 -->
@@ -143,17 +143,17 @@ async function handleToggle(row: PromptTemplate) {
 
       <template #action="{ row }">
         <Tooltip title="编辑">
-          <Button type="link" size="small" @click="handleEdit(row)">
+          <Button v-access:code="['prompts.write']" type="link" size="small" @click="handleEdit(row)">
             <span class="icon-[lucide--pencil]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="启用" v-if="!row.enabled">
-          <Button type="link" size="small" @click="handleToggle(row)">
+          <Button v-access:code="['prompts.write']" type="link" size="small" @click="handleToggle(row)">
             <span class="icon-[lucide--toggle-left]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="停用" v-else>
-          <Button type="link" danger size="small" @click="handleToggle(row)">
+          <Button v-access:code="['prompts.write']" type="link" danger size="small" @click="handleToggle(row)">
             <span class="icon-[lucide--toggle-right]"></span>
           </Button>
         </Tooltip>

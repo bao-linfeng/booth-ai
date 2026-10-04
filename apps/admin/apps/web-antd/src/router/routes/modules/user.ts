@@ -29,6 +29,12 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'UserRoles',
+        path: 'roles',
+        component: () => import('#/views/user/roles/index.vue'),
+        meta: { icon: 'lucide:shield-check', title: '用户角色' },
+      },
+      {
         name: 'CreditList',
         path: '/credits/list',
         component: () => import('#/views/credits/index.vue'),

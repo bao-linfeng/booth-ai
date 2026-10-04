@@ -1,11 +1,13 @@
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import { destroySession, getSession, type SessionData, type SessionSite } from '../../infra/session.js';
+import { resolveAdminPermissions } from './roles.js';
 
 export interface Principal {
   site: SessionSite;
   localId: string;
   roles: string[];
+  permissions: string[];
   session: SessionData;
   token: string;
 }
@@ -26,7 +28,7 @@ export async function resolvePrincipal(pool: pg.Pool, redis: Redis, token: strin
   const account = (await pool.query<{ enabled: boolean; roles: string[]; sessionVersion: number }>(
     `SELECT enabled,roles,session_version AS "sessionVersion" FROM ${table} WHERE id=$1`, [session.localId],
   )).rows[0];
-  if (!account?.enabled || (site === 'admin' && !account.roles.includes('ROLE_ADMIN'))) {
+  if (!account?.enabled) {
     await destroySession(redis, token);
     throw authenticationError(403, 'ACCESS_DENIED');
   }
@@ -34,5 +36,10 @@ export async function resolvePrincipal(pool: pg.Pool, redis: Redis, token: strin
     await destroySession(redis, token);
     throw authenticationError();
   }
-  return { site, localId: session.localId, roles: account.roles, session, token };
+  const permissions = site === 'admin' ? await resolveAdminPermissions(pool, account.roles) : [];
+  if (site === 'admin' && permissions.length === 0) {
+    await destroySession(redis, token);
+    throw authenticationError(403, 'ACCESS_DENIED');
+  }
+  return { site, localId: session.localId, roles: account.roles, permissions, session, token };
 }

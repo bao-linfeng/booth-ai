@@ -468,12 +468,13 @@ defineExpose({ open });
             · 核验于 {{ formatDate(bomData.verifiedAt) }}
           </span>
         </div>
-        <div v-if="mode === 'edit'" class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap gap-2">
           <AButton
             v-if="bomData && bomData.status === 'verified'"
             size="small"
             :disabled="bomLoading"
             @click="handleBomDownload"
+            v-access:code="['bom.download']"
           >
             导出客户清单
           </AButton>
@@ -484,6 +485,7 @@ defineExpose({ open });
             type="primary"
             ghost
             @click="openVerifyModal"
+            v-access:code="['bom.verify']"
           >
             提交核验
           </AButton>
@@ -492,6 +494,7 @@ defineExpose({ open });
             :disabled="bomLoading || bomLocked"
             :loading="bomImporting"
             @click="handleBomImport"
+            v-access:code="['bom.write']"
           >
             导入 XLSX/XLSM
           </AButton>
@@ -580,6 +583,7 @@ defineExpose({ open });
             :disabled="!bomImportResult.canCommit || bomLoading || bomLocked"
             :loading="bomCommitting"
             @click="handleBomCommit"
+            v-access:code="['bom.write']"
           >
             {{ bomImportResult.canCommit ? '确认导入' : '存在错误，无法导入' }}
           </AButton>
@@ -649,6 +653,7 @@ defineExpose({ open });
                 size="small"
                 :disabled="bomLocked"
                 @click="startItemEdit(record.id)"
+                v-access:code="['bom.write']"
               >
                 编辑
               </AButton>
@@ -659,6 +664,7 @@ defineExpose({ open });
                 danger
                 :disabled="bomLocked"
                 @click="handleItemDelete(record.id)"
+                v-access:code="['bom.write']"
               >
                 删除
               </AButton>

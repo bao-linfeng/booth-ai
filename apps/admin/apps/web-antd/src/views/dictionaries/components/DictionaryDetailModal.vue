@@ -246,7 +246,7 @@ defineExpose({ open });
       <div class="h-96">
         <Grid>
           <template #toolbar-actions>
-            <Button type="primary" @click="handleInsert">新增字典项</Button>
+            <Button v-access:code="['dictionaries.write']" type="primary" @click="handleInsert">新增字典项</Button>
           </template>
 
           <template #edit_itemValue="{ row }">
@@ -296,7 +296,7 @@ defineExpose({ open });
 
           <template #action="{ row }">
             <template v-if="hasActiveEditRow(row)">
-              <Button type="link" size="small" @click="handleSaveRow(row)">
+              <Button v-access:code="['dictionaries.write']" type="link" size="small" @click="handleSaveRow(row)">
                 保存
               </Button>
               <Button type="link" size="small" @click="handleCancelRow(row)">
@@ -308,6 +308,7 @@ defineExpose({ open });
                 type="link"
                 size="small"
                 @click="gridApi.grid?.setEditRow(row)"
+                v-access:code="['dictionaries.write']"
               >
                 编辑
               </Button>
@@ -316,6 +317,7 @@ defineExpose({ open });
                 type="link"
                 size="small"
                 @click="handleDeleteRow(row)"
+                v-access:code="['dictionaries.write']"
               >
                 删除
               </Button>

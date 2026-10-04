@@ -159,11 +159,11 @@ function handleReload() {
 </script>
 
 <template>
-  <Page auto-content-height title="积分流水">
+  <Page auto-content-height>
     <Grid>
       <template #toolbar-actions>
         <div class="flex gap-2">
-          <Button type="primary" @click="handleRecharge">充值积分</Button>
+          <Button v-access:code="['credits.write']" type="primary" @click="handleRecharge">充值积分</Button>
         </div>
       </template>
 

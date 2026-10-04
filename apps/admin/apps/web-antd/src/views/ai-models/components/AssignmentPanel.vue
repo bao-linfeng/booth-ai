@@ -222,6 +222,7 @@ async function save(purpose: AiPurpose) {
           size="small"
           :disabled="index === 0"
           @click="move(assignment.purpose, index, -1)"
+          v-access:code="['ai-models.write']"
         >
           ↑
         </Button>
@@ -229,10 +230,11 @@ async function save(purpose: AiPurpose) {
           size="small"
           :disabled="index === drafts[assignment.purpose]!.length - 1"
           @click="move(assignment.purpose, index, 1)"
+          v-access:code="['ai-models.write']"
         >
           ↓
         </Button>
-        <Button size="small" danger @click="remove(assignment.purpose, index)">
+        <Button v-access:code="['ai-models.write']" size="small" danger @click="remove(assignment.purpose, index)">
           移除
         </Button>
       </div>
@@ -244,13 +246,14 @@ async function save(purpose: AiPurpose) {
         message="还没有能用于此用途的模型"
       />
       <div class="mt-3 flex justify-between">
-        <Button size="small" @click="add(assignment.purpose)">添加模型</Button>
+        <Button v-access:code="['ai-models.write']" size="small" @click="add(assignment.purpose)">添加模型</Button>
         <Button
           type="primary"
           size="small"
           :disabled="!dirty(assignment.purpose)"
           :loading="saving === assignment.purpose"
           @click="save(assignment.purpose)"
+          v-access:code="['ai-models.write']"
         >
           保存
         </Button>

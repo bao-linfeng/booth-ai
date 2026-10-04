@@ -62,7 +62,7 @@ function handleDelete(row: ApplicabilityQuestion) {
   <Page auto-content-height>
     <Grid>
       <template #toolbar-actions>
-        <Button type="primary" @click="handleCreate">新建适用条件问题</Button>
+        <Button v-access:code="['questions.write']" type="primary" @click="handleCreate">新建适用条件问题</Button>
       </template>
 
       <template #helpTextPreview="{ row }">
@@ -80,22 +80,22 @@ function handleDelete(row: ApplicabilityQuestion) {
 
       <template #action="{ row }">
         <Tooltip title="编辑">
-          <Button type="link" size="small" @click="handleEdit(row)">
+          <Button v-access:code="['questions.write']" type="link" size="small" @click="handleEdit(row)">
             <span class="icon-[lucide--pencil]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="启用" v-if="!row.enabled">
-          <Button type="link" size="small" @click="handleToggle(row)">
+          <Button v-access:code="['questions.write']" type="link" size="small" @click="handleToggle(row)">
             <span class="icon-[lucide--toggle-left]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="停用" v-else>
-          <Button type="link" danger size="small" @click="handleToggle(row)">
+          <Button v-access:code="['questions.write']" type="link" danger size="small" @click="handleToggle(row)">
             <span class="icon-[lucide--toggle-right]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="删除">
-          <Button type="link" danger size="small" @click="handleDelete(row)">
+          <Button v-access:code="['questions.write']" type="link" danger size="small" @click="handleDelete(row)">
             <span class="icon-[lucide--trash-2]"></span>
           </Button>
         </Tooltip>

@@ -53,7 +53,7 @@ function handleDelete(row: any) {
   <Page auto-content-height>
     <Grid>
       <template #toolbar-actions>
-        <Button type="primary" @click="handleCreate">新建字典</Button>
+        <Button v-access:code="['dictionaries.write']" type="primary" @click="handleCreate">新建字典</Button>
       </template>
 
       <template #enabled="{ row }">
@@ -66,8 +66,8 @@ function handleDelete(row: any) {
         <Button type="link" size="small" @click="handleDetail(row.id)">
           详情
         </Button>
-        <Button type="link" size="small" @click="handleEdit(row)">编辑</Button>
-        <Button danger type="link" size="small" @click="handleDelete(row)">
+        <Button v-access:code="['dictionaries.write']" type="link" size="small" @click="handleEdit(row)">编辑</Button>
+        <Button v-access:code="['dictionaries.write']" danger type="link" size="small" @click="handleDelete(row)">
           删除
         </Button>
       </template>

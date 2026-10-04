@@ -321,7 +321,7 @@ function requirementOptionLabel(value: unknown): string {
 </script>
 
 <template>
-  <Page auto-content-height title="检索记录">
+  <Page auto-content-height>
     <Grid>
       <template #createdAt="{ row }">
         {{ formatDateTime(row.createdAt) }}

@@ -12,6 +12,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { formatDate } from '@vben/utils';
+import { useAccess } from '@vben/access';
 
 import {
   Button as AButton,
@@ -56,6 +57,7 @@ const ATextarea = AInput.TextArea;
 
 const route = useRoute();
 const router = useRouter();
+const { hasAccessByCodes } = useAccess();
 
 const isCreate = computed(() => route.path === '/scheme/create');
 const currentCode = computed(() =>
@@ -181,7 +183,7 @@ async function fetchDetail() {
       typeof conditions?.publicNotes === 'string' ? conditions.publicNotes : '';
 
     // Fetch asset counts
-    const assets = await listSchemeAssetsApi(requestCode);
+    const assets = hasAccessByCodes(['assets.read']) ? await listSchemeAssetsApi(requestCode) : [];
     if (sequence !== detailRequestSequence || requestCode !== currentCode.value)
       return;
     assetCounts.rendering = assets.filter((a) => a.type === 'rendering').length;
@@ -224,7 +226,7 @@ async function fetchModelAssets() {
 }
 
 async function fetchChecklistBom() {
-  if (!currentCode.value) return;
+  if (!currentCode.value || !hasAccessByCodes(['bom.read'])) return;
   const requestCode = currentCode.value;
   const sequence = ++checklistRequestSequence;
   checklistLoading.value = true;
@@ -552,6 +554,7 @@ onMounted(() => {
           :type="isCreate ? 'primary' : 'default'"
           :loading="saving"
           @click="handleSave"
+          v-access:code="[isCreate ? 'schemes.create' : 'schemes.update']"
         >
           保存草稿
         </AButton>
@@ -559,6 +562,7 @@ onMounted(() => {
           <AButton
             v-if="originalData.publishStatus !== 'published'"
             @click="openReviewModal"
+            v-access:code="['schemes.review']"
           >
             整体审核
           </AButton>
@@ -567,6 +571,7 @@ onMounted(() => {
             :loading="publishLoading"
             :disabled="publishButtonDisabled"
             @click="handlePublish"
+            v-access:code="['schemes.publish']"
           >
             发布
           </AButton>
@@ -574,6 +579,7 @@ onMounted(() => {
             v-if="originalData.publishStatus === 'published'"
             danger
             @click="openUnpublishModal"
+            v-access:code="['schemes.publish']"
           >
             下架
           </AButton>
@@ -810,13 +816,14 @@ onMounted(() => {
             </div>
           </ATabPane>
 
-          <ATabPane v-if="!isCreate" key="model" tab="模型">
+          <ATabPane v-if="!isCreate && hasAccessByCodes(['assets.read'])" key="model" tab="模型">
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
               <span class="text-muted-foreground text-sm">共 {{ modelAssets.length }} 个模型文件</span>
               <AButton
                 type="primary"
                 :loading="modelUploading"
                 @click="handleModelUpload"
+                v-access:code="['assets.write']"
               >
                 上传模型（.skp）
               </AButton>
@@ -843,6 +850,7 @@ onMounted(() => {
                   type="link"
                   size="small"
                   @click="handleModelDownload(asset)"
+                  v-access:code="['assets.download']"
                 >
                   下载
                 </AButton>
@@ -850,7 +858,7 @@ onMounted(() => {
             </div>
           </ATabPane>
 
-          <ATabPane v-if="!isCreate" key="assets" tab="资产汇总">
+          <ATabPane v-if="!isCreate && hasAccessByCodes(['assets.read'])" key="assets" tab="资产汇总">
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <ACard
                 hoverable
@@ -913,7 +921,7 @@ onMounted(() => {
             </div>
           </ATabPane>
 
-          <ATabPane v-if="!isCreate" key="checklist" tab="简化清单">
+          <ATabPane v-if="!isCreate && hasAccessByCodes(['bom.read'])" key="checklist" tab="简化清单">
             <div v-loading="checklistLoading" class="space-y-4 py-4">
               <div
                 class="border-border bg-muted/50 flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
@@ -1120,7 +1128,7 @@ onMounted(() => {
 
                 <!-- 操作区 -->
                 <div class="flex flex-wrap gap-3">
-                  <AButton type="primary" ghost @click="openReviewModal">
+                  <AButton v-access:code="['schemes.review']" type="primary" ghost @click="openReviewModal">
                     整体审核
                   </AButton>
                   <AButton
@@ -1130,6 +1138,7 @@ onMounted(() => {
                       publishButtonDisabled || !readinessData.canPublish
                     "
                     @click="handlePublish"
+                    v-access:code="['schemes.publish']"
                   >
                     发布方案
                   </AButton>
@@ -1137,6 +1146,7 @@ onMounted(() => {
                     v-if="originalData?.publishStatus === 'published'"
                     danger
                     @click="openUnpublishModal"
+                    v-access:code="['schemes.publish']"
                   >
                     下架方案
                   </AButton>

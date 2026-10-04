@@ -3,9 +3,10 @@ import type { Router } from 'vue-router';
 import { LOGIN_PATH } from '@vben/constants';
 import { preferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
-import { startProgress, stopProgress } from '@vben/utils';
+import { resetStaticRoutes, startProgress, stopProgress } from '@vben/utils';
 
-import { accessRoutes, coreRouteNames } from '#/router/routes';
+import { accessRoutes, coreRouteNames, routes } from '#/router/routes';
+import { getAdminAccessApi } from '#/api/core/roles';
 import { useAuthStore } from '#/store';
 
 import { generateAccess } from './access';
@@ -45,6 +46,7 @@ function setupCommonGuard(router: Router) {
  * @param router
  */
 function setupAccessGuard(router: Router) {
+  let accessSignature = '';
   router.beforeEach(async (to, from) => {
     const accessStore = useAccessStore();
     const userStore = useUserStore();
@@ -85,8 +87,20 @@ function setupAccessGuard(router: Router) {
       return to;
     }
 
+    const access = await getAdminAccessApi();
+    accessStore.setAccessCodes(access.permissions);
+    const signature = JSON.stringify([access.routeNames, [...access.permissions].sort()]);
+    if (!accessStore.isAccessChecked || accessSignature !== signature) {
+      resetStaticRoutes(router, routes);
+      accessStore.setIsAccessChecked(false);
+      accessSignature = signature;
+    }
+
     // 是否已经生成过动态路由
     if (accessStore.isAccessChecked) {
+      if (to.name && !to.matched.at(-1)?.children.length && !access.routeNames.includes(String(to.name))) {
+        return { path: access.homePath, replace: true };
+      }
       return true;
     }
 
@@ -101,7 +115,7 @@ function setupAccessGuard(router: Router) {
       router,
       // 则会在菜单中显示，但是访问会被重定向到403
       routes: accessRoutes,
-    });
+    }, access.routeNames);
 
     // 保存菜单信息和路由信息
     accessStore.setAccessMenus(accessibleMenus);

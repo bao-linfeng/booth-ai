@@ -5,6 +5,7 @@ import { getProject, type ProjectRecord } from './repository.js';
 import { operationReceipt, saveOperation } from './service.js';
 import { captureScheme } from './snapshot.js';
 import { calculateQuotation, localCalendarDate, type QuotationInput, type SavedQuotation } from './quotation.js';
+import { resolveAdminPermissions } from '../identity/roles.js';
 
 interface Change { requestKey: string; expectedRevision: number }
 export interface AssignmentInput extends Change { assigneeAdminId: string; reason: string }
@@ -16,7 +17,7 @@ export interface FollowUpInput extends Change {
 }
 export async function assertProjectAdmin(db: pg.Pool | pg.PoolClient,adminId: string) {
   const admin=(await db.query<{enabled:boolean;roles:string[]}>('SELECT enabled,roles FROM admins WHERE id=$1',[adminId])).rows[0];
-  if(!admin?.enabled || !admin.roles.includes('ROLE_ADMIN')) throw projectError('ACCESS_DENIED',403);
+  if(!admin?.enabled || !(await resolveAdminPermissions(db,admin.roles)).includes('projects.write')) throw projectError('ACCESS_DENIED',403);
 }
 function editable(project: ProjectRecord) {if(terminalStatuses.includes(project.status)) throw projectError('INVALID_STATUS_TRANSITION');}
 async function change<T>(pool:pg.Pool,id:string,adminId:string,operation:string,input:Change,work:(client:pg.PoolClient,project:ProjectRecord)=>Promise<T>):Promise<T> {
@@ -40,7 +41,7 @@ async function event(client:pg.PoolClient,id:string,adminId:string,kind:string,p
 export async function assignProject(pool:pg.Pool,id:string,adminId:string,input:AssignmentInput) {
   return change(pool,id,adminId,'assignee',input,async(client,project)=>{
     editable(project);
-    const target=(await client.query<{id:string}>("SELECT id FROM admins WHERE id=$1 AND enabled AND 'ROLE_ADMIN'=ANY(roles) FOR SHARE",[input.assigneeAdminId])).rows[0];
+    const target=(await client.query<{id:string}>("SELECT id FROM admins WHERE id=$1 AND enabled AND ('ROLE_ADMIN'=ANY(roles) OR EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.write'=ANY(r.permission_codes))) FOR SHARE",[input.assigneeAdminId])).rows[0];
     if(!target)throw projectError('INVALID_ASSIGNEE',422);
     if(!input.reason.trim())throw projectError('INVALID_INPUT',400);
     await client.query('UPDATE projects SET assignee_admin_id=$2,revision=revision+1,updated_at=now() WHERE id=$1',[id,target.id]);

@@ -308,9 +308,9 @@ const columns = [
     <fieldset :disabled="saving || terminal || viewingHistory">
       <Form />
       <div class="my-4 flex gap-3">
-        <Button :disabled="terminal || viewingHistory" @click="copyBom">
+        <Button v-access:code="['projects.write']" :disabled="terminal || viewingHistory" @click="copyBom">
           从项目清单快照复制材料
-</Button><Button :disabled="terminal || viewingHistory" @click="add">
+</Button><Button v-access:code="['projects.write']" :disabled="terminal || viewingHistory" @click="add">
           新增服务 / 材料行
         </Button>
       </div>
@@ -342,6 +342,7 @@ const columns = [
           }}</span>
           <Button
             v-else-if="column.key === 'action'"
+            v-access:code="['projects.write']"
             danger
             size="small"
             :disabled="terminal || viewingHistory || saving"
@@ -385,6 +386,7 @@ const columns = [
         :loading="saving"
         :disabled="terminal || viewingHistory"
         @click="formApi.validateAndSubmitForm()"
+        v-access:code="['projects.write']"
       >
         保存新报价修订
       </Button>

@@ -56,7 +56,13 @@ function kindAvatar(kind: string) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-onMounted(() => notificationStore.start());
+onMounted(() => {
+  if (accessStore.accessCodes.includes('notifications.read')) notificationStore.start();
+});
+watch(() => accessStore.accessCodes.includes('notifications.read'), (allowed) => {
+  if (allowed) notificationStore.start();
+  else notificationStore.stop();
+});
 onBeforeUnmount(() => notificationStore.stop());
 
 const menus = computed(() => [
@@ -150,6 +156,7 @@ watch(
     </template>
     <template #notification>
       <Notification
+        v-if="accessStore.accessCodes.includes('notifications.read')"
         :dot="showDot"
         :notifications="notifications"
         @clear="handleMarkAllRead"

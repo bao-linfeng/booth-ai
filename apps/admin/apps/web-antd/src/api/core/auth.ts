@@ -1,4 +1,5 @@
 import { requestClient } from '#/api/request';
+import { getAdminAccessApi } from './roles';
 
 export interface AdminCurrentUser {
   id: string;
@@ -17,6 +18,7 @@ export interface AdminCurrentUser {
   roles: string[];
   permissions: string[];
   lastSyncedAt: string;
+  homePath: string;
 }
 
 export namespace AuthApi {
@@ -52,5 +54,5 @@ export async function logoutApi() {
  * 获取用户权限码
  */
 export async function getAccessCodesApi(): Promise<string[]> {
-  return [];
+  return (await getAdminAccessApi()).permissions;
 }

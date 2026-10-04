@@ -105,8 +105,8 @@ function paramSummary(model: AiModelRecord) {
       </Tag>
     </template>
     <template #actions="{ row }">
-      <Button type="link" size="small" @click="emit('edit', row)">编辑</Button>
-      <Button type="link" size="small" danger @click="emit('delete', row)">
+      <Button v-access:code="['ai-models.write']" type="link" size="small" @click="emit('edit', row)">编辑</Button>
+      <Button v-access:code="['ai-models.write']" type="link" size="small" danger @click="emit('delete', row)">
         删除
       </Button>
     </template>

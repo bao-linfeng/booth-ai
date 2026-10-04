@@ -22,10 +22,14 @@ import { registerAdminSchemeSearchesRoutes } from './scheme-searches/index.js';
 import { registerAdminCreditRoutes } from './credits/index.js';
 import { registerAdminGenerationJobRoutes } from './generation-jobs/index.js';
 import { registerAdminApplicabilityQuestionRoutes } from './applicability-questions/index.js';
+import { registerAdminAuthorization } from './authorization.js';
+import { registerAdminRoleRoutes } from './roles.controller.js';
 
 export async function registerAdminModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
   await app.register(async admin => {
     registerAuthentication(admin, pool, redis, 'admin');
+    registerAdminAuthorization(admin);
+    await registerAdminRoleRoutes(admin, config, pool);
     await registerAdminAuthRoutes(admin, config, pool, redis);
     await registerAdminMeRoutes(admin, config, pool, redis);
     await registerAdminCreditRoutes(admin, pool, redis);

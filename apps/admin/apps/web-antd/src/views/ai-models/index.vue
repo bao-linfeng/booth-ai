@@ -116,6 +116,7 @@ onMounted(async () => {
               type="primary"
               :disabled="!protocols.length"
               @click="providerModalRef?.open()"
+              v-access:code="['ai-models.write']"
             >
               新建供应商
             </Button>
@@ -148,16 +149,18 @@ onMounted(async () => {
               :loading="refreshingIds.has(row.id)"
               :disabled="!row.credentialConfigured"
               @click="refreshCatalog(row)"
+              v-access:code="['ai-models.write']"
             >
               刷新模型
             </Button>
-            <Button type="link" size="small" @click="modelModalRef?.open(row)">
+            <Button v-access:code="['ai-models.write']" type="link" size="small" @click="modelModalRef?.open(row)">
               添加模型
             </Button>
             <Button
               type="link"
               size="small"
               @click="providerModalRef?.open(row)"
+              v-access:code="['ai-models.write']"
             >
               编辑
             </Button>
@@ -166,6 +169,7 @@ onMounted(async () => {
               size="small"
               danger
               @click="confirmDeleteProvider(row)"
+              v-access:code="['ai-models.write']"
             >
               删除
             </Button>

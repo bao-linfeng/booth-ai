@@ -200,7 +200,7 @@ async function openDetail(id: string) {
 </script>
 
 <template>
-  <Page auto-content-height title="生成任务">
+  <Page auto-content-height>
     <Grid>
       <template #id="{ row }">
         <Tooltip :title="(row as GenerationJob).id">

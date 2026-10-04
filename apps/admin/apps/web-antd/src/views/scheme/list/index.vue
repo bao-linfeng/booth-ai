@@ -167,8 +167,8 @@ onMounted(() => {
     <Grid>
       <template #toolbar-actions>
         <div class="flex gap-2">
-          <Button @click="handleImport">批量导入</Button>
-          <Button type="primary" @click="handleCreate">新建方案</Button>
+          <Button v-access:code="['schemes.import']" @click="handleImport">批量导入</Button>
+          <Button v-access:code="['schemes.create']" type="primary" @click="handleCreate">新建方案</Button>
         </div>
       </template>
 
@@ -330,7 +330,7 @@ onMounted(() => {
           </Button>
         </Tooltip>
         <Tooltip title="编辑">
-          <Button type="link" size="small" @click="handleEdit(row)">
+          <Button v-access:code="['schemes.update']" type="link" size="small" @click="handleEdit(row)">
             <span class="icon-[lucide--pencil]"></span>
           </Button>
         </Tooltip>
@@ -340,17 +340,17 @@ onMounted(() => {
           </Button>
         </Tooltip>
         <Tooltip title="审核">
-          <Button type="link" size="small" @click="handleReview(row.code)">
+          <Button v-access:code="['schemes.review']" type="link" size="small" @click="handleReview(row.code)">
             <span class="icon-[lucide--clipboard-check]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="资产管理">
-          <Button type="link" size="small" @click="handleAssets(row.code)">
+          <Button v-access:code="['assets.read']" type="link" size="small" @click="handleAssets(row.code)">
             <span class="icon-[lucide--folder-open]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="删除">
-          <Button type="link" size="small" danger @click="handleDelete(row)">
+          <Button v-access:code="['schemes.delete']" type="link" size="small" danger @click="handleDelete(row)">
             <span class="icon-[lucide--trash-2]"></span>
           </Button>
         </Tooltip>
