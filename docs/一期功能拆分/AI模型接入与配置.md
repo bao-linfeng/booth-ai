@@ -6,7 +6,7 @@
 |---|---|---|
 | 智选文本解析 | 千问 `qwen-plus`，OpenAI 兼容 Chat Completions，`response_format: {type: 'json_object'}` | [阿里云千问兼容接口](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions) |
 | 智选文本解析 | DeepSeek `deepseek-v4-flash`，`POST /chat/completions`，JSON 模式；提示词明确要求 JSON，需防空响应 | [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode)、[官方模型配置示例](https://api-docs.deepseek.com/quick_start/agent_integrations/pi_mono) |
-| 换主题 / 四面素材 | Gemini Nano Banana 系列，默认 `gemini-3.1-flash-image`。`POST /v1beta/models/{model}:generateContent`（官方标注为 legacy 但完全支持），`x-goog-api-key` 头鉴权；文字与原图 `inlineData` 作为多模态输入，`generationConfig: {responseModalities: ['IMAGE'], imageConfig: {aspectRatio, imageSize: '2K'}}`。换主题按原图最接近的官方比例取 `aspectRatio`，四面素材固定 `3:2`。每次请求只出 1 张图，带 `thought: true` 的中间草图会被丢弃；`promptFeedback.blockReason` 或安全类 `finishReason` 归类为 `PROVIDER_CONTENT_BLOCKED`，无最终图归类为 `PROVIDER_NO_IMAGE`。参考图超过 14 MB 时先转为长边 ≤3072 的 JPEG，避免超出 20 MB 内联请求上限 | [Gemini 图像生成和编辑](https://ai.google.dev/gemini-api/docs/image-generation)、[API Key](https://ai.google.dev/gemini-api/docs/api-key) |
+| 换主题 / 四面素材 | Gemini Nano Banana 系列，默认 `gemini-3.1-flash-image`。`POST /v1beta/models/{model}:generateContent`（官方标注为 legacy 但完全支持），`x-goog-api-key` 头鉴权；文字与原图 `inlineData` 作为多模态输入，`generationConfig: {responseModalities: ['IMAGE'], imageConfig: {aspectRatio, imageSize: '2K'}}`。换主题与四面素材均固定 `aspectRatio: '16:9'`。每次请求只出 1 张图，带 `thought: true` 的中间草图会被丢弃；`promptFeedback.blockReason` 或安全类 `finishReason` 归类为 `PROVIDER_CONTENT_BLOCKED`，无最终图归类为 `PROVIDER_NO_IMAGE`。参考图超过 14 MB 时先转为长边 ≤3072 的 JPEG，避免超出 20 MB 内联请求上限 | [Gemini 图像生成和编辑](https://ai.google.dev/gemini-api/docs/image-generation)、[API Key](https://ai.google.dev/gemini-api/docs/api-key) |
 | 换主题 | 通义万相 `wanx2.1-imageedit` 局部重绘，`description_edit_with_mask`，原图与**黑白**蒙版，异步任务 | [万相图像编辑 API](https://help.aliyun.com/zh/model-studio/wanx-image-edit-api-reference) |
 
 旧需求中的 `wanx-x-painting` + `mask_color` 与上面的现行图像编辑接口不一致。现有品红蒙版在调用万相前必须转换为白色可修改、黑色不可修改的二值蒙版；Gemini 无与万相等价的硬蒙版参数，必须在生成后做区域外像素保护并验证画面质量。图像输出 URL 有有效期，需要保存到平台私有 S3。各提供商调用适配器已按下文「代码结构与接入新模型」实现；万相的二值蒙版转换与 Gemini 的区域外像素保护尚未实现。
@@ -64,7 +64,7 @@
 管理接口在 `modules/ai-models/service.ts`（`/api/v1/admin/ai-protocols`、`ai-providers`、`ai-providers/:id/catalog/refresh`、`ai-providers/probe`、`ai-models`、`ai-model-assignments`）。刷新已保存供应商的模型目录时只使用已保存的地址和密钥，密钥不会被发往请求中携带的其他地址。
 
 图像适配器约定：
-- `edit(model, request)` 返回 `data:` URL 或受信 HTTPS URL；按 `model.purpose` 决定尺寸/画质（四面素材须达到 1536×1024），按 `model.params` 读取管理员配置的参数，请求地址经 `providerEndpoint(model.baseUrl, path)` 校验。
+- `edit(model, request)` 返回 `data:` URL 或受信 HTTPS URL；按 `model.purpose` 决定尺寸/画质（换主题 OpenAI 为 1792×1008；四面素材须为 16:9 且达到 1536×1024 最低像素，OpenAI 为 2048×1152），按 `model.params` 读取管理员配置的参数，请求地址经 `providerEndpoint(model.baseUrl, path)` 校验。
 - 失败必须抛 `ImageGenerationError` 并正确设置 `retryable` / `outcomeUnknown`，Worker 依此决定重试、切换备用模型和积分结算；不要把上游响应正文写进错误信息或日志。
 - `maxImagesPerRequest`：单次最多出图数。换主题 Worker 按 `min(上限, 剩余张数)` 请求，返回满额且未凑够时继续调用，返回不足则以部分成功结束。
 - 异步提供商在 `edit` 中先调用 `onSubmitted(taskId)` 持久化任务号，并实现 `poll(model, taskId, deadline)` 供 Worker 崩溃后恢复轮询。

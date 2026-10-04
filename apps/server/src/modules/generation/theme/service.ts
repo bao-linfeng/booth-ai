@@ -79,7 +79,7 @@ export async function loadGenerationSnapshot(pool: pg.Pool, parameters: ThemePar
   const template = await getActivePromptTemplate(pool, 'theme', parameters.input.industryId, parameters.input.styleId);
   const input = normalizeThemeInput(parameters.input);
   const prompt = buildThemePrompt(input, industryLabel, styleLabel, template?.body);
-  return { source, mask, models, template: template ? { id: template.id, revision: template.revision, body: template.body } : null, prompt, pipelineRevision: 2 };
+  return { source, mask, models, template: template ? { id: template.id, revision: template.revision, body: template.body } : null, prompt, pipelineRevision: 3 };
 }
 
 export async function findCachedThemeJob(database: Database, userId: string, cacheKey: string, requestedCount: number): Promise<string | null> {

@@ -29,7 +29,7 @@ export async function loadArtworkSnapshot(pool: pg.Pool, userId: string, context
   const { prompt, directionPrompts } = buildArtworkPrompts(selected.input, industryLabel, styleLabel, template?.body);
   return { source: { assetId: selected.sourceAssetId, versionId: selected.versionId, objectKey: selected.objectKey, checksum: selected.checksum }, input: selected.input,
     template: template ? { id: template.id, revision: template.revision, body: template.body } : null, prompt, directionPrompts,
-    model: { id: model.id, model: model.model, revision: model.revision, unitCredits: model.unitCredits }, quality: ARTWORK_QUALITY, pipelineRevision: 4 };
+    model: { id: model.id, model: model.model, revision: model.revision, unitCredits: model.unitCredits }, quality: ARTWORK_QUALITY, pipelineRevision: 5 };
 }
 export async function createArtworkJob(pool: pg.Pool, userId: string, requestKey: string, offerId: string, context: ArtworkContext, offer: ArtworkOffer,
   requestId: string | null = null) {

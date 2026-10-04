@@ -38,9 +38,9 @@ module.exports = {
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
-        success: "hsl(var(--success))",
-        warning: "hsl(var(--warning))",
-        info: "hsl(var(--info))",
+        success: "hsl(var(--success) / <alpha-value>)",
+        warning: "hsl(var(--warning) / <alpha-value>)",
+        info: "hsl(var(--info) / <alpha-value>)",
         'image-surface': "hsl(var(--image-surface))",
         primary: {
           DEFAULT: "hsl(var(--primary))",

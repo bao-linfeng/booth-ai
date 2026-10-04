@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import sharp from 'sharp';
-import { IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage } from '../src/infra/ai/image.js';
+import { IMAGE_LIMITS, ImageGenerationError, isOutputAspect, normalizeGeneratedImage } from '../src/infra/ai/image.js';
 import { downloadGeneratedImage as downloadImage, imageAdapter, normalizeParams, PROTOCOLS, supportsPurpose } from '../src/infra/ai/protocols.js';
-import { geminiAspectRatio } from '../src/infra/ai/providers/gemini.js';
 import type { ActiveAiModel, ImageEditRequest } from '../src/infra/ai/types.js';
 import { activeModel } from './ai-fixtures.js';
 
@@ -78,7 +77,7 @@ test('gemini edits send the documented generateContent payload and keep only fin
   assert.equal(request?.url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent');
   assert.equal(request?.headers.get('x-goog-api-key'), 'gemini-secret');
   assert.equal(request?.url.includes('gemini-secret'), false);
-  assert.deepEqual(request?.body.generationConfig, { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '3:2', imageSize: '2K' } });
+  assert.deepEqual(request?.body.generationConfig, { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: '16:9', imageSize: '2K' } });
   const parts = request?.body.contents[0].parts;
   assert.deepEqual(parts[0], { text: 'artwork prompt' });
   assert.equal(parts[1].inlineData.mimeType, 'image/png');
@@ -86,16 +85,13 @@ test('gemini edits send the documented generateContent payload and keep only fin
 
   const portrait = await sharp({ create: { width: 900, height: 1600, channels: 3, background: '#123456' } }).jpeg().toBuffer();
   await edit(activeModel('gemini', 'theme', { apiKey: 'gemini-secret' }), portrait, 'theme prompt');
-  assert.equal(requests[1]?.body.generationConfig.imageConfig.aspectRatio, '9:16');
+  assert.equal(requests[1]?.body.generationConfig.imageConfig.aspectRatio, '16:9');
   assert.equal(requests[1]?.body.contents[0].parts[1].inlineData.mimeType, 'image/jpeg');
 });
 
-test('gemini aspect ratio picks the closest supported ratio', () => {
-  assert.equal(geminiAspectRatio(1792, 1024), '16:9');
-  assert.equal(geminiAspectRatio(1536, 1024), '3:2');
-  assert.equal(geminiAspectRatio(1000, 1000), '1:1');
-  assert.equal(geminiAspectRatio(2520, 1080), '21:9');
-  assert.equal(geminiAspectRatio(undefined, 100), '16:9');
+test('output aspect accepts 16:9 within tolerance only', () => {
+  for (const [w, h] of [[2048, 1152], [1792, 1008], [2752, 1536]] as const) assert.equal(isOutputAspect(w, h), true);
+  for (const [w, h] of [[1536, 1024], [1024, 1024], [1024, 1792], [100, 0]] as const) assert.equal(isOutputAspect(w, h), false);
 });
 
 test('gemini responses without final images are classified instead of silently empty', async t => {
@@ -177,7 +173,7 @@ test('openai adapter derives size and quality from the purpose and model params'
   assert.deepEqual(await edit(activeModel('openai', 'artwork'), reference, 'prompt'), ['data:image/png;base64,aW1n']);
   await edit(activeModel('openai', 'theme'), reference, 'prompt', { count: 3, mask: reference });
   await edit(activeModel('openai', 'theme', { params: { quality: 'medium' } }), reference, 'prompt');
-  assert.deepEqual([forms[0]?.get('model'), forms[0]?.get('size'), forms[0]?.get('quality'), forms[0]?.get('n')], ['gpt-image-1.5', '1536x1024', 'high', '1']);
-  assert.deepEqual([forms[1]?.get('size'), forms[1]?.get('quality'), forms[1]?.get('n'), forms[1]?.has('mask')], ['1792x1024', null, '3', true]);
+  assert.deepEqual([forms[0]?.get('model'), forms[0]?.get('size'), forms[0]?.get('quality'), forms[0]?.get('n')], ['gpt-image-1.5', '2048x1152', 'high', '1']);
+  assert.deepEqual([forms[1]?.get('size'), forms[1]?.get('quality'), forms[1]?.get('n'), forms[1]?.has('mask')], ['1792x1008', null, '3', true]);
   assert.equal(forms[2]?.get('quality'), 'medium');
 });

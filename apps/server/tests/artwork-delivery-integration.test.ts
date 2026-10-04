@@ -42,8 +42,8 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,1,'test',ARRAY['ROLE_ADMIN'])", [admin]);
     await pool.query(`INSERT INTO schemes(id,code,name,publish_status,applicable_conditions,length_mm,width_mm,height_mm,area_sqm,opening_count,product_system_id,industry_ids,zone_ids,feature_ids)
       VALUES($1,$2,$2,'published','{"labelsConfirmed":true,"status":"confirmed","rules":[]}',6000,6000,3000,36,2,$3,'{}','{}','{}')`, [scheme, code, productSystem]);
-    const jpeg = await sharp({ create: { width: 1536, height: 1024, channels: 3, background: '#345678' } }).jpeg().toBuffer();
-    const small = await sharp(jpeg).resize(512, 342).png().toBuffer();
+    const jpeg = await sharp({ create: { width: 2048, height: 1152, channels: 3, background: '#345678' } }).jpeg().toBuffer();
+    const small = await sharp(jpeg).resize(512, 288).png().toBuffer();
     const sourceChecksum = createHash('sha256').update(jpeg).digest('hex');
     const buffers = new Map<string, Buffer>([['selected-theme.jpg', jpeg]]);
     const read = (key: string) => { const bytes = buffers.get(key); if (!bytes) throw new Error('Missing storage object'); return bytes; };
@@ -110,7 +110,7 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
       if (!url.startsWith('https://api.openai.com/')) return new Response(new Uint8Array(jpeg), { headers: { 'Content-Type': 'image/jpeg' } });
       calls++;
       const form = init!.body as FormData; const prompt = String(form.get('prompt')); prompts.push(prompt);
-      assert.equal(form.get('n'), '1'); assert.equal(form.get('size'), '1536x1024');
+      assert.equal(form.get('n'), '1'); assert.equal(form.get('size'), '2048x1152');
       const sent = await (form.get('image') as Blob).arrayBuffer(); assert.equal(createHash('sha256').update(Buffer.from(sent)).digest('hex'), sourceChecksum);
       const data = mode === 'partial' && prompt.includes('背面正交') ? small : jpeg;
       return Response.json({ data: [{ b64_json: data.toString('base64') }] });
@@ -136,7 +136,7 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     assert.deepEqual(observedStates, notifications.map(event => event.direction ? { status: event.status } : { status: event.status, deliveryStatus: event.deliveryStatus, reservationStatus: 'settled' }));
     assert.equal(calls, 4); assert.equal(new Set(prompts).size, 4);
     const frozen = (await pool.query<{ snapshot: ArtworkSnapshot }>('SELECT generation_snapshot AS snapshot FROM artwork_jobs WHERE id=$1', [jobId])).rows[0]!.snapshot;
-    assert.equal(frozen.pipelineRevision, 4);
+    assert.equal(frozen.pipelineRevision, 5);
     for (const [index, direction] of DIRECTIONS.entries()) {
       const prompt = prompts[index]!;
       assert.equal(prompt, frozen.directionPrompts?.[direction]);
@@ -150,7 +150,7 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     assert.match(prompts[3]!, /前部\/入口在画面左侧，展台后部\/后墙在画面右侧/);
     const ready = await getArtworkJob(pool, storage, user, jobId);
     assert.equal(ready.deliveryStatus, 'ready'); assert.equal(ready.credits.chargedCredits, 40); assert.equal(ready.credits.heldCredits, 0);
-    assert.ok(ready.directions.every(d => d.width === 1536 && d.height === 1024));
+    assert.ok(ready.directions.every(d => d.width === 2048 && d.height === 1152));
     await processArtworkJob(pool, jobId, config, storage); await settleArtworkJob(pool, jobId);
     assert.equal(calls, 4); assert.equal((await pool.query('SELECT * FROM credit_transactions WHERE artwork_job_id=$1', [jobId])).rowCount, 1);
     const zip = await JSZip.loadAsync(await streamBuffer((await artworkArchive(pool, storage, user, jobId)).stream));

@@ -1,6 +1,6 @@
 import { assertPublicEndpoint } from '../endpoint.js';
 import { fetchModelListing, ModelDiscoveryError } from '../discovery.js';
-import { ImageGenerationError, imageMimeType, providerEndpoint, providerJson } from '../image.js';
+import { ImageGenerationError, OUTPUT_ASPECT, imageMimeType, providerEndpoint, providerJson } from '../image.js';
 import type { DiscoveredModel, ImageModelAdapter, ParamField, TextModelAdapter } from '../types.js';
 
 // OpenAI and every service exposing the same REST surface (DeepSeek, DashScope compatible mode, relays).
@@ -29,9 +29,12 @@ export const openAiChat: TextModelAdapter = {
 };
 
 export const openAiImageParams: ParamField[] = [
-  { key: 'quality', label: '换主题画质', description: '四面素材固定使用 high 以满足 1536×1024 交付标准', type: 'select', default: 'auto',
+  { key: 'quality', label: '换主题画质', description: '四面素材固定使用 high 以满足 16:9 高清交付标准', type: 'select', default: 'auto',
     options: ['auto', 'low', 'medium', 'high'].map(value => ({ label: value, value })) },
 ];
+
+// 两条边均为 16 的倍数且严格 16:9；需模型支持自定义尺寸（如 gpt-image-2），仅支持固定尺寸的旧模型无法满足 16:9。
+const IMAGE_SIZE = { theme: '1792x1008', artwork: '2048x1152' } as const;
 
 // https://platform.openai.com/docs/api-reference/images/createEdit
 export const openAiImage: ImageModelAdapter = {
@@ -46,7 +49,7 @@ export const openAiImage: ImageModelAdapter = {
     form.set('image', new Blob([new Uint8Array(reference)], { type: await imageMimeType(reference) }), 'source.png');
     form.set('prompt', prompt);
     form.set('n', String(count));
-    form.set('size', artwork ? '1536x1024' : '1792x1024');
+    form.set('size', IMAGE_SIZE[model.purpose === 'artwork' ? 'artwork' : 'theme']);
     if (quality !== 'auto') form.set('quality', quality);
     if (artwork) form.set('output_format', 'png');
     if (mask) form.set('mask', new Blob([new Uint8Array(mask)], { type: 'image/png' }), 'mask.png');

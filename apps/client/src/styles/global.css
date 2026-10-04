@@ -6,6 +6,16 @@
   :root {
     --radius: 0.5rem;
     --font-sans: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+    /* semantic color fallbacks — overridden per theme in themes.css */
+    --success: 152 64% 28%;
+    --warning: 32 88% 32%;
+    --info: 211 76% 39%;
+  }
+
+  html.dark {
+    --success: 152 58% 65%;
+    --warning: 38 92% 68%;
+    --info: 211 86% 73%;
   }
 
   * {

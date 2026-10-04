@@ -1,10 +1,9 @@
 import sharp from 'sharp';
 import { fetchModelListing, ModelDiscoveryError } from '../discovery.js';
-import { IMAGE_LIMITS, ImageGenerationError, imageMimeType, providerEndpoint, providerJson } from '../image.js';
+import { IMAGE_LIMITS, ImageGenerationError, OUTPUT_ASPECT, imageMimeType, providerEndpoint, providerJson } from '../image.js';
 import type { DiscoveredModel, ImageModelAdapter, ParamField } from '../types.js';
 
 // Gemini image models: https://ai.google.dev/gemini-api/docs/image-generation (generateContent stays fully supported).
-const ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] as const;
 // Inline request data is capped at 20 MB; base64 inflates by 4/3, so larger references are re-encoded first.
 const INLINE_REFERENCE_BYTES = 14 * 1024 * 1024;
 const BLOCKED_FINISH_REASONS = ['SAFETY', 'IMAGE_SAFETY', 'PROHIBITED_CONTENT', 'IMAGE_PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION', 'IMAGE_RECITATION'];
@@ -14,14 +13,7 @@ type GeminiResponse = {
   candidates?: { finishReason?: string; content?: { parts?: { thought?: boolean; inlineData?: { mimeType?: string; data?: string } }[] } }[];
 };
 
-export function geminiAspectRatio(width: number | undefined, height: number | undefined): string {
-  if (!width || !height) return '16:9';
-  const target = Math.log(width / height);
-  const distance = (ratio: string) => { const [w, h] = ratio.split(':').map(Number); return Math.abs(Math.log(w! / h!) - target); };
-  return ASPECT_RATIOS.reduce((best, ratio) => distance(ratio) < distance(best) ? ratio : best);
-}
-
-// 1K is omitted: its 3:2 output (about 1264x848) misses the 1536x1024 artwork quality gate.
+// 1K is omitted: its 16:9 output (about 1376x768) misses the artwork quality gate (short edge >= 1024).
 export const geminiImageParams: ParamField[] = [
   { key: 'imageSize', label: '输出分辨率', type: 'select', default: '2K', options: [{ label: '2K', value: '2K' }, { label: '4K', value: '4K' }] },
 ];
@@ -32,19 +24,17 @@ export const geminiImage: ImageModelAdapter = {
   downloadHosts: ['googleusercontent.com'],
   async edit(model, { reference, prompt, deadline, onProviderRequest }) {
     const url = await providerEndpoint(model.baseUrl, `/models/${encodeURIComponent(model.model)}:generateContent`);
-    const metadata = await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels }).metadata();
     let input = { data: reference, mimeType: await imageMimeType(reference) };
     if (reference.length > INLINE_REFERENCE_BYTES) {
       input = { mimeType: 'image/jpeg', data: await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels }).rotate()
         .resize({ width: 3072, height: 3072, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer() };
     }
-    const [width, height] = (metadata.orientation ?? 1) >= 5 ? [metadata.height, metadata.width] : [metadata.width, metadata.height];
     const body = await providerJson(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': model.apiKey },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: input.mimeType, data: input.data.toString('base64') } }] }],
         generationConfig: { responseModalities: ['IMAGE'], imageConfig: {
-          aspectRatio: model.purpose === 'artwork' ? '3:2' : geminiAspectRatio(width, height), imageSize: String(model.params.imageSize ?? '2K') } },
+          aspectRatio: OUTPUT_ASPECT.label, imageSize: String(model.params.imageSize ?? '2K') } },
       }),
     }, deadline, true, onProviderRequest) as GeminiResponse;
     if (body?.promptFeedback?.blockReason) throw new ImageGenerationError('PROVIDER_CONTENT_BLOCKED');

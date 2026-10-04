@@ -25,9 +25,10 @@ test('default artwork snapshot freezes single-reference reconstruction and resol
   const snapshot = await loadArtworkSnapshot(pool, 'user', context);
   assert.deepEqual(snapshot.source, { assetId: source.sourceAssetId, versionId: source.versionId, objectKey: source.objectKey, checksum: source.checksum });
   assert.equal(snapshot.template, null);
-  assert.equal(snapshot.pipelineRevision, 4);
+  assert.equal(snapshot.pipelineRevision, 5);
   assert.match(snapshot.prompt, /行业：汽车。风格：科技未来。品牌色：沿用参考图已有配色/);
   assert.match(snapshot.prompt, /唯一一张主题效果参考图/);
+  assert.match(snapshot.prompt, /画幅固定为16:9横版/);
   assert.match(snapshot.prompt, /最小必要的合理补全/);
   assert.match(snapshot.prompt, /不把可见正面机械复制到不可见面/);
   assert.match(snapshot.prompt, /观察者左手一侧定义为左侧，右手一侧定义为右侧/);
@@ -91,13 +92,15 @@ test('artwork snapshot freezes the first assigned model able to render artwork',
 });
 
 test('artwork acceptance converts actual JPEG pixels to PNG and rejects low resolution, corrupt and oversized content', async () => {
-  const jpeg = await sharp({ create: { width: 1536, height: 1024, channels: 3, background: '#345678' } }).jpeg().toBuffer();
+  const jpeg = await sharp({ create: { width: 2048, height: 1152, channels: 3, background: '#345678' } }).jpeg().toBuffer();
   const image = await normalizeArtworkImage(jpeg);
   assert.deepEqual([...image.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-  assert.equal(image.width, 1536); assert.equal(image.height, 1024);
+  assert.equal(image.width, 2048); assert.equal(image.height, 1152);
   assert.equal((await sharp(image.bytes).metadata()).format, 'png');
-  const small = await sharp(jpeg).resize(1024, 683).png().toBuffer();
+  const small = await sharp(jpeg).resize(1024, 576).png().toBuffer();
   await assert.rejects(normalizeArtworkImage(small), /ARTWORK_RESOLUTION_TOO_LOW/);
+  const threeByTwo = await sharp(jpeg).resize(1920, 1280, { fit: 'fill' }).png().toBuffer();
+  await assert.rejects(normalizeArtworkImage(threeByTwo), /ARTWORK_ASPECT_INVALID/);
   await assert.rejects(normalizeArtworkImage(Buffer.from('fake PNG')));
   await assert.rejects(normalizeArtworkImage(jpeg.subarray(0, 100)));
   await assert.rejects(normalizeArtworkImage(Buffer.alloc(30 * 1024 * 1024 + 1)), /ARTWORK_SIZE_INVALID/);

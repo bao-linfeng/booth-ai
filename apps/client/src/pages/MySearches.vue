@@ -151,7 +151,7 @@ onMounted(() => load())
                   <RouterLink
                     v-for="item in record.items.slice(0, thumbnailLimit)" :key="item.code" :to="detailLink(item.code, record.id)"
                     :aria-label="`查看方案 ${item.code}`"
-                    class="relative block h-16 w-24 shrink-0 overflow-hidden rounded-md border bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    class="relative block aspect-video w-28 md:w-40 shrink-0 overflow-hidden rounded-md border bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <img v-if="item.thumbnail" :src="item.thumbnail" :alt="item.code" class="h-full w-full object-contain" loading="lazy" />
                     <Image v-else class="absolute inset-0 m-auto size-5 opacity-40" aria-hidden="true" />
@@ -175,10 +175,10 @@ onMounted(() => load())
                 <ul v-if="expanded[record.id]" :id="`record-${record.id}`" class="divide-y rounded-lg border">
                   <li v-for="item in record.items" :key="item.code" class="grid gap-3 p-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.4fr)] md:gap-5">
                     <div class="flex min-w-0 gap-3">
-                      <Button v-if="item.thumbnail" variant="ghost" class="h-16 w-24 shrink-0 overflow-hidden rounded-md border bg-muted/40 p-0 hover:bg-muted/60" :aria-label="`放大 ${item.code} 原始方案`" @click="expandedImage = { url: item.thumbnail, label: `${item.code} · 原始方案` }">
+                      <Button v-if="item.thumbnail" variant="ghost" class="aspect-video w-28 shrink-0 overflow-hidden rounded-md border bg-muted/40 p-0 hover:bg-muted/60" :aria-label="`放大 ${item.code} 原始方案`" @click="expandedImage = { url: item.thumbnail, label: `${item.code} · 原始方案` }">
                         <img :src="item.thumbnail" :alt="item.code" class="h-full w-full object-contain" loading="lazy" />
                       </Button>
-                      <span v-else class="flex h-16 w-24 shrink-0 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground" role="img" :aria-label="`${item.code} 暂无原始方案图片`"><Image class="size-5 opacity-50" /></span>
+                      <span v-else class="flex aspect-video w-28 md:w-40 shrink-0 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground" role="img" :aria-label="`${item.code} 暂无原始方案图片`"><Image class="size-5 opacity-50" /></span>
                       <div class="min-w-0 space-y-1">
                         <div class="flex flex-wrap items-center gap-2">
                           <span class="font-mono text-sm font-medium">{{ item.code }}</span>
@@ -198,7 +198,7 @@ onMounted(() => load())
                         <span v-else class="text-xs text-muted-foreground">未换主题</span>
                       </div>
                       <div v-if="item.theme" class="flex flex-wrap items-center gap-3">
-                        <Button v-if="item.theme.previewUrl" variant="ghost" class="h-12 w-16 overflow-hidden rounded-md border bg-muted/40 p-0 hover:bg-muted/60" :aria-label="`放大 ${item.code} AI 换主题效果`" @click="expandedImage = { url: item.theme.previewUrl, label: `${item.code} · AI 换主题` }">
+                        <Button v-if="item.theme.previewUrl" variant="ghost" class="aspect-video w-20 md:w-28 overflow-hidden rounded-md border bg-muted/40 p-0 hover:bg-muted/60" :aria-label="`放大 ${item.code} AI 换主题效果`" @click="expandedImage = { url: item.theme.previewUrl, label: `${item.code} · AI 换主题` }">
                           <img :src="item.theme.previewUrl" :alt="`${item.code} 本次检索的换主题效果`" class="h-full w-full object-contain" loading="lazy" />
                         </Button>
                         <div class="space-y-1 text-xs text-muted-foreground">
@@ -216,8 +216,8 @@ onMounted(() => load())
                       </div>
                       <div v-if="item.artwork" class="space-y-2">
                         <div v-if="item.artwork.views.length" class="flex flex-wrap gap-2">
-                          <Button v-for="view in item.artwork.views" :key="view.direction" variant="ghost" class="h-auto w-16 flex-col gap-1 p-0 hover:bg-transparent" :aria-label="`放大 ${item.code} ${directionLabels[view.direction]}视图`" @click="expandedImage = { url: view.previewUrl, label: `${item.code} · ${directionLabels[view.direction]}视图` }">
-                            <img :src="view.previewUrl" :alt="`${item.code} ${directionLabels[view.direction]}视图`" class="aspect-[3/2] w-full rounded-md border bg-muted/40 object-contain" loading="lazy" />
+                          <Button v-for="view in item.artwork.views" :key="view.direction" variant="ghost" class="h-auto w-20 md:w-28 flex-col gap-1 p-0 hover:bg-transparent" :aria-label="`放大 ${item.code} ${directionLabels[view.direction]}视图`" @click="expandedImage = { url: view.previewUrl, label: `${item.code} · ${directionLabels[view.direction]}视图` }">
+                            <img :src="view.previewUrl" :alt="`${item.code} ${directionLabels[view.direction]}视图`" class="aspect-video w-full rounded-md border bg-muted/40 object-contain" loading="lazy" />
                             <span class="text-xs font-normal text-muted-foreground">{{ directionLabels[view.direction] }}</span>
                           </Button>
                         </div>

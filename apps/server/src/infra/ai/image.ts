@@ -3,6 +3,10 @@ import { assertPublicEndpoint } from './endpoint.js';
 import type { ProviderRequestObserver } from './types.js';
 
 export const IMAGE_LIMITS = { maxBytes: 30 * 1024 * 1024, maxPixels: 40_000_000 };
+/** 换主题与四面素材统一产出 16:9 横图；供应商实际尺寸允许在容差内取整。 */
+export const OUTPUT_ASPECT = { label: '16:9', ratio: 16 / 9, tolerance: 0.02 } as const;
+export const isOutputAspect = (width: number, height: number) =>
+  height > 0 && Math.abs(width / height / OUTPUT_ASPECT.ratio - 1) <= OUTPUT_ASPECT.tolerance;
 export const GENERATION_LEASE_MINUTES = 15;
 export const GENERATION_DEADLINE_MINUTES = 30;
 

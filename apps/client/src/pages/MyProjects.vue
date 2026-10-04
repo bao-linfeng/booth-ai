@@ -252,7 +252,7 @@ watch(() => route.params.projectId, () => { detail.value = undefined; list.value
                 <p class="text-muted-foreground">{{ detail.schemeSnapshot.lengthMm / 1000 }} × {{ detail.schemeSnapshot.widthMm / 1000 }} m · 高 {{ detail.schemeSnapshot.heightMm / 1000 }} m · {{ detail.schemeSnapshot.openingCount }} 面开口 · 方案修订 {{ detail.schemeSnapshot.revision }}</p>
               </div>
               <p v-else class="text-sm text-muted-foreground">尚未关联方案，顾问将与您沟通确认。</p>
-              <img v-if="detail.selectedThemeSummary" :src="detail.selectedThemeSummary.previewUrl" alt="本项目选定的主题效果" class="max-h-80 w-full rounded-lg object-contain" />
+              <img v-if="detail.selectedThemeSummary" :src="detail.selectedThemeSummary.previewUrl" alt="本项目选定的主题效果" class="aspect-video w-full rounded-lg object-contain" />
               <div class="grid gap-3 sm:grid-cols-3">
                 <div v-for="(value, type) in detail.materialsStatus" :key="type" class="rounded-md bg-muted p-4 text-sm">{{ materialTypeLabels[type] ?? type }}：{{ materialLabels[value] ?? value }}</div>
               </div>
