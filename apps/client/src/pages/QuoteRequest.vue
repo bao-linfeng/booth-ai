@@ -218,11 +218,11 @@ async function submitManual() {
 </script>
 
 <template>
-  <SelectionShell><main class="container mx-auto max-w-5xl space-y-6 px-4 py-8 md:px-6">
+  <SelectionShell><main id="main-content" class="studio-page">
     <Button variant="ghost" as-child><RouterLink :to="manual ? '/ai-selection' : `/schemes/${encodeURIComponent(code)}`"><ArrowLeft class="mr-2 size-4" />{{ manual ? '返回智选' : '返回方案' }}</RouterLink></Button>
     <template v-if="receipt">
-      <Card class="border-primary/30"><CardContent class="space-y-6 p-8 md:p-12">
-        <CheckCircle2 class="size-12 text-primary" /><div><p class="mb-2 text-sm text-muted-foreground">申请已受理</p><h1 class="text-3xl font-semibold">您的展台项目已建立</h1></div>
+      <Card class="border-success/25"><CardContent class="space-y-6 p-6 md:p-12">
+        <CheckCircle2 class="size-12 text-success" /><div><p class="mb-2 text-sm text-success">申请已受理</p><h1 class="studio-title">您的展台项目已建立</h1></div>
         <dl class="grid gap-4 rounded-lg bg-muted p-5 sm:grid-cols-2"><div><dt class="text-sm text-muted-foreground">项目编号</dt><dd class="mt-1 font-mono text-xl">{{ receipt.projectNo }}</dd></div><div><dt class="text-sm text-muted-foreground">申请编号</dt><dd class="mt-1 break-all font-mono text-sm">{{ receipt.requestNo }}</dd></div></dl>
         <p class="text-sm leading-6 text-muted-foreground">管理人员将根据本次申请联系您，核对需求后提供人工报价。当前状态为待跟进，受理回执不代表已出具报价。</p>
         <p v-if="receipt.materialsStatus?.artworks === 'pending'" class="text-sm">已固定您选择的主题效果，配套平面素材待补充。</p>
@@ -232,12 +232,12 @@ async function submitManual() {
       </CardContent></Card>
     </template>
     <template v-else>
-      <header class="space-y-2"><p class="text-sm font-medium text-primary">项目申请 / {{ manual ? '人工需求' : '报价服务' }}</p><h1 class="text-3xl font-semibold tracking-tight">{{ manual ? '特别的需求，交给专业的人' : '让方案进入您的展会' }}</h1><p class="text-sm text-muted-foreground">填写实际需求，交由管理人员核对并人工报价。</p></header>
-      <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+      <header class="studio-header"><p class="studio-eyebrow">项目申请 / {{ manual ? '人工需求' : '报价服务' }}</p><h1 class="studio-title">{{ manual ? '特别的需求，交给专业的人' : '让方案进入您的展会' }}</h1><p class="text-base text-muted-foreground">填写实际需求，交由管理人员核对并人工报价。</p></header>
+      <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
         <form class="space-y-5" @submit.prevent="submit">
-          <fieldset :disabled="frozen" class="space-y-5">
-            <Card v-if="manual"><CardHeader><CardTitle class="text-lg">需求描述</CardTitle></CardHeader><CardContent class="space-y-3"><Textarea v-model="originalDescription" required maxlength="5000" class="min-h-32" aria-label="原始需求描述" placeholder="描述展位尺寸、功能、风格和需要确认的问题" /><p v-for="question in unresolvedQuestions" :key="question" class="text-xs text-muted-foreground">待确认：{{ question }}</p><p class="text-xs text-muted-foreground">本次申请不指定方案；沟通确认后由管理人员关联并固定资料。</p></CardContent></Card>
-            <Card><CardHeader><CardTitle class="text-lg">01 / 展会信息</CardTitle></CardHeader><CardContent class="grid gap-4 sm:grid-cols-2">
+          <fieldset :disabled="frozen" class="studio-panel min-w-0 divide-y">
+            <section v-if="manual"><CardHeader><CardTitle class="text-lg">需求描述</CardTitle></CardHeader><CardContent class="space-y-3"><Textarea v-model="originalDescription" required maxlength="5000" class="min-h-32" aria-label="原始需求描述" placeholder="描述展位尺寸、功能、风格和需要确认的问题" /><p v-for="question in unresolvedQuestions" :key="question" class="text-sm text-warning">待确认：{{ question }}</p><p class="text-sm text-muted-foreground">本次申请不指定方案；沟通确认后由管理人员关联并固定资料。</p></CardContent></section>
+            <section><CardHeader><CardTitle class="text-lg">01 / 展会信息</CardTitle></CardHeader><CardContent class="grid gap-5 sm:grid-cols-2">
               <div class="space-y-2 sm:col-span-2"><Label for="exhibition">展会名称 *</Label><Input id="exhibition" v-model="form.exhibitionName" required maxlength="200" /></div>
               <!-- 国家代码 -->
               <div class="space-y-2">
@@ -288,33 +288,33 @@ async function submitManual() {
               </div>
               <div class="space-y-2"><Label>开展日期 *</Label><DatePickerInput v-model="form.startDate" placeholder="选择开展日期" required /></div>
               <div class="space-y-2"><Label>结束日期 *</Label><DatePickerInput v-model="form.endDate" :min="form.startDate" placeholder="选择结束日期" required /></div>
-            </CardContent></Card>
-            <Card><CardHeader><CardTitle class="text-lg">02 / 需求与材料预算</CardTitle></CardHeader><CardContent class="space-y-4">
+            </CardContent></section>
+            <section><CardHeader><CardTitle class="text-lg">02 / 需求与材料预算</CardTitle></CardHeader><CardContent class="space-y-5">
               <div class="flex flex-wrap gap-4"><label v-for="scope in scopes" :key="scope.code" class="flex items-center gap-2 text-sm cursor-pointer"><Checkbox :checked="form.scopeCodes.includes(scope.code)" @update:checked="(v) => { if (v) form.scopeCodes.push(scope.code); else form.scopeCodes = form.scopeCodes.filter(c => c !== scope.code) }" />{{ scope.label }}</label></div>
               <div class="space-y-2"><Label for="scope">范围说明{{ form.scopeCodes.includes('other') ? ' *' : '' }}</Label><Textarea id="scope" v-model="form.scopeNotes" :required="form.scopeCodes.includes('other')" maxlength="2000" /></div>
               <div class="grid gap-4 sm:grid-cols-[120px_1fr]"><div class="space-y-2"><Label for="currency">币种 *</Label><Select :model-value="form.currency" @update:model-value="form.currency = $event"><SelectTrigger id="currency"><SelectValue placeholder="选择币种" /></SelectTrigger><SelectContent><SelectItem v-for="currency in ['CNY','USD','EUR','GBP','HKD','JPY','KRW','KWD']" :key="currency" :value="currency">{{ currency }}</SelectItem></SelectContent></Select></div><div class="space-y-2"><Label for="budget">材料购买预算 *</Label><Input id="budget" v-model="form.amount" required inputmode="decimal" pattern="(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,6})?" placeholder="如 30000" /></div></div>
-              <p class="text-xs text-muted-foreground">预算仅用于需求沟通，不等于报价；运输、搭建及税费由人工另行确认。</p>
-            </CardContent></Card>
-            <Card><CardHeader><CardTitle class="text-lg">03 / 联系方式</CardTitle></CardHeader><CardContent class="grid gap-4 sm:grid-cols-2">
+              <p class="studio-note">预算仅用于需求沟通，不等于报价；运输、搭建及税费由人工另行确认。</p>
+            </CardContent></section>
+            <section><CardHeader><CardTitle class="text-lg">03 / 联系方式</CardTitle></CardHeader><CardContent class="grid gap-5 sm:grid-cols-2">
               <div class="space-y-2"><Label for="customer-type">客户类型 *</Label><Select :model-value="form.customerType" @update:model-value="form.customerType = $event as 'company' | 'individual'"><SelectTrigger id="customer-type"><SelectValue placeholder="选择类型" /></SelectTrigger><SelectContent><SelectItem value="individual">个人</SelectItem><SelectItem value="company">企业</SelectItem></SelectContent></Select></div>
               <div class="space-y-2"><Label for="company">企业名称{{ form.customerType === 'company' ? ' *' : '' }}</Label><Input id="company" v-model="form.company" :required="form.customerType === 'company'" maxlength="200" /></div>
               <div class="space-y-2 sm:col-span-2"><Label for="contact">联系人 *</Label><Input id="contact" v-model="form.contactName" required maxlength="100" autocomplete="name" /></div>
               <div class="space-y-2"><Label for="email">邮箱（与电话至少一项）</Label><Input id="email" v-model="form.email" type="email" maxlength="254" autocomplete="email" /></div>
               <div class="space-y-2"><Label for="phone">电话（支持国际区号）</Label><Input id="phone" v-model="form.phone" type="tel" maxlength="30" autocomplete="tel" /></div>
               <div class="space-y-2 sm:col-span-2"><Label for="notes">补充说明</Label><Textarea id="notes" v-model="form.notes" maxlength="2000" /></div>
-            </CardContent></Card>
+            </CardContent></section>
           </fieldset>
           <p v-if="error" role="alert" class="rounded-md border border-destructive/30 p-4 text-sm text-destructive">{{ error }}</p>
           <Button v-if="conflict" type="button" variant="outline" @click="refreshContext">刷新资料并重新确认</Button>
           <Button v-if="!auth.isLoggedIn" type="button" @click="login">登录后提交申请</Button>
           <Button v-else :disabled="busy || loading || (!manual && !pending && (!context || conflict))" type="submit" class="w-full sm:w-auto"><Loader2 v-if="busy" class="mr-2 size-4 animate-spin" />{{ busy ? '正在确认受理…' : pending || pendingManual ? '重试确认本次申请' : manual ? '确认并提交人工需求' : '确认并提交报价申请' }}</Button>
         </form>
-        <aside class="space-y-4 lg:sticky lg:top-6"><Card><CardHeader><FileText class="size-6 text-primary" /><CardTitle class="text-base">{{ manual ? '人工需求承接' : '本次申请方案' }}</CardTitle></CardHeader><CardContent class="space-y-4 text-sm">
+        <aside class="space-y-4 lg:sticky lg:top-24"><section class="border-t"><CardHeader class="px-0"><FileText class="size-6 text-muted-foreground" /><CardTitle class="text-lg">{{ manual ? '人工需求承接' : '本次申请方案' }}</CardTitle></CardHeader><CardContent class="space-y-4 px-0 text-sm">
           <p v-if="!manual" class="break-all font-mono">{{ code }}</p><p v-else>原文与确认条件分别保存。提交后建立项目，由管理员联系并核对适用方案。</p><p v-if="loading" class="text-muted-foreground">读取方案资料…</p>
           <template v-else-if="context"><p>清单修订 {{ context.bomRevision }} · 方案修订 {{ context.schemeRevision }}</p><img v-if="themePreview || standardPreview" :src="themePreview || standardPreview" :alt="theme ? '本次选定主题效果' : '标准方案效果'" class="aspect-video w-full rounded-md object-contain" /><p>{{ theme ? '已带入您选择的主题效果' : '使用标准方案效果' }}</p><p v-if="theme" class="text-xs text-muted-foreground">主题平面素材尚待补充，不以标准素材代替。</p></template>
-          <div v-if="matchingSummary" class="space-y-2 border-t pt-4 text-xs"><p class="font-medium">{{ matchingSummary.matchType === 'direct' ? '匹配条件已带入' : '参考方案 · 适用性需确认' }}</p><p v-for="difference in matchingSummary.differences" :key="difference.field">{{ difference.requested }} → {{ difference.actual }}：{{ difference.reason }}</p><p v-for="confirmation in matchingSummary.pendingConfirmations" :key="confirmation.message">{{ confirmation.message }}</p></div>
-          <p class="border-t pt-4 text-xs leading-6 text-muted-foreground">提交时将固定当前资料。方案适用性、场馆规范和交付范围需经专业确认。</p>
-        </CardContent></Card></aside>
+          <div v-if="matchingSummary" class="space-y-2 border-t pt-4 text-sm"><p class="font-medium">{{ matchingSummary.matchType === 'direct' ? '匹配条件已带入' : '参考方案 · 适用性需确认' }}</p><p v-for="difference in matchingSummary.differences" :key="difference.field">{{ difference.requested }} → {{ difference.actual }}：{{ difference.reason }}</p><p v-for="confirmation in matchingSummary.pendingConfirmations" :key="confirmation.message">{{ confirmation.message }}</p></div>
+          <p class="border-t pt-4 text-sm leading-6 text-muted-foreground">提交时将固定当前资料。方案适用性、场馆规范和交付范围需经专业确认。</p>
+        </CardContent></section></aside>
       </div>
     </template>
   </main></SelectionShell>

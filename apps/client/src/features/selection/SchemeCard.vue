@@ -2,7 +2,6 @@
 import { computed, ref, useId, watch } from 'vue'
 import { ArrowUpRight, Check, CircleCheck, CircleAlert, ChevronDown, Shuffle } from 'lucide-vue-next'
 import { cva } from 'class-variance-authority'
-import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -38,12 +37,12 @@ watch(() => props.item, () => { reasonsExpanded.value = false })
 </script>
 
 <template>
-  <Card class="overflow-hidden shadow-none">
-    <CardContent class="grid gap-0 p-0 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-      <div class="min-w-0 bg-muted/30 p-3 sm:p-5 lg:p-6">
+  <article class="border-t py-7 md:py-9" :aria-labelledby="`${reasonsId}-title`">
+    <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] lg:gap-9">
+      <div class="min-w-0 lg:sticky lg:top-24">
         <SchemeGallery v-model:active="active" :images="item.images" :code="item.code" :preview="preview" :variant="index" />
       </div>
-      <div class="flex min-w-0 flex-col gap-5 p-5 sm:p-6 lg:p-7">
+      <div class="flex min-w-0 flex-col gap-5">
         <div class="flex items-center justify-between gap-3">
           <Badge variant="outline" :class="matchBadge({ type: item.matchType })">
             <component :is="matchStatus[item.matchType].icon" class="size-3.5" aria-hidden="true" />
@@ -52,7 +51,7 @@ watch(() => props.item, () => { reasonsExpanded.value = false })
           <span class="font-mono text-xs text-muted-foreground" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
         </div>
         <div class="space-y-3">
-          <h3 class="break-words text-xl font-semibold leading-snug tracking-tight sm:text-2xl">{{ title }}</h3>
+          <h3 :id="`${reasonsId}-title`" class="break-words text-xl font-semibold leading-snug tracking-tight">{{ title }}</h3>
           <p class="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
             <span>{{ item.specifications.openingCount }} 面开口</span>
             <span>{{ item.specifications.areaM2 }} ㎡</span>
@@ -77,7 +76,7 @@ watch(() => props.item, () => { reasonsExpanded.value = false })
         </section>
         <section class="space-y-3 border-t pt-4 text-sm leading-relaxed" aria-label="需要确认的差异">
           <h4 class="font-semibold">需要确认的差异</h4>
-          <div v-if="item.differences.length" class="space-y-3 rounded-md border border-warning/25 bg-warning/5 p-3">
+          <div v-if="item.differences.length" class="space-y-3 border-l-2 border-warning/50 bg-warning/5 p-4">
             <p class="flex items-center gap-2 font-medium text-warning"><CircleAlert class="size-4 shrink-0" aria-hidden="true" />结构差异</p>
             <div v-for="difference in item.differences" :key="difference.field" class="space-y-1 break-words">
               <p><span class="text-muted-foreground">您的需求：</span>{{ difference.requested }}</p>
@@ -103,6 +102,6 @@ watch(() => props.item, () => { reasonsExpanded.value = false })
           <RouterLink :to="{ path: `${preview ? '/ai-selection/preview/schemes' : '/schemes'}/${encodeURIComponent(item.code)}`, query: !preview && searchId ? { searchId } : {} }">查看方案<ArrowUpRight class="size-4" aria-hidden="true" /></RouterLink>
         </Button>
       </div>
-    </CardContent>
-  </Card>
+    </div>
+  </article>
 </template>

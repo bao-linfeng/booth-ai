@@ -84,11 +84,11 @@ onMounted(() => load())
 
 <template>
   <SelectionShell>
-    <main class="container mx-auto max-w-5xl space-y-6 px-4 py-8">
+    <main id="main-content" class="studio-page">
       <header class="flex flex-wrap items-center justify-between gap-4">
         <div class="space-y-2">
           <p class="text-sm text-primary flex items-center gap-2"><History class="w-4 h-4" /> 检索记录</p>
-          <h1 class="text-3xl font-semibold">每次 AI 智选的检索结果</h1>
+          <h1 class="studio-title">每次 AI 智选的检索结果</h1>
           <p class="text-sm text-muted-foreground">查看匹配方案、AI 换主题与四面素材的生成进度，展开记录可直接进入对应任务。</p>
         </div>
         <Button as-child>

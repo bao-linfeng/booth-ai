@@ -92,11 +92,11 @@ watch(() => route.params.projectId, () => { detail.value = undefined; list.value
 
 <template>
   <SelectionShell>
-    <main class="container mx-auto max-w-5xl space-y-6 px-4 py-8">
+    <main id="main-content" class="studio-page">
       <header class="flex flex-wrap items-center justify-between gap-4">
         <div class="space-y-2">
           <p class="text-sm text-primary">展会项目 / 申请记录</p>
-          <h1 class="text-3xl font-semibold">{{ route.params.projectId ? '项目详情' : '我的项目' }}</h1>
+          <h1 class="studio-title">{{ route.params.projectId ? '项目详情' : '我的项目' }}</h1>
           <p class="text-sm text-muted-foreground">查看本人提交的报价申请和人工需求，了解当前状态与最新进展。</p>
         </div>
         <Button variant="outline" as-child>

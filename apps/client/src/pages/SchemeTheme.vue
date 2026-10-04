@@ -251,15 +251,15 @@ function setDialogOpen(open: boolean) {
 
 <template>
   <SelectionShell>
-    <main class="container mx-auto space-y-7 px-4 py-6 md:px-6 md:py-10 lg:px-8">
-      <header class="space-y-5">
+    <main id="main-content" class="studio-page">
+      <header class="studio-header">
         <Button as-child variant="ghost" class="-ml-3">
           <RouterLink :to="{ path: detailPath, query: searchId ? { searchId } : {} }"><ArrowLeft class="mr-2 size-4" />返回方案详情</RouterLink>
         </Button>
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div class="min-w-0 flex-1 basis-64 space-y-2">
             <p class="break-words text-xs tracking-widest text-muted-foreground">品牌视觉工作区 · 方案 {{ schemeCode }}</p>
-            <h1 class="text-3xl font-semibold tracking-tight md:text-4xl">让展台呈现您的品牌</h1>
+            <h1 class="studio-title">让展台呈现您的品牌</h1>
             <p class="text-sm leading-relaxed text-muted-foreground">选择原图，调整品牌色与视觉偏好，再确认积分生成主题效果。</p>
           </div>
           <Badge v-if="isPreview" variant="secondary">静态示例 · 不可提交</Badge>
@@ -282,8 +282,8 @@ function setDialogOpen(open: boolean) {
             <h2 class="font-medium">原始效果图</h2>
             <span class="text-muted-foreground">{{ images.length ? `视角 ${selectedImageIndex} / ${images.length}` : '暂无原图' }}</span>
           </div>
-          <div class="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-muted/50 ring-1 ring-inset ring-border">
-            <img v-if="selectedImageUrl" :src="selectedImageUrl" class="size-full object-contain p-2 md:p-5" :alt="`原始方案 · 视角 ${selectedImageIndex}`" />
+          <div class="relative flex aspect-video items-center justify-center overflow-hidden rounded-md bg-image-surface">
+            <img v-if="selectedImageUrl" :src="selectedImageUrl" class="size-full object-contain" :alt="`原始方案 · 视角 ${selectedImageIndex}`" />
             <div v-else class="space-y-3 text-center text-muted-foreground">
               <BoothIllustration class="mx-auto size-32 opacity-40" />
               <p class="text-sm">{{ isPreview ? '静态示例不提供真实生成' : '该方案暂无可用原图' }}</p>
@@ -294,7 +294,7 @@ function setDialogOpen(open: boolean) {
             <button v-for="(image, index) in images" :key="image.assetId" type="button"
               :class="cn('min-w-0 overflow-hidden rounded-lg border-2 bg-muted/30 p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60', selectedAssetId === image.assetId ? 'border-primary' : 'border-transparent hover:border-border')"
               :aria-label="`选择视角 ${index + 1}`" :aria-pressed="selectedAssetId === image.assetId" :disabled="formLocked" @click="selectedAssetId = image.assetId">
-              <img :src="image.thumbnailUrl || image.url" class="aspect-[4/3] w-full object-contain" :alt="`视角 ${index + 1}`" />
+              <img :src="image.thumbnailUrl || image.url" class="aspect-video w-full object-contain" :alt="`视角 ${index + 1}`" />
               <span class="block py-1 text-xs">视角 {{ index + 1 }}</span>
             </button>
           </div>
@@ -308,7 +308,7 @@ function setDialogOpen(open: boolean) {
           </div>
         </section>
 
-        <aside class="min-w-0 overflow-hidden rounded-2xl border bg-card text-card-foreground">
+        <aside class="studio-panel min-w-0 overflow-hidden">
           <div class="space-y-1 border-b px-5 py-5 sm:px-6">
             <h2 class="flex items-center gap-2 text-lg font-semibold"><Palette class="size-5 text-primary" />品牌与视觉偏好</h2>
             <p class="text-sm text-muted-foreground">从品牌出发，探索新的展示风格。</p>
@@ -389,7 +389,7 @@ function setDialogOpen(open: boolean) {
               </Button>
               </div>
               <p v-if="jobError && !confirmDialogOpen" role="alert" class="text-sm text-destructive">{{ jobError }}</p>
-              <p class="text-xs leading-relaxed text-muted-foreground">按实际成功张数结算，未成功部分释放积分。此处为 AI 生成积分，与展台服务报价无关。</p>
+              <p class="text-sm leading-6 text-muted-foreground">按实际成功张数结算，未成功部分释放积分。此处为 AI 生成积分，与展台服务报价无关。</p>
               <details class="border-t pt-3 text-xs text-muted-foreground">
                 <summary class="cursor-pointer py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">模型由平台配置 · 查看说明</summary>
                 <div class="mt-3 space-y-2 leading-relaxed">

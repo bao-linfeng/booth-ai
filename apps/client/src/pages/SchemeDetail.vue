@@ -363,8 +363,8 @@ onMounted(async () => {
 
 <template>
   <SelectionShell>
-    <main class="container mx-auto min-w-0 space-y-8 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-5 md:px-6 lg:px-8 lg:pb-12">
-      <header class="space-y-4">
+    <main id="main-content" class="studio-page pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-12">
+      <header class="studio-header">
         <Button as-child variant="ghost" class="-ml-3">
           <RouterLink :to="preview ? '/ai-selection/preview' : '/ai-selection'"><ArrowLeft class="mr-2 size-4" aria-hidden="true" />返回 AI 智选</RouterLink>
         </Button>
@@ -373,7 +373,7 @@ onMounted(async () => {
             <span class="break-all font-mono">方案编号 {{ item.code }}</span>
             <Badge v-if="preview" variant="secondary">静态示例 · 非已发布方案</Badge>
           </div>
-          <h1 class="break-words text-2xl font-semibold tracking-tight md:text-3xl">{{ schemeTitle }}</h1>
+          <h1 class="studio-title break-words">{{ schemeTitle }}</h1>
           <p class="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
             <span>{{ item.specifications.areaM2 }} ㎡</span>
             <span>{{ item.specifications.openingCount }} 面开口</span>
@@ -394,7 +394,7 @@ onMounted(async () => {
             <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-5 border-b pb-6">
               <div v-for="spec in specifications" :key="spec.label" class="min-w-0 space-y-1">
                 <dt class="text-xs text-muted-foreground">{{ spec.label }}</dt>
-                <dd class="break-words text-sm font-medium">{{ spec.value }}</dd>
+                <dd class="break-words text-base font-medium tabular-nums">{{ spec.value }}</dd>
               </div>
             </dl>
             <div class="space-y-3 py-6">
@@ -402,7 +402,7 @@ onMounted(async () => {
               <p class="text-sm leading-relaxed text-muted-foreground">可直接使用标准方案申请报价，无需先生成主题或素材。</p>
               <Button v-if="!preview" as-child size="lg" class="w-full"><RouterLink :to="quoteLocation">申请报价<ArrowUpRight class="ml-2 size-4" aria-hidden="true" /></RouterLink></Button>
               <Button v-else disabled size="lg" class="w-full">示例方案不可申请报价</Button>
-              <p class="text-xs leading-relaxed text-muted-foreground">适用条件与方案差异需经专业确认后，才能进入项目施工交付。</p>
+              <p class="text-sm leading-relaxed text-muted-foreground">适用条件与方案差异需经专业确认后，才能进入项目施工交付。</p>
             </div>
             <div class="space-y-3 border-t pt-5">
               <div class="flex items-center justify-between gap-3"><h3 class="text-sm font-medium">让空间呈现您的品牌</h3><span class="shrink-0 text-xs text-muted-foreground">可选</span></div>
@@ -451,7 +451,7 @@ onMounted(async () => {
                     <Loader2 v-if="bomDownloading" class="mr-2 size-4 animate-spin" aria-hidden="true" /><FileText v-else class="mr-2 size-4" aria-hidden="true" />{{ bomDownloading ? '下载中…' : '下载 XLSX' }}
                   </Button>
                 </div>
-                <div role="region" aria-label="物料明细，可横向滚动" tabindex="0" class="max-w-full overflow-x-auto rounded-lg border p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <div role="region" aria-label="物料明细，可横向滚动" tabindex="0" class="max-w-full overflow-x-auto rounded-md bg-card p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <table class="w-full min-w-[760px] text-sm">
                     <caption class="sr-only">标准方案物料明细</caption>
                     <thead>
@@ -505,8 +505,8 @@ onMounted(async () => {
                       <Button variant="outline" :disabled="downloadBusy || !resourceRevision" :aria-busy="downloadingArchive === activeResource" @click="downloadAllResources(activeResource)"><Loader2 v-if="downloadingArchive === activeResource" class="mr-2 size-4 animate-spin" aria-hidden="true" /><Download v-else class="mr-2 size-4" aria-hidden="true" />{{ downloadingArchive === activeResource ? '打包中…' : '下载全部' }}</Button>
                     </div>
                     <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                      <article v-for="asset in resourceItems" :key="asset.assetId" class="min-w-0 overflow-hidden rounded-lg border bg-card">
-                        <div class="flex aspect-[4/3] items-center justify-center bg-muted/40 p-3">
+                      <article v-for="asset in resourceItems" :key="asset.assetId" class="min-w-0 overflow-hidden border-b">
+                        <div class="flex aspect-video items-center justify-center rounded-md bg-image-surface p-3">
                           <img v-if="asset.mimeType.startsWith('image/') && assetUrlMap.has(asset.assetId)" :src="assetUrlMap.get(asset.assetId)" :alt="asset.name" loading="lazy" class="h-full w-full object-contain" @error="assetUrlMap.delete(asset.assetId)" />
                           <div v-else class="flex flex-col items-center gap-2 text-muted-foreground"><FileText class="size-8" aria-hidden="true" /><span class="text-xs">{{ asset.mimeType.startsWith('image/') ? '可点击预览查看原图' : asset.mimeType === 'application/pdf' ? 'PDF 文档' : '下载文件查看' }}</span></div>
                         </div>

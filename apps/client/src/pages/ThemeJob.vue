@@ -216,15 +216,15 @@ const failureReason = computed(() => {
 
 <template>
   <SelectionShell>
-    <main class="container mx-auto max-w-7xl space-y-8 px-4 py-8 md:px-6 lg:px-8">
-      <header class="space-y-4">
+    <main id="main-content" class="studio-page">
+      <header class="studio-header">
         <Button variant="ghost" class="-ml-3" @click="router.back()">
           <ArrowLeft class="mr-2 size-4" />返回
         </Button>
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0 space-y-2">
             <p v-if="jobData" class="break-all text-sm text-muted-foreground">方案 {{ jobData.schemeCode }}</p>
-            <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">AI 换主题结果</h1>
+            <h1 class="studio-title">AI 换主题结果</h1>
             <p class="text-sm text-muted-foreground">先预览对比，再选定用于报价与四面素材的效果。</p>
           </div>
           <div v-if="jobData" class="flex flex-wrap gap-2">
@@ -320,7 +320,7 @@ const failureReason = computed(() => {
                 <Badge v-if="activeResult?.resultId === selectedResultId && !selectionUncertain" variant="outline" class="gap-1 border-success/30 text-success"><CheckCircle2 class="size-3.5" />已选定效果</Badge>
                 <Badge v-else variant="secondary">仅预览</Badge>
               </div>
-              <div v-if="activeResult" class="aspect-[4/3] overflow-hidden rounded-xl border bg-muted/40 sm:aspect-video">
+              <div v-if="activeResult" class="aspect-video overflow-hidden rounded-md bg-image-surface">
                 <img :src="activeResult.previewUrl" :alt="`正在预览的第 ${activeResultIndex + 1} 张主题效果`" class="h-full w-full object-contain" />
               </div>
               <div class="grid grid-cols-2 gap-3 sm:grid-cols-4" role="group" aria-label="切换效果预览">
@@ -354,13 +354,13 @@ const failureReason = computed(() => {
                 </Button>
                 <p v-else class="flex items-center gap-1.5 text-sm text-success"><CheckCircle2 class="size-4" />此效果已选定</p>
               </div>
-              <details class="rounded-xl border p-4">
+              <details class="border-t py-5">
                 <summary class="flex cursor-pointer items-center gap-2 rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ImageIcon class="size-4" />查看原版方案对比</summary>
                 <img :src="jobData.original.previewUrl" alt="原版方案效果图" class="mt-4 aspect-video w-full rounded-lg bg-muted/40 object-contain" />
               </details>
             </section>
 
-            <aside class="min-w-0 space-y-5 rounded-xl border bg-card p-5 lg:sticky lg:top-24" aria-labelledby="selected-heading" :aria-busy="selectionBusy">
+            <aside class="studio-panel min-w-0 space-y-5 p-6 lg:sticky lg:top-24" aria-labelledby="selected-heading" :aria-busy="selectionBusy">
               <div class="space-y-2">
                 <h2 id="selected-heading" class="flex items-center gap-2 text-lg font-semibold"><CheckCircle2 class="size-5 text-primary" />已选定效果</h2>
                 <p class="text-sm text-muted-foreground">报价与四面素材均使用这里的效果。</p>

@@ -186,9 +186,9 @@ onUnmounted(() => { destroyed = true; epoch++; stopEvents() })
 </script>
 
 <template>
-  <SelectionShell><main class="container mx-auto max-w-6xl space-y-7 px-4 py-8 md:px-6">
+  <SelectionShell><main id="main-content" class="studio-page">
     <header class="flex flex-wrap items-center justify-between gap-4 border-b pb-6">
-      <div><p class="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-primary">Theme / Artwork / Delivery</p><h1 class="text-3xl font-semibold tracking-tight">让主题，延伸到每一面</h1><p class="mt-3 text-sm text-muted-foreground">固定主题 · 四方向高清底图 · 项目资料交付</p></div>
+      <div><p class="studio-eyebrow mb-3">主题 / 四面素材 / 交付</p><h1 class="studio-title">让主题，延伸到每一面</h1><p class="mt-3 text-sm text-muted-foreground">固定主题 · 四方向高清底图 · 项目资料交付</p></div>
       <Button v-if="context" variant="outline" as-child><RouterLink :to="`/theme-jobs/${context.themeJobId}`"><ArrowLeft class="mr-2 size-4" />返回主题效果</RouterLink></Button>
     </header>
     <Card v-if="!auth.isLoggedIn"><CardContent class="space-y-4 p-8"><p>登录后读取您选定的主题并生成配套素材。</p><Button @click="login">登录并返回</Button></CardContent></Card>
@@ -196,13 +196,22 @@ onUnmounted(() => { destroyed = true; epoch++; stopEvents() })
     <template v-else>
       <div v-if="error" role="alert" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm"><p>{{ error }}</p><Button variant="outline" :disabled="busy" @click="load"><RefreshCw class="mr-2 size-4" />刷新状态</Button></div>
       <div v-if="context" class="grid items-start gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <aside class="space-y-4 lg:sticky lg:top-6">
-          <Card><CardContent class="space-y-4 p-5"><div class="flex items-center justify-between"><span class="text-sm font-medium">01 / 主题参考</span><span class="text-xs text-muted-foreground">已固定</span></div><img v-if="reference" :src="reference" alt="四面素材对应的选定主题效果" class="aspect-[3/2] w-full rounded-md bg-muted object-contain" /><dl class="space-y-2 text-xs"><div class="flex justify-between"><dt class="text-muted-foreground">方案</dt><dd>{{ context.schemeCode }}</dd></div><div class="flex justify-between"><dt class="text-muted-foreground">主题选择修订</dt><dd>{{ context.selectionRevision }}</dd></div></dl><p class="break-all font-mono text-[10px] text-muted-foreground">{{ context.resultId }}</p></CardContent></Card>
-          <Card><CardContent class="space-y-3 p-5"><h2 class="text-sm font-medium">交付标准</h2><p class="text-xs leading-6 text-muted-foreground">实际解码并统一转为 PNG。长边 ≥ 1536 px，短边 ≥ 1024 px；不以插值放大代替高清验收。</p><p class="text-xs leading-6 text-muted-foreground">素材为四面方向底图。画面清单映射、物理尺寸与印刷适配尚需确认。</p></CardContent></Card>
+        <aside class="space-y-6 lg:sticky lg:top-24">
+          <section class="space-y-4"><div class="flex items-center justify-between"><h2 class="text-lg font-medium">01 / 主题参考</h2><span class="text-xs text-muted-foreground">已固定</span></div><img v-if="reference" :src="reference" alt="四面素材对应的选定主题效果" class="aspect-video w-full rounded-md bg-image-surface object-contain" /><dl class="space-y-2 text-sm"><div class="flex justify-between gap-3"><dt class="shrink-0 text-muted-foreground">方案</dt><dd class="break-all font-mono">{{ context.schemeCode }}</dd></div><div class="flex justify-between"><dt class="text-muted-foreground">主题选择修订</dt><dd>{{ context.selectionRevision }}</dd></div></dl><p class="break-all font-mono text-xs text-muted-foreground">{{ context.resultId }}</p></section>
+          <section class="space-y-3 border-t pt-5"><h2 class="text-lg font-medium">交付标准</h2><p class="text-sm leading-6 text-muted-foreground">实际解码并统一转为 PNG。长边 ≥ 1536 px，短边 ≥ 1024 px；不以插值放大代替高清验收。</p><p class="text-sm leading-6 text-muted-foreground">素材为四面方向底图。画面清单映射、物理尺寸与印刷适配尚需确认。</p></section>
           <RouterLink v-if="project" :to="`/my-projects/${project.projectId}`" class="flex items-center justify-between rounded-lg border p-4 text-sm"><span>项目 {{ project.projectNo }}</span><ArrowRight class="size-4" /></RouterLink>
         </aside>
         <section class="space-y-6">
-          <Card v-if="!job"><CardContent class="space-y-5 p-6 md:p-8"><div><p class="text-xs text-muted-foreground">02 / 成套生成</p><h2 class="mt-2 text-2xl font-medium">正、背、左、右，共用一个主题</h2><p class="mt-3 text-sm leading-6 text-muted-foreground">每个方向沿用同一参考效果、品牌参数、模型和提示词快照。只有四方向均通过验收，才可完整打包和绑定项目。</p></div><div v-if="offer" class="grid grid-cols-3 gap-4 rounded-lg bg-muted/50 p-4 text-sm"><div><p class="text-xs text-muted-foreground">每方向</p><p class="mt-2 font-semibold">{{ offer.unitCredits }} 积分</p></div><div><p class="text-xs text-muted-foreground">本次预占</p><p class="mt-2 font-semibold">{{ offer.maxCredits }} 积分</p></div><div><p class="text-xs text-muted-foreground">结算方式</p><p class="mt-2">按合格方向</p></div></div><p class="text-xs text-muted-foreground">失败方向释放预占；部分成功可下载合格单张，但不能作为完整套装交付。重新生成会创建新的四面任务并重新计费。</p><Button :disabled="busy || (!offer && !pending) || (!!projectId && !project)" @click="generate"><Loader2 v-if="busy" class="mr-2 size-4 animate-spin" />{{ pending ? '确认上次提交结果' : '确认费用，生成四面素材' }}</Button></CardContent></Card>
+          <Card v-if="!job" class="border-0"><CardContent class="space-y-6 p-6 md:p-8">
+            <div><p class="studio-eyebrow">02 / 成套生成</p><h2 class="mt-2 text-xl font-medium">正、背、左、右，共用一个主题</h2><p class="mt-3 text-sm leading-7 text-muted-foreground">每个方向沿用同一参考效果、品牌参数、模型和提示词快照。只有四方向均通过验收，才可完整打包和绑定项目。</p></div>
+            <dl v-if="offer" class="grid gap-5 border-y py-5 text-sm sm:grid-cols-3">
+              <div><dt class="text-muted-foreground">每方向</dt><dd class="mt-2 font-mono text-lg">{{ offer.unitCredits }} <span class="font-sans text-sm">积分</span></dd></div>
+              <div><dt class="text-muted-foreground">本次预占</dt><dd class="mt-2 font-mono text-lg">{{ offer.maxCredits }} <span class="font-sans text-sm">积分</span></dd></div>
+              <div><dt class="text-muted-foreground">结算方式</dt><dd class="mt-2">按合格方向</dd></div>
+            </dl>
+            <p class="text-sm leading-7 text-muted-foreground">失败方向释放预占；部分成功可下载合格单张，但不能作为完整套装交付。重新生成会创建新的四面任务并重新计费。</p>
+            <Button class="h-auto min-h-11 whitespace-normal" :disabled="busy || (!offer && !pending) || (!!projectId && !project)" @click="generate"><Loader2 v-if="busy" class="mr-2 size-4 animate-spin" />{{ pending ? '确认上次提交结果' : '确认费用，生成四面素材' }}</Button>
+          </CardContent></Card>
           <div v-if="!job && history.length" class="space-y-3"><h2 class="text-sm font-medium">这个主题的生成记录</h2><RouterLink v-for="item in history" :key="item.jobId" :to="{ path: `/artwork-jobs/${item.jobId}`, query: projectId ? { projectId } : {} }" class="flex items-center justify-between rounded-lg border px-4 py-3 text-sm"><span class="font-mono">{{ item.jobId.slice(0, 8) }}</span><span>{{ item.deliveryStatus === 'ready' ? '四面齐全' : ['pending', 'queued', 'running', 'settling'].includes(item.status) ? '处理中' : '未成套' }}</span><ArrowRight class="size-4" /></RouterLink></div>
           <template v-if="job">
             <div class="flex flex-wrap items-center justify-between gap-4"><div><p class="text-xs text-muted-foreground">02 / 四面成果</p><h2 class="mt-2 flex items-center gap-2 text-xl font-medium"><Loader2 v-if="isRunning" class="size-5 animate-spin text-primary" /><CheckCircle2 v-else-if="ready" class="size-5 text-primary" />{{ isRunning ? '四方向正在生成与验收' : ready ? '四面齐全，已通过像素与格式验收' : '本次成果尚未成套' }}</h2><p class="mt-2 text-xs text-muted-foreground">可关闭页面，任务将继续处理 · {{ job.jobId.slice(0, 8) }}</p></div><Button variant="outline" @click="fetchJob()"><RefreshCw class="mr-2 size-4" />刷新</Button></div>

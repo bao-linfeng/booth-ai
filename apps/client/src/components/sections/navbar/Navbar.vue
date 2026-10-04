@@ -17,8 +17,8 @@ const props = withDefaults(defineProps<NavbarProps>(), {
 
 <template>
   <header :class="cn(navbarVariants({ position: props.position, size: props.size }), props.class)">
-    <div class="container flex h-full items-center gap-4 px-4">
+    <div class="mx-auto flex h-full w-full max-w-[1280px] items-center gap-4 px-4 md:px-8 lg:px-10">
       <slot />
     </div>
   </header>
-</template> 
+</template>

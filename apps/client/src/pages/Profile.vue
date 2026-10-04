@@ -41,7 +41,9 @@ const formatExternalId = (id?: string) => {
 
 <template>
   <SelectionShell>
-    <div class="max-w-2xl mx-auto px-4 py-8 space-y-6">
+    <main id="main-content" class="studio-page">
+    <header class="studio-header"><p class="studio-eyebrow">账户 / ACCOUNT</p><h1 class="studio-title">个人账户</h1></header>
+    <div class="max-w-2xl space-y-6">
     <CreditSignIn class="w-full" />
 
     <Card class="shadow-sm border-border">
@@ -92,6 +94,7 @@ const formatExternalId = (id?: string) => {
         </dl>
       </CardContent>
     </Card>
-  </div>
+    </div>
+    </main>
   </SelectionShell>
 </template>

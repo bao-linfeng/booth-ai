@@ -1,8 +1,8 @@
 export function useFont() {
   const loadFont = async (fontFamily: string) => {
     try {
-      await document.fonts.load(`1rem ${fontFamily}`)
-      document.documentElement.style.setProperty('font-family', fontFamily)
+      await document.fonts.load(`1rem "${fontFamily}"`)
+      document.documentElement.style.setProperty('--font-sans', `"${fontFamily}", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`)
     } catch (error) {
       console.error(`Failed to load font: ${fontFamily}`, error)
     }
@@ -13,6 +13,8 @@ export function useFont() {
     if (existingLink) {
       existingLink.remove()
     }
+
+    if (fontFamily === 'Microsoft YaHei') return
 
     const link = document.createElement('link')
     link.rel = 'stylesheet'
@@ -25,4 +27,4 @@ export function useFont() {
     loadFont,
     updateFontLink
   }
-} 
+}

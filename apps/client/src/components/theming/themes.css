@@ -773,3 +773,49 @@ html.dark {
 
   --ring: 263.4 70% 50.4%;
 }
+
+html[class*='theme-'] {
+  --background: 40 14% 96%;
+  --foreground: 30 6% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 30 6% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 30 6% 15%;
+  --muted: 40 10% 92%;
+  --muted-foreground: 30 4% 42%;
+  --secondary: 40 10% 92%;
+  --secondary-foreground: 30 6% 22%;
+  --accent: 40 10% 90%;
+  --accent-foreground: 30 6% 15%;
+  --border: 35 8% 85%;
+  --input: 35 6% 76%;
+  --image-surface: 40 8% 91%;
+  --success: 152 64% 28%;
+  --warning: 32 88% 32%;
+  --info: 211 76% 39%;
+  --destructive: 0 68% 43%;
+  --destructive-foreground: 0 0% 100%;
+}
+
+html[class*='theme-'].dark {
+  --background: 30 5% 10%;
+  --foreground: 40 10% 94%;
+  --card: 30 5% 14%;
+  --card-foreground: 40 10% 94%;
+  --popover: 30 5% 14%;
+  --popover-foreground: 40 10% 94%;
+  --muted: 30 4% 19%;
+  --muted-foreground: 35 6% 68%;
+  --secondary: 30 4% 19%;
+  --secondary-foreground: 40 10% 94%;
+  --accent: 30 4% 23%;
+  --accent-foreground: 40 10% 94%;
+  --border: 30 4% 27%;
+  --input: 30 4% 40%;
+  --image-surface: 30 4% 18%;
+  --success: 152 58% 65%;
+  --warning: 38 92% 68%;
+  --info: 211 86% 73%;
+  --destructive: 0 80% 72%;
+  --destructive-foreground: 0 0% 10%;
+}

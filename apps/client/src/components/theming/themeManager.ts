@@ -33,7 +33,7 @@ export const initializeTheme = () => {
   const currentState = JSON.parse(localStorage.getItem('currentState') || '{}')
   const storedTheme = currentState?.sceleton?.theme || 'green'
   const storedRadius = currentState?.sceleton?.radius || '0.5rem'
-  const storedFont = currentState?.sceleton?.config?.theme?.fontFamily?.sans?.[0] || 'Nunito'
+  const storedFont = currentState?.sceleton?.config?.theme?.fontFamily?.sans?.[0] || 'Microsoft YaHei'
   
   if (!currentState.sceleton) currentState.sceleton = {}
   
@@ -116,4 +116,4 @@ export const applyThemeClass = (theme: string) => {
     }
   })
   document.documentElement.classList.add(`theme-${theme}`)
-} 
+}

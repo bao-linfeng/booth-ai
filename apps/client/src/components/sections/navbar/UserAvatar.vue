@@ -47,7 +47,7 @@ const avatarFallback = computed(() => authStore.displayName.charAt(0) || '?')
       aria-label="登录"
       title="登录"
     >
-      <LogIn class="!size-5" aria-hidden="true" />
+      <LogIn class="hidden !size-5 sm:block" aria-hidden="true" />
       <span>登录</span>
     </router-link>
   </Button>

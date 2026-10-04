@@ -5,14 +5,58 @@
 @layer base {
   :root {
     --radius: 0.5rem;
-    --success: 152 64% 28%;
-    --warning: 32 88% 32%;
-    --info: 211 76% 39%;
+    --font-sans: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
   }
 
-  .dark {
-    --success: 152 58% 65%;
-    --warning: 38 92% 68%;
-    --info: 211 86% 73%;
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    line-height: 1.65;
+  }
+
+  h1, h2, h3, h4 {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.16);
+  }
+}
+
+@layer components {
+  .studio-page {
+    @apply mx-auto w-full min-w-0 max-w-[1280px] space-y-8 px-4 py-8 md:space-y-10 md:px-8 md:py-12 lg:px-10;
+  }
+
+  .studio-header {
+    @apply space-y-3 border-b pb-7 md:pb-9;
+  }
+
+  .studio-title {
+    @apply text-[28px] font-semibold leading-snug tracking-tight md:text-[32px];
+  }
+
+  .studio-eyebrow {
+    @apply text-xs font-medium tracking-[0.16em] text-muted-foreground;
+  }
+
+  .studio-panel {
+    @apply rounded-lg border-0 bg-card text-card-foreground shadow-none;
+  }
+
+  .studio-note {
+    @apply border-l-2 border-border pl-4 text-sm leading-7 text-muted-foreground;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

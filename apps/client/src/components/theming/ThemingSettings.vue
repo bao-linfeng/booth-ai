@@ -36,7 +36,7 @@ const sheetContent = {
         label: '字体',
         type: 'font',
         options: [
-          'Nunito', 'Inter', 'Roboto', 'Lato', 'Lexend', 'Urbanist',
+          'Microsoft YaHei', 'Nunito', 'Inter', 'Roboto', 'Lato', 'Lexend', 'Urbanist',
           'Kanit', 'Fira Sans', 'Karla', 'Prompt', 'Saira', 'Geologica', 'Bai Jamjuree', 'Niramit', 'Livvic', 'Exo', 'K2D', 'Jura', 'Philosopher', 'Montserrat', 'Open Sans', 'Rubik', 'Oswald','Work Sans', 'Mulish', 'Barlow', 'Heebo', 'Titillium Web', 'Libre Franklin', 'Josefin Sans', 'Jost', 'Outfit', 'Figtree', 'Overpass', 'Chivo', 'Alegreya Sans', 'Fahkwang'
         ]
       }
@@ -49,7 +49,7 @@ const colorLabels: Record<string, string> = {
 }
 
 const selectedFont = ref(
-  JSON.parse(localStorage.getItem('currentState') || '{}')?.sceleton?.config?.theme?.fontFamily?.sans?.[0] || 'Nunito'
+  JSON.parse(localStorage.getItem('currentState') || '{}')?.sceleton?.config?.theme?.fontFamily?.sans?.[0] || 'Microsoft YaHei'
 )
 const selectedColor = ref(currentTheme.value || 'green')
 const selectedRadius = ref(JSON.parse(localStorage.getItem('currentState') || '{}')?.sceleton?.radius || '0.5rem')
