@@ -12,6 +12,8 @@ import { syncAdmin } from '../src/modules/identity/admin-service.js';
 import { resolvePrincipal } from '../src/modules/identity/principal.js';
 import { getThemeJob, ownedThemeJob, selectThemeResult } from '../src/modules/generation/theme/queries.js';
 import { rateLimitPolicies } from '../src/http/rate-limits.js';
+import { allPermissionCodes } from '../src/modules/identity/permissions.js';
+import { resolveAdminPermissions } from '../src/modules/identity/roles.js';
 
 const config = loadConfig({
   NODE_ENV: 'test', LOG_LEVEL: 'silent', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',
@@ -25,6 +27,7 @@ const jobId = '00000000-0000-4000-8000-000000000002';
 
 async function setup(t: TestContext, site: SessionSite = 'client') {
   const account = { enabled: true, roles: site === 'admin' ? ['ROLE_ADMIN'] : ['ROLE_USER'], sessionVersion: 1 };
+  const rolePermissions = { codes: ['bom.read', 'schemes.read', 'dictionaries.read', 'generation.read', 'generation.detail'] };
   const values = new Map<string, string>();
   const counters = new Map<string, number>();
   const reads: string[] = [];
@@ -32,6 +35,10 @@ async function setup(t: TestContext, site: SessionSite = 'client') {
   const pool = { query: async (sql: string, params: unknown[]) => {
     queries.push(sql);
     if (sql.includes('session_version') && sql.startsWith('SELECT')) return { rows: [{ ...account }] };
+    if (sql.includes('unnest(permission_codes)')) {
+      assert.deepEqual(params, [account.roles]);
+      return { rows: rolePermissions.codes.map(code => ({ code })) };
+    }
     if (sql.startsWith('UPDATE users SET session_version') || sql.startsWith('UPDATE admins SET session_version')) { account.sessionVersion++; return { rows: [] }; }
     if (sql.includes('user_credit_balances')) { assert.deepEqual(params, [userId]); return { rows: [{ balance: 50 }] }; }
     if (sql.includes('SELECT 1 FROM theme_jobs') || sql.includes('FROM artwork_jobs WHERE id=$1 AND user_id=$2')) return { rows: [{ id: jobId }] };
@@ -52,7 +59,7 @@ async function setup(t: TestContext, site: SessionSite = 'client') {
     externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret), loginSource: 'password', sessionVersion: 1 }, 3600, Math.floor(Date.now() / 1000) + 3600);
   const app = await buildApp(config, healthy, { pool, redis, storage: {} } as never);
   t.after(() => app.close());
-  return { app, account, values, counters, reads, queries, pool, redis, token, headers: { authorization: `Bearer ${token}` } };
+  return { app, account, rolePermissions, values, counters, reads, queries, pool, redis, token, headers: { authorization: `Bearer ${token}` } };
 }
 
 test('disabled client accounts are denied consistently before credits, generation, quotes, history and profile sync', async t => {
@@ -100,6 +107,18 @@ test('admin BOM uses the entry principal without repeated session/account reads 
   assert.equal(result.statusCode, 200, result.body);
   assert.equal(reads.length, 1);
   assert.equal(queries.filter(sql => sql.includes('session_version')).length, 1);
+  assert.equal(queries.filter(sql => sql.includes('unnest(permission_codes)')).length, 1);
+});
+
+test('ROLE_ADMIN without local role grants is denied before business queries and its session is revoked', async t => {
+  const { app, headers, rolePermissions, values, queries } = await setup(t, 'admin');
+  rolePermissions.codes = [];
+  const response = await app.inject({ url: '/api/v1/admin/bill-of-materials', headers });
+  assert.equal(response.statusCode, 403, response.body);
+  assert.equal(response.json().error.reason, 'ACCESS_DENIED');
+  assert.equal(values.size, 0);
+  assert.equal(queries.length, 2);
+  assert.ok(queries[1]?.includes('FROM admin_roles'));
 });
 
 test('admin audited business route uses the entry principal without reading Session again', async t => {
@@ -241,13 +260,15 @@ test('real SQL: disable/re-enable, role removal and identity changes invalidate 
     await adminPool.query(`CREATE SCHEMA ${schema}`);
     const pool = new pg.Pool({ connectionString: process.env.PROJECT_TEST_DATABASE_URL, options: `-c search_path=${schema}` });
     t.after(async () => { await pool.end(); await adminPool.query(`DROP SCHEMA ${schema} CASCADE`); await adminPool.end(); });
-    for (const name of ['001_foundation.sql', '002_auth.sql', '043_user_login_source.sql', '051_account_session_versions.sql']) {
+    for (const name of ['001_foundation.sql', '002_auth.sql', '043_user_login_source.sql', '051_account_session_versions.sql', '059_admin_role_permissions.sql', '060_editable_admin_role.sql']) {
       await pool.query(await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'));
     }
     const detail = { externalUserId: 1, username: 'test', nickname: null, email: null, mobile: null, avatarPath: null,
       company: null, country: null, city: null, languageCode: null, enabled: true, roles: ['ROLE_ADMIN'], permissions: [] };
     const client = await syncClientUser(pool, detail, true, 'password');
     const admin = await syncAdmin(pool, detail, true);
+    assert.deepEqual((await resolveAdminPermissions(pool, ['ROLE_ADMIN'])).sort(), [...allPermissionCodes].sort());
+    assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_UNCONFIGURED']), []);
     const values = new Map<string, string>();
     const redis = { set: async (key: string, value: string) => { values.set(key, value); return 'OK'; },
       get: async (key: string) => values.get(key) ?? null, del: async (key: string) => Number(values.delete(key)) } as unknown as Redis;
@@ -263,8 +284,17 @@ test('real SQL: disable/re-enable, role removal and identity changes invalidate 
       assert.equal((await pool.query(`SELECT session_version FROM ${table} WHERE id=$1`, [account.id])).rows[0].session_version, 2);
     }
     await pool.query('UPDATE admins SET roles=ARRAY[]::text[] WHERE id=$1', [admin.id]);
-    await pool.query("UPDATE admins SET roles=ARRAY['ROLE_ADMIN'] WHERE id=$1", [admin.id]);
     assert.equal((await pool.query('SELECT session_version FROM admins WHERE id=$1', [admin.id])).rows[0].session_version, 3);
+    await pool.query("UPDATE admins SET roles=ARRAY['ROLE_ADMIN'] WHERE id=$1", [admin.id]);
+    assert.equal((await pool.query('SELECT session_version FROM admins WHERE id=$1', [admin.id])).rows[0].session_version, 4);
     await pool.query('UPDATE users SET external_user_id=2 WHERE id=$1', [client.id]);
     assert.equal((await pool.query('SELECT session_version FROM users WHERE id=$1', [client.id])).rows[0].session_version, 3);
+    await pool.query("UPDATE admin_roles SET permission_codes='{}' WHERE name='ROLE_ADMIN'");
+    assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), []);
+    await syncAdmin(pool, detail, true);
+    assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), []);
+    const deniedToken = await createSession(redis, { site: 'admin', localId: admin.id, sessionVersion: 4,
+      externalUserId: 1, username: 'test', externalJwtCiphertext: 'cipher', loginSource: 'password' }, 3600, Math.floor(Date.now() / 1000) + 3600);
+    await assert.rejects(resolvePrincipal(pool, redis, deniedToken, 'admin'), { statusCode: 403 });
+    assert.equal(await getSession(redis, deniedToken, 'admin'), null);
   });

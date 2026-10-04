@@ -7,8 +7,8 @@ import { loadCatalog } from '../selection/repository.js';
 import { validateRequirement } from '../selection/domain.js';
 
 export async function defaultAssignee(client: pg.PoolClient): Promise<string> {
-  const row = (await client.query<{ id: string }>(`SELECT id FROM admins WHERE enabled AND ('ROLE_ADMIN'=ANY(roles)
-    OR EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.write'=ANY(r.permission_codes)))
+  const row = (await client.query<{ id: string }>(`SELECT id FROM admins WHERE enabled
+    AND EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.follow-up'=ANY(r.permission_codes))
     ORDER BY created_at,id LIMIT 1 FOR SHARE`)).rows[0];
   if (!row) throw projectError('ASSIGNMENT_UNAVAILABLE', 503);
   return row.id;

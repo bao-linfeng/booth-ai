@@ -5,8 +5,8 @@ import { preferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
 import { resetStaticRoutes, startProgress, stopProgress } from '@vben/utils';
 
-import { accessRoutes, coreRouteNames, routes } from '#/router/routes';
 import { getAdminAccessApi } from '#/api/core/roles';
+import { accessRoutes, coreRouteNames, routes } from '#/router/routes';
 import { useAuthStore } from '#/store';
 
 import { generateAccess } from './access';
@@ -89,17 +89,35 @@ function setupAccessGuard(router: Router) {
 
     const access = await getAdminAccessApi();
     accessStore.setAccessCodes(access.permissions);
-    const signature = JSON.stringify([access.routeNames, [...access.permissions].sort()]);
+    const signature = JSON.stringify([
+      access.routeNames,
+      access.permissions.toSorted(),
+    ]);
     if (!accessStore.isAccessChecked || accessSignature !== signature) {
       resetStaticRoutes(router, routes);
+      const rootRoute = routes.find((route) => route.name === 'Root');
+      if (rootRoute) {
+        router.addRoute({ ...rootRoute, children: [] });
+      }
       accessStore.setIsAccessChecked(false);
       accessSignature = signature;
     }
 
     // 是否已经生成过动态路由
     if (accessStore.isAccessChecked) {
-      if (to.name && !to.matched.at(-1)?.children.length && !access.routeNames.includes(String(to.name))) {
-        return { path: access.homePath, replace: true };
+      if (
+        to.name &&
+        to.name !== 'FallbackNotFound' &&
+        !to.matched.at(-1)?.children.length &&
+        !access.routeNames.includes(String(to.name))
+      ) {
+        return {
+          name: 'FallbackNotFound',
+          params: { path: to.path.slice(1).split('/') },
+          query: to.query,
+          hash: to.hash,
+          replace: true,
+        };
       }
       return true;
     }
@@ -110,12 +128,14 @@ function setupAccessGuard(router: Router) {
     const userRoles = userInfo.roles ?? [];
 
     // 生成菜单和路由
-    const { accessibleMenus, accessibleRoutes } = await generateAccess({
-      roles: userRoles,
-      router,
-      // 则会在菜单中显示，但是访问会被重定向到403
-      routes: accessRoutes,
-    }, access.routeNames);
+    const { accessibleMenus, accessibleRoutes } = await generateAccess(
+      {
+        roles: userRoles,
+        router,
+        routes: accessRoutes,
+      },
+      access.routeNames,
+    );
 
     // 保存菜单信息和路由信息
     accessStore.setAccessMenus(accessibleMenus);

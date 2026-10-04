@@ -68,6 +68,10 @@ function handleEdit(row: PromptTemplate) {
   formModalRef.value?.open(row);
 }
 
+function handlePreview(row: PromptTemplate) {
+  formModalRef.value?.open(row, 'preview');
+}
+
 function onReload() {
   gridApi.reload();
 }
@@ -91,7 +95,12 @@ async function handleToggle(row: PromptTemplate) {
   <Page auto-content-height>
     <Grid>
       <template #toolbar-actions>
-        <Button v-access:code="['prompts.write']" type="primary" @click="handleCreate">新建模板</Button>
+        <Button
+          v-access:code="['prompts.create']"
+          type="primary"
+          @click="handleCreate"
+          >新建模板</Button
+        >
       </template>
 
       <!-- 列插槽 -->
@@ -142,18 +151,41 @@ async function handleToggle(row: PromptTemplate) {
       </template>
 
       <template #action="{ row }">
+        <Button
+          v-access:code="['prompts.preview']"
+          type="link"
+          size="small"
+          @click="handlePreview(row)"
+          >预览</Button
+        >
         <Tooltip title="编辑">
-          <Button v-access:code="['prompts.write']" type="link" size="small" @click="handleEdit(row)">
+          <Button
+            v-access:code="['prompts.update']"
+            type="link"
+            size="small"
+            @click="handleEdit(row)"
+          >
             <span class="icon-[lucide--pencil]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="启用" v-if="!row.enabled">
-          <Button v-access:code="['prompts.write']" type="link" size="small" @click="handleToggle(row)">
+          <Button
+            v-access:code="['prompts.enable']"
+            type="link"
+            size="small"
+            @click="handleToggle(row)"
+          >
             <span class="icon-[lucide--toggle-left]"></span>
           </Button>
         </Tooltip>
         <Tooltip title="停用" v-else>
-          <Button v-access:code="['prompts.write']" type="link" danger size="small" @click="handleToggle(row)">
+          <Button
+            v-access:code="['prompts.disable']"
+            type="link"
+            danger
+            size="small"
+            @click="handleToggle(row)"
+          >
             <span class="icon-[lucide--toggle-right]"></span>
           </Button>
         </Tooltip>

@@ -9,7 +9,6 @@ const routes: RouteRecordRaw[] = [
       icon: 'lucide:bell',
       title: '消息通知',
       hideInMenu: true,
-      authority: ['ROLE_ADMIN'],
     },
   },
 ];

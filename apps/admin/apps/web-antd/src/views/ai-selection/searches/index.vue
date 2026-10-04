@@ -357,6 +357,7 @@ function requirementOptionLabel(value: unknown): string {
             type="link"
             size="small"
             aria-label="查看检索详情"
+            v-access:code="['searches.detail']"
             @click="openDetail(row.id)"
           >
             <span class="icon-[lucide--eye]"></span>

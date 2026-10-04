@@ -93,10 +93,13 @@ onMounted(load);
             <Button
               :disabled="terminal"
               @click="operation?.open(project, 'assignment')"
-              v-access:code="['projects.write']"
+              v-access:code="['projects.assign']"
             >
-              改派
-</Button><Button v-access:code="['projects.write']" @click="operation?.open(project, 'follow-up')">
+              改派 </Button
+            ><Button
+              v-access:code="['projects.follow-up']"
+              @click="operation?.open(project, 'follow-up')"
+            >
               追加跟进
             </Button>
             <Button
@@ -105,12 +108,12 @@ onMounted(load);
               "
               :disabled="terminal"
               @click="operation?.open(project, 'scheme')"
-              v-access:code="['projects.write']"
+              v-access:code="['projects.link-scheme']"
             >
-              确认关联方案
-</Button><Button @click="load">刷新项目</Button>
-          </div>
-</template><Descriptions bordered :column="2" size="small">
+              确认关联方案 </Button
+            ><Button @click="load">刷新项目</Button>
+          </div> </template
+        ><Descriptions bordered :column="2" size="small">
           <DescriptionsItem label="来源">
             {{
               project.sourceType === 'quote_request' ? '报价申请' : '人工需求'
@@ -118,10 +121,10 @@ onMounted(load);
             / {{ project.request.entryPoint }}
           </DescriptionsItem>
           <DescriptionsItem label="项目修订">
-            {{ project.revision }}
-</DescriptionsItem><DescriptionsItem label="承接人">
-            {{ project.assigneeName }}
-</DescriptionsItem><DescriptionsItem label="渠道归属">
+            {{ project.revision }} </DescriptionsItem
+          ><DescriptionsItem label="承接人">
+            {{ project.assigneeName }} </DescriptionsItem
+          ><DescriptionsItem label="渠道归属">
             {{ project.attribution }}
           </DescriptionsItem>
           <DescriptionsItem label="客户 / 联系人">
@@ -136,22 +139,22 @@ onMounted(load);
           <DescriptionsItem label="展会">
             {{
               project.request.exhibition?.name ?? '历史资料待补'
-            }}
-</DescriptionsItem><DescriptionsItem label="国家 / 城市">
+            }} </DescriptionsItem
+          ><DescriptionsItem label="国家 / 城市">
             {{ project.request.exhibition?.countryCode }}
             {{ project.request.exhibition?.city }}
           </DescriptionsItem>
           <DescriptionsItem label="展会日期">
             {{ project.request.exhibition?.startDate }} 至
-            {{ project.request.exhibition?.endDate }}
-</DescriptionsItem><DescriptionsItem label="材料预算">
+            {{ project.request.exhibition?.endDate }} </DescriptionsItem
+          ><DescriptionsItem label="材料预算">
             {{ project.request.materialBudget?.currency }}
             {{ project.request.materialBudget?.amount }}
           </DescriptionsItem>
           <DescriptionsItem label="需求范围">
             {{ project.request.scopeCodes?.join('、') }}
-            {{ project.request.scopeNotes }}
-</DescriptionsItem><DescriptionsItem label="已关联方案">
+            {{ project.request.scopeNotes }} </DescriptionsItem
+          ><DescriptionsItem label="已关联方案">
             {{ project.schemeCode ?? '未关联' }} /
             {{ project.schemeSnapshot?.name }}
           </DescriptionsItem>
@@ -202,6 +205,7 @@ onMounted(load);
             :key="asset.versionId"
             size="small"
             @click="download(asset.versionId)"
+            v-access:code="['projects.asset-download']"
           >
             固定资料：{{ asset.name }}
           </Button>
@@ -215,7 +219,9 @@ onMounted(load);
           class="mb-4 border-b pb-4"
         >
           <div class="mb-2 flex gap-3">
-            <Tag>{{ eventLabels[item.kind] ?? item.kind }}</Tag><span>{{ item.actorName ?? '系统' }}</span><span class="text-sm text-muted-foreground">{{
+            <Tag>{{ eventLabels[item.kind] ?? item.kind }}</Tag
+            ><span>{{ item.actorName ?? '系统' }}</span
+            ><span class="text-sm text-muted-foreground">{{
               formatDateTime(item.createdAt)
             }}</span>
           </div>
@@ -229,7 +235,7 @@ onMounted(load);
           :page-size="20"
           @change="events"
         />
-      </Card>
-</template><OperationModal ref="operation" @reload="load" />
+      </Card> </template
+    ><OperationModal ref="operation" @reload="load" />
   </Page>
 </template>

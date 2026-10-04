@@ -73,15 +73,14 @@ const [Grid, gridApi] = useVbenVxeGrid<AdminRole>({
         </span>
       </template>
       <template #permissions="{ row }">
-        <Tag v-if="row.builtIn" color="blue">内置全权限</Tag>
-        <Tag v-else-if="row.permissionCodes.length" color="success">
+        <Tag v-if="row.permissionCodes.length" color="success">
           已授权 {{ row.permissionCodes.length }} 项
         </Tag>
         <Tag v-else>未授权</Tag>
       </template>
       <template #actions="{ row }">
         <Button type="link" @click="modal?.open(row.id)">
-          {{ !row.builtIn && hasAccessByCodes(['roles.write']) ? '配置权限' : '查看权限' }}
+          {{ hasAccessByCodes(['roles.write']) ? '配置权限' : '查看权限' }}
         </Button>
       </template>
     </Grid>

@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { createStorage } from '../../../infra/storage.js';
-import { adminUserId } from '../../authentication.js';
+import { adminUserId, requirePrincipal } from '../../authentication.js';
+import { requireAdminPermission } from '../authorization.js';
+import { assetPermissionCode } from '../../../modules/identity/permissions.js';
 import { getAsset, getAssetVersion, listAssets, listSchemeAssets } from '../../../modules/assets/queries.js';
 import { deleteAsset, updateAsset } from '../../../modules/assets/service.js';
 import type { AssetType, ListAssetsOptions, UpdateAssetInput } from '../../../modules/assets/types.js';
@@ -41,8 +43,11 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     } } },
   }, async request => {
     const query = request.query as AssetsQuery;
+    const allowedTypes = assetTypes.filter(type => requirePrincipal(request, 'admin').permissions.includes(assetPermissionCode(type, 'read')));
+    if (query.type) requireAdminPermission(request, assetPermissionCode(query.type, 'read'));
     const options: ListAssetsOptions = {
       page: query.page ?? 1, pageSize: query.pageSize ?? 20,
+      allowedTypes,
       ...(query.type ? { type: query.type } : {}),
       ...(query.schemeCode ? { schemeCode: query.schemeCode.trim() } : {}),
       ...(query.schemeName ? { schemeName: query.schemeName.trim() } : {}),
@@ -54,7 +59,10 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     schema: { tags: ['admin-assets'], params: codeParamsSchema, querystring: { type: 'object', additionalProperties: false, properties: { type: assetTypeSchema } } },
   }, async request => {
     const query = request.query as SchemeAssetsQuery;
-    return { code: 0, data: await listSchemeAssets(pool, decodedCode(request.params as CodeParams), query.type) };
+    if (query.type) requireAdminPermission(request, assetPermissionCode(query.type, 'read'));
+    const assets = await listSchemeAssets(pool, decodedCode(request.params as CodeParams), query.type);
+    const permissions = requirePrincipal(request, 'admin').permissions;
+    return { code: 0, data: assets.filter(asset => permissions.includes(assetPermissionCode(asset.type, 'read'))) };
   });
 
   app.post('/schemes/:code/assets', {
@@ -62,6 +70,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
   }, async request => {
     const { file, fields } = await readAssetMultipart(request);
     const input = parseCreateAssetFields(decodedCode(request.params as CodeParams), fields);
+    requireAdminPermission(request, assetPermissionCode(input.type, 'upload'));
     return { code: 0, data: await uploadAsset(pool, storage, adminUserId(request), input, file) };
   });
 
@@ -73,6 +82,8 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
   }, async request => {
     const { expectedRevision, ...input } = request.body as UpdateBody;
     const params = request.params as AssetParams;
+    const asset = await getAsset(pool, decodedCode(params), params.assetId);
+    requireAdminPermission(request, assetPermissionCode(asset.type, 'update'));
     return { code: 0, data: await updateAsset(pool, adminUserId(request), decodedCode(params), params.assetId, input, expectedRevision) };
   });
 
@@ -81,6 +92,8 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
   }, async request => {
     const params = request.params as AssetParams;
     const schemeCode = decodedCode(params);
+    const asset = await getAsset(pool, schemeCode, params.assetId);
+    requireAdminPermission(request, assetPermissionCode(asset.type, 'replace'));
     const { file, fields } = await readAssetMultipart(request);
     const expectedRevision = parseOptionalInteger(fields.expectedRevision, 'expectedRevision');
     if (!expectedRevision || expectedRevision < 1) throw requestError('expectedRevision is required', 400);
@@ -92,6 +105,8 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
   }, async request => {
     const params = request.params as AssetParams;
     const { expectedRevision } = request.body as DeleteBody;
+    const asset = await getAsset(pool, decodedCode(params), params.assetId);
+    requireAdminPermission(request, assetPermissionCode(asset.type, 'delete'));
     return { code: 0, data: { revision: await deleteAsset(pool, adminUserId(request), decodedCode(params), params.assetId, expectedRevision) } };
   });
 
@@ -103,6 +118,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     const params = request.params as AssetParams;
     const asset = await getAsset(pool, decodedCode(params), params.assetId);
     const query = request.query as DownloadQuery;
+    requireAdminPermission(request, assetPermissionCode(asset.type, query.disposition === 'preview' ? 'preview' : 'download'));
     const version = query.assetVersionId ? await getAssetVersion(pool, asset.id, query.assetVersionId) : asset.currentVersion;
     if (!version) throw requestError('Asset has no uploaded version', 404);
     const expiresIn = 300;

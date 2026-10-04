@@ -203,7 +203,9 @@ views/<module>/list/
 - 权限来源为本系统服务端 `GET /api/v1/admin/access`，返回 `permissions`、`routeNames`、`homePath`；外部角色权限不参与授权。
 - `router/guard.ts` 在导航时刷新权限，`router/authorized-routes.ts` 依据服务端路由名称白名单过滤菜单和路由。
 - 按钮复用 `@vben/access` 的 `v-access:code` / `hasAccessByCodes`，权限码与服务端目录一致；业务接口仍由服务端强制鉴权。
-- “用户运营 → 用户角色”配置本地授权；角色 ID/名称来自灵通用户系统，内置 `ROLE_ADMIN` 全权限且不可编辑。
+- 授权弹窗用 `@vben/common-ui` 的 `Tree`（多选、父子联动）展示按真实路由（`accessRoutes`）生成的「一级菜单 → 二级页面 → 页面操作」树（`views/user/roles/permission-tree.ts`）；权限码仍是唯一数据源，Tree 选中键与权限码互转，依赖补齐/级联取消在弹窗的 `toggleCodes` 完成。页面与权限的对应以服务端目录的 `routes` 为准：新增页面时在服务端 `permissionGroups` 登记路由名；带 `meta.activePath` 的从属页不单列；没有页面的权限模块归入“其他”。
+- “用户运营 → 用户角色”配置本地授权；角色 ID/名称来自灵通用户系统，所有角色（包括 `ROLE_ADMIN`）均可由拥有 `roles.write` 权限的用户编辑，实际权限以本地保存值为准。
+- 权限树按每个权限项的 `routes` 映射实际页面，同一页面可包含多个权限分组；资源页面分别授权，模型操作挂在方案列表下。新增按钮需同步登记操作权限、页面控制与服务端鉴权，共享接口按资源类型或提交字段细分检查。
 
 ### 提交规范
 

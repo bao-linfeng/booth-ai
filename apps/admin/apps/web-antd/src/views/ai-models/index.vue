@@ -60,7 +60,9 @@ async function refreshCatalog(provider: AiProviderRecord) {
   refreshingIds.value = new Set([...refreshingIds.value, provider.id]);
   try {
     const { models } = await refreshAiProviderCatalogApi(provider.id);
-    message.success(`「${provider.name}」模型目录已更新，共 ${models.length} 个`);
+    message.success(
+      `「${provider.name}」模型目录已更新，共 ${models.length} 个`,
+    );
     await gridApi.reload();
   } catch (error) {
     message.error(discoveryErrorMessage(error));
@@ -116,7 +118,7 @@ onMounted(async () => {
               type="primary"
               :disabled="!protocols.length"
               @click="providerModalRef?.open()"
-              v-access:code="['ai-models.write']"
+              v-access:code="['ai-models.provider-create']"
             >
               新建供应商
             </Button>
@@ -149,18 +151,23 @@ onMounted(async () => {
               :loading="refreshingIds.has(row.id)"
               :disabled="!row.credentialConfigured"
               @click="refreshCatalog(row)"
-              v-access:code="['ai-models.write']"
+              v-access:code="['ai-models.discover']"
             >
               刷新模型
             </Button>
-            <Button v-access:code="['ai-models.write']" type="link" size="small" @click="modelModalRef?.open(row)">
+            <Button
+              v-access:code="['ai-models.model-create']"
+              type="link"
+              size="small"
+              @click="modelModalRef?.open(row)"
+            >
               添加模型
             </Button>
             <Button
               type="link"
               size="small"
               @click="providerModalRef?.open(row)"
-              v-access:code="['ai-models.write']"
+              v-access:code="['ai-models.provider-update']"
             >
               编辑
             </Button>
@@ -169,7 +176,7 @@ onMounted(async () => {
               size="small"
               danger
               @click="confirmDeleteProvider(row)"
-              v-access:code="['ai-models.write']"
+              v-access:code="['ai-models.provider-delete']"
             >
               删除
             </Button>

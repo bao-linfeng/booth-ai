@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 
+import { useAccess } from '@vben/access';
 import { Page } from '@vben/common-ui';
 import { debounce, formatDate } from '@vben/utils';
 
@@ -19,6 +20,7 @@ import UploadModal from './components/UploadModal.vue';
 import { createFormOptions, createGridOptions } from './options';
 
 const uploadModalRef = ref<InstanceType<typeof UploadModal>>();
+const { hasAccessByCodes } = useAccess();
 
 const schemeOptions = ref<{ label: string; value: string }[]>([]);
 const schemeLoading = ref(false);
@@ -126,7 +128,12 @@ function handleDelete(row: any) {
   <Page auto-content-height>
     <Grid>
       <template #toolbar-actions>
-        <Button v-access:code="['assets.write']" type="primary" @click="handleUpload">上传效果图</Button>
+        <Button
+          v-access:code="['assets-renderings.upload']"
+          type="primary"
+          @click="handleUpload"
+          >上传效果图</Button
+        >
       </template>
       <template #filename="{ row }">
         {{ row.currentVersion?.originalFilename || '-' }}
@@ -134,6 +141,7 @@ function handleDelete(row: any) {
       <template #sortOrder="{ row }">
         <InputNumber
           :value="row.sortOrder"
+          :disabled="!hasAccessByCodes(['assets-renderings.update'])"
           :min="0"
           size="small"
           class="w-20"
@@ -144,13 +152,29 @@ function handleDelete(row: any) {
         {{ formatDate(row.createdAt) }}
       </template>
       <template #action="{ row }">
-        <Button type="link" size="small" @click="handlePreview(row)">
+        <Button
+          v-access:code="['assets-renderings.preview']"
+          type="link"
+          size="small"
+          @click="handlePreview(row)"
+        >
           预览
         </Button>
-        <Button v-access:code="['assets.write']" type="link" size="small" @click="handleReplace(row)">
+        <Button
+          v-access:code="['assets-renderings.replace']"
+          type="link"
+          size="small"
+          @click="handleReplace(row)"
+        >
           替换
         </Button>
-        <Button v-access:code="['assets.write']" type="link" size="small" danger @click="handleDelete(row)">
+        <Button
+          v-access:code="['assets-renderings.delete']"
+          type="link"
+          size="small"
+          danger
+          @click="handleDelete(row)"
+        >
           删除
         </Button>
       </template>

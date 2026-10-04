@@ -326,7 +326,7 @@ async function renderPreview() {
   }
 }
 
-async function open(row?: PromptTemplate) {
+async function open(row?: PromptTemplate, mode: 'edit' | 'preview' = 'edit') {
   const sequence = ++openSequence;
   ready.value = false;
   loadError.value = false;
@@ -338,7 +338,13 @@ async function open(row?: PromptTemplate) {
     drafts[key as TemplatePurpose] = undefined;
   });
   modalApi.setState({
-    title: row ? '编辑提示词模板' : '新建提示词模板',
+    title:
+      mode === 'preview'
+        ? '预览提示词模板'
+        : row
+          ? '编辑提示词模板'
+          : '新建提示词模板',
+    showConfirmButton: mode !== 'preview',
     confirmDisabled: true,
   });
   modalApi.open();
@@ -503,7 +509,11 @@ defineExpose({ open });
               使用同一套服务端组装逻辑；只渲染示例，不调用模型、不消耗积分。
             </p>
           </div>
-          <Button :loading="previewLoading" @click="renderPreview">
+          <Button
+            v-access:code="['prompts.preview']"
+            :loading="previewLoading"
+            @click="renderPreview"
+          >
             校验并生成预览
           </Button>
         </div>

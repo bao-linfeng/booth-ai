@@ -155,7 +155,7 @@ function handleDelete(row: BomListEntry) {
         <div class="flex gap-2">
           <Button
             type="primary"
-            v-access:code="['bom.write']"
+            v-access:code="['bom.import']"
             @click="importModalRef?.open(linkedSchemeCode)"
           >
             导入方案清单
@@ -195,7 +195,7 @@ function handleDelete(row: BomListEntry) {
           size="small"
           :disabled="row.status === 'verified'"
           @click="workspaceModalRef?.open(row.schemeCode, 'edit')"
-          v-access:code="['bom.write']"
+          v-access:code="['bom.update', 'bom.delete-item']"
         >
           编辑
         </Button>
@@ -204,7 +204,7 @@ function handleDelete(row: BomListEntry) {
           size="small"
           :disabled="row.status === 'verified'"
           @click="importModalRef?.open(row.schemeCode)"
-          v-access:code="['bom.write']"
+          v-access:code="['bom.import']"
         >
           替换 Excel
         </Button>
@@ -214,7 +214,7 @@ function handleDelete(row: BomListEntry) {
           danger
           :disabled="row.status === 'verified'"
           @click="handleDelete(row)"
-          v-access:code="['bom.write']"
+          v-access:code="['bom.delete']"
         >
           删除
         </Button>

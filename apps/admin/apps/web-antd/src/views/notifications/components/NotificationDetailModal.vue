@@ -8,6 +8,7 @@ import type { ProjectStatus } from '#/api/core/projects';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useAccess } from '@vben/access';
 import { useVbenModal } from '@vben/common-ui';
 import { formatDateTime } from '@vben/utils';
 
@@ -22,6 +23,7 @@ import {
 import { statusLabels } from '#/api/core/projects';
 
 const emit = defineEmits<{ reload: [] }>();
+const { hasAccessByCodes } = useAccess();
 const router = useRouter();
 const detail = ref<ProjectNotificationDetail>();
 const loading = ref(false);
@@ -44,7 +46,7 @@ const [Modal, modalApi] = useVbenModal({
   confirmText: '查看项目',
   cancelText: '关闭',
   onConfirm: () => {
-    if (!detail.value) return;
+    if (!detail.value || !hasAccessByCodes(['projects.read'])) return;
     modalApi.close();
     router.push(`/projects/${detail.value.projectId}`);
   },
@@ -53,12 +55,15 @@ const [Modal, modalApi] = useVbenModal({
 async function open(row: ProjectNotification) {
   detail.value = undefined;
   loading.value = true;
-  modalApi.setState({ title: '通知详情' });
+  modalApi.setState({
+    title: '通知详情',
+    showConfirmButton: hasAccessByCodes(['projects.read']),
+  });
   modalApi.open();
   try {
     detail.value = await getProjectNotificationApi(row.id);
     // 打开详情即视为已读
-    if (!detail.value.isRead) {
+    if (!detail.value.isRead && hasAccessByCodes(['notifications.mark-read'])) {
       await markProjectNotificationReadApi(row.id);
       emit('reload');
     }

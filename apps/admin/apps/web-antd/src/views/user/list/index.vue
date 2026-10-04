@@ -30,7 +30,12 @@ const handleDetail = (row: any) => {
         </Tag>
       </template>
       <template #action="{ row }">
-        <Button type="link" size="small" @click="handleDetail(row)">
+        <Button
+          v-access:code="['users.detail']"
+          type="link"
+          size="small"
+          @click="handleDetail(row)"
+        >
           详情
         </Button>
       </template>

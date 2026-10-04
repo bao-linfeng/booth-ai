@@ -113,7 +113,12 @@ function handleDelete(row: any) {
   <Page auto-content-height>
     <Grid>
       <template #toolbar-actions>
-        <Button v-access:code="['assets.write']" type="primary" @click="handleUpload">上传报馆图</Button>
+        <Button
+          v-access:code="['assets-drawings.upload']"
+          type="primary"
+          @click="handleUpload"
+          >上传报馆图</Button
+        >
       </template>
       <template #filename="{ row }">
         {{ row.currentVersion?.originalFilename || '-' }}
@@ -122,13 +127,29 @@ function handleDelete(row: any) {
         {{ formatDate(row.createdAt) }}
       </template>
       <template #action="{ row }">
-        <Button v-access:code="['assets.write']" type="link" size="small" @click="handleReplace(row)">
+        <Button
+          v-access:code="['assets-drawings.replace']"
+          type="link"
+          size="small"
+          @click="handleReplace(row)"
+        >
           替换
         </Button>
-        <Button v-access:code="['assets.download']" type="link" size="small" @click="handleDownload(row)">
+        <Button
+          v-access:code="['assets-drawings.download']"
+          type="link"
+          size="small"
+          @click="handleDownload(row)"
+        >
           下载
         </Button>
-        <Button v-access:code="['assets.write']" type="link" size="small" danger @click="handleDelete(row)">
+        <Button
+          v-access:code="['assets-drawings.delete']"
+          type="link"
+          size="small"
+          danger
+          @click="handleDelete(row)"
+        >
           删除
         </Button>
       </template>

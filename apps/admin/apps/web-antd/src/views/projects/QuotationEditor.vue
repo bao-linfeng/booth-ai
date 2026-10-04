@@ -8,6 +8,7 @@ import type {
 
 import { computed, nextTick, ref, watch } from 'vue';
 
+import { useAccess } from '@vben/access';
 import { cloneDeep, downloadFileFromBlob, formatDateTime } from '@vben/utils';
 
 import {
@@ -29,6 +30,8 @@ import {
 } from '#/api/core/projects';
 const props = defineProps<{ project: ProjectDetail }>();
 const emit = defineEmits<{ reload: [] }>();
+const { hasAccessByCodes } = useAccess();
+const canEdit = computed(() => hasAccessByCodes(['projects.quotation']));
 const items = ref<QuotationItem[]>([]);
 const displayed = ref<null | Quotation>(null);
 const baseRevision = ref(0);
@@ -50,7 +53,13 @@ const [Form, formApi] = useVbenForm({
     if (!initializing) dirty.value = true;
   },
   handleSubmit: async (values: Record<string, unknown>) => {
-    if (saving.value || terminal.value || viewingHistory.value) return;
+    if (
+      !canEdit.value ||
+      saving.value ||
+      terminal.value ||
+      viewingHistory.value
+    )
+      return;
     const payload: QuotationInput = {
       expectedRevision: baseProjectRevision.value,
       expectedQuotationRevision: baseRevision.value,
@@ -157,11 +166,15 @@ const [Form, formApi] = useVbenForm({
   ],
 });
 watch(
-  [terminal, viewingHistory, saving],
+  [canEdit, terminal, viewingHistory, saving],
   () =>
     formApi.setState({
       commonConfig: {
-        disabled: terminal.value || viewingHistory.value || saving.value,
+        disabled:
+          !canEdit.value ||
+          terminal.value ||
+          viewingHistory.value ||
+          saving.value,
       },
     }),
   { immediate: true },
@@ -290,27 +303,40 @@ const columns = [
 <template>
   <Card title="人工报价 / 不可变修订" class="mt-5">
     <div class="mb-5 flex flex-wrap items-center gap-3">
-      <Tag>{{ viewingHistory ? '历史报价' : '当前编辑' }}</Tag><span v-if="displayed">{{ displayed.quotationNo }} · 修订 {{ displayed.revision }} ·
-        {{ formatDateTime(displayed.createdAt) }}</span>
+      <Tag>{{ viewingHistory ? '历史报价' : '当前编辑' }}</Tag
+      ><span v-if="displayed"
+        >{{ displayed.quotationNo }} · 修订 {{ displayed.revision }} ·
+        {{ formatDateTime(displayed.createdAt) }}</span
+      >
       <InputNumber
         v-model:value="history"
         :min="1"
         :precision="0"
         placeholder="历史修订"
-      /><Button @click="loadHistory">读取历史</Button><Button @click="reset">放弃草稿 / 回到当前</Button>
+      /><Button @click="loadHistory">读取历史</Button
+      ><Button @click="reset">放弃草稿 / 回到当前</Button>
       <Button
+        v-access:code="['projects.quotation-download']"
         :disabled="!displayed || displayed.completeness !== 'ready'"
         @click="download"
       >
         导出已存修订 {{ displayed?.revision }}
       </Button>
     </div>
-    <fieldset :disabled="saving || terminal || viewingHistory">
+    <fieldset :disabled="!canEdit || saving || terminal || viewingHistory">
       <Form />
       <div class="my-4 flex gap-3">
-        <Button v-access:code="['projects.write']" :disabled="terminal || viewingHistory" @click="copyBom">
-          从项目清单快照复制材料
-</Button><Button v-access:code="['projects.write']" :disabled="terminal || viewingHistory" @click="add">
+        <Button
+          v-access:code="['projects.quotation']"
+          :disabled="terminal || viewingHistory"
+          @click="copyBom"
+        >
+          从项目清单快照复制材料 </Button
+        ><Button
+          v-access:code="['projects.quotation']"
+          :disabled="terminal || viewingHistory"
+          @click="add"
+        >
           新增服务 / 材料行
         </Button>
       </div>
@@ -327,7 +353,7 @@ const columns = [
             v-if="column.key === 'kind'"
             v-model:value="record.kind"
             class="w-full"
-            :disabled="terminal || viewingHistory || saving"
+            :disabled="!canEdit || terminal || viewingHistory || saving"
             :options="[
               { value: 'material', label: '材料' },
               { value: 'graphic', label: '画面' },
@@ -342,10 +368,10 @@ const columns = [
           }}</span>
           <Button
             v-else-if="column.key === 'action'"
-            v-access:code="['projects.write']"
+            v-access:code="['projects.quotation']"
             danger
             size="small"
-            :disabled="terminal || viewingHistory || saving"
+            :disabled="!canEdit || terminal || viewingHistory || saving"
             @click="
               items = items.filter(
                 (item) => item.clientLineId !== record.clientLineId,
@@ -358,7 +384,7 @@ const columns = [
           <Input
             v-else-if="column.key !== undefined"
             v-model:value="record[column.key]"
-            :disabled="terminal || viewingHistory || saving"
+            :disabled="!canEdit || terminal || viewingHistory || saving"
             :maxlength="column.key === 'notes' ? 2000 : 500"
             @change="dirty = true"
           />
@@ -386,7 +412,7 @@ const columns = [
         :loading="saving"
         :disabled="terminal || viewingHistory"
         @click="formApi.validateAndSubmitForm()"
-        v-access:code="['projects.write']"
+        v-access:code="['projects.quotation']"
       >
         保存新报价修订
       </Button>

@@ -10,6 +10,7 @@ import type {
 
 import { computed, ref, watch } from 'vue';
 
+import { useAccess } from '@vben/access';
 import {
   Alert,
   Button,
@@ -33,6 +34,7 @@ const props = defineProps<{
   providers: AiProviderRecord[];
 }>();
 const emit = defineEmits<{ reload: [] }>();
+const { hasAccessByCodes } = useAccess();
 
 const PURPOSE_HINTS: Record<AiPurpose, string> = {
   selection_parse:
@@ -185,6 +187,7 @@ async function save(purpose: AiPurpose) {
           {{ index === 0 ? '主用' : `备用 ${index}` }}
         </Tag>
         <Select
+          :disabled="!hasAccessByCodes(['ai-models.assign'])"
           v-model:value="item.modelId"
           class="min-w-0 flex-1"
           :options="
@@ -200,6 +203,7 @@ async function save(purpose: AiPurpose) {
           "
         />
         <InputNumber
+          :disabled="!hasAccessByCodes(['ai-models.assign'])"
           v-if="assignment.purpose !== 'selection_parse'"
           :value="item.unitCredits ?? undefined"
           @update:value="
@@ -222,7 +226,7 @@ async function save(purpose: AiPurpose) {
           size="small"
           :disabled="index === 0"
           @click="move(assignment.purpose, index, -1)"
-          v-access:code="['ai-models.write']"
+          v-access:code="['ai-models.assign']"
         >
           ↑
         </Button>
@@ -230,11 +234,16 @@ async function save(purpose: AiPurpose) {
           size="small"
           :disabled="index === drafts[assignment.purpose]!.length - 1"
           @click="move(assignment.purpose, index, 1)"
-          v-access:code="['ai-models.write']"
+          v-access:code="['ai-models.assign']"
         >
           ↓
         </Button>
-        <Button v-access:code="['ai-models.write']" size="small" danger @click="remove(assignment.purpose, index)">
+        <Button
+          v-access:code="['ai-models.assign']"
+          size="small"
+          danger
+          @click="remove(assignment.purpose, index)"
+        >
           移除
         </Button>
       </div>
@@ -246,14 +255,19 @@ async function save(purpose: AiPurpose) {
         message="还没有能用于此用途的模型"
       />
       <div class="mt-3 flex justify-between">
-        <Button v-access:code="['ai-models.write']" size="small" @click="add(assignment.purpose)">添加模型</Button>
+        <Button
+          v-access:code="['ai-models.assign']"
+          size="small"
+          @click="add(assignment.purpose)"
+          >添加模型</Button
+        >
         <Button
           type="primary"
           size="small"
           :disabled="!dirty(assignment.purpose)"
           :loading="saving === assignment.purpose"
           @click="save(assignment.purpose)"
-          v-access:code="['ai-models.write']"
+          v-access:code="['ai-models.assign']"
         >
           保存
         </Button>

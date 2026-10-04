@@ -6,7 +6,6 @@ const routes: RouteRecordRaw[] = [
       icon: 'lucide:briefcase-business',
       order: 15,
       title: '项目管理',
-      authority: ['ROLE_ADMIN'],
     },
     name: 'Projects',
     path: '/projects',
@@ -18,7 +17,6 @@ const routes: RouteRecordRaw[] = [
         meta: {
           icon: 'lucide:clipboard',
           title: '项目承接',
-          authority: ['ROLE_ADMIN'],
         },
       },
       {
@@ -49,7 +47,6 @@ const routes: RouteRecordRaw[] = [
       title: '项目工作区',
       hideInMenu: true,
       activePath: '/projects',
-      authority: ['ROLE_ADMIN'],
     },
   },
 ];

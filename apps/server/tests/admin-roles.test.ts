@@ -7,7 +7,7 @@ import { loadConfig } from '../src/config.js';
 import { fetchExternalRoles, fetchExternalUserDetail } from '../src/infra/external-auth.js';
 import { createSession, encryptJwt } from '../src/infra/session.js';
 import { adminRoutePermissions } from '../src/http/admin/authorization.js';
-import { accessSummary, allPermissionCodes, validatePermissionCodes } from '../src/modules/identity/permissions.js';
+import { accessSummary, allPermissionCodes, permissionCatalog, permissionGroups, validatePermissionCodes } from '../src/modules/identity/permissions.js';
 import { resolveAdminPermissions, updateRolePermissions } from '../src/modules/identity/roles.js';
 
 const config = loadConfig({
@@ -53,9 +53,114 @@ test('permission catalog rejects unknown and orphan actions; route grants follow
   assert.ok(!summary.routeNames.includes('UserRoles'));
   assert.equal(summary.homePath, '/profile');
   assert.equal(adminRoutePermissions('POST', '/api/v1/admin/schemes/:code/publish')?.[0], 'schemes.publish');
-  assert.equal(adminRoutePermissions('GET', '/api/v1/admin/schemes/:code/assets/:assetId/download')?.[0], 'assets.download');
+  assert.ok(adminRoutePermissions('GET', '/api/v1/admin/schemes/:code/assets/:assetId/download')?.includes('assets-masks.read'));
   assert.equal(adminRoutePermissions('PUT', '/api/v1/admin/roles/:id/permissions')?.[0], 'roles.write');
   assert.equal(adminRoutePermissions('GET', '/api/v1/admin/unregistered'), null);
+});
+
+test('page grants and business actions are independent and enforce their real dependencies', () => {
+  assert.ok(!accessSummary(['searches.read']).routeNames.includes('AiSelectionAnalytics'));
+  assert.deepEqual(accessSummary(['assets-drawings.read']).routeNames, ['Profile', 'AssetsVenueMaterials']);
+  assert.ok(!accessSummary(['dashboard.read']).routeNames.includes('Workspace'));
+  assert.equal(accessSummary(['workspace.read']).homePath, '/dashboard/workspace');
+  assert.throws(() => validatePermissionCodes(['assets-masks.read', 'assets-masks.preview', 'schemes.read']), { statusCode: 400 });
+  assert.throws(() => validatePermissionCodes(['prompts.read', 'prompts.update', 'schemes.read']), { statusCode: 400 });
+  assert.equal(new Set(allPermissionCodes).size, allPermissionCodes.length);
+  validatePermissionCodes(allPermissionCodes);
+  for (const [method, route, expected] of [
+    ['POST', '/credits/recharge', 'credits.recharge'],
+    ['GET', '/scheme-searches/:id', 'searches.detail'],
+    ['GET', '/scheme-searches/statistics', 'search-analytics.read'],
+    ['POST', '/schemes/:code/unpublish', 'schemes.unpublish'],
+    ['POST', '/schemes/:code/bill-of-materials/imports/:importId/commit', 'bom.import'],
+    ['DELETE', '/schemes/:code/bill-of-materials/items/:itemId', 'bom.delete-item'],
+    ['DELETE', '/schemes/:code/bill-of-materials', 'bom.delete'],
+    ['PUT', '/projects/:projectId/assignee', 'projects.assign'],
+    ['POST', '/projects/:projectId/follow-ups', 'projects.follow-up'],
+    ['PUT', '/projects/:projectId/scheme', 'projects.link-scheme'],
+    ['PUT', '/projects/:projectId/quotation', 'projects.quotation'],
+    ['GET', '/projects/:projectId/quotation/download', 'projects.quotation-download'],
+    ['GET', '/projects/:projectId/assets/:versionId/download', 'projects.asset-download'],
+    ['POST', '/project-notifications/read-all', 'notifications.mark-all-read'],
+    ['POST', '/project-notifications/:id/read', 'notifications.mark-read'],
+    ['POST', '/dictionaries/:id/items', 'dictionaries.item-create'],
+    ['DELETE', '/dictionaries/:id/items/:itemId', 'dictionaries.item-delete'],
+    ['POST', '/ai-providers/probe', 'ai-models.discover'],
+    ['POST', '/ai-providers/:id/catalog/refresh', 'ai-models.discover'],
+    ['POST', '/ai-models', 'ai-models.model-create'],
+    ['PUT', '/ai-model-assignments/:purpose', 'ai-models.assign'],
+  ]) assert.deepEqual(adminRoutePermissions(method!, `/api/v1/admin${route}`), [expected], `${method} ${route}`);
+});
+
+test('action-only grants cannot mutate other operations, PATCH fields or other asset types', async t => {
+  const actorId = '00000000-0000-4000-8000-000000000001';
+  const assetId = '00000000-0000-4000-8000-000000000002';
+  let permissions: string[] = ['questions.read', 'questions.enable'];
+  let mutations = 0;
+  let assetType = 'rendering';
+  const pool = { query: async (sql: string) => {
+    if (sql.includes('session_version')) return { rows: [{ enabled: true, roles: ['ROLE_TEST'], sessionVersion: 1 }] };
+    if (sql.includes('unnest(permission_codes)')) return { rows: permissions.map(code => ({ code })) };
+    if (sql.includes('UPDATE applicability_questions')) {
+      mutations++;
+      return { rows: [{ id: 'test', label: 'test', helpText: '', enabled: true, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() }] };
+    }
+    if (sql.includes('sa.id = $2')) return { rows: [{ id: assetId, type: assetType, schemeCode: 'TEST', revision: 1,
+      createdAt: new Date(), updatedAt: new Date(), versionId: assetId, versionAssetId: assetId, versionObjectKey: 'asset',
+      versionOriginalFilename: 'asset.png', versionMimeType: 'image/png', versionByteSize: 10, versionChecksum: 'hash', versionCreatedAt: new Date() }] };
+    if (sql.includes('FROM scheme_baseline_assets')) return { rows: sql.includes('count(*)') ? [{ total: '0' }] : [] };
+    throw new Error('Unauthorized request reached a business query');
+  } } as unknown as pg.Pool;
+  const values = new Map<string, string>();
+  const redis = { get: async (key: string) => values.get(key) ?? null,
+    set: async (key: string, value: string) => { values.set(key, value); return 'OK'; }, del: async (key: string) => Number(values.delete(key)) } as unknown as Redis;
+  const token = await createSession(redis, { site: 'admin', localId: actorId, externalUserId: 1, username: 'test', sessionVersion: 1,
+    externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret), loginSource: 'password' }, 3600, Math.floor(Date.now() / 1000) + 3600);
+  const app = await buildApp(config, healthy, { pool, redis, storage: { signDownload: async () => '/preview' } } as never);
+  t.after(() => app.close());
+  const headers = { authorization: `Bearer ${token}` };
+  const patch = (payload: object) => app.inject({ method: 'PATCH', url: '/api/v1/admin/applicability-questions/test', headers, payload });
+  assert.equal((await patch({ enabled: true })).statusCode, 200);
+  assert.equal((await patch({ enabled: false })).statusCode, 403);
+  assert.equal((await patch({ label: 'changed' })).statusCode, 403);
+  assert.equal((await patch({ enabled: true, label: 'changed' })).statusCode, 403);
+  assert.equal(mutations, 1);
+  permissions = ['questions.read', 'questions.disable'];
+  assert.equal((await patch({ enabled: 'true' })).statusCode, 403);
+  permissions = ['prompts.read', 'prompts.enable', 'schemes.read'];
+  for (const payload of [{ body: 'changed', expectedRevision: 1 }, { enabled: false, expectedRevision: 1 }, { enabled: true, body: 'changed', expectedRevision: 1 }]) {
+    assert.equal((await app.inject({ method: 'PATCH', url: `/api/v1/admin/prompt-templates/${assetId}`, headers, payload })).statusCode, 403);
+  }
+  permissions = ['schemes.read', 'assets-renderings.read', 'assets-renderings.upload'];
+  assert.equal((await app.inject({ url: '/api/v1/admin/assets?type=rendering', headers })).statusCode, 200);
+  assert.equal((await app.inject({ url: '/api/v1/admin/assets?type=mask', headers })).statusCode, 403);
+  assert.equal((await app.inject({ url: '/api/v1/admin/schemes/TEST/assets?type=mask', headers })).statusCode, 403);
+  for (const method of ['PATCH', 'DELETE'] as const) {
+    assert.equal((await app.inject({ method, url: `/api/v1/admin/schemes/TEST/assets/${assetId}`, headers, payload: { expectedRevision: 1 } })).statusCode, 403);
+  }
+  permissions.push('assets-renderings.preview');
+  assert.equal((await app.inject({ url: `/api/v1/admin/schemes/TEST/assets/${assetId}/download?disposition=preview`, headers })).statusCode, 200);
+  assert.equal((await app.inject({ url: `/api/v1/admin/schemes/TEST/assets/${assetId}/download`, headers })).statusCode, 403);
+  assetType = 'mask';
+  assert.equal((await app.inject({ url: `/api/v1/admin/schemes/TEST/assets/${assetId}/download?disposition=preview`, headers })).statusCode, 403);
+  permissions = ['projects.read', 'projects.follow-up'];
+  for (const route of ['/assignee', '/scheme', '/quotation']) {
+    assert.equal((await app.inject({ method: 'PUT', url: `/api/v1/admin/projects/${assetId}${route}`, headers, payload: {} })).statusCode, 403);
+  }
+  permissions = ['notifications.read', 'notifications.mark-read'];
+  assert.equal((await app.inject({ method: 'POST', url: '/api/v1/admin/project-notifications/read-all', headers })).statusCode, 403);
+});
+
+test('permission catalog exposes group key and page route names for the authorization tree', () => {
+  const schemesRead = permissionCatalog.find(item => item.code === 'schemes.read');
+  assert.equal(schemesRead?.groupKey, 'schemes');
+  assert.deepEqual(schemesRead?.routes, ['SchemeList', 'SchemeDetail']);
+  assert.deepEqual(permissionCatalog.find(item => item.code === 'audit.read')?.routes, []);
+  for (const group of permissionGroups) {
+    const items = permissionCatalog.filter(item => item.groupKey === group.key);
+    assert.equal(items.length, group.actions.length, group.key);
+    assert.ok(items.every(item => item.group === group.label && item.routes.join() === group.routes.join()), group.key);
+  }
 });
 
 test('all registered admin business endpoints have an explicit local permission policy', async t => {
@@ -74,12 +179,16 @@ test('all registered admin business endpoints have an explicit local permission 
   }
 });
 
-test('non-super admin API grants, route codes, mutation denials and revocation use current local permissions', async t => {
+for (const roleName of ['ROLE_ADMIN_PRODUCT', 'ROLE_ADMIN']) {
+test(`${roleName} API grants, route codes, mutation denials and revocation use current local permissions`, async t => {
   let permissions = ['roles.read'];
   let mutationQueries = 0;
   const pool = { query: async (sql: string) => {
-    if (sql.includes('session_version')) return { rows: [{ enabled: true, roles: ['ROLE_ADMIN_PRODUCT'], sessionVersion: 1 }] };
-    if (sql.includes('unnest(permission_codes)')) return { rows: permissions.map(code => ({ code })) };
+    if (sql.includes('session_version')) return { rows: [{ enabled: true, roles: [roleName], sessionVersion: 1 }] };
+    if (sql.includes('unnest(permission_codes)')) {
+      assert.ok(sql.includes('FROM admin_roles'));
+      return { rows: permissions.map(code => ({ code })) };
+    }
     mutationQueries++;
     throw new Error('Denied requests must not reach business queries');
   } } as unknown as pg.Pool;
@@ -114,25 +223,56 @@ test('non-super admin API grants, route codes, mutation denials and revocation u
   assert.equal((await app.inject({ url: '/api/v1/admin/access', headers })).statusCode, 403);
   assert.equal(values.size, 0);
 });
+}
 
-test('built-in role is immutable; role saves enforce revisions and audit in one transaction', async () => {
+test('all role saves, including ROLE_ADMIN, enforce revisions and audit persisted permission reductions', async () => {
   let name = 'ROLE_ADMIN_PRODUCT';
   let revision = 2;
+  let permissions: string[] = [];
+  const audits: { before: string[]; after: string[] }[] = [];
   const statements: string[] = [];
-  const client = { query: async (sql: string) => {
+  const client = { query: async (sql: string, params?: unknown[]) => {
     statements.push(sql);
-    if (sql.includes('FOR UPDATE')) return { rows: [{ name, revision, permissionCodes: [] }] };
+    if (sql.includes('FOR UPDATE')) return { rows: [{ name, revision, permissionCodes: [...permissions] }] };
+    if (sql.startsWith('UPDATE admin_roles')) {
+      permissions = params?.[1] as string[];
+      revision++;
+    }
+    if (sql.includes('INSERT INTO admin_audit_logs')) audits.push(JSON.parse(String(params?.[2])));
+    if (sql.includes('unnest(permission_codes)')) {
+      assert.deepEqual(params, [['ROLE_ADMIN']]);
+      return { rows: permissions.map(code => ({ code })) };
+    }
     return { rows: [] };
   }, release() {} };
-  const pool = { connect: async () => client } as unknown as pg.Pool;
+  const pool = { connect: async () => client, query: client.query } as unknown as pg.Pool;
   const saved = await updateRolePermissions(pool, 4, ['users.read'], 2, 'actor');
   assert.equal(saved.revision, 3);
   assert.ok(statements.some(sql => sql.includes('INSERT INTO admin_audit_logs')));
   assert.equal(statements.at(-1), 'COMMIT');
-  revision = 3;
   await assert.rejects(updateRolePermissions(pool, 4, ['users.read'], 2, 'actor'), { statusCode: 409 });
   assert.equal(statements.at(-1), 'ROLLBACK');
+  assert.equal(audits.length, 1);
   name = 'ROLE_ADMIN';
-  await assert.rejects(updateRolePermissions(pool, 5, [], 3, 'actor'), { statusCode: 400 });
-  assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), allPermissionCodes);
+  permissions = [...allPermissionCodes];
+  const reduced = await updateRolePermissions(pool, 5, ['roles.read'], 3, 'actor');
+  assert.deepEqual(reduced, { id: 5, name, permissionCodes: ['roles.read'], revision: 4 });
+  assert.equal(statements.at(-1), 'COMMIT');
+  assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), ['roles.read']);
+  assert.deepEqual(audits.at(-1), { before: allPermissionCodes, after: ['roles.read'] });
+  await updateRolePermissions(pool, 5, [], 4, 'actor');
+  assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), []);
+});
+
+test('unconfigured roles, including ROLE_ADMIN, have no permissions and cannot inherit external grants', async () => {
+  const queriedRoles: string[][] = [];
+  const pool = { query: async (sql: string, params: string[][]) => {
+    assert.ok(sql.includes('FROM admin_roles'));
+    queriedRoles.push(params[0]!);
+    return { rows: [] };
+  } } as unknown as pg.Pool;
+  for (const roles of [[], ['ROLE_ADMIN'], ['ROLE_ADMIN_PRODUCT'], ['ROLE_UNKNOWN']]) {
+    assert.deepEqual(await resolveAdminPermissions(pool, roles), []);
+  }
+  assert.deepEqual(queriedRoles, [['ROLE_ADMIN'], ['ROLE_ADMIN_PRODUCT'], ['ROLE_UNKNOWN']]);
 });

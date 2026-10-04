@@ -494,7 +494,7 @@ defineExpose({ open });
             :disabled="bomLoading || bomLocked"
             :loading="bomImporting"
             @click="handleBomImport"
-            v-access:code="['bom.write']"
+            v-access:code="['bom.import']"
           >
             导入 XLSX/XLSM
           </AButton>
@@ -583,7 +583,7 @@ defineExpose({ open });
             :disabled="!bomImportResult.canCommit || bomLoading || bomLocked"
             :loading="bomCommitting"
             @click="handleBomCommit"
-            v-access:code="['bom.write']"
+            v-access:code="['bom.import']"
           >
             {{ bomImportResult.canCommit ? '确认导入' : '存在错误，无法导入' }}
           </AButton>
@@ -653,7 +653,7 @@ defineExpose({ open });
                 size="small"
                 :disabled="bomLocked"
                 @click="startItemEdit(record.id)"
-                v-access:code="['bom.write']"
+                v-access:code="['bom.update']"
               >
                 编辑
               </AButton>
@@ -664,7 +664,7 @@ defineExpose({ open });
                 danger
                 :disabled="bomLocked"
                 @click="handleItemDelete(record.id)"
-                v-access:code="['bom.write']"
+                v-access:code="['bom.delete-item']"
               >
                 删除
               </AButton>

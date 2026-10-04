@@ -3,6 +3,7 @@ import type { AiProtocol, AiProviderRecord } from '#/api/core/ai-models';
 
 import { ref } from 'vue';
 
+import { useAccess } from '@vben/access';
 import { useVbenModal } from '@vben/common-ui';
 
 import { Alert, Button, message } from 'ant-design-vue';
@@ -27,6 +28,7 @@ type FormValues = {
 
 const props = defineProps<{ protocols: AiProtocol[] }>();
 const emit = defineEmits<{ reload: [] }>();
+const { hasAccessByCodes } = useAccess();
 
 const editing = ref<AiProviderRecord | null>(null);
 const testing = ref(false);
@@ -126,7 +128,11 @@ const [Form, formApi] = useVbenForm<FormValues>({
         !target ||
         Boolean(input.apiKey) ||
         normalizedBaseUrl(values) !== target.baseUrl;
-      if (endpointChanged && (input.apiKey || target?.credentialConfigured)) {
+      if (
+        hasAccessByCodes(['ai-models.discover']) &&
+        endpointChanged &&
+        (input.apiKey || target?.credentialConfigured)
+      ) {
         await fillCatalog(id);
       }
       emit('reload');
@@ -244,8 +250,15 @@ defineExpose({ open });
   <Modal class="w-[560px]">
     <Form />
     <div class="flex items-center gap-3 px-1">
-      <Button :loading="testing" @click="testConnection">测试连接</Button>
-      <span class="text-xs text-muted-foreground">用当前填写的地址与密钥拉取模型列表，不会保存</span>
+      <Button
+        v-access:code="['ai-models.discover']"
+        :loading="testing"
+        @click="testConnection"
+        >测试连接</Button
+      >
+      <span class="text-xs text-muted-foreground"
+        >用当前填写的地址与密钥拉取模型列表，不会保存</span
+      >
     </div>
     <Alert
       v-if="testError"

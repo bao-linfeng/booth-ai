@@ -15,14 +15,17 @@ export interface FollowUpInput extends Change {
   targetStatus?: ProjectStatus; outcome?: string; reopenReason?: string; publicResult?: string;
   quoteEvidence?: { type:'platform'; quotationRevision:number; sentAt:string; channel:string } | {type:'external_manual';reference:string;sentAt:string;channel:string};
 }
-export async function assertProjectAdmin(db: pg.Pool | pg.PoolClient,adminId: string) {
+export async function assertProjectAdmin(db: pg.Pool | pg.PoolClient,adminId: string, permission = 'projects.follow-up') {
   const admin=(await db.query<{enabled:boolean;roles:string[]}>('SELECT enabled,roles FROM admins WHERE id=$1',[adminId])).rows[0];
-  if(!admin?.enabled || !(await resolveAdminPermissions(db,admin.roles)).includes('projects.write')) throw projectError('ACCESS_DENIED',403);
+  if(!admin?.enabled || !(await resolveAdminPermissions(db,admin.roles)).includes(permission)) throw projectError('ACCESS_DENIED',403);
 }
 function editable(project: ProjectRecord) {if(terminalStatuses.includes(project.status)) throw projectError('INVALID_STATUS_TRANSITION');}
 async function change<T>(pool:pg.Pool,id:string,adminId:string,operation:string,input:Change,work:(client:pg.PoolClient,project:ProjectRecord)=>Promise<T>):Promise<T> {
   return transaction(pool,async client=>{
-    await assertProjectAdmin(client,adminId);
+    const permissions: Record<string, string> = { assignee: 'projects.assign', 'follow-up': 'projects.follow-up', scheme: 'projects.link-scheme', quotation: 'projects.quotation' };
+    const permission = permissions[operation];
+    if (!permission) throw projectError('ACCESS_DENIED',403);
+    await assertProjectAdmin(client,adminId,permission);
     const hash=digest({...input,requestKey:undefined});
     const existing=await operationReceipt<T>(client,'admin',adminId,operation,id,input.requestKey,hash);
     if(existing)return existing;
@@ -41,7 +44,7 @@ async function event(client:pg.PoolClient,id:string,adminId:string,kind:string,p
 export async function assignProject(pool:pg.Pool,id:string,adminId:string,input:AssignmentInput) {
   return change(pool,id,adminId,'assignee',input,async(client,project)=>{
     editable(project);
-    const target=(await client.query<{id:string}>("SELECT id FROM admins WHERE id=$1 AND enabled AND ('ROLE_ADMIN'=ANY(roles) OR EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.write'=ANY(r.permission_codes))) FOR SHARE",[input.assigneeAdminId])).rows[0];
+    const target=(await client.query<{id:string}>("SELECT id FROM admins WHERE id=$1 AND enabled AND EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.follow-up'=ANY(r.permission_codes)) FOR SHARE",[input.assigneeAdminId])).rows[0];
     if(!target)throw projectError('INVALID_ASSIGNEE',422);
     if(!input.reason.trim())throw projectError('INVALID_INPUT',400);
     await client.query('UPDATE projects SET assignee_admin_id=$2,revision=revision+1,updated_at=now() WHERE id=$1',[id,target.id]);

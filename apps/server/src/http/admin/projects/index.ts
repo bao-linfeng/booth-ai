@@ -13,7 +13,7 @@ import { assignmentSchema,followUpSchema,linkSchema,projectParams,queryPropertie
 export async function registerAdminProjectRoutes(app:FastifyInstance,pool:pg.Pool,redis:Redis,storage:ReturnType<typeof createStorage>) {
   await app.register(async routes=>{
     routes.addHook('onRequest',async(request,reply)=>{reply.header('Cache-Control','private, no-store');adminUserId(request);});
-    routes.get('/project-assignees',async()=>({code:0,data:(await pool.query("SELECT id,coalesce(nickname,username) AS name FROM admins WHERE enabled AND ('ROLE_ADMIN'=ANY(roles) OR EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.write'=ANY(r.permission_codes))) ORDER BY username,id")).rows}));
+    routes.get('/project-assignees',async()=>({code:0,data:(await pool.query("SELECT id,coalesce(nickname,username) AS name FROM admins WHERE enabled AND EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.follow-up'=ANY(r.permission_codes)) ORDER BY username,id")).rows}));
     routes.get<{Querystring:ProjectQuery}>('/projects',{schema:{querystring:{type:'object',additionalProperties:false,properties:{...queryProperties,city:{type:'string',maxLength:100},customerName:{type:'string',maxLength:200},customerUserId:uuid,assigneeAdminId:uuid,
       exhibitionStartFrom:{type:'string',format:'date'},exhibitionStartTo:{type:'string',format:'date'}}}}},async request=>({code:0,data:await listProjects(pool,request.query)}));
     routes.get<{Params:{projectId:string}}>('/projects/:projectId',{schema:{params:projectParams}},async request=>{

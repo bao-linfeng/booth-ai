@@ -4,6 +4,7 @@ import type { UserRecord } from '#/api/core/user-manage';
 
 import { ref } from 'vue';
 
+import { useAccess } from '@vben/access';
 import { useVbenModal } from '@vben/common-ui';
 
 import {
@@ -22,6 +23,7 @@ import {
 import { getUserDetailApi } from '#/api/core/user-manage';
 
 const currentUserId = ref('');
+const { hasAccessByCodes } = useAccess();
 const currentUser = ref<null | UserRecord>(null);
 const currentBalance = ref<null | number>(null);
 const activeTab = ref('info');
@@ -54,7 +56,8 @@ const [CreditGrid, creditGridApi] = useVbenVxeGrid<CreditTransaction>({
         }: {
           page: { currentPage: number; pageSize: number };
         }) => {
-          if (!currentUserId.value) return { items: [], total: 0 };
+          if (!currentUserId.value || !hasAccessByCodes(['credits.read']))
+            return { items: [], total: 0 };
           const result = await getCreditTransactionsApi({
             page: page.currentPage,
             pageSize: page.pageSize,
@@ -80,10 +83,12 @@ const open = async (userId: string) => {
   try {
     const [detail, balance] = await Promise.all([
       getUserDetailApi(userId),
-      getUserCreditBalanceApi(userId),
+      hasAccessByCodes(['credits.read'])
+        ? getUserCreditBalanceApi(userId)
+        : Promise.resolve(null),
     ]);
     currentUser.value = detail;
-    currentBalance.value = balance.balance;
+    currentBalance.value = balance?.balance ?? null;
   } finally {
     modalApi.setState({ confirmLoading: false });
   }
@@ -131,7 +136,10 @@ const kindMap: Record<string, string> = {
                     .join(' / ') || '-'
                 }}
               </DescriptionsItem>
-              <DescriptionsItem label="当前积分">
+              <DescriptionsItem
+                v-if="hasAccessByCodes(['credits.read'])"
+                label="当前积分"
+              >
                 <span class="text-lg font-bold text-green-600">{{
                   currentBalance ?? '-'
                 }}</span>
@@ -151,7 +159,11 @@ const kindMap: Record<string, string> = {
           </div>
         </TabPane>
 
-        <TabPane key="credits" tab="积分流水">
+        <TabPane
+          v-if="hasAccessByCodes(['credits.read'])"
+          key="credits"
+          tab="积分流水"
+        >
           <div class="h-[380px] py-2">
             <CreditGrid :key="currentUserId">
               <template #kind="{ row }">

@@ -50,6 +50,7 @@ const deliveryColors = {
     <Grid>
       <template #toolbar-actions>
         <Button
+          v-access:code="['notifications.mark-all-read']"
           :disabled="notificationStore.unreadCount <= 0"
           @click="handleMarkAllRead"
         >

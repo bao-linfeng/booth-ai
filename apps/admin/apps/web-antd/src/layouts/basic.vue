@@ -57,12 +57,16 @@ function kindAvatar(kind: string) {
 }
 
 onMounted(() => {
-  if (accessStore.accessCodes.includes('notifications.read')) notificationStore.start();
+  if (accessStore.accessCodes.includes('notifications.read'))
+    notificationStore.start();
 });
-watch(() => accessStore.accessCodes.includes('notifications.read'), (allowed) => {
-  if (allowed) notificationStore.start();
-  else notificationStore.stop();
-});
+watch(
+  () => accessStore.accessCodes.includes('notifications.read'),
+  (allowed) => {
+    if (allowed) notificationStore.start();
+    else notificationStore.stop();
+  },
+);
 onBeforeUnmount(() => notificationStore.stop());
 
 const menus = computed(() => [
@@ -159,6 +163,12 @@ watch(
         v-if="accessStore.accessCodes.includes('notifications.read')"
         :dot="showDot"
         :notifications="notifications"
+        :allow-mark-read="
+          accessStore.accessCodes.includes('notifications.mark-read')
+        "
+        :allow-mark-all-read="
+          accessStore.accessCodes.includes('notifications.mark-all-read')
+        "
         @clear="handleMarkAllRead"
         @read="(item) => notificationStore.markRead(String(item.id))"
         @make-all="handleMarkAllRead"

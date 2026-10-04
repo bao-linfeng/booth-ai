@@ -183,7 +183,16 @@ async function fetchDetail() {
       typeof conditions?.publicNotes === 'string' ? conditions.publicNotes : '';
 
     // Fetch asset counts
-    const assets = hasAccessByCodes(['assets.read']) ? await listSchemeAssetsApi(requestCode) : [];
+    const assets = hasAccessByCodes([
+      'assets-renderings.read',
+      'assets-masks.read',
+      'assets-drawings.read',
+      'assets-artworks.read',
+      'assets-models.read',
+      'assets-checklists.read',
+    ])
+      ? await listSchemeAssetsApi(requestCode)
+      : [];
     if (sequence !== detailRequestSequence || requestCode !== currentCode.value)
       return;
     assetCounts.rendering = assets.filter((a) => a.type === 'rendering').length;
@@ -217,7 +226,7 @@ async function fetchDetail() {
 }
 
 async function fetchModelAssets() {
-  if (!currentCode.value) return;
+  if (!currentCode.value || !hasAccessByCodes(['assets-models.read'])) return;
   try {
     modelAssets.value = await listSchemeAssetsApi(currentCode.value, 'model');
   } catch {
@@ -352,6 +361,7 @@ function handleBack() {
 }
 
 async function fetchReadiness() {
+  if (!hasAccessByCodes(['schemes.readiness'])) return;
   if (!currentCode.value) return;
   readinessLoading.value = true;
   try {
@@ -579,7 +589,7 @@ onMounted(() => {
             v-if="originalData.publishStatus === 'published'"
             danger
             @click="openUnpublishModal"
-            v-access:code="['schemes.publish']"
+            v-access:code="['schemes.unpublish']"
           >
             下架
           </AButton>
@@ -816,14 +826,20 @@ onMounted(() => {
             </div>
           </ATabPane>
 
-          <ATabPane v-if="!isCreate && hasAccessByCodes(['assets.read'])" key="model" tab="模型">
+          <ATabPane
+            v-if="!isCreate && hasAccessByCodes(['assets-models.read'])"
+            key="model"
+            tab="模型"
+          >
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <span class="text-muted-foreground text-sm">共 {{ modelAssets.length }} 个模型文件</span>
+              <span class="text-muted-foreground text-sm"
+                >共 {{ modelAssets.length }} 个模型文件</span
+              >
               <AButton
                 type="primary"
                 :loading="modelUploading"
                 @click="handleModelUpload"
-                v-access:code="['assets.write']"
+                v-access:code="['assets-models.upload']"
               >
                 上传模型（.skp）
               </AButton>
@@ -850,7 +866,7 @@ onMounted(() => {
                   type="link"
                   size="small"
                   @click="handleModelDownload(asset)"
-                  v-access:code="['assets.download']"
+                  v-access:code="['assets-models.download']"
                 >
                   下载
                 </AButton>
@@ -858,9 +874,24 @@ onMounted(() => {
             </div>
           </ATabPane>
 
-          <ATabPane v-if="!isCreate && hasAccessByCodes(['assets.read'])" key="assets" tab="资产汇总">
+          <ATabPane
+            v-if="
+              !isCreate &&
+              hasAccessByCodes([
+                'assets-renderings.read',
+                'assets-masks.read',
+                'assets-drawings.read',
+                'assets-artworks.read',
+                'assets-models.read',
+                'assets-checklists.read',
+              ])
+            "
+            key="assets"
+            tab="资产汇总"
+          >
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <ACard
+                v-if="hasAccessByCodes(['assets-renderings.read'])"
                 hoverable
                 class="text-center"
                 @click="
@@ -873,6 +904,7 @@ onMounted(() => {
                 </div>
               </ACard>
               <ACard
+                v-if="hasAccessByCodes(['assets-masks.read'])"
                 hoverable
                 class="text-center"
                 @click="router.push(`/assets/masks?schemeCode=${currentCode}`)"
@@ -881,6 +913,7 @@ onMounted(() => {
                 <div class="text-2xl font-semibold">{{ assetCounts.mask }}</div>
               </ACard>
               <ACard
+                v-if="hasAccessByCodes(['assets-drawings.read'])"
                 hoverable
                 class="text-center"
                 @click="
@@ -895,6 +928,7 @@ onMounted(() => {
                 </div>
               </ACard>
               <ACard
+                v-if="hasAccessByCodes(['assets-artworks.read'])"
                 hoverable
                 class="text-center"
                 @click="
@@ -906,13 +940,19 @@ onMounted(() => {
                   {{ assetCounts.artwork }}
                 </div>
               </ACard>
-              <ACard class="text-center">
+              <ACard
+                v-if="hasAccessByCodes(['assets-models.read'])"
+                class="text-center"
+              >
                 <div class="text-muted-foreground mb-2">模型</div>
                 <div class="text-2xl font-semibold">
                   {{ assetCounts.model }}
                 </div>
               </ACard>
-              <ACard class="text-center">
+              <ACard
+                v-if="hasAccessByCodes(['assets-checklists.read'])"
+                class="text-center"
+              >
                 <div class="text-muted-foreground mb-2">清单</div>
                 <div class="text-2xl font-semibold">
                   {{ assetCounts.checklist }}
@@ -921,7 +961,11 @@ onMounted(() => {
             </div>
           </ATabPane>
 
-          <ATabPane v-if="!isCreate && hasAccessByCodes(['bom.read'])" key="checklist" tab="简化清单">
+          <ATabPane
+            v-if="!isCreate && hasAccessByCodes(['bom.read'])"
+            key="checklist"
+            tab="简化清单"
+          >
             <div v-loading="checklistLoading" class="space-y-4 py-4">
               <div
                 class="border-border bg-muted/50 flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4"
@@ -993,7 +1037,11 @@ onMounted(() => {
             </div>
           </ATabPane>
 
-          <ATabPane v-if="!isCreate" key="publish" tab="审核发布">
+          <ATabPane
+            v-if="!isCreate && hasAccessByCodes(['schemes.readiness'])"
+            key="publish"
+            tab="审核发布"
+          >
             <div v-loading="readinessLoading" class="space-y-4">
               <div v-if="!readinessData" class="py-8 text-center">
                 <AButton :loading="readinessLoading" @click="fetchReadiness">
@@ -1128,7 +1176,12 @@ onMounted(() => {
 
                 <!-- 操作区 -->
                 <div class="flex flex-wrap gap-3">
-                  <AButton v-access:code="['schemes.review']" type="primary" ghost @click="openReviewModal">
+                  <AButton
+                    v-access:code="['schemes.review']"
+                    type="primary"
+                    ghost
+                    @click="openReviewModal"
+                  >
                     整体审核
                   </AButton>
                   <AButton
@@ -1146,7 +1199,7 @@ onMounted(() => {
                     v-if="originalData?.publishStatus === 'published'"
                     danger
                     @click="openUnpublishModal"
-                    v-access:code="['schemes.publish']"
+                    v-access:code="['schemes.unpublish']"
                   >
                     下架方案
                   </AButton>

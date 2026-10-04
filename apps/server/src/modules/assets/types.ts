@@ -32,6 +32,7 @@ export interface SchemeAsset {
 }
 
 export interface ListAssetsOptions {
+  allowedTypes?: AssetType[];
   page: number;
   pageSize: number;
   type?: AssetType;

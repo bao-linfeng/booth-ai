@@ -9,11 +9,9 @@ export interface AdminRole {
   name: string;
   permissionCodes: string[];
   revision: number;
-  builtIn: boolean;
 }
 
 export async function resolveAdminPermissions(pool: pg.Pool | pg.PoolClient, roles: string[]): Promise<string[]> {
-  if (roles.includes('ROLE_ADMIN')) return [...allPermissionCodes];
   if (roles.length === 0) return [];
   const result = await pool.query<{ code: string }>(`
     SELECT DISTINCT unnest(permission_codes) AS code FROM admin_roles WHERE active AND name=ANY($1::text[])
@@ -25,11 +23,6 @@ export async function requireAdminAccess(pool: pg.Pool, roles: string[]): Promis
   const permissions = await resolveAdminPermissions(pool, roles);
   if (permissions.length === 0) throw Object.assign(new Error('未授予后台访问权限'), { statusCode: 403, reason: 'ACCESS_DENIED' });
   return permissions;
-}
-
-function mapRole(row: Omit<AdminRole, 'builtIn'>): AdminRole {
-  const builtIn = row.name === 'ROLE_ADMIN';
-  return { ...row, builtIn, permissionCodes: builtIn ? [...allPermissionCodes] : row.permissionCodes };
 }
 
 export async function listAdminRoles(config: Config, pool: pg.Pool, jwt: string): Promise<AdminRole[]> {
@@ -44,19 +37,19 @@ export async function listAdminRoles(config: Config, pool: pg.Pool, jwt: string)
           revision=admin_roles.revision+CASE WHEN admin_roles.name<>EXCLUDED.name OR NOT admin_roles.active THEN 1 ELSE 0 END,
           updated_at=now()`, [role.id, role.name]);
     }
-    const result = await client.query<Omit<AdminRole, 'builtIn'>>(`
+    const result = await client.query<AdminRole>(`
       SELECT id::float8 AS id,name,permission_codes AS "permissionCodes",revision FROM admin_roles WHERE active ORDER BY id
     `);
-    return result.rows.map(mapRole);
+    return result.rows;
   });
 }
 
 export async function getAdminRole(pool: pg.Pool, id: number): Promise<AdminRole> {
-  const row = (await pool.query<Omit<AdminRole, 'builtIn'>>(`
+  const row = (await pool.query<AdminRole>(`
     SELECT id::float8 AS id,name,permission_codes AS "permissionCodes",revision FROM admin_roles WHERE id=$1 AND active
   `, [id])).rows[0];
   if (!row) throw Object.assign(new Error('角色不存在，请刷新角色列表'), { statusCode: 404 });
-  return mapRole(row);
+  return row;
 }
 
 export async function updateRolePermissions(pool: pg.Pool, id: number, codes: string[], expectedRevision: number, actorId: string): Promise<AdminRole> {
@@ -66,11 +59,10 @@ export async function updateRolePermissions(pool: pg.Pool, id: number, codes: st
       SELECT name,revision,permission_codes AS "permissionCodes" FROM admin_roles WHERE id=$1 AND active FOR UPDATE
     `, [id])).rows[0];
     if (!row) throw Object.assign(new Error('角色不存在'), { statusCode: 404 });
-    if (row.name === 'ROLE_ADMIN') throw Object.assign(new Error('内置管理员权限不可修改'), { statusCode: 400 });
     if (row.revision !== expectedRevision) throw Object.assign(new Error('角色权限已更新，请重新打开配置'), { statusCode: 409 });
     await client.query('UPDATE admin_roles SET permission_codes=$2,revision=revision+1,updated_at=now() WHERE id=$1', [id, permissions]);
     await client.query(`INSERT INTO admin_audit_logs (admin_id,action,target_type,target_id,detail)
       VALUES ($1,'role.permissions.update','role',$2,$3::jsonb)`, [actorId, String(id), JSON.stringify({ before: row.permissionCodes, after: permissions })]);
-    return { id, name: row.name, permissionCodes: permissions, revision: row.revision + 1, builtIn: false };
+    return { id, name: row.name, permissionCodes: permissions, revision: row.revision + 1 };
   });
 }

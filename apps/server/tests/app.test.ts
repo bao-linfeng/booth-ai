@@ -87,7 +87,7 @@ test('admin business routes reject missing sessions before accessing data', asyn
   }
 });
 
-test('administrator can list BOMs without external scheme permissions', async t => {
+test('administrator can list BOMs with local grants and without external scheme permissions', async t => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ success: true, data: {
     id: 1, username: 'admin', enabled: true, roles: [{ name: 'ROLE_ADMIN', roleEntityPermissions: [] }],
@@ -97,6 +97,7 @@ test('administrator can list BOMs without external scheme permissions', async t 
     pool: { query: async (sql: string) => {
       if (sql.includes('INSERT INTO admins')) return { rows: [{ id: 'admin-id' }] };
       if (sql.includes('FROM admins WHERE id=')) return { rows: [{ enabled: true, roles: ['ROLE_ADMIN'], sessionVersion: 1 }] };
+      if (sql.includes('unnest(permission_codes)')) return { rows: ['bom.read', 'schemes.read', 'dictionaries.read'].map(code => ({ code })) };
       if (sql.includes('count(*)::text AS count FROM scheme_boms')) return { rows: [{ count: '0' }] };
       if (sql.includes('FROM scheme_boms b JOIN schemes s')) return { rows: [] };
       throw new Error('Unexpected query');
@@ -125,6 +126,7 @@ test('prompt template routes expose definitions, preview real builders, and isol
   const styleId = '00000000-0000-0000-0000-000000000004';
   const pool = { query: async (sql: string) => {
     if (sql.includes('FROM admins')) return { rows: [{ enabled: true, roles: ['ROLE_ADMIN'], sessionVersion: 1 }] };
+    if (sql.includes('unnest(permission_codes)')) return { rows: ['schemes.read', 'prompts.read', 'prompts.preview', 'prompts.create'].map(code => ({ code })) };
     if (sql.includes('FROM dictionaries')) return { rows: [] };
     if (sql.includes('FROM dictionary_items') && sql.includes('ANY')) return { rows: [
       { id: industryId, label: '医疗', code: 'industry' }, { id: styleId, label: '现代', code: 'style' },

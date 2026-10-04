@@ -12,6 +12,7 @@ import { registerAdminAssetsRoutes } from '../src/http/admin/assets/index.js';
 import { uploadAsset, uploadAssetVersion, type AssetUploadFile } from '../src/modules/assets/upload.js';
 import { createAssetWithVersion, updateAsset } from '../src/modules/assets/service.js';
 import { validateAssetMetadata } from '../src/modules/assets/metadata.js';
+import { allPermissionCodes } from '../src/modules/identity/permissions.js';
 
 function dependencies(options: { saveError?: Error; storageError?: Error; cleanupError?: Error; revision?: number } = {}) {
   const events: string[] = [];
@@ -193,7 +194,7 @@ test('admin upload routes share multipart parsing for either field order and rej
   await app.register(multipart);
   app.decorateRequest('principal', null);
   app.addHook('onRequest', async request => {
-    request.principal = { site: 'admin', localId: 'admin-id' } as Principal;
+    request.principal = { site: 'admin', localId: 'admin-id', permissions: allPermissionCodes } as Principal;
   });
   await registerAdminAssetsRoutes(app, deps.pool, deps.storage as unknown as ReturnType<typeof createStorage>, {} as Redis);
   const file = await imageFile('png');
@@ -225,6 +226,6 @@ test('admin upload routes share multipart parsing for either field order and rej
       headers: { 'content-type': 'multipart/form-data; boundary=asset-boundary' }, payload: multipartBody(fields, files) });
     assert.equal(response.statusCode, 400, response.body);
     assert.equal(response.json().message, message);
-    assert.deepEqual(deps.events, []);
+    assert.ok(deps.events.every(sql => sql.includes('FROM scheme_baseline_assets sa')), 'invalid requests must not write to storage or the database');
   }
 });

@@ -163,7 +163,12 @@ function handleReload() {
     <Grid>
       <template #toolbar-actions>
         <div class="flex gap-2">
-          <Button v-access:code="['credits.write']" type="primary" @click="handleRecharge">充值积分</Button>
+          <Button
+            v-access:code="['credits.recharge']"
+            type="primary"
+            @click="handleRecharge"
+            >充值积分</Button
+          >
         </div>
       </template>
 

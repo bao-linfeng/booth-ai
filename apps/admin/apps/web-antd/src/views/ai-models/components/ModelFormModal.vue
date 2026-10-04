@@ -273,6 +273,7 @@ defineExpose({ open });
       class="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-dashed px-3 py-2"
     >
       <Button
+        v-access:code="['ai-models.discover']"
         size="small"
         :loading="refreshing"
         :disabled="!provider?.credentialConfigured"
@@ -291,7 +292,9 @@ defineExpose({ open });
       </span>
       <span v-else class="text-xs text-muted-foreground">
         <template v-if="catalogRefreshedAt">
-          目录 {{ catalog.length }} 个（{{ formatDateTime(catalogRefreshedAt) }}
+          目录 {{ catalog.length }} 个（{{
+            formatDateTime(catalogRefreshedAt)
+          }}
           刷新），筛选后可选 {{ modelOptions.length }} 个
         </template>
         <template v-else>尚未刷新模型目录，可直接输入模型 ID</template>
@@ -314,8 +317,10 @@ defineExpose({ open });
       <Tag v-for="purpose in capability.purposes" :key="purpose">
         {{ PURPOSE_LABELS[purpose] }}
       </Tag>
-      <span v-if="editing">·
-        保存修改会使该模型尚未提交的报价失效，进行中的任务不再调用旧配置</span>
+      <span v-if="editing"
+        >·
+        保存修改会使该模型尚未提交的报价失效，进行中的任务不再调用旧配置</span
+      >
     </div>
   </Modal>
 </template>

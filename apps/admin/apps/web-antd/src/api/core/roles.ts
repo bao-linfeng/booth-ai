@@ -5,13 +5,15 @@ export interface AdminRole {
   name: string;
   permissionCodes: string[];
   revision: number;
-  builtIn: boolean;
 }
 
 export interface PermissionDefinition {
   code: string;
   label: string;
   group: string;
+  groupKey: string;
+  /** 展示该操作的页面路由名，与前端路由 name 对应；没有独立页面时为空 */
+  routes: string[];
   kind: 'action' | 'route';
   requires: string[];
 }
