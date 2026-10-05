@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import SelectionShell from '@/features/selection/SelectionShell.vue'
+import MainLayout from '@/layouts/MainLayout.vue'
 import { scopeLabel } from '@/features/projects/labels'
 import { closedStatuses, dateRange, joinParts, nextSteps, regionName, summarizeRequirement } from '@/features/projects/summary'
 import type { Catalog } from '@/features/selection/types'
@@ -78,7 +78,7 @@ watch(() => route.params.projectId, () => { detail.value = undefined; list.value
 </script>
 
 <template>
-  <SelectionShell>
+  <MainLayout>
     <main id="main-content" class="studio-page">
       <header class="flex flex-wrap items-center justify-between gap-4">
         <div class="space-y-2">
@@ -255,5 +255,5 @@ watch(() => route.params.projectId, () => { detail.value = undefined; list.value
         </template>
       </template>
     </main>
-  </SelectionShell>
+  </MainLayout>
 </template>

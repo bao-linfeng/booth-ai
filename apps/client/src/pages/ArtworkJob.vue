@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Download, Loader2, RefreshCw } fro
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
-import SelectionShell from '@/features/selection/SelectionShell.vue'
+import MainLayout from '@/layouts/MainLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { createArtworkJob, createArtworkJobEventsTicket, directionLabels, downloadArtwork, getArtworkJob, getArtworkJobs, getArtworkOffer, openArtworkJobEvents, type ArtworkContext, type ArtworkJob, type ArtworkOffer, type ArtworkSubmission } from '@/services/api/artwork-jobs'
 import { getThemeJob } from '@/services/api/theme-jobs'
@@ -156,7 +156,7 @@ onUnmounted(() => { destroyed = true; epoch++; asyncJob.stop() })
 </script>
 
 <template>
-  <SelectionShell><main id="main-content" class="studio-page">
+  <MainLayout><main id="main-content" class="studio-page">
     <header class="flex flex-wrap items-center justify-between gap-4 border-b pb-6">
       <div><p class="studio-eyebrow mb-3">主题 / 四面素材 / 交付</p><h1 class="studio-title">让主题，延伸到每一面</h1><p class="mt-3 text-sm text-muted-foreground">固定主题 · 四方向高清底图 · 项目资料交付</p></div>
       <Button v-if="context" variant="outline" as-child><RouterLink :to="`/theme-jobs/${context.themeJobId}`"><ArrowLeft class="mr-2 size-4" />返回主题效果</RouterLink></Button>
@@ -191,5 +191,5 @@ onUnmounted(() => { destroyed = true; epoch++; asyncJob.stop() })
         </section>
       </div>
     </template>
-  </main></SelectionShell>
+  </main></MainLayout>
 </template>

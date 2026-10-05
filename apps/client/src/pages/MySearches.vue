@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue'
 import { Pagination, PaginationList, PaginationPrev, PaginationNext } from '@/components/ui/pagination'
-import SelectionShell from '@/features/selection/SelectionShell.vue'
+import MainLayout from '@/layouts/MainLayout.vue'
 import { generationText, jobStatusLabels, requirementSummary, summarizeGeneration } from '@/features/searches/summary'
 import { useAuthStore } from '@/stores/auth'
 import { getMySearches, type SearchPage, type SearchTheme, type SearchArtwork } from '@/services/api/searches'
@@ -73,7 +73,7 @@ onMounted(() => load())
 </script>
 
 <template>
-  <SelectionShell>
+  <MainLayout>
     <main id="main-content" class="studio-page">
       <header class="flex flex-wrap items-center justify-between gap-4">
         <div class="space-y-2">
@@ -243,5 +243,5 @@ onMounted(() => load())
       description="本次检索中的方案与生成成果预览。"
       @update:open="value => { if (!value) expandedImage = undefined }"
     />
-  </SelectionShell>
+  </MainLayout>
 </template>

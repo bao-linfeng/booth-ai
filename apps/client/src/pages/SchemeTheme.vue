@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import SelectionShell from '@/features/selection/SelectionShell.vue'
+import MainLayout from '@/layouts/MainLayout.vue'
 import BoothIllustration from '@/features/selection/BoothIllustration.vue'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
@@ -255,7 +255,7 @@ function setDialogOpen(open: boolean) {
 </script>
 
 <template>
-  <SelectionShell>
+  <MainLayout>
     <main id="main-content" class="studio-page">
       <header class="studio-header">
         <Button as-child variant="ghost" class="-ml-3">
@@ -433,5 +433,5 @@ function setDialogOpen(open: boolean) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </SelectionShell>
+  </MainLayout>
 </template>

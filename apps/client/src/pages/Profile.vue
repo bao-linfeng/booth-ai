@@ -7,7 +7,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import CreditSignIn from '@/components/ui/CreditSignIn.vue'
-import SelectionShell from '@/features/selection/SelectionShell.vue'
+import MainLayout from '@/layouts/MainLayout.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -40,7 +40,7 @@ const formatExternalId = (id?: string) => {
 </script>
 
 <template>
-  <SelectionShell>
+  <MainLayout>
     <main id="main-content" class="studio-page">
     <header class="studio-header"><p class="studio-eyebrow">账户 / ACCOUNT</p><h1 class="studio-title">个人账户</h1></header>
     <div class="max-w-2xl space-y-6">
@@ -96,5 +96,5 @@ const formatExternalId = (id?: string) => {
     </Card>
     </div>
     </main>
-  </SelectionShell>
+  </MainLayout>
 </template>

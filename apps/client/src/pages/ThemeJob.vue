@@ -8,7 +8,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue'
-import SelectionShell from '@/features/selection/SelectionShell.vue'
+import MainLayout from '@/layouts/MainLayout.vue'
 import { cn } from '@/lib/utils'
 import { useAsyncJob } from '@/composables/useAsyncJob'
 import { createThemeJobEventsTicket, getThemeJob, openThemeJobEvents, saveThemeSelection, type ThemeJob } from '@/services/api/theme-jobs'
@@ -163,7 +163,7 @@ const failureReason = computed(() => {
 </script>
 
 <template>
-  <SelectionShell>
+  <MainLayout>
     <main id="main-content" class="studio-page">
       <header class="studio-header">
         <Button variant="ghost" class="-ml-3" @click="router.back()">
@@ -353,5 +353,5 @@ const failureReason = computed(() => {
       :title="`第 ${activeResultIndex + 1} 张主题效果`"
       :description="`共 ${jobData?.results.length ?? 0} 张生成效果。`"
     />
-  </SelectionShell>
+  </MainLayout>
 </template>

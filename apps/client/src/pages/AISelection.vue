@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { useAuthStore } from '@/stores/auth'
-import SelectionShell from '@/features/selection/SelectionShell.vue'
+import MainLayout from '@/layouts/MainLayout.vue'
 import RequirementForm from '@/features/selection/RequirementForm.vue'
 import RequirementField from '@/features/selection/RequirementField.vue'
 import SchemeCard from '@/features/selection/SchemeCard.vue'
@@ -677,7 +677,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <SelectionShell>
+  <MainLayout>
     <main id="main-content" class="studio-page">
       <section class="grid items-end gap-8 border-b pb-8 md:pb-10 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div class="space-y-5">
@@ -778,7 +778,7 @@ onMounted(() => {
         <p v-if="isPreview" class="text-xs text-muted-foreground">静态预览不提交真实需求。</p>
         <Button type="submit" class="w-full" :disabled="!canSubmitManual">继续填写完整申请</Button>
       </form></DialogContent></Dialog>
-  </SelectionShell>
+  </MainLayout>
 </template>
 
 <style scoped>

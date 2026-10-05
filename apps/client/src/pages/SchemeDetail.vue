@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import ImagePreviewDialog from "@/components/ImagePreviewDialog.vue";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import SelectionShell from "@/features/selection/SelectionShell.vue";
+import MainLayout from '@/layouts/MainLayout.vue'
 import SchemeGallery from "@/features/selection/SchemeGallery.vue";
 import { previewItems } from "@/features/selection/preview";
 import type { SchemeDetail } from "@/features/selection/types";
@@ -368,7 +368,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <SelectionShell>
+  <MainLayout>
     <main id="main-content" :style="{ '--scheme-actions-height': `${shortcutHeight}px` }" class="studio-page pb-[calc(var(--scheme-actions-height)+1.5rem)] md:pb-[calc(var(--scheme-actions-height)+1.5rem)] lg:pb-12">
       <header class="studio-header">
         <Button as-child variant="ghost" class="-ml-3">
@@ -570,5 +570,5 @@ onMounted(async () => {
         <Button v-if="errorState || preview" as-child><RouterLink to="/ai-selection">返回选型</RouterLink></Button>
       </section>
     </main>
-  </SelectionShell>
+  </MainLayout>
 </template>

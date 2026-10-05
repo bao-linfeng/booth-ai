@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import SelectionShell from '@/features/selection/SelectionShell.vue'
+import MainLayout from '@/layouts/MainLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getQuoteContext, submitQuote, submitManualRequest, type ManualRequest, type QuoteContext, type QuoteRequest, type ProjectReceipt } from '@/services/api/projects'
 import { getThemeJob } from '@/services/api/theme-jobs'
@@ -245,7 +245,7 @@ async function submitManual() {
 </script>
 
 <template>
-  <SelectionShell><main id="main-content" class="studio-page">
+  <MainLayout><main id="main-content" class="studio-page">
     <Button variant="ghost" as-child><RouterLink :to="manual ? '/ai-selection' : `/schemes/${encodeURIComponent(code)}`"><ArrowLeft class="mr-2 size-4" />{{ manual ? '返回智选' : '返回方案' }}</RouterLink></Button>
     <template v-if="receipt">
       <Card class="border-success/25"><CardContent class="space-y-6 p-6 md:p-12">
@@ -345,5 +345,5 @@ async function submitManual() {
         </CardContent></section></aside>
       </div>
     </template>
-  </main></SelectionShell>
+  </main></MainLayout>
 </template>
