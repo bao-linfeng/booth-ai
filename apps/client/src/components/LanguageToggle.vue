@@ -13,7 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { getLanguageList, type LanguageItem } from '@/services/api/language.api'
+import { getLanguageList, type LanguageItem } from '@/services/api/language'
 
 const { locale } = useI18n()
 

@@ -1,5 +1,5 @@
 import type { NavigationGuard } from 'vue-router'
-import { syncAuthApi } from '@/services/api/auth.api'
+import { syncAuth } from '@/services/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import pinia from '@/plugins/pinia/setup'
 
@@ -20,11 +20,9 @@ export const externalLoginGuard: NavigationGuard = async (to) => {
   authStore.clearAuth()
   if (typeof token === 'string' && token.trim() && typeof username === 'string' && username.trim()) {
     try {
-      const response = await syncAuthApi({ token, username })
-      if (response.code === 0) {
-        authStore.setLoginResult(response.data.accessToken, response.data.user)
-        return { path: to.path, query, hash: to.hash, replace: true }
-      }
+      const response = await syncAuth({ token, username })
+      authStore.setLoginResult(response.accessToken, response.user)
+      return { path: to.path, query, hash: to.hash, replace: true }
     } catch {}
   }
   return { path: '/auth/sign-in', query: { redirect: cleanedUrl }, replace: true }

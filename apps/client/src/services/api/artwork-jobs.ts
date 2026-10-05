@@ -1,7 +1,6 @@
 import { API_BASE_URL, apiFetch } from '@/lib/api-client'
 
 export type Direction = 'front' | 'back' | 'left' | 'right'
-export const directionLabels: Record<Direction, string> = { front: '正面', back: '背面', left: '左侧', right: '右侧' }
 export interface ArtworkContext { schemeCode: string; themeJobId: string; resultId: string; selectionRevision: number }
 export interface ArtworkOffer { id: string; expiresAt: string; unitCredits: number; maxCredits: number; settlementRule: 'per_usable_direction' }
 export interface ArtworkReceipt {

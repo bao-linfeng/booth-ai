@@ -12,6 +12,7 @@ import MainLayout from '@/layouts/MainLayout.vue'
 import { cn } from '@/lib/utils'
 import { useAsyncJob } from '@/composables/useAsyncJob'
 import { createThemeJobEventsTicket, getThemeJob, openThemeJobEvents, saveThemeSelection, type ThemeJob } from '@/services/api/theme-jobs'
+import { failureReasonText, phaseText as getPhaseText, themeJobStatusLabels } from '@/features/theme-jobs/labels'
 
 const route = useRoute()
 const router = useRouter()
@@ -134,31 +135,12 @@ function continueWithSelection(destination: 'quote' | 'artwork') {
 
 const statusText = computed(() => {
   if (!jobData.value) return '加载中'
-  const labels: Record<ThemeJob['status'], string> = {
-    pending: '等待处理', queued: '排队中', running: '生成中', settling: '结算中',
-    succeeded: '生成完成', partially_succeeded: '部分完成', failed: '生成失败',
-  }
-  return labels[jobData.value.status]
+  return themeJobStatusLabels[jobData.value.status]
 })
 
-const phaseText = computed(() => {
-  if (!jobData.value) return '加载中...'
-  if (jobData.value.status === 'queued') return '排队中'
-  if (jobData.value.status === 'running') return 'AI 正在生成'
-  if (jobData.value.status === 'settling') return '正在结算'
-  return jobData.value.phase || '请稍候'
-})
+const phaseText = computed(() => getPhaseText(jobData.value))
 
-const failureReason = computed(() => {
-  const reason = jobData.value?.failure?.reason
-  if (!reason) return '未知错误'
-  const map: Record<string, string> = {
-    'INSUFFICIENT_CREDITS': '积分不足',
-    'PROVIDER_ERROR': 'AI 服务商暂不可用',
-    'INTERNAL_ERROR': '系统内部错误'
-  }
-  return map[reason] || reason
-})
+const failureReason = computed(() => failureReasonText(jobData.value?.failure?.reason))
 
 </script>
 

@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { getCreditBalanceApi, signInForCreditsApi } from '@/services/api/credits'
+import { getCreditBalance, signInForCredits } from '@/services/api/credits'
 
 export function useCredits() {
   const balance = ref<number | null>(null)
@@ -16,7 +16,7 @@ export function useCredits() {
   async function fetchBalance() {
     loading.value = true
     try {
-      const data = await getCreditBalanceApi()
+      const data = await getCreditBalance()
       balance.value = data.balance
     } catch (e) {
       console.error('Failed to fetch balance', e)
@@ -28,7 +28,7 @@ export function useCredits() {
   async function signIn(): Promise<{ success: boolean; alreadySigned?: boolean; amount?: number }> {
     loading.value = true
     try {
-      const data = await signInForCreditsApi()
+      const data = await signInForCredits()
       balance.value = data.balance
       signedInToday.value = true
       localStorage.setItem(lastSignInKey, new Date().toLocaleDateString())

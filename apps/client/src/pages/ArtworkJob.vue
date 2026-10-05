@@ -7,7 +7,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import StatusBadge from '@/components/StatusBadge.vue'
 import MainLayout from '@/layouts/MainLayout.vue'
 import { useAuthStore } from '@/stores/auth'
-import { createArtworkJob, createArtworkJobEventsTicket, directionLabels, downloadArtwork, getArtworkJob, getArtworkJobs, getArtworkOffer, openArtworkJobEvents, type ArtworkContext, type ArtworkJob, type ArtworkOffer, type ArtworkSubmission } from '@/services/api/artwork-jobs'
+import { createArtworkJob, createArtworkJobEventsTicket, downloadArtwork, getArtworkJob, getArtworkJobs, getArtworkOffer, openArtworkJobEvents, type ArtworkContext, type ArtworkJob, type ArtworkOffer, type ArtworkSubmission } from '@/services/api/artwork-jobs'
+import { directionLabels, reasonLabels } from '@/features/artwork-jobs/labels'
 import { getThemeJob } from '@/services/api/theme-jobs'
 import { bindProjectArtworks, getMyProject, type MyProjectDetail } from '@/services/api/projects'
 import { useAsyncJob } from '@/composables/useAsyncJob'
@@ -34,8 +35,6 @@ const projectId = computed(() => typeof route.query.projectId === 'string' ? rou
 const ready = computed(() => job.value?.deliveryStatus === 'ready')
 const draftKey = computed(() => `booth:artwork-request:${auth.currentUser?.id}:${context.value?.themeJobId}:${context.value?.resultId}:${context.value?.selectionRevision}`)
 const canBind = computed(() => ready.value && project.value && !['won', 'lost', 'closed'].includes(project.value.status) && project.value.materialsStatus.artworks !== 'available')
-const reasonLabels: Record<string, string> = { ARTWORK_RESOLUTION_TOO_LOW: '输出像素低于高清标准', ARTWORK_FORMAT_INVALID: '输出格式无法验收', ARTWORK_IMAGE_INVALID: '图片无法读取或解码', ARTWORK_SIZE_INVALID: '图片大小不合格', MODEL_UNAVAILABLE: '所选模型已不可用', PROVIDER_OUTCOME_UNKNOWN: '服务商未返回可确认的结果', PROCESSING_FAILED: '处理失败' }
-
 function statusOf(failure: unknown) { return (failure as { response?: { status?: number } }).response?.status }
 function login() { void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } }) }
 function alive(version: number) { return !destroyed && version === epoch }

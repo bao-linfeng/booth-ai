@@ -1,4 +1,4 @@
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch } from '@/lib/api-client'
 
 export interface ClientBomItem {
   id: string;
@@ -21,15 +21,21 @@ export interface ClientBomResponse {
   items: ClientBomItem[];
 }
 
-export async function getClientBomApi(schemeCode: string): Promise<ClientBomResponse> {
-  const res = await apiFetch<ClientBomResponse>(
-    `/api/v1/client/schemes/${encodeURIComponent(schemeCode)}/bill-of-materials`
-  );
-  return res;
+export async function getClientBom(schemeCode: string): Promise<ClientBomResponse> {
+  const response = await apiFetch<{ code: number; data: ClientBomResponse }>(
+    `/api/v1/client/schemes/${encodeURIComponent(schemeCode)}/bill-of-materials`,
+  )
+  return response.data
 }
 
-export async function downloadClientBomApi(schemeCode: string, revision: number): Promise<Response> {
-  const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
-  const url = `${baseUrl}/api/v1/client/schemes/${encodeURIComponent(schemeCode)}/bill-of-materials/download?revision=${revision}`;
-  return fetch(url);
+export async function downloadClientBom(schemeCode: string, revision: number): Promise<Blob> {
+  const response = await apiFetch.raw<Blob, 'blob'>(
+    `/api/v1/client/schemes/${encodeURIComponent(schemeCode)}/bill-of-materials/download`,
+    { query: { revision }, responseType: 'blob', timeout: 120000, retry: 0 },
+  )
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!response._data?.size || (!contentType.includes('spreadsheetml') && !contentType.includes('spreadsheet'))) {
+    throw new Error('Invalid BOM download')
+  }
+  return response._data
 }

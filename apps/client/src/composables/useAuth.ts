@@ -1,8 +1,8 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { loginApi, logoutApi } from '@/services/api/auth.api'
-import { fetchCurrentUser } from '@/services/api/user.api'
+import { login as loginUser, logout } from '@/services/api/auth'
+import { fetchCurrentUser } from '@/services/api/user'
 
 export function useAuth() {
   const router = useRouter()
@@ -15,12 +15,8 @@ export function useAuth() {
     loading.value = true
     error.value = null
     try {
-      const res = await loginApi({ username, password })
-      if (res.code !== 0) {
-        error.value = res.message || '登录失败'
-        return
-      }
-      authStore.setLoginResult(res.data.accessToken, res.data.user)
+      const result = await loginUser({ username, password })
+      authStore.setLoginResult(result.accessToken, result.user)
       const redirect = route.query.redirect
       await router.push(typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/')
     } catch {
@@ -43,7 +39,7 @@ export function useAuth() {
   }
 
   async function logout() {
-    try { await logoutApi() } catch {}
+    try { await logout() } catch {}
     authStore.clearAuth()
     await router.push('/auth/sign-in')
   }
@@ -51,13 +47,8 @@ export function useAuth() {
   async function restoreSession() {
     if (!authStore.token) return
     try {
-      const res = await fetchCurrentUser()
-      if (res.code === 0) {
-        authStore.setCurrentUser(res.data)
-      } else {
-        authStore.clearAuth()
-        await router.push('/auth/sign-in')
-      }
+      const user = await fetchCurrentUser()
+      authStore.setCurrentUser(user)
     } catch {
       authStore.clearAuth()
     }

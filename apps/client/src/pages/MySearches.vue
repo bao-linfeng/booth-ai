@@ -12,7 +12,7 @@ import MainLayout from '@/layouts/MainLayout.vue'
 import { generationText, jobStatusLabels, requirementSummary, summarizeGeneration } from '@/features/searches/summary'
 import { useAuthStore } from '@/stores/auth'
 import { getMySearches, type SearchPage, type SearchTheme, type SearchArtwork } from '@/services/api/searches'
-import { directionLabels } from '@/services/api/artwork-jobs'
+import { directionLabels } from '@/features/artwork-jobs/labels'
 
 const router = useRouter()
 const authStore = useAuthStore()

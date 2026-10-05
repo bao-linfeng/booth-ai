@@ -18,6 +18,7 @@ import { getThemeModels, type ThemeModel } from '@/services/api/theme-models'
 import type { SchemeDetail } from '@/features/selection/types'
 import { useAuthStore } from '@/stores/auth'
 import { useCredits } from '@/composables/useCredits'
+import { blockedReasonText as getBlockedReasonText } from '@/features/theme-jobs/labels'
 
 const route = useRoute()
 const router = useRouter()
@@ -72,11 +73,7 @@ const parameterKey = computed(() => JSON.stringify(parameters.value))
 const canFetchOffer = computed(() => !isPreview.value && isLoggedIn.value && !!selectedAssetId.value && !!industryId.value && !!styleId.value && !invalidColors.value && !keywordError.value)
 const blockedReasonText = computed(() => {
   if (!themeOffer.value || themeOffer.value.available) return ''
-  const reasons = themeOffer.value.blockedReasons
-  if (reasons.includes('MODEL_UNAVAILABLE')) return '平台生成服务暂不可用，请稍后重试。'
-  if (reasons.includes('MASK_UNAVAILABLE')) return '该视角暂无可用编辑区域，请选择其他原图。'
-  if (reasons.includes('TEMPLATE_UNAVAILABLE')) return '当前风格暂不可用，请调整视觉偏好。'
-  return '当前条件暂不可生成，请调整偏好或稍后重试。'
+  return getBlockedReasonText(themeOffer.value.blockedReasons)
 })
 let offerRequest = 0
 let offerTimer: ReturnType<typeof setTimeout> | undefined

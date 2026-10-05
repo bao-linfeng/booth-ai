@@ -4,13 +4,10 @@ import App from './App.vue'
 import router from './router'
 import { initializeTheme } from '@/components/theming/themeManager'
 import './components/theming/themes.css'
-import { useCollecty } from '@/composables/useCollecty'
 import { setupI18n } from '@/plugins/i18n/setup'
 import { setupPinia } from '@/plugins/pinia/setup'
 
-// Initialize theme and collecty store
 initializeTheme()
-useCollecty()
 
 const app = createApp(App)
 setupPinia(app)

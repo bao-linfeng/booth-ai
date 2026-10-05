@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
-import { useAuth } from '@/composables/use-auth'
+import { useAuth } from '@/composables/useAuth'
 import { useCredits } from '@/composables/useCredits'
 
 const route = useRoute()

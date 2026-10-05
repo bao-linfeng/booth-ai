@@ -24,8 +24,8 @@ import { previewItems } from "@/features/selection/preview";
 import type { SchemeDetail } from "@/features/selection/types";
 import { apiFetch } from "@/lib/api-client";
 import {
-  getClientBomApi,
-  downloadClientBomApi,
+  getClientBom,
+  downloadClientBom,
   type ClientBomResponse,
 } from "@/services/api/bom";
 import { downloadSchemeArchive, getSchemeDeliverables, getSchemeDownload, type SchemeAssetType, type SchemeDeliverable } from "@/services/api/scheme-assets";
@@ -225,7 +225,7 @@ async function fetchBom() {
   bomError.value = false;
   bomRevisionChanged.value = false;
   try {
-    bomData.value = await getClientBomApi(schemeCode);
+    bomData.value = await getClientBom(schemeCode);
   } catch (e: any) {
     if (e?.status === 409 || e?.response?.status === 409) {
       bomData.value = null;
@@ -243,24 +243,7 @@ async function handleBomDownload() {
   bomDownloading.value = true;
   bomRevisionChanged.value = false;
   try {
-    const response = await downloadClientBomApi(schemeCode, revision);
-    if (!response.ok) {
-      const contentType = response.headers.get('content-type') ?? '';
-      if (contentType.includes('json')) {
-        const err = await response.json();
-        if (err?.error?.reason === 'BOM_REVISION_CHANGED') {
-          bomRevisionChanged.value = true;
-          return;
-        }
-      }
-      throw new Error('下载失败');
-    }
-    // 严格校验 MIME，防止把非 XLSX 内容保存成文件
-    const contentType = response.headers.get('content-type') ?? '';
-    if (!contentType.includes('spreadsheetml') && !contentType.includes('spreadsheet')) {
-      throw new Error('下载内容类型异常');
-    }
-    const blob = await response.blob();
+    const blob = await downloadClientBom(schemeCode, revision);
     const filename = `${schemeCode.replace(/[\\/:*?"<>|]/g, '_')}@简化清单.xlsx`;
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
