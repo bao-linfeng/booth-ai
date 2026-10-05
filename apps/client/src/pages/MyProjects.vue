@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, Loader2 } from 'lucide-vue-next'
-import { cva } from 'class-variance-authority'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -15,7 +15,7 @@ import { closedStatuses, dateRange, joinParts, nextSteps, regionName, summarizeR
 import type { Catalog } from '@/features/selection/types'
 import { useAuthStore } from '@/stores/auth'
 import { getCatalogOptions } from '@/services/api/catalog'
-import { getMyProject, getMyProjects, statusLabels, type MyProjectDetail, type ProjectPage, type ProjectStatus } from '@/services/api/projects'
+import { getMyProject, getMyProjects, statusLabels, type MyProjectDetail, type ProjectPage } from '@/services/api/projects'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,19 +33,6 @@ const date = (value: string) => new Date(value).toLocaleString('zh-CN')
 const materialLabels: Record<string, string> = { available: '已附带', pending: '待补充', missing: '暂无资料' }
 const materialTypeLabels: Record<string, string> = { bom: '物料清单', drawings: '三视图', artworks: '四面素材' }
 const sourceLabels = { quote_request: '报价申请', manual_request: '人工需求' }
-const statusPill = cva('inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-xs font-medium', {
-  variants: {
-    status: {
-      pending: 'border-warning/25 bg-warning/10 text-warning',
-      following: 'border-info/25 bg-info/10 text-info',
-      quoted: 'border-info/25 bg-info/10 text-info',
-      won: 'border-success/25 bg-success/10 text-success',
-      lost: 'bg-muted text-muted-foreground',
-      closed: 'bg-muted text-muted-foreground',
-    } satisfies Record<ProjectStatus, string>,
-  },
-})
-
 const exhibitionPlace = (exhibition: MyProjectDetail['request']['exhibition']) =>
   joinParts([regionName(exhibition?.countryCode), exhibition?.city], ' / ')
 const requirement = computed(() => summarizeRequirement(detail.value?.request.confirmedRequirements, catalog.value))
@@ -164,7 +151,7 @@ watch(() => route.params.projectId, () => { detail.value = undefined; list.value
                   {{ joinParts([sourceLabels[project.sourceType], project.schemeCode ? `方案 ${project.schemeCode}` : '尚未关联方案', joinParts([regionName(project.exhibition?.countryCode), project.exhibition?.city], ' / '), dateRange(project.exhibition?.startDate, project.exhibition?.endDate)]) }}
                 </p>
               </div>
-              <span :class="statusPill({ status: project.status })">{{ statusLabels[project.status] }}</span>
+              <StatusBadge domain="project" :status="project.status" class="rounded-full px-3 py-1" />
             </div>
             <p class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="font-medium">下一步：</span>{{ nextSteps[project.status] }}</p>
             <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -189,7 +176,7 @@ watch(() => route.params.projectId, () => { detail.value = undefined; list.value
                   <h2 class="break-words text-2xl font-semibold">{{ detail.request.exhibition?.name ?? '历史人工需求' }}</h2>
                   <p class="text-sm text-muted-foreground">{{ sourceLabels[detail.sourceType] }} · 项目编号 <span class="font-mono">{{ detail.projectNo }}</span></p>
                 </div>
-                <span :class="statusPill({ status: detail.status })">{{ statusLabels[detail.status] }}</span>
+                <StatusBadge domain="project" :status="detail.status" class="rounded-full px-3 py-1" />
               </div>
               <p class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="font-medium">下一步：</span>{{ nextSteps[detail.status] }}</p>
             </CardContent>

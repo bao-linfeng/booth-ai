@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Loader2, CheckCircle2, CircleAlert, ImageIcon } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue'
@@ -175,12 +176,11 @@ const failureReason = computed(() => {
             <p class="text-sm text-muted-foreground">先预览对比，再选定用于报价与四面素材的效果。</p>
           </div>
           <div v-if="jobData" class="flex flex-wrap gap-2">
-            <Badge variant="outline" :class="cn('gap-1.5 py-1', isFailed ? 'border-destructive/30 text-destructive' : isPartial ? 'border-warning/30 text-warning' : isPending ? 'text-muted-foreground' : 'border-success/30 text-success')">
+            <StatusBadge domain="job" :status="jobData.status" :label="statusText" class="gap-1.5 py-1">
               <Loader2 v-if="isPending" class="size-3.5 animate-spin" />
               <CircleAlert v-else-if="isFailed || isPartial" class="size-3.5" />
               <CheckCircle2 v-else class="size-3.5" />
-              {{ statusText }}
-            </Badge>
+            </StatusBadge>
             <Badge v-if="jobData.credits.status === 'settled'" variant="secondary">积分已结算</Badge>
           </div>
         </div>

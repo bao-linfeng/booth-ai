@@ -2,14 +2,14 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { History, Search, ArrowRight, Image, Loader2, Palette, PanelsTopLeft, ChevronDown } from 'lucide-vue-next'
-import { cva } from 'class-variance-authority'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue'
 import { Pagination, PaginationList, PaginationPrev, PaginationNext } from '@/components/ui/pagination'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
-import { generationText, jobStatusLabels, jobTone, requirementSummary, summarizeGeneration } from '@/features/searches/summary'
+import { generationText, jobStatusLabels, requirementSummary, summarizeGeneration } from '@/features/searches/summary'
 import { useAuthStore } from '@/stores/auth'
 import { getMySearches, type SearchPage, type SearchTheme, type SearchArtwork } from '@/services/api/searches'
 import { directionLabels } from '@/services/api/artwork-jobs'
@@ -27,16 +27,6 @@ const expanded = ref<Record<string, boolean>>({})
 const expandedImage = ref<{ url: string; label: string }>()
 
 const formatDate = (isoStr: string) => new Date(isoStr).toLocaleString('zh-CN')
-const toneClass = cva('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium', {
-  variants: {
-    tone: {
-      done: 'border-success/25 bg-success/10 text-success',
-      active: 'border-info/25 bg-info/10 text-info',
-      failed: 'border-destructive/25 bg-destructive/10 text-destructive',
-    },
-  },
-})
-
 function getJobLabel(job: SearchTheme | SearchArtwork) {
   if ('deliveryStatus' in job && job.deliveryStatus === 'ready') return '四面齐全'
   return jobStatusLabels[job.status]
@@ -194,7 +184,7 @@ onMounted(() => load())
                     <div class="min-w-0 space-y-2 text-sm">
                       <div class="flex flex-wrap items-center gap-2">
                         <span class="flex items-center gap-1.5 font-medium"><Palette class="size-4 text-primary" aria-hidden="true" />AI 换主题</span>
-                        <span v-if="item.theme" :class="toneClass({ tone: jobTone(item.theme.status) })">{{ getJobLabel(item.theme) }}</span>
+                        <StatusBadge v-if="item.theme" domain="job" :status="item.theme.status" :label="getJobLabel(item.theme)" />
                         <span v-else class="text-xs text-muted-foreground">未换主题</span>
                       </div>
                       <div v-if="item.theme" class="flex flex-wrap items-center gap-3">
@@ -211,7 +201,7 @@ onMounted(() => load())
                     <div class="min-w-0 space-y-2 text-sm">
                       <div class="flex flex-wrap items-center gap-2">
                         <span class="flex items-center gap-1.5 font-medium"><PanelsTopLeft class="size-4 text-primary" aria-hidden="true" />四面素材</span>
-                        <span v-if="item.artwork" :class="toneClass({ tone: jobTone(item.artwork.status) })">{{ getJobLabel(item.artwork) }}</span>
+                        <StatusBadge v-if="item.artwork" domain="job" :status="item.artwork.status" :label="getJobLabel(item.artwork)" />
                         <span v-else class="text-xs text-muted-foreground">未生成四面素材</span>
                       </div>
                       <div v-if="item.artwork" class="space-y-2">
