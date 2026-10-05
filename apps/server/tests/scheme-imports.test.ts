@@ -6,8 +6,19 @@ import type pg from 'pg';
 import { commitImport } from '../src/modules/schemes/imports/commit.js';
 import { previewImport } from '../src/modules/schemes/imports/preview.js';
 import type { ImportRow } from '../src/modules/schemes/imports/types.js';
+import { parseWorkbook } from '../src/modules/schemes/imports/workbook.js';
+
+async function templateItems() {
+  const rows = await parseWorkbook(await readFile(new URL('../../../docs/source/灵通展台方案打标模板.xlsx', import.meta.url)));
+  const fields: Record<string, keyof ImportRow> = { product_system: 'productSystemId', style: 'styleId', industry: 'industryIds', budget_tier: 'budgetTierId', functional_zone: 'zoneIds', key_feature: 'featureIds' };
+  return Object.fromEntries(Object.entries(fields).map(([code, field]) => [code, [...new Set(rows.flatMap(row => {
+    const value = row[field];
+    return Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+  }))].map(label => ({ id: '00000000-0000-4000-8000-000000000001', label, itemValue: label }))]));
+}
 
 test('the scheme template preview stores JSON rows and summary for commit', async () => {
+  const dictionaryItems = await templateItems();
   const file = new URL('../../../docs/source/灵通展台方案打标模板.xlsx', import.meta.url);
   const buffer = await readFile(file);
   let savedRows: unknown;
@@ -16,8 +27,7 @@ test('the scheme template preview stores JSON rows and summary for commit', asyn
     query: async (sql: string, params: unknown[]) => {
       if (sql.includes('SELECT code FROM schemes')) return { rows: [] };
       if (sql.includes('FROM dictionary_items')) {
-        const labels = params[1] as string[];
-        return { rows: labels.map(label => ({ id: '00000000-0000-4000-8000-000000000001', label, itemValue: label })) };
+        return { rows: dictionaryItems[String(params[0])] ?? [] };
       }
       if (sql.includes('INSERT INTO scheme_imports')) {
         assert.equal(params[0], '灵通展台方案打标模板.xlsx');
@@ -34,6 +44,8 @@ test('the scheme template preview stores JSON rows and summary for commit', asyn
   assert.equal(result.summary.skipped, 37);
   assert.equal(result.rows.length, 48);
   assert.ok(result.rows.every(row => row.status === 'valid'));
+  assert.equal(result.rows[0]?.data?.lengthMm, 6000);
+  assert.equal(result.rows[0]?.data?.widthMm, 3000);
   assert.equal(typeof savedRows, 'string');
   assert.deepEqual(JSON.parse(savedRows as string), result.rows);
   assert.equal(typeof savedSummary, 'string');
@@ -41,6 +53,7 @@ test('the scheme template preview stores JSON rows and summary for commit', asyn
 });
 
 test('preview snapshots duplicate revisions in the stored rows', async () => {
+  const dictionaryItems = await templateItems();
   const buffer = await readFile(new URL('../../../docs/source/灵通展台方案打标模板.xlsx', import.meta.url));
   let duplicateCode: string | undefined;
   let savedRows: string | undefined;
@@ -55,7 +68,7 @@ test('preview snapshots duplicate revisions in the stored rows', async () => {
         return { rows: [{ code: duplicateCode, revision: 7 }] };
       }
       if (sql.includes('FROM dictionary_items')) {
-        return { rows: (params[1] as string[]).map(label => ({ id: '00000000-0000-4000-8000-000000000001', label, itemValue: label })) };
+        return { rows: dictionaryItems[String(params[0])] ?? [] };
       }
       if (sql.includes('INSERT INTO scheme_imports')) {
         savedRows = params[1] as string;
@@ -131,7 +144,7 @@ test('commit rejects duplicate rows when the preview revision is stale or missin
 test('commit isolates failing rows with savepoints and creates generated dictionary items for written rows', async () => {
   const base: ImportRow = {
     code: 'S1', name: 'Scheme', parentCode: null, widthMm: 3000, lengthMm: 6000, areaM2: 18,
-    heightMm: null, openingCount: 2, productSystemId: null, styleId: null, industryIds: null,
+    heightMm: 4500, openingCount: 2, productSystemId: null, styleId: null, industryIds: null,
     budgetTierId: null, zoneIds: null, featureIds: null, description: null, keywords: null,
     verificationStatus: 'unverified', notes: null,
   };
@@ -163,10 +176,9 @@ test('commit isolates failing rows with savepoints and creates generated diction
   ]);
   assert.equal(queries.filter(sql => sql === 'SAVEPOINT row_save').length, 3);
   assert.equal(queries.filter(sql => sql === 'ROLLBACK TO SAVEPOINT row_save').length, 2);
-  // 仅已写入的 S1 参与字典生成：开口面数 2、展位长 6000、展位宽 3000、展位面积 18
   assert.deepEqual(itemInserts.map(params => [params[0], params[1]]), [
-    ['opening_count', '2'], ['booth_length', '6000'], ['booth_width', '3000'], ['booth_area', '18'],
+    ['opening_count', '2'], ['booth_size', '6000-3000-4500'],
   ]);
-  assert.equal(result.dictionaryItemsCreated, 4);
+  assert.equal(result.dictionaryItemsCreated, 2);
   assert.deepEqual(JSON.parse(savedResult!), result);
 });

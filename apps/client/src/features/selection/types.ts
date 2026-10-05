@@ -10,6 +10,7 @@ export interface PendingConfirmation {
 }
 
 export interface Requirement {
+  boothSpaceId: string | null
   lengthMm: number | null
   widthMm: number | null
   maxHeightMm: number | null
@@ -29,10 +30,9 @@ export interface Requirement {
   applicabilityAnswers: Record<string, boolean>
 }
 
-export interface Option { id: string; label: string }
+export interface Option { id: string; label: string; value?: string; labels?: Record<string, string>; aliases?: { locale: string; text: string }[] }
 export interface BoothSpace { id: string; label: string; lengthMm: number; widthMm: number; heightMm: number }
 export interface Catalog {
-  dimensions: { lengthMm: number[]; widthMm: number[]; maxHeightMm: number[]; areaM2: number[] }
   boothSpaces: BoothSpace[]
   openingCounts: Option[]
   productSystems: Option[]
@@ -105,6 +105,7 @@ export interface SchemeDetail {
 }
 
 export const emptyRequirement = (): Requirement => ({
+  boothSpaceId: null,
   lengthMm: null, widthMm: null, maxHeightMm: null, areaM2: null,
   openingCount: null, productSystemId: null,
   styleIds: [], industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],

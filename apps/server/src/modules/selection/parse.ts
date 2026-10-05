@@ -1,4 +1,5 @@
 import { emptyRequirement, rulesVersion, type Catalog, type Option, type Requirement } from './domain.js';
+import { dictionaryTerms, normalizeDictionaryTerm } from './dictionary-language.js';
 
 type FieldSource = { source: 'form' | 'text' | 'derived'; evidence?: string };
 type Override = { field: string; previousValue: unknown; value: unknown; evidence: string };
@@ -33,6 +34,7 @@ function createContext(text: string, form: Requirement): ParseContext {
     text: text.trim(),
     requirement, fieldSources, overrides, clarifications, consumed,
     set(field, value, evidence) {
+      if ((field === 'lengthMm' || field === 'widthMm') && requirement[field] !== value) requirement.boothSpaceId = null;
       if (JSON.stringify(requirement[field]) !== JSON.stringify(value)) {
         overrides.push({ field, previousValue: requirement[field], value, evidence });
       }
@@ -49,6 +51,7 @@ export function parseRequirement(text: string, form: Requirement, catalog: Catal
   const ctx = createContext(text, form);
 
   parseDimensions(ctx);
+  parseBoothSize(ctx, catalog);
   const areaMentioned = parseArea(ctx);
   flagAmbiguousDimensions(ctx);
   parseOpenings(ctx);
@@ -82,8 +85,8 @@ export function parseRequirement(text: string, form: Requirement, catalog: Catal
 // ---------- 尺寸 / 面积 / 开口 ----------
 
 function parseDimensions(ctx: ParseContext) {
-  for (const [field, label] of [['lengthMm', '(?:展位)?长(?:度)?'], ['widthMm', '(?:展位)?宽(?:度)?'], ['maxHeightMm', '(?:场馆)?限高']] as const) {
-    const matches = [...ctx.text.matchAll(new RegExp(`${label}\\s*(?:为|是|改为|改成|=|：)?\\s*(\\d+(?:\\.\\d+)?)\\s*(毫米|厘米|mm|cm|米|m)(?![a-z])`, 'gi'))];
+  for (const [field, label] of [['lengthMm', '(?:(?:展位)?长(?:度)?|\\blength|長さ|間口)'], ['widthMm', '(?:(?:展位)?宽(?:度)?|\\bwidth|奥行き)'], ['maxHeightMm', '(?:(?:场馆)?限高|\\b(?:max(?:imum)? height|height limit)|高さ制限|制限高さ)']] as const) {
+    const matches = [...ctx.text.matchAll(new RegExp(`${label}\\s*(?:为|是|改为|改成|is|=|:|：|は)?\\s*(\\d+(?:\\.\\d+)?)\\s*(毫米|厘米|mm|cm|米|meters?|metres?|メートル|m)(?![a-z])`, 'gi'))];
     const values = matches.map(match => Number(match[1]) * (/毫米|mm/i.test(match[2]!) ? 1 : /厘米|cm/i.test(match[2]!) ? 10 : 1000));
 
     if (new Set(values).size > 1) {
@@ -98,6 +101,21 @@ function parseDimensions(ctx: ParseContext) {
     }
     matches.forEach(ctx.consume);
   }
+}
+
+function parseBoothSize(ctx: ParseContext, catalog: Catalog): void {
+  const matches = [...ctx.text.matchAll(/(?:方案高(?:度)?|(?<!限)(?<!度)高(?:度)?|\bheight|高さ)\s*(?:为|是|is|=|:|：|は)?\s*(\d+(?:\.\d+)?)\s*(毫米|厘米|mm|cm|米|meters?|metres?|メートル|m)(?![a-z])/gi)]
+    .filter(match => !ctx.consumed.some(([start, end]) => match.index! < end && match.index! + match[0].length > start));
+  if (!matches.length) return;
+  const heights = [...new Set(matches.map(match => Number(match[1]) * (/毫米|mm/i.test(match[2]!) ? 1 : /厘米|cm/i.test(match[2]!) ? 10 : 1000)))];
+  if (ctx.fieldSources.lengthMm?.source !== 'text' || ctx.fieldSources.widthMm?.source !== 'text' || heights.length !== 1) {
+    ctx.clarify('boothSpaceId', '方案高度须与明确的长、宽一起选择完整尺寸，请确认。');
+  } else {
+    const size = catalog.boothSpaces.find(space => space.lengthMm === ctx.requirement.lengthMm && space.widthMm === ctx.requirement.widthMm && space.heightMm === heights[0]);
+    if (size) ctx.set('boothSpaceId', size.id, matches[0]![0]);
+    else ctx.clarify('boothSpaceId', '没有对应的完整方案尺寸，请选择已有尺寸或转人工确认。');
+  }
+  matches.forEach(ctx.consume);
 }
 
 /** @returns 原文是否出现过面积表述，供后续与长宽乘积做冲突校验。 */
@@ -139,8 +157,8 @@ function parseOpenings(ctx: ParseContext) {
 type DictionaryField = 'productSystemId' | 'styleIds' | 'industryIds' | 'budgetTierId' | 'zoneIds' | 'featureIds';
 type DictionaryHits = { found: string[]; required: string[]; excluded: string[] };
 
-const NEGATIVE_PREFIX = /(?:不要|不需要|禁止|不能有|不含|不能包含|无)\s*$/;
-const STRONG_PREFIX = /(?:必须|务必|一定要)(?:有|包含|带)?\s*$/;
+const NEGATIVE_PREFIX = /(?:不要|不需要|禁止|不能有|不含|不能包含|无|\bno|\bwithout|\bexclude|\b(?:do not|don't)\s+(?:want|need|include))\s*$/i;
+const STRONG_PREFIX = /(?:必须|务必|一定要)(?:有|包含|带)?\s*$|\b(?:must have|must include|required)\s*$/i;
 
 function parseDictionaries(ctx: ParseContext, catalog: Catalog) {
   for (const [field, options] of [
@@ -159,28 +177,59 @@ function parseDictionaries(ctx: ParseContext, catalog: Catalog) {
 function scanDictionary(ctx: ParseContext, field: DictionaryField, options: Option[]): DictionaryHits {
   const hits: DictionaryHits = { found: [], required: [], excluded: [] };
   const supportsTagConstraints = field === 'zoneIds' || field === 'featureIds';
-
-  for (const option of options) {
-    let start = 0;
-    while (start < ctx.text.length) {
-      const index = ctx.text.indexOf(option.label, start);
-      if (index < 0) break;
-
-      const prefix = ctx.text.slice(Math.max(0, index - 10), index).split(/[，,。；;]/).at(-1) ?? '';
-      const negative = NEGATIVE_PREFIX.test(prefix);
-      const strong = STRONG_PREFIX.test(prefix);
-
-      if (supportsTagConstraints) {
-        (negative ? hits.excluded : strong ? hits.required : hits.found).push(option.id);
-      } else if (negative || strong) {
-        ctx.clarify(field, `“${prefix}${option.label}”包含强约束，请明确确认条件。`);
-      } else {
-        hits.found.push(option.id);
+  let normalized = '';
+  const offsets: { start: number; end: number }[] = [];
+  let offset = 0;
+  for (const char of ctx.text) {
+    const value = char.normalize('NFKC').toLowerCase();
+    for (let index = 0; index < value.length; index++) {
+      const current = /\s/u.test(value[index]!) ? ' ' : value[index]!;
+      if (current === ' ' && normalized.endsWith(' ')) offsets[offsets.length - 1]!.end = offset + char.length;
+      else {
+        normalized += current;
+        offsets.push({ start: offset, end: offset + char.length });
       }
-
-      ctx.consumeRange(index, index + option.label.length);
-      start = index + option.label.length;
     }
+    offset += char.length;
+  }
+  const matches: { start: number; end: number; id: string }[] = [];
+  for (const option of options) for (const term of dictionaryTerms(option)) {
+    const word = normalizeDictionaryTerm(term);
+    if (!word) continue;
+    const isName = [option.label, ...Object.values(option.labels ?? {}), ...(option.aliases ?? []).map(alias => alias.text)]
+      .some(name => normalizeDictionaryTerm(name) === word);
+    if (!isName && normalizeDictionaryTerm(ctx.text) !== word) continue;
+    let start = 0;
+    while (start < normalized.length) {
+      const index = normalized.indexOf(word, start);
+      if (index < 0) break;
+      start = index + word.length;
+      if ((/^[a-z0-9]/i.test(word) && /[a-z0-9_]/i.test(normalized[index - 1] ?? ''))
+        || (/[a-z0-9]$/i.test(word) && /[a-z0-9_]/i.test(normalized[start] ?? ''))) continue;
+      matches.push({ start: offsets[index]!.start, end: offsets[start - 1]!.end, id: option.id });
+    }
+  }
+  const ordered = matches.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
+  const accepted: typeof matches = [];
+  for (const match of ordered) {
+    if (accepted.some(other => other.start <= match.start && other.end >= match.end && (other.start !== match.start || other.end !== match.end))) continue;
+    accepted.push(match);
+  }
+  for (const match of accepted) {
+    const same = accepted.filter(other => other.start === match.start && other.end === match.end);
+    if (new Set(same.map(other => other.id)).size > 1) {
+      ctx.clarify(field, `“${ctx.text.slice(match.start, match.end)}”存在多个候选，请确认。`);
+      ctx.consumeRange(match.start, match.end);
+      continue;
+    }
+    const prefix = ctx.text.slice(Math.max(0, match.start - 40), match.start).split(/[，,。；;]/).at(-1) ?? '';
+    const suffix = ctx.text.slice(match.end).split(/[，,。；;]/)[0] ?? '';
+    const negative = NEGATIVE_PREFIX.test(prefix) || /^(?:は|が|を)?\s*(?:不要|必要ない|いらない|なし)/u.test(suffix);
+    const strong = STRONG_PREFIX.test(prefix) || /^(?:は|が)?\s*必須/u.test(suffix);
+    if (supportsTagConstraints) (negative ? hits.excluded : strong ? hits.required : hits.found).push(match.id);
+    else if (negative || strong) ctx.clarify(field, '该分类不支持否定或强制条件，请确认。');
+    else hits.found.push(match.id);
+    ctx.consumeRange(match.start, match.end);
   }
   return hits;
 }

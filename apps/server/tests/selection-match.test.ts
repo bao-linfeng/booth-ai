@@ -13,6 +13,18 @@ const candidate: Candidate = {
   labelsConfirmed: true, applicabilityRules: [], applicabilityNotes: '',
 };
 
+test('complete size selection excludes differing heights and rotated footprints independently of venue height', () => {
+  const spaces = [{ id: 'size', label: '6 × 3 × 3.5 m', lengthMm: 6000, widthMm: 3000, heightMm: 3500 }];
+  const higher = { ...candidate, code: 'HIGH', specifications: { ...candidate.specifications, heightMm: 4500 } };
+  const rotated = { ...candidate, code: 'ROTATED', specifications: { ...candidate.specifications, lengthMm: 3000, widthMm: 6000 } };
+  const requirement = { ...emptyRequirement(), boothSpaceId: 'size', lengthMm: 6000, widthMm: 3000, areaM2: 18, maxHeightMm: 5000, openingCount: 2 };
+  const result = matchSchemes([candidate, higher, rotated], requirement, 'filtered', false, undefined, [], spaces);
+  assert.deepEqual(result.items.map(item => item.code), ['BOOTH-1']);
+  assert.equal(result.diagnostics.exclusions.dimensions, 2);
+  assert.equal(result.diagnostics.exclusions.height, 0);
+  assert.equal(matchSchemes([candidate], { ...requirement, maxHeightMm: 3000 }, 'filtered', false, undefined, [], spaces).status, 'no_match');
+});
+
 test('equal area does not hide an excessive deviation in either dimension', () => {
   const requirement = { ...emptyRequirement(), lengthMm: 9000, widthMm: 2000, areaM2: 18 };
   const result = matchSchemes([candidate], requirement, 'filtered', false);

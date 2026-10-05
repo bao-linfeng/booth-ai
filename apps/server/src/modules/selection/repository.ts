@@ -2,6 +2,7 @@ import type pg from 'pg';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../infra/storage.js';
 import { rulesVersion, type ApplicabilityQuestionSummary, type BoothSpace, type Candidate, type CandidateImage, type Catalog, type MatchDiagnostics, type MatchItem, type Option, type PublicImage } from './domain.js';
+import { localizedLabel, type DictionaryAlias } from './dictionary-language.js';
 
 interface CandidateRow {
   id: string;
@@ -34,25 +35,26 @@ interface AssetRow {
   mime: string;
 }
 
-export async function loadCatalog(pool: pg.Pool | pg.PoolClient): Promise<Catalog & { rulesVersion: string; dictionaryVersion: string }> {
-  const result = await pool.query<{ type: string; id: string; value: string; label: string }>(`SELECT d.code AS type, i.id::text AS id, i.item_value AS value, i.item_label AS label
+export async function loadCatalog(pool: pg.Pool | pg.PoolClient, locale = 'zh-CN'): Promise<Catalog & { rulesVersion: string; dictionaryVersion: string }> {
+  const result = await pool.query<{ type: string; id: string; value: string; label: string; labels: Record<string, string>; aliases: DictionaryAlias[] }>(`SELECT d.code AS type, i.id::text AS id, i.item_value AS value, i.item_label AS label, i.labels, i.aliases
     FROM dictionaries d JOIN dictionary_items i ON i.dictionary_id = d.id
-    WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','booth_length','booth_width','booth_height','booth_area','product_system','style','industry','budget_tier','functional_zone','key_feature')
+    WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','product_system','style','industry','budget_tier','functional_zone','key_feature')
     ORDER BY d.code, i.sort_order, i.id`);
   const byType = (type: string, useValue = false): Option[] => result.rows
     .filter(row => row.type === type)
-    .map(({ id, value, label }) => ({ id: useValue ? value : id, label }));
-  const numericValues = (type: string): number[] => [...new Set(result.rows
-    .filter(row => row.type === type)
-    .map(row => Number(row.value))
-    .filter(value => Number.isFinite(value)))].sort((left, right) => left - right);
-  const spaces = await pool.query<{ lengthMm: number; widthMm: number; heightMm: number }>(`
-    SELECT DISTINCT length_mm AS "lengthMm", width_mm AS "widthMm", height_mm AS "heightMm"
-    FROM schemes
-    WHERE length_mm > 0 AND width_mm > 0 AND height_mm > 0
-    ORDER BY length_mm, width_mm, height_mm`);
+    .map(row => ({ id: useValue ? row.value : row.id, value: row.value, label: localizedLabel(row, locale),
+      labels: { 'zh-CN': row.label, ...row.labels }, aliases: row.aliases ?? [] }));
+  const spaces = await pool.query<{ id: string; lengthMm: number; widthMm: number; heightMm: number }>(`
+    SELECT i.id::text AS id, i.length_mm AS "lengthMm", i.width_mm AS "widthMm", i.height_mm AS "heightMm"
+    FROM dictionary_items i JOIN dictionaries d ON d.id = i.dictionary_id
+    WHERE d.code = 'booth_size' AND d.enabled AND i.enabled AND i.length_mm > 0 AND i.width_mm > 0 AND i.height_mm > 0
+      AND EXISTS (SELECT 1 FROM schemes s WHERE s.length_mm = i.length_mm AND s.width_mm = i.width_mm
+        AND s.height_mm = i.height_mm AND s.publish_status = 'published'
+        AND (SELECT r.decision FROM scheme_reviews r WHERE r.scheme_id = s.id AND r.scheme_revision = s.revision
+          AND r.phase = 'overall' ORDER BY r.created_at DESC, r.id DESC LIMIT 1) = 'pass')
+    ORDER BY i.sort_order, i.length_mm, i.width_mm, i.height_mm, i.id`);
   const boothSpaces: BoothSpace[] = spaces.rows.map(row => ({
-    id: `${row.lengthMm}-${row.widthMm}-${row.heightMm}`,
+    id: row.id,
     label: `${row.lengthMm / 1000} × ${row.widthMm / 1000} × ${row.heightMm / 1000} m`,
     lengthMm: row.lengthMm,
     widthMm: row.widthMm,
@@ -63,7 +65,6 @@ export async function loadCatalog(pool: pg.Pool | pg.PoolClient): Promise<Catalo
   );
   
   return {
-    dimensions: { lengthMm: numericValues('booth_length'), widthMm: numericValues('booth_width'), maxHeightMm: numericValues('booth_height'), areaM2: numericValues('booth_area') },
     boothSpaces,
     openingCounts: byType('opening_count', true),
     productSystems: byType('product_system'),
@@ -74,7 +75,7 @@ export async function loadCatalog(pool: pg.Pool | pg.PoolClient): Promise<Catalo
     features: byType('key_feature'),
     applicabilityQuestions: questionsResult.rows,
     rulesVersion,
-    dictionaryVersion: createHash('sha256').update(JSON.stringify(result.rows)).digest('hex').slice(0, 16),
+    dictionaryVersion: createHash('sha256').update(JSON.stringify([result.rows, spaces.rows, questionsResult.rows])).digest('hex').slice(0, 16),
   };
 }
 

@@ -7,7 +7,7 @@ import type { ActiveAiModel } from '../src/infra/ai/types.js';
 import { activeModel } from './ai-fixtures.js';
 
 const catalog: Catalog = {
-  dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] }, boothSpaces: [],
+  boothSpaces: [],
   openingCounts: [{ id: '2', label: '两面开口' }], productSystems: [], industries: [], budgetTiers: [],
   styles: [{ id: 'modern', label: '现代简约' }], zones: [{ id: 'storage', label: '储藏间' }],
   features: [], applicabilityQuestions: [],

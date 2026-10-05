@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { VxeGridProps } from '#/adapter/vxe-table';
-import type { DictionaryDetailRecord } from '#/api/core/dictionaries';
+import type { DictionaryDetailRecord, DictionaryItemRecord } from '#/api/core/dictionaries';
 
 import { ref } from 'vue';
 
@@ -19,6 +19,7 @@ import {
 } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useVbenForm } from '#/adapter/form';
 import {
   createDictionaryItemApi,
   deleteDictionaryItemApi,
@@ -31,6 +32,66 @@ const emit = defineEmits(['reload']);
 const currentId = ref<string>('');
 const detailInfo = ref<DictionaryDetailRecord | null>(null);
 const isLoading = ref(false);
+type EditableItem = DictionaryItemRecord & { isNew?: boolean };
+const languageItem = ref<DictionaryItemRecord | null>(null);
+
+function parseLanguageLines(text: string): { locale: string; text: string }[] {
+  return text.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+    const separator = line.indexOf('|');
+    const locale = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    if (separator < 1 || !/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(locale) || !value) {
+      throw new Error('每行请填写“语言代码 | 文本”，例如 en | Modern minimalist');
+    }
+    return { locale, text: value };
+  });
+}
+
+const [LanguageForm, languageFormApi] = useVbenForm({
+  showDefaultActions: false,
+  schema: [
+    { component: 'Textarea', fieldName: 'labels', label: '多语言名称', componentProps: {
+      rows: 4, placeholder: '每行一个名称，例如：\nen | Modern minimalist\nja | モダン・ミニマル',
+    } },
+    { component: 'Textarea', fieldName: 'aliases', label: '搜索别名', componentProps: {
+      rows: 6, placeholder: '每行一个别名，同一语言可填写多行，例如：\nen | modern minimalism\nja | ミニマルスタイル',
+    } },
+  ],
+  handleSubmit: async (values: Record<string, unknown>) => {
+    if (!languageItem.value) return;
+    try {
+      const labels = parseLanguageLines(String(values.labels ?? ''));
+      if (new Set(labels.map(item => item.locale.toLowerCase())).size !== labels.length) throw new Error('同一语言只能设置一个展示名称');
+      languageModalApi.setState({ confirmLoading: true });
+      await updateDictionaryItemApi(currentId.value, languageItem.value.id, {
+        labels: Object.fromEntries(labels.map(item => [item.locale, item.text])),
+        aliases: parseLanguageLines(String(values.aliases ?? '')),
+      });
+      message.success('多语言名称与别名已保存');
+      languageModalApi.close();
+      await loadData(currentId.value);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存失败');
+    } finally {
+      languageModalApi.setState({ confirmLoading: false });
+    }
+  },
+});
+const [LanguageModal, languageModalApi] = useVbenModal({
+  title: '多语言名称与搜索别名',
+  onConfirm: () => languageFormApi.validateAndSubmitForm(),
+});
+
+function editLanguages(row: DictionaryItemRecord) {
+  languageItem.value = row;
+  languageFormApi.resetForm();
+  languageFormApi.setValues({
+    labels: Object.entries(row.labels).map(([locale, text]) => `${locale} | ${text}`).join('\n'),
+    aliases: row.aliases.map(alias => `${alias.locale} | ${alias.text}`).join('\n'),
+  });
+  languageModalApi.setState({ title: `${row.itemLabel} · 多语言与别名` });
+  languageModalApi.open();
+}
 
 const gridOptions: VxeGridProps = {
   columns: [
@@ -78,8 +139,14 @@ const gridOptions: VxeGridProps = {
       slots: { default: 'default_enabled', edit: 'edit_enabled' },
     },
     {
+      field: 'labels',
+      title: '多语言 / 别名',
+      minWidth: 160,
+      slots: { default: 'languages' },
+    },
+    {
       title: '操作',
-      width: 120,
+      width: 190,
       slots: { default: 'action' },
       align: 'center' as const,
     },
@@ -134,6 +201,8 @@ const handleInsert = async () => {
     description: '',
     sortOrder: 0,
     enabled: true,
+    labels: {},
+    aliases: [],
     isNew: true,
   };
   const { row: newRow } = (await gridApi.grid?.insertAt(record, -1)) || {};
@@ -142,7 +211,7 @@ const handleInsert = async () => {
   }
 };
 
-const handleSaveRow = async (row: any) => {
+const handleSaveRow = async (row: EditableItem) => {
   try {
     if (!row.itemValue || !row.itemLabel) {
       message.error('字典值和字典标签不能为空');
@@ -178,7 +247,7 @@ const handleSaveRow = async (row: any) => {
   }
 };
 
-const handleCancelRow = (row: any) => {
+const handleCancelRow = (row: EditableItem) => {
   if (row.isNew) {
     gridApi.grid?.remove(row);
   } else {
@@ -187,7 +256,7 @@ const handleCancelRow = (row: any) => {
   }
 };
 
-const handleDeleteRow = async (row: any) => {
+const handleDeleteRow = async (row: EditableItem) => {
   if (row.isNew) {
     gridApi.grid?.remove(row);
     return;
@@ -208,7 +277,7 @@ const handleDeleteRow = async (row: any) => {
   });
 };
 
-const hasActiveEditRow = (row: any) => {
+const hasActiveEditRow = (row: EditableItem) => {
   return gridApi.grid?.isActiveByRow(row);
 };
 
@@ -216,7 +285,7 @@ defineExpose({ open });
 </script>
 
 <template>
-  <Modal class="w-200">
+  <Modal class="w-300">
     <div v-if="detailInfo" class="flex flex-col gap-4">
       <div class="bg-background border-border p-4 rounded-md border">
         <Descriptions title="字典信息" :column="2" size="small">
@@ -272,6 +341,13 @@ defineExpose({ open });
             <span>{{ row.itemLabel }}</span>
           </template>
 
+          <template #languages="{ row }">
+            <div class="flex flex-wrap gap-1">
+              <Tag v-for="locale in Object.keys(row.labels)" :key="locale">{{ locale }}</Tag>
+              <span class="text-muted-foreground text-xs">{{ row.aliases.length }} 个别名</span>
+            </div>
+          </template>
+
           <template #edit_description="{ row }">
             <Input v-model:value="row.description" placeholder="输入描述" />
           </template>
@@ -319,6 +395,12 @@ defineExpose({ open });
             </template>
             <template v-else>
               <Button
+                v-access:code="['dictionaries.item-update']"
+                type="link"
+                size="small"
+                @click="editLanguages(row)"
+              >语言</Button>
+              <Button
                 type="link"
                 size="small"
                 @click="gridApi.grid?.setEditRow(row)"
@@ -341,4 +423,8 @@ defineExpose({ open });
       </div>
     </div>
   </Modal>
+  <LanguageModal class="w-160">
+    <p class="text-muted-foreground mb-4 text-sm">中文标签作为默认名称。切换语言只改变展示；名称和别名均映射到同一个字典 ID。缺少翻译时显示默认名称。</p>
+    <LanguageForm />
+  </LanguageModal>
 </template>

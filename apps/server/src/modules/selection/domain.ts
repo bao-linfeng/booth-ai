@@ -1,4 +1,4 @@
-export const rulesVersion = 'selection-2026-10-01';
+export const rulesVersion = 'selection-2026-10-05';
 
 export interface MatchDiagnostics {
   reviewedPublished: number;
@@ -16,6 +16,7 @@ export interface MatchDiagnostics {
 }
 
 export interface Requirement {
+  boothSpaceId: string | null;
   lengthMm: number | null;
   widthMm: number | null;
   maxHeightMm: number | null;
@@ -35,13 +36,12 @@ export interface Requirement {
   applicabilityAnswers: Record<string, boolean>;
 }
 
-export interface Option { id: string; label: string; }
+export interface Option { id: string; label: string; value?: string; labels?: Record<string, string>; aliases?: { locale: string; text: string }[]; }
 /** 目录/匹配用到的适用条件问题摘要（管理端完整记录见 applicability-questions.ts）。 */
 export interface ApplicabilityQuestionSummary { id: string; label: string; helpText: string; }
 export interface BoothSpace { id: string; label: string; lengthMm: number; widthMm: number; heightMm: number; }
 
 export interface Catalog {
-  dimensions: { lengthMm: number[]; widthMm: number[]; maxHeightMm: number[]; areaM2: number[]; };
   boothSpaces: BoothSpace[];
   openingCounts: Option[];
   productSystems: Option[];
@@ -118,6 +118,7 @@ export interface MatchItem<Image = CandidateImage> {
 
 export function emptyRequirement(): Requirement {
   return {
+    boothSpaceId: null,
     lengthMm: null, widthMm: null, maxHeightMm: null, areaM2: null,
     openingCount: null, productSystemId: null,
     styleIds: [], industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
@@ -136,6 +137,13 @@ export function invalid(message: string): never {
 
 export function validateRequirement(input: Requirement, catalog: Catalog): Requirement {
   const r = structuredClone(input);
+  if (r.boothSpaceId !== null) {
+    const size = catalog.boothSpaces.find(space => space.id === r.boothSpaceId);
+    if (!size) invalid('Unknown booth size');
+    if ((r.lengthMm !== null && r.lengthMm !== size.lengthMm) || (r.widthMm !== null && r.widthMm !== size.widthMm)) invalid('Selected size conflicts with dimensions');
+    r.lengthMm = size.lengthMm;
+    r.widthMm = size.widthMm;
+  }
   if (r.lengthMm && r.widthMm) {
     const area = r.lengthMm * r.widthMm / 1_000_000;
     if (r.areaM2 !== null && Math.abs(area - r.areaM2) > 0.0000001) invalid('Area conflicts with dimensions');
@@ -177,6 +185,7 @@ export const requirementSchema = {
   additionalProperties: false,
   required: Object.keys(emptyRequirement()),
   properties: {
+    boothSpaceId: nullableId,
     lengthMm: nullableDimension,
     widthMm: nullableDimension,
     maxHeightMm: nullableDimension,

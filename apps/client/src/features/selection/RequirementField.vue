@@ -10,6 +10,7 @@ const props = defineProps<{ modelValue: Requirement; field: keyof Requirement; c
 const emit = defineEmits<{ 'update:modelValue': [value: Requirement] }>()
 const numericFields = ['lengthMm', 'widthMm', 'maxHeightMm', 'areaM2']
 const labels: Record<keyof Requirement, string> = {
+  boothSpaceId: '方案尺寸（长×宽×高）',
   lengthMm: '展位长 · 左右（m）', widthMm: '展位宽 · 前后（m）', maxHeightMm: '场馆限高（m）', areaM2: '面积（㎡）',
   openingCount: '开口面数', productSystemId: '产品体系', budgetTierId: '材料购买预算',
   styleIds: '设计风格', industryIds: '适用行业', zoneIds: '功能分区', featureIds: '特色功能',
@@ -18,6 +19,7 @@ const labels: Record<keyof Requirement, string> = {
 }
 const options = computed(() => {
   switch (props.field) {
+    case 'boothSpaceId': return props.catalog.boothSpaces
     case 'openingCount': return props.catalog.openingCounts
     case 'productSystemId': return props.catalog.productSystems
     case 'budgetTierId': return props.catalog.budgetTiers
@@ -43,7 +45,14 @@ const numericError = computed(() => {
 function update(value: Requirement[keyof Requirement]) {
   const next = { ...props.modelValue, [props.field]: value }
   if (props.field === 'lengthMm' || props.field === 'widthMm') {
+    next.boothSpaceId = null
     next.areaM2 = next.lengthMm && next.widthMm ? Number((next.lengthMm * next.widthMm / 1_000_000).toFixed(6)) : null
+  }
+  if (props.field === 'boothSpaceId') {
+    const size = props.catalog.boothSpaces.find(space => space.id === value)
+    next.lengthMm = size?.lengthMm ?? null
+    next.widthMm = size?.widthMm ?? null
+    next.areaM2 = size ? size.lengthMm * size.widthMm / 1_000_000 : null
   }
   emit('update:modelValue', next)
 }
@@ -66,7 +75,7 @@ function answer(id: string, value: string | null) {
   <div class="min-w-0 space-y-2">
     <Label :for="numericFields.includes(field) || field === 'keywords' ? id : undefined">{{ labels[field] }}</Label>
     <template v-if="numericFields.includes(field)"><Input :id="id" type="number" inputmode="decimal" :min="field === 'areaM2' ? 0.000001 : 0.001" :max="field === 'areaM2' ? 1000000 : 1000" :step="field === 'areaM2' ? 0.000001 : 0.001" :model-value="numericValue" :disabled="disabled" :aria-invalid="!!numericError" :aria-describedby="numericError ? `${id}-error` : undefined" placeholder="选填" @update:model-value="updateNumber" /><p v-if="numericError" :id="`${id}-error`" class="text-xs text-destructive">{{ numericError }}</p></template>
-    <OptionSelect v-else-if="field === 'openingCount' || field === 'productSystemId' || field === 'budgetTierId'" :label="labels[field]" :model-value="modelValue[field] === null ? null : String(modelValue[field])" :options="options" :disabled="disabled" @update:model-value="update(field === 'openingCount' && $event !== null ? Number($event) : $event)" />
+    <OptionSelect v-else-if="field === 'boothSpaceId' || field === 'openingCount' || field === 'productSystemId' || field === 'budgetTierId'" :label="labels[field]" :model-value="modelValue[field] === null ? null : String(modelValue[field])" :options="options" :disabled="disabled" @update:model-value="update(field === 'openingCount' && $event !== null ? Number($event) : $event)" />
     <div v-else class="flex flex-wrap gap-2">
       <Button v-for="option in options" :key="option.id" type="button" size="sm" :disabled="disabled" :variant="(modelValue[field] as string[]).includes(option.id) ? 'secondary' : 'outline'" :aria-pressed="(modelValue[field] as string[]).includes(option.id)" @click="toggle(option.id)">{{ option.label }}</Button>
       <p v-if="!options.length" class="text-xs text-muted-foreground">暂无可选项，可修改文字描述后重新解析。</p>

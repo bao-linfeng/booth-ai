@@ -1,4 +1,6 @@
 import type pg from 'pg';
+import { transaction } from '../../infra/database.js';
+import { ensureSelectionSizes } from '../selection/sizes.js';
 import { writeAuditLog } from '../../infra/audit.js';
 import { validateSchemeDictionaryIds } from './dictionary-ids.js';
 
@@ -176,10 +178,14 @@ export async function getScheme(pool: pg.Pool, code: string): Promise<SchemeReco
 
 export async function createScheme(pool: pg.Pool, adminId: string, input: SchemeInput): Promise<SchemeRecord> {
   if ('publishStatus' in input || 'verificationStatus' in input) throw requestError('Publication and verification require review', 400);
+  validateDimensions(input);
+  return transaction(pool, client => createSchemeRecord(client, adminId, input));
+}
+
+async function createSchemeRecord(pool: pg.PoolClient, adminId: string, input: SchemeInput): Promise<SchemeRecord> {
   const code = input.code?.trim();
   const name = input.name?.trim();
   if (!code || !name) throw requestError('Code and name are required', 400);
-  validateDimensions(input);
   await validateSchemeDictionaryIds(pool, input);
   const existing = await pool.query('SELECT 1 FROM schemes WHERE code = $1', [code]);
   if (existing.rowCount) throw requestError('Scheme code already exists', 409);
@@ -202,6 +208,7 @@ export async function createScheme(pool: pg.Pool, adminId: string, input: Scheme
   const result = await pool.query<SchemeRow>(`INSERT INTO schemes (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING ${schemeColumns}`, values);
   const row = result.rows[0];
   if (!row) throw requestError('Failed to create scheme', 500);
+  await ensureSelectionSizes(pool, [row]);
   await writeAuditLog(pool, {
     adminId,
     action: 'scheme.create',
@@ -228,6 +235,10 @@ export async function updateScheme(pool: pg.Pool, code: string, adminId: string,
   if ('publishStatus' in input || 'verificationStatus' in input) throw requestError('Publication and verification require review', 400);
   if (hasInput(input, 'code')) throw requestError('Scheme code cannot be changed', 400);
   validateDimensions(input);
+  return transaction(pool, client => updateSchemeRecord(client, code, adminId, input, expectedRevision));
+}
+
+async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: string, input: SchemeInput, expectedRevision: number): Promise<SchemeRecord> {
   await validateSchemeDictionaryIds(pool, input);
   if (input.areaM2 !== undefined && input.areaM2 !== null) {
     const current = await pool.query<{ lengthMm: number | null; widthMm: number | null }>(
@@ -263,6 +274,7 @@ export async function updateScheme(pool: pg.Pool, code: string, adminId: string,
   const result = await pool.query<SchemeRow>(`UPDATE schemes SET ${updates.join(', ')} WHERE code = $${values.length - 1} AND revision = $${values.length} RETURNING ${schemeColumns}`, values);
   const row = result.rows[0];
   if (row) {
+    await ensureSelectionSizes(pool, [row]);
     await writeAuditLog(pool, {
       adminId,
       action: 'scheme.update',

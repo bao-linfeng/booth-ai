@@ -1,7 +1,6 @@
 import type { Catalog, MatchItem, SelectionState } from './types'
 
 export const previewCatalog: Catalog = {
-  dimensions: { lengthMm: [3000, 6000, 9000, 12000], widthMm: [3000, 6000, 9000], maxHeightMm: [3500, 4000, 4500, 5000], areaM2: [9, 18, 27, 36, 54, 72] },
   boothSpaces: [
     { id: '6000-3000-3500', label: '6 × 3 × 3.5 m', lengthMm: 6000, widthMm: 3000, heightMm: 3500 },
     { id: '6000-3000-4500', label: '6 × 3 × 4.5 m', lengthMm: 6000, widthMm: 3000, heightMm: 4500 },

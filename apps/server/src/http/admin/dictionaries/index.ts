@@ -29,11 +29,14 @@ const dictionaryProperties = {
 const itemProperties = {
   itemValue: { type: 'string', minLength: 1 }, itemLabel: { type: 'string', minLength: 1 },
   description: { type: ['string', 'null'] }, enabled: { type: 'boolean' }, sortOrder: { type: 'integer' },
+  labels: { type: 'object', maxProperties: 30, propertyNames: { pattern: '^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$' }, additionalProperties: { type: 'string', minLength: 1, maxLength: 200 } },
+  aliases: { type: 'array', maxItems: 100, items: { type: 'object', required: ['locale', 'text'], additionalProperties: false,
+    properties: { locale: { type: 'string', pattern: '^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$' }, text: { type: 'string', minLength: 1, maxLength: 200 } } } },
 };
 const dictionaryCreateSchema = { type: 'object', required: ['code', 'name', 'type'], additionalProperties: false, properties: dictionaryProperties };
 const dictionaryUpdateSchema = { type: 'object', minProperties: 1, additionalProperties: false, properties: { name: dictionaryProperties.name, description: dictionaryProperties.description, enabled: dictionaryProperties.enabled, sortOrder: dictionaryProperties.sortOrder } };
 const itemCreateSchema = { type: 'object', required: ['itemValue', 'itemLabel'], additionalProperties: false, properties: itemProperties };
-const itemUpdateSchema = { type: 'object', minProperties: 1, additionalProperties: false, properties: { itemLabel: itemProperties.itemLabel, description: itemProperties.description, enabled: itemProperties.enabled, sortOrder: itemProperties.sortOrder } };
+const itemUpdateSchema = { type: 'object', minProperties: 1, additionalProperties: false, properties: { itemLabel: itemProperties.itemLabel, description: itemProperties.description, enabled: itemProperties.enabled, sortOrder: itemProperties.sortOrder, labels: itemProperties.labels, aliases: itemProperties.aliases } };
 
 export async function registerAdminDictionariesRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   const tags = ['admin-dictionaries'];

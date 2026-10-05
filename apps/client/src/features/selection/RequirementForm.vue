@@ -8,11 +8,8 @@ import type { Catalog, Requirement } from './types'
 
 const props = defineProps<{ modelValue: Requirement; catalog: Catalog; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: Requirement] }>()
-const commonSizes = computed(() => [...new Map(props.catalog.boothSpaces.map(space => {
-  const id = `${space.lengthMm}-${space.widthMm}`
-  return [id, { id, label: `${space.lengthMm / 1000}×${space.widthMm / 1000} m`, lengthMm: space.lengthMm, widthMm: space.widthMm }]
-})).values()])
-const selectedSize = computed(() => commonSizes.value.find(size => size.lengthMm === props.modelValue.lengthMm && size.widthMm === props.modelValue.widthMm)?.id ?? null)
+const commonSizes = computed(() => props.catalog.boothSpaces)
+const selectedSize = computed(() => props.modelValue.boothSpaceId)
 const moreFields = ['maxHeightMm', 'productSystemId', 'styleIds', 'industryIds', 'zoneIds', 'featureIds', 'budgetTierId'] as const
 const moreCount = computed(() => moreFields.filter(field => {
   const value = props.modelValue[field]
@@ -20,7 +17,7 @@ const moreCount = computed(() => moreFields.filter(field => {
 }).length)
 function selectSize(id: string | null) {
   const size = commonSizes.value.find(item => item.id === id)
-  emit('update:modelValue', { ...props.modelValue, lengthMm: size?.lengthMm ?? null, widthMm: size?.widthMm ?? null, areaM2: size ? size.lengthMm * size.widthMm / 1_000_000 : null })
+  emit('update:modelValue', { ...props.modelValue, boothSpaceId: size?.id ?? null, lengthMm: size?.lengthMm ?? null, widthMm: size?.widthMm ?? null, areaM2: size ? size.lengthMm * size.widthMm / 1_000_000 : null })
 }
 </script>
 
@@ -30,8 +27,8 @@ function selectSize(id: string | null) {
     <h3 class="text-sm font-medium">展位条件 <span class="font-normal text-muted-foreground">· 选填</span></h3>
     <div class="grid grid-cols-2 gap-3 sm:gap-4">
       <div class="min-w-0 space-y-2">
-        <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">展位尺寸（m）</label>
-        <OptionSelect label="展位尺寸" placeholder="不限" :disabled="disabled" :model-value="selectedSize" :options="commonSizes" @update:model-value="selectSize" />
+        <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">方案尺寸 · 长×宽×高（m）</label>
+        <OptionSelect label="方案尺寸" placeholder="不限" :disabled="disabled" :model-value="selectedSize" :options="commonSizes" @update:model-value="selectSize" />
       </div>
       <RequirementField :id="`requirement-openingCount`" field="openingCount" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />
     </div>
@@ -43,7 +40,7 @@ function selectSize(id: string | null) {
           <div class="grid gap-6 sm:grid-cols-2">
             <RequirementField v-for="field in moreFields" :id="`requirement-${field}`" :key="field" :field="field" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />
           </div>
-          <p class="text-xs leading-6 text-muted-foreground">限高按场馆规定填写，常用尺寸不会代填限高。产品体系用于严格筛选；风格、行业、功能分区和材料预算用于排序。材料预算不含搭建、运输等费用，不代表实际报价。</p>
+          <p class="text-xs leading-6 text-muted-foreground">方案尺寸按长、宽、高整体精确筛选。长为左右方向，宽为前后方向。场馆限高另外填写，方案高度不会代填限高。产品体系用于严格筛选；风格、行业、功能分区和材料预算用于排序。材料预算不含搭建、运输等费用，不代表实际报价。</p>
         </AccordionContent>
       </AccordionItem>
     </Accordion>

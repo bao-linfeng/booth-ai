@@ -77,7 +77,7 @@ async function editRequirement() {
 
 function clarificationFields(field: string): (keyof Requirement)[] {
   if (field === 'lengthMm' || field === 'widthMm' || field === 'areaM2') return ['lengthMm', 'widthMm', ...(field === 'areaM2' ? ['areaM2' as const] : [])]
-  const supportedFields: (keyof Requirement)[] = ['maxHeightMm', 'openingCount', 'productSystemId', 'styleIds', 'industryIds', 'zoneIds', 'featureIds', 'budgetTierId']
+  const supportedFields: (keyof Requirement)[] = ['boothSpaceId', 'maxHeightMm', 'openingCount', 'productSystemId', 'styleIds', 'industryIds', 'zoneIds', 'featureIds', 'budgetTierId']
   return supportedFields.includes(field as keyof Requirement) ? [field as keyof Requirement] : []
 }
 
@@ -116,9 +116,9 @@ let imageRefreshTimer: ReturnType<typeof setInterval> | undefined
 let imageRefreshPending = false
 
 const selectionSessionKey = 'booth-ai:ai-selection'
-const selectionSessionVersion = 2
+const selectionSessionVersion = 3
 type PersistedSelection = {
-  version: 2
+  version: 3
   requirement: Requirement
   text: string
   state: SelectionState
@@ -150,7 +150,7 @@ function isNullableNumber(value: unknown): value is number | null {
 function isRequirement(value: unknown): value is Requirement {
   if (!isRecord(value)) return false
   const nullableNumbers = ['lengthMm', 'widthMm', 'maxHeightMm', 'areaM2', 'openingCount']
-  const nullableStrings = ['productSystemId', 'budgetTierId']
+  const nullableStrings = ['boothSpaceId', 'productSystemId', 'budgetTierId']
   return nullableNumbers.every(field => isNullableNumber(value[field])) &&
     nullableStrings.every(field => value[field] === null || typeof value[field] === 'string') &&
     ['styleIds', 'industryIds', 'zoneIds', 'featureIds', 'keywords', 'requiredZoneIds', 'requiredFeatureIds', 'excludedZoneIds', 'excludedFeatureIds'].every(field => isStringArray(value[field])) &&
@@ -358,7 +358,7 @@ async function refreshExpiredImages() {
   }
 }
 
-const emptyCatalog: Catalog = { dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] }, boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [] }
+const emptyCatalog: Catalog = { boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [] }
 const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value ?? emptyCatalog))
 const textChangedSinceParse = computed(() => parsedText.value !== null && parsedText.value !== text.value)
 const unresolvedClarifications = computed(() => liveClarifications.value.filter((item, index) => {
@@ -438,6 +438,7 @@ const chips = computed(() => {
   const r = requirement.value
   const currentCatalog = catalog.value
   return [
+    currentCatalog.boothSpaces.find(space => space.id === r.boothSpaceId)?.label ?? '',
     r.lengthMm ? `长 ${r.lengthMm / 1000} m` : '',
     r.widthMm ? `宽 ${r.widthMm / 1000} m` : '',
     r.areaM2 ? `${r.areaM2} ㎡` : '', 
@@ -463,6 +464,7 @@ function clearText() {
 }
 
 const fieldLabels: Record<keyof Requirement, string> = {
+  boothSpaceId: '方案尺寸（长×宽×高）',
   lengthMm: '展位长', widthMm: '展位宽', maxHeightMm: '场馆限高', areaM2: '面积',
   openingCount: '开口面数', productSystemId: '产品体系',
   styleIds: '设计风格', industryIds: '适用行业', budgetTierId: '材料预算',
@@ -474,7 +476,7 @@ function fieldLabel(field: string) { return fieldLabels[field as keyof Requireme
 function displayValue(field: string, value: unknown): string {
   if (value === null || value === undefined || (Array.isArray(value) && !value.length)) return '未填写'
   if (typeof value === 'number') return ['lengthMm', 'widthMm', 'maxHeightMm'].includes(field) ? `${value / 1000} m` : field === 'areaM2' ? `${value} ㎡` : String(value)
-  const options = [...catalog.value.productSystems, ...catalog.value.styles, ...catalog.value.industries, ...catalog.value.budgetTiers, ...catalog.value.zones, ...catalog.value.features]
+  const options = [...catalog.value.boothSpaces, ...catalog.value.productSystems, ...catalog.value.styles, ...catalog.value.industries, ...catalog.value.budgetTiers, ...catalog.value.zones, ...catalog.value.features]
   const label = (id: string) => options.find(option => option.id === id)?.label ?? id
   if (Array.isArray(value)) return value.map(id => label(String(id))).join('、')
   if (typeof value === 'object') return Object.entries(value).map(([id, answer]) => `${catalog.value.applicabilityQuestions.find(question => question.id === id)?.label ?? id}：${answer ? '是' : '否'}`).join('、') || '未填写'
@@ -535,7 +537,8 @@ async function loadCatalog() {
   const sequence = ++catalogSequence
   catalogState.value = 'loading'
   try {
-    const res = await apiFetch<{ code: number; data: Catalog }>('/api/v1/client/catalog/options')
+    const locale = navigator.language || 'zh-CN'
+    const res = await apiFetch<{ code: number; data: Catalog }>(`/api/v1/client/catalog/options?locale=${encodeURIComponent(locale)}`)
     if (sequence !== catalogSequence) return
     if (res.code !== 0) throw new Error('Catalog unavailable')
     liveCatalog.value = { ...res.data, boothSpaces: Array.isArray(res.data.boothSpaces) ? res.data.boothSpaces : [] }

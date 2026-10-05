@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { isEmpty, invalid, rulesVersion, type ApplicabilityQuestionSummary, type Candidate, type MatchDiagnostics, type MatchItem, type PendingConfirmation, type Requirement } from './domain.js';
+import { isEmpty, invalid, rulesVersion, type ApplicabilityQuestionSummary, type BoothSpace, type Candidate, type MatchDiagnostics, type MatchItem, type PendingConfirmation, type Requirement } from './domain.js';
 
 type ExclusionKey = keyof MatchDiagnostics['exclusions'];
 type FilterExclusionKey = 'productSystem' | 'height' | 'applicability' | 'tags' | 'dimensions';
@@ -12,13 +12,15 @@ const MAX_DIMENSION_DEVIATION = 0.3;
 const EXCLUSION_LABELS: Record<ExclusionKey, string> = {
   unverifiedChecklist: '清单未核验', incompleteAssets: '资产不完整', invalidData: '基础数据或审核信息不完整',
   productSystem: '产品体系不符', height: '超过场馆限高', applicability: '适用条件不符',
-  tags: '必选或禁用功能条件不符', dimensions: '尺寸超出参考范围'
+  tags: '必选或禁用功能条件不符', dimensions: '尺寸不符或超出参考范围'
 };
 const POOL_EXCLUSIONS: ExclusionKey[] = ['unverifiedChecklist', 'incompleteAssets', 'invalidData'];
 
 const intersects = (left: string[], right: string[]) => left.some(value => right.includes(value));
 
-export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean, poolDiagnostics?: MatchDiagnostics, applicabilityQuestions: ApplicabilityQuestionSummary[] = []) {
+export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean, poolDiagnostics?: MatchDiagnostics, applicabilityQuestions: ApplicabilityQuestionSummary[] = [], boothSpaces: BoothSpace[] = []) {
+  const selectedSize = requirement.boothSpaceId ? boothSpaces.find(space => space.id === requirement.boothSpaceId) : undefined;
+  if (requirement.boothSpaceId && !selectedSize) invalid('Unknown booth size');
   if (mode === 'random' && (textProvided || !isEmpty(requirement))) invalid('Random requires empty input');
 
   const diagnostics = createDiagnostics(candidates, poolDiagnostics);
@@ -31,7 +33,7 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
 
   const items = mode === 'random'
     ? pickRandomItems(candidates)
-    : rankCandidates(candidates, requirement, missingFields, applicabilityQuestions, diagnostics);
+    : rankCandidates(candidates, requirement, missingFields, applicabilityQuestions, diagnostics, selectedSize);
 
   const counts = {
     direct: items.filter(item => item.matchType === 'direct').length,
@@ -101,11 +103,11 @@ function pickRandomItems(candidates: Candidate[]): MatchItem[] {
 
 // ---------- filtered ----------
 
-function rankCandidates(candidates: Candidate[], requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[], diagnostics: MatchDiagnostics): MatchItem[] {
+function rankCandidates(candidates: Candidate[], requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[], diagnostics: MatchDiagnostics, selectedSize?: BoothSpace): MatchItem[] {
   const ranked: RankedItem[] = [];
 
   for (const candidate of candidates) {
-    const { misses, deviation } = evaluateCandidate(candidate, requirement);
+    const { misses, deviation } = evaluateCandidate(candidate, requirement, selectedSize);
     const missed = (Object.keys(misses) as FilterExclusionKey[]).filter(key => misses[key]);
     for (const key of missed) diagnostics.exclusions[key]++;
     if (missed.length) continue;
@@ -120,7 +122,7 @@ function rankCandidates(candidates: Candidate[], requirement: Requirement, missi
 }
 
 /** 硬条件判定：所有命中的排除项都会被记录（原因可重叠），deviation 为尺寸/面积的最大相对偏差。 */
-function evaluateCandidate(candidate: Candidate, requirement: Requirement): Evaluation {
+function evaluateCandidate(candidate: Candidate, requirement: Requirement, selectedSize?: BoothSpace): Evaluation {
   const s = candidate.specifications;
   const deviation = dimensionDeviation(candidate, requirement);
   return {
@@ -130,7 +132,8 @@ function evaluateCandidate(candidate: Candidate, requirement: Requirement): Eval
       height: !!requirement.maxHeightMm && s.heightMm > requirement.maxHeightMm,
       applicability: candidate.applicabilityRules.some(rule => requirement.applicabilityAnswers[rule.id] !== undefined && requirement.applicabilityAnswers[rule.id] !== rule.expectedValue),
       tags: hasTagMiss(candidate, requirement),
-      dimensions: deviation > MAX_DIMENSION_DEVIATION + Number.EPSILON
+      dimensions: selectedSize ? s.lengthMm !== selectedSize.lengthMm || s.widthMm !== selectedSize.widthMm || s.heightMm !== selectedSize.heightMm
+        : deviation > MAX_DIMENSION_DEVIATION + Number.EPSILON
     }
   };
 }
@@ -253,7 +256,7 @@ function buildNoMatchReasons(mode: 'random' | 'filtered', diagnostics: MatchDiag
 
 function buildNoMatchSuggestions(diagnostics: MatchDiagnostics): string[] {
   return [
-    ...(diagnostics.exclusions.dimensions ? ['可尝试调整展位长宽或面积，再重新查询'] : []),
+    ...(diagnostics.exclusions.dimensions ? ['可检查所选长宽高尺寸，或调整自定义长宽与面积后重新查询'] : []),
     ...(diagnostics.exclusions.productSystem ? ['可检查所选产品体系，修改后重新查询'] : []),
     ...(diagnostics.exclusions.tags ? ['可检查必选或禁用的功能条件，修改后重新查询'] : []),
     '也可联系专业顾问确认可用方案'

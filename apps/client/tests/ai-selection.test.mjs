@@ -89,7 +89,7 @@ async function mount({ restore = false, status = 'matched' } = {}) {
     apiFetch: async (path, options) => {
       const call = JSON.parse(JSON.stringify({ path, options }))
       calls.push(call)
-      if (path === '/api/v1/client/catalog/options') return { code: 0, data: structuredClone(catalog) }
+      if (path.startsWith('/api/v1/client/catalog/options')) return { code: 0, data: structuredClone(catalog) }
       if (path === '/api/v1/client/requirements/parse') return { code: 0, data: {
         status: 'ready', requirement: call.options.body.form, parser: 'rules', degraded: false,
         fieldSources: {}, overrides: [], clarifications: [], unhandledText: [], warnings: [],
@@ -123,9 +123,9 @@ async function input(container, selector, value) {
   element.dispatchEvent(new Event('input', { bubbles: true }))
   await settle()
 }
-async function selectSize(container, label = '6×3 m') {
-  const trigger = container.querySelector('[aria-label="展位尺寸"]')
-  assert.ok(trigger, 'Missing 展位尺寸 select trigger')
+async function selectSize(container, label = '6x3') {
+  const trigger = container.querySelector('[aria-label="方案尺寸"]')
+  assert.ok(trigger, 'Missing 方案尺寸 select trigger')
   trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await nextTick(); await nextTick()
   const options = [...document.querySelectorAll('[role="option"]')]
@@ -148,8 +148,7 @@ test('fresh entry shows the lightweight editor with no automatic search and heig
   try {
     assertEditor(mounted.container, true)
     assert.equal(mounted.container.querySelector('#requirement-text').value, '')
-    assert.ok(mounted.container.querySelector('[aria-label="展位尺寸"]'))
-    assert.ok(mounted.container.querySelector('[aria-label="开口面数"]'))
+    assert.ok(mounted.container.querySelector('[aria-label="方案尺寸"]'))
     assert.equal(mounted.container.querySelector('#requirement-maxHeightMm'), null)
     assert.equal(button(mounted.container, '更多条件').getAttribute('aria-expanded'), 'false')
     assert.equal(button(mounted.container, '匹配方案').disabled, false)
@@ -197,14 +196,14 @@ test('random submit and session reload keep the editor beside inspiration result
 test('filtered form submit collapses to a condition summary and restores that summary on reload', async () => {
   let mounted = await mount()
   try {
-    await selectSize(mounted.container, '6×3 m')
+    await selectSize(mounted.container, '6x3')
     await click(mounted.container, '匹配方案')
     assert.equal(posts(mounted).length, 1)
     assert.equal(posts(mounted)[0].options.body.mode, 'filtered')
     assert.equal(posts(mounted)[0].options.body.requirement.areaM2, 18)
     assertEditor(mounted.container, false)
     const summary = mounted.container.querySelector('[aria-label="当前需求摘要"]')
-    for (const text of ['长 6 m', '宽 3 m', '18 ㎡', '查看全部 3 项条件']) assert.ok(summary.textContent.includes(text), text)
+    for (const text of ['长 6 m', '宽 3 m', '18 ㎡', '查看全部 4 项条件']) assert.ok(summary.textContent.includes(text), text)
     assert.equal(button(summary, '修改需求').getAttribute('aria-expanded'), 'false')
     assert.match(mounted.container.textContent, /为您找到的空间方案/)
     await mounted.close()
@@ -254,7 +253,7 @@ for (const status of ['matched', 'no_match']) {
   test(`${status}: editing an outcome and choosing an example only fills a stale draft; reload shows the editor`, async () => {
     let mounted = await mount({ status })
     try {
-      await selectSize(mounted.container, '6×3 m')
+      await selectSize(mounted.container, '6x3')
       await click(mounted.container, '匹配方案')
       assertEditor(mounted.container, false)
       await click(mounted.container, '修改需求')
@@ -273,7 +272,7 @@ for (const status of ['matched', 'no_match']) {
       mounted = await mount({ restore: true, status })
       assertEditor(mounted.container, true)
       assert.equal(mounted.container.querySelector('#requirement-text').value, '医疗健康行业，必须有储藏间')
-      assert.match(mounted.container.textContent, /6×3 m/)
+      assert.match(mounted.container.textContent, /6x3/)
       assert.match(mounted.container.textContent, /当前为上次匹配结果/)
       assert.equal(posts(mounted).length, 0)
     } finally { await mounted.close() }
@@ -283,17 +282,17 @@ for (const status of ['matched', 'no_match']) {
 test('changing form conditions keeps a stale draft visible after reload without reparsing or matching', async () => {
   let mounted = await mount()
   try {
-    await selectSize(mounted.container, '6×3 m')
+    await selectSize(mounted.container, '6x3')
     await click(mounted.container, '匹配方案')
     await click(mounted.container, '修改需求')
-    await selectSize(mounted.container, '6×4 m')
+    await selectSize(mounted.container, '6x4')
     assert.equal(saved().requirement.areaM2, 24)
     assert.match(mounted.container.textContent, /当前为上次匹配结果/)
     assert.equal(posts(mounted).length, 1)
     await mounted.close()
     mounted = await mount({ restore: true })
     assertEditor(mounted.container, true)
-    assert.match(mounted.container.textContent, /6×4 m/)
+    assert.match(mounted.container.textContent, /6x4/)
     assert.match(mounted.container.textContent, /面积 24 ㎡/)
     assert.equal(posts(mounted).length, 0)
   } finally { await mounted.close() }
@@ -302,7 +301,7 @@ test('changing form conditions keeps a stale draft visible after reload without 
 test('page reset clears the draft and previous outcome, returning to idle even after reload', async () => {
   let mounted = await mount()
   try {
-    await selectSize(mounted.container, '6×3 m')
+    await selectSize(mounted.container, '6x3')
     await click(mounted.container, '匹配方案')
     await click(mounted.container, '修改需求')
     const reset = button(mounted.container, '重置需求')

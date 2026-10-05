@@ -18,8 +18,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function mergeExtraction(text: string, form: Requirement, catalog: Catalog, raw: unknown) {
   if (!isRecord(raw) || !isRecord(raw.fields) || !Array.isArray(raw.unhandledText) ||
-    Object.keys(raw).some(key => !['fields', 'unhandledText'].includes(key)) || raw.unhandledText.length > 20 ||
-    raw.unhandledText.some(item => typeof item !== 'string' || !item.trim() || !text.includes(item)) || Object.keys(raw.fields).length > 17) throw new Error('Invalid extraction');
+      Object.keys(raw).some(key => !['fields', 'unhandledText'].includes(key)) || raw.unhandledText.length > 20 ||
+    raw.unhandledText.some(item => typeof item !== 'string' || !item.trim() || !text.includes(item)) || Object.keys(raw.fields).length > 18) throw new Error('Invalid extraction');
   const rules = parseRequirement(text, form, catalog);
   const requirement = structuredClone(rules.requirement);
   const fieldSources = { ...rules.fieldSources };
@@ -35,7 +35,7 @@ export function mergeExtraction(text: string, form: Requirement, catalog: Catalo
       !entry.evidence.trim() || !text.includes(entry.evidence)) throw new Error('Invalid extraction');
     const key = field as Field;
     const value = entry.value;
-    const options = field === 'productSystemId' ? catalog.productSystems : field === 'budgetTierId' ? catalog.budgetTiers :
+    const options = field === 'boothSpaceId' ? catalog.boothSpaces : field === 'productSystemId' ? catalog.productSystems : field === 'budgetTierId' ? catalog.budgetTiers :
       field === 'styleIds' ? catalog.styles : field === 'industryIds' ? catalog.industries :
       field.toLowerCase().includes('zone') ? catalog.zones : catalog.features;
     if (['lengthMm', 'widthMm', 'maxHeightMm', 'openingCount', 'areaM2'].includes(field)) {
@@ -74,6 +74,7 @@ export function mergeExtraction(text: string, form: Requirement, catalog: Catalo
       continue;
     }
     const nextValue = field === 'applicabilityAnswers' ? { ...requirement.applicabilityAnswers, ...value as Record<string, boolean> } : value;
+    if ((field === 'lengthMm' || field === 'widthMm') && requirement[key] !== value) requirement.boothSpaceId = null;
     if (JSON.stringify(requirement[key]) !== JSON.stringify(nextValue)) overrides.push({ field, previousValue: requirement[key], value: nextValue, evidence: entry.evidence });
     (requirement as unknown as Record<string, unknown>)[key] = nextValue;
     fieldSources[field] = { source: 'text', evidence: entry.evidence };
@@ -87,7 +88,7 @@ export function mergeExtraction(text: string, form: Requirement, catalog: Catalo
     requirement.areaM2 = area;
     fieldSources.areaM2 = { source: 'derived' };
   }
-  try { validateRequirement(requirement, catalog); } catch { throw new Error('Invalid extraction'); }
+  try { Object.assign(requirement, validateRequirement(requirement, catalog)); } catch { throw new Error('Invalid extraction'); }
   const unhandledText = [...new Set([
     ...parseRequirement(text, form, catalog, [...handled]).unhandledText,
     ...raw.unhandledText as string[],

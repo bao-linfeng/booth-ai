@@ -37,8 +37,8 @@ export async function selectionDependency<T>(operation: () => Promise<T>): Promi
   }
 }
 
-export function getSelectionCatalog(pool: pg.Pool) {
-  return selectionDependency(() => loadCatalog(pool));
+export function getSelectionCatalog(pool: pg.Pool, locale = 'zh-CN') {
+  return selectionDependency(() => loadCatalog(pool, locale));
 }
 
 export async function parseSelection(pool: pg.Pool, config: Pick<Config, 'aiModelEncryptionKey'>,
@@ -70,7 +70,7 @@ export async function matchSelection(pool: pg.Pool, storage: Pick<ReturnType<typ
   const catalog = await getSelectionCatalog(pool);
   const requirement = validateRequirement(input.requirement, catalog);
   const { candidates, diagnostics } = await selectionDependency(() => loadCandidatePool(pool, catalog));
-  const result = matchSchemes(candidates, requirement, input.mode, input.inputContext.textProvided, diagnostics, catalog.applicabilityQuestions);
+   const result = matchSchemes(candidates, requirement, input.mode, input.inputContext.textProvided, diagnostics, catalog.applicabilityQuestions, catalog.boothSpaces);
   // Only the returned items (at most three) need presigned image URLs.
   const items = await selectionDependency(() => signMatchItems(storage, result.items));
   const data = {

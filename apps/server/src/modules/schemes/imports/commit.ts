@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { transaction } from '../../../infra/database.js';
 import { validateSchemeDictionaryIds } from '../dictionary-ids.js';
-import { createGeneratedDictionaryItems } from './generated-dictionaries.js';
+import { ensureSelectionSizes } from '../../selection/sizes.js';
 import type { CommitImportOptions, CommitImportResult, ImportPreviewRow, ImportRow } from './types.js';
 import { importRowFromJson, validateImportedSize } from './validation.js';
 
@@ -152,7 +152,7 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
         result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: failureReason(error) });
       }
     }
-    result.dictionaryItemsCreated = await createGeneratedDictionaryItems(client, committedRows);
+    result.dictionaryItemsCreated = await ensureSelectionSizes(client, committedRows);
     await client.query("UPDATE scheme_imports SET status = 'committed', committed_at = now(), commit_request_hash = $2, committed_result = $3 WHERE id = $1", [importId, requestHash, JSON.stringify(result)]);
     return result;
   });

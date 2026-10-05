@@ -127,7 +127,7 @@ export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.
     const result = await pool.query<{ code: string; id: string; label: string; itemValue: string }>(`
       SELECT d.code, i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue" FROM dictionaries d
       JOIN dictionary_items i ON i.dictionary_id = d.id
-       WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','booth_length','booth_width','booth_height','booth_area','product_system','style','industry','budget_tier','functional_zone','key_feature')
+       WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','booth_size','product_system','style','industry','budget_tier','functional_zone','key_feature')
       ORDER BY d.code, i.sort_order, i.id`);
     return { code: 0, data: result.rows.reduce<Record<string, { id: string; label: string; itemValue: string }[]>>((options, item) => {
       (options[item.code] ??= []).push({ id: item.id, label: item.label, itemValue: item.itemValue });

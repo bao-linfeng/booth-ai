@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { ImportPreviewRow, ImportRow } from './types.js';
+import { resolveDictionaryTerms, type DictionaryAlias } from '../../selection/dictionary-language.js';
 
 const importDictionaries = {
   productSystemId: 'product_system', styleId: 'style', industryIds: 'industry',
@@ -16,12 +17,11 @@ async function resolveImportLabels(client: pg.Pool | pg.PoolClient, row: ImportR
     if (value === null) continue;
     const labels = Array.isArray(value) ? value : [value];
     if (labels.length === 0) continue;
-    const matches = await client.query<{ id: string; label: string; itemValue: string }>(`
-      SELECT i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue"
+    const matches = await client.query<{ id: string; label: string; itemValue: string; labels: Record<string, string>; aliases: DictionaryAlias[] }>(`
+      SELECT i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue", i.labels, i.aliases
       FROM dictionary_items i JOIN dictionaries d ON d.id = i.dictionary_id
-      WHERE d.code = $1 AND d.enabled AND i.enabled AND (i.item_label = ANY($2::text[]) OR i.item_value = ANY($2::text[]))`, [code, labels]);
-    const ids = labels.map(label => matches.rows.find(item => item.label === label || item.itemValue === label)?.id);
-    if (ids.some(id => !id)) throw Object.assign(new Error(`未映射的${code}标签: ${labels.filter((_, index) => !ids[index]).join('、')}`), { statusCode: 400 });
+      WHERE d.code = $1 AND d.enabled AND i.enabled`, [code]);
+    const ids = resolveDictionaryTerms(matches.rows.map(item => ({ ...item, value: item.itemValue })), labels);
     (result as Record<ImportDictionaryField, string | string[] | null>)[field] = Array.isArray(value) ? ids as string[] : ids[0]!;
   }
   return result;

@@ -4,7 +4,6 @@ import { emptyRequirement, type Catalog } from '../src/modules/selection/domain.
 import { parseRequirement } from '../src/modules/selection/parse.js';
 
 const catalog: Catalog = {
-  dimensions: { lengthMm: [], widthMm: [], maxHeightMm: [], areaM2: [] },
   boothSpaces: [],
   openingCounts: [{ id: '1', label: '1面开口' }, { id: '2', label: '2面开口' }, { id: '3', label: '3面开口' }, { id: '4', label: '4面开口（岛式）' }],
   productSystems: [],

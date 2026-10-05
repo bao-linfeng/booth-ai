@@ -50,19 +50,21 @@ test('editing a published scheme atomically removes its publication and verifica
   let auditValues: unknown[] | undefined;
   const pool = {
     query: async (sql: string, values?: unknown[]) => {
+      if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql) || sql.includes('INSERT INTO dictionaries') || sql.includes('INSERT INTO dictionary_items')) return { rows: [], rowCount: 0 };
       if (sql.includes('FROM dictionary_items')) return { rows: [] };
       if (sql.includes('INSERT INTO admin_audit_logs')) { auditValues = values; return { rows: [] }; }
       if (sql.startsWith('UPDATE schemes SET')) {
         updateSql = sql;
-        return { rows: [{ id: 'id', code: 'S-1', name: 'test', revision: 2, createdAt: new Date(), updatedAt: new Date() }] };
+        return { rows: [{ id: 'id', code: 'S-1', name: 'test', editRevision: 2, lengthMm: null, widthMm: null, heightMm: null, openingCount: null, createdAt: new Date(), updatedAt: new Date() }] };
       }
       throw new Error(`Unexpected query: ${sql}`);
     },
+    connect: async () => ({ query: pool.query, release: () => {} }),
   } as unknown as pg.Pool;
   await updateScheme(pool, 'S-1', adminId, { name: 'edited' }, 1);
   assert.match(updateSql, /publish_status = CASE WHEN publish_status = 'published' THEN 'draft'/);
   assert.match(updateSql, /verification_status = 'unverified'/);
-  assert.deepEqual(auditValues, [adminId, 'scheme.update', 'scheme', 'S-1', '{}']);
+  assert.deepEqual(auditValues, [adminId, 'scheme.update', 'scheme', 'S-1', '{"revision":2}']);
 });
 
 test('import update invalidates publication without trusting source verification claim', async () => {

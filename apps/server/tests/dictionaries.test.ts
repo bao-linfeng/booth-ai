@@ -81,6 +81,8 @@ test('dictionary CRUD trims fields, rejects duplicate code and detects missing d
 
 test('item CRUD scopes mutations to dictionary and handles foreign key and conflicts', async () => {
   const pool = poolFor((sql, params) => {
+    if (sql.startsWith('SELECT code FROM dictionaries')) return { rows: [{ code: 'gender' }] };
+    if (sql.includes('JOIN schemes s') && sql.includes('i.length_mm')) return { rows: [{ used: false }] };
     if (sql.startsWith('INSERT')) {
       assert.deepEqual(params, [dictionary.id, 'm', 'Male']);
       return { rows: [item] };
@@ -100,7 +102,7 @@ test('item CRUD scopes mutations to dictionary and handles foreign key and confl
   assert.equal((await createDictionaryItem(pool, dictionary.id, { itemValue: ' m ', itemLabel: ' Male ' })).id, item.id);
   assert.equal((await updateDictionaryItem(pool, item.id, { itemLabel: ' Female ' }, dictionary.id)).itemLabel, 'Female');
   await assert.rejects(deleteDictionaryItem(pool, item.id, dictionary.id), { statusCode: 404 });
-  const missingParent = poolFor(() => { throw Object.assign(new Error('foreign key'), { code: '23503' }); });
+  const missingParent = poolFor(() => ({ rows: [] }));
   await assert.rejects(createDictionaryItem(missingParent, 'missing', { itemValue: 'm', itemLabel: 'Male' }), { statusCode: 404 });
   const conflict = poolFor(() => { throw Object.assign(new Error('duplicate'), { code: '23505' }); });
   await assert.rejects(updateDictionaryItem(conflict, item.id, { itemLabel: 'm' }), { statusCode: 409 });

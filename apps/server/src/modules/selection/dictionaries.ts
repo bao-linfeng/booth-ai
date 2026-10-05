@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { canonicalLocale, normalizeDictionaryTerm, type DictionaryAlias } from './dictionary-language.js';
 
 export interface DictionaryInput {
   code?: string;
@@ -32,6 +33,8 @@ export interface DictionaryItemInput {
   description?: string | null;
   enabled?: boolean;
   sortOrder?: number;
+  labels?: Record<string, string>;
+  aliases?: DictionaryAlias[];
 }
 
 export interface DictionaryItemRecord {
@@ -39,6 +42,11 @@ export interface DictionaryItemRecord {
   dictionaryId: string;
   itemValue: string;
   itemLabel: string;
+  labels: Record<string, string>;
+  aliases: DictionaryAlias[];
+  lengthMm: number | null;
+  widthMm: number | null;
+  heightMm: number | null;
   description: string | null;
   enabled: boolean;
   sortOrder: number;
@@ -66,12 +74,13 @@ interface DictionaryItemRow extends Omit<DictionaryItemRecord, 'createdAt' | 'up
 }
 
 const dictionaryColumns = 'id, code, name, type, description, enabled, sort_order AS "sortOrder", created_at AS "createdAt", updated_at AS "updatedAt"';
-const itemColumns = 'id, dictionary_id AS "dictionaryId", item_value AS "itemValue", item_label AS "itemLabel", description, enabled, sort_order AS "sortOrder", created_at AS "createdAt", updated_at AS "updatedAt"';
+const itemColumns = 'id, dictionary_id AS "dictionaryId", item_value AS "itemValue", item_label AS "itemLabel", labels, aliases, length_mm AS "lengthMm", width_mm AS "widthMm", height_mm AS "heightMm", description, enabled, sort_order AS "sortOrder", created_at AS "createdAt", updated_at AS "updatedAt"';
 const dictionaryFields: Record<keyof DictionaryInput, string> = {
   code: 'code', name: 'name', type: 'type', description: 'description', enabled: 'enabled', sortOrder: 'sort_order',
 };
 const itemFields: Record<keyof DictionaryItemInput, string> = {
   itemValue: 'item_value', itemLabel: 'item_label', description: 'description', enabled: 'enabled', sortOrder: 'sort_order',
+  labels: 'labels', aliases: 'aliases',
 };
 
 function requestError(message: string, statusCode: number): Error & { statusCode: number } {
@@ -100,6 +109,7 @@ function fieldsFor<T extends object>(input: T, columns: Record<keyof T, string>)
       value = value.trim();
       if (!value) throw requestError(`${key} is required`, 400);
     }
+    if (key === 'labels' || key === 'aliases') value = JSON.stringify(value);
     values.push(value);
     assignments.push(`${column} = $${values.length}`);
   }
@@ -109,6 +119,29 @@ function fieldsFor<T extends object>(input: T, columns: Record<keyof T, string>)
 function translateConstraint(error: unknown, message: string): never {
   if (error && typeof error === 'object' && 'code' in error && error.code === '23505') throw requestError(message, 409);
   throw error;
+}
+
+function validateNames(input: DictionaryItemInput): void {
+  const localePattern = /^[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*$/;
+  if (input.labels !== undefined) {
+    const labels: Record<string, string> = {};
+    for (const [locale, text] of Object.entries(input.labels)) {
+      if (!localePattern.test(locale) || typeof text !== 'string' || !text.trim()) throw requestError('Invalid translated label', 400);
+      const key = canonicalLocale(locale);
+      if (labels[key]) throw requestError('Duplicate translation locale', 400);
+      labels[key] = text.trim();
+    }
+    input.labels = labels;
+  }
+  if (input.aliases !== undefined) {
+    const aliases = new Map<string, DictionaryAlias>();
+    for (const alias of input.aliases) {
+      if (!localePattern.test(alias.locale) || !alias.text.trim()) throw requestError('Invalid dictionary alias', 400);
+      const locale = canonicalLocale(alias.locale);
+      aliases.set(`${locale}:${normalizeDictionaryTerm(alias.text)}`, { locale, text: alias.text.trim() });
+    }
+    input.aliases = [...aliases.values()];
+  }
 }
 
 export async function listDictionaries(pool: pg.Pool, options: ListDictionariesOptions): Promise<{ data: DictionaryRecord[]; total: number; page: number; pageSize: number }> {
@@ -165,7 +198,7 @@ export async function updateDictionary(pool: pg.Pool, id: string, input: Diction
 
 export async function deleteDictionary(pool: pg.Pool, id: string): Promise<void> {
   const protectedDictionary = await pool.query<{ code: string }>('SELECT code FROM dictionaries WHERE id = $1', [id]);
-  if (protectedDictionary.rows[0] && ['product_system','style','industry','budget_tier','functional_zone','key_feature','opening_count','booth_length','booth_width','booth_height','booth_area'].includes(protectedDictionary.rows[0].code)) throw requestError('Selection dictionaries cannot be deleted', 409);
+  if (protectedDictionary.rows[0] && ['product_system','style','industry','budget_tier','functional_zone','key_feature','opening_count','booth_size'].includes(protectedDictionary.rows[0].code)) throw requestError('Selection dictionaries cannot be deleted', 409);
   const used = await pool.query<{ used: boolean }>(`SELECT EXISTS (
     SELECT 1 FROM dictionary_items i JOIN schemes s ON
       s.product_system_id = i.id OR s.style_id = i.id OR s.budget_tier_id = i.id
@@ -188,6 +221,20 @@ export async function listDictionaryItems(pool: pg.Pool, dictionaryId: string): 
 
 export async function createDictionaryItem(pool: pg.Pool, dictionaryId: string, input: DictionaryItemInput): Promise<DictionaryItemRecord> {
   if (!input.itemValue?.trim() || !input.itemLabel?.trim()) throw requestError('Item value and label are required', 400);
+  validateNames(input);
+  const parent = await pool.query<{ code: string }>('SELECT code FROM dictionaries WHERE id = $1', [dictionaryId]);
+  if (!parent.rows[0]) throw requestError('Dictionary not found', 404);
+  if (parent.rows[0].code === 'booth_size') {
+    const dimensions = input.itemValue.trim().split('-').map(Number);
+    if (dimensions.length !== 3 || dimensions.some(value => !Number.isSafeInteger(value) || value <= 0 || value > 2147483647)
+      || dimensions.join('-') !== input.itemValue.trim()) throw requestError('尺寸值须为长-宽-高的整数毫米，例如 6000-3000-4500', 400);
+    const result = await pool.query<DictionaryItemRow>(`INSERT INTO dictionary_items
+      (dictionary_id, item_value, item_label, labels, aliases, description, enabled, sort_order, length_mm, width_mm, height_mm)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING ${itemColumns}`,
+    [dictionaryId, input.itemValue.trim(), input.itemLabel.trim(), JSON.stringify(input.labels ?? {}), JSON.stringify(input.aliases ?? []),
+      input.description ?? null, input.enabled ?? true, input.sortOrder ?? 0, ...dimensions]).catch(error => translateConstraint(error, 'Dictionary item value already exists'));
+    return toItem(result.rows[0]!);
+  }
   const { assignments, values } = fieldsFor(input, itemFields);
   const columns = assignments.map(assignment => assignment.split(' = ')[0]);
   try {
@@ -201,6 +248,7 @@ export async function createDictionaryItem(pool: pg.Pool, dictionaryId: string, 
 
 export async function updateDictionaryItem(pool: pg.Pool, itemId: string, input: DictionaryItemInput, dictionaryId?: string): Promise<DictionaryItemRecord> {
   if (input.itemValue !== undefined) throw requestError('Dictionary item value cannot be changed', 400);
+  validateNames(input);
   const { assignments, values } = fieldsFor(input, itemFields);
   if (!assignments.length) throw requestError('No fields to update', 400);
   const scope = dictionaryId === undefined ? '' : ` AND dictionary_id = $${values.length + 2}`;
@@ -214,6 +262,9 @@ export async function updateDictionaryItem(pool: pg.Pool, itemId: string, input:
 }
 
 export async function deleteDictionaryItem(pool: pg.Pool, itemId: string, dictionaryId?: string): Promise<void> {
+  const sizeUsed = await pool.query<{ used: boolean }>(`SELECT EXISTS (SELECT 1 FROM dictionary_items i JOIN schemes s
+    ON s.length_mm = i.length_mm AND s.width_mm = i.width_mm AND s.height_mm = i.height_mm WHERE i.id = $1) AS used`, [itemId]);
+  if (sizeUsed.rows[0]?.used) throw requestError('Dictionary size is referenced by schemes; disable it instead', 409);
   const used = await pool.query<{ used: boolean }>(`SELECT EXISTS (
     SELECT 1 FROM schemes WHERE product_system_id = $1 OR style_id = $1 OR budget_tier_id = $1
       OR $1 = ANY(industry_ids) OR $1 = ANY(zone_ids) OR $1 = ANY(feature_ids)
@@ -235,10 +286,14 @@ export interface DictionaryItemSeed {
   value: string;
   label: string;
   sortOrder: number;
+  lengthMm?: number;
+  widthMm?: number;
+  heightMm?: number;
+  labels?: Record<string, string>;
 }
 
 /** 幂等确保字典及条目存在；已有字典和条目保持原样，返回新增条目数。 */
-export async function ensureDictionaryItems(client: pg.PoolClient, dictionary: DictionarySeed, items: DictionaryItemSeed[]): Promise<number> {
+export async function ensureDictionaryItems(client: pg.Pool | pg.PoolClient, dictionary: DictionarySeed, items: DictionaryItemSeed[]): Promise<number> {
   await client.query(
     'INSERT INTO dictionaries (code, name, type) VALUES ($1, $2, $3) ON CONFLICT (code) DO NOTHING',
     [dictionary.code, dictionary.name, dictionary.type],
@@ -246,10 +301,10 @@ export async function ensureDictionaryItems(client: pg.PoolClient, dictionary: D
   let created = 0;
   for (const item of items) {
     const result = await client.query(
-      `INSERT INTO dictionary_items (dictionary_id, item_value, item_label, sort_order)
-       SELECT id, $2, $3, $4 FROM dictionaries WHERE code = $1
+      `INSERT INTO dictionary_items (dictionary_id, item_value, item_label, sort_order, length_mm, width_mm, height_mm, labels)
+       SELECT id, $2, $3, $4, $5, $6, $7, $8 FROM dictionaries WHERE code = $1
        ON CONFLICT (dictionary_id, item_value) DO NOTHING`,
-      [dictionary.code, item.value, item.label, item.sortOrder],
+      [dictionary.code, item.value, item.label, item.sortOrder, item.lengthMm ?? null, item.widthMm ?? null, item.heightMm ?? null, JSON.stringify(item.labels ?? {})],
     );
     created += result.rowCount ?? 0;
   }

@@ -17,9 +17,12 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
     });
 
     selection.get('/catalog/options', {
-      schema: { tags: ['AI 智选'], summary: '获取智选公共条件' }
-    }, async () => {
-      return { code: 0, data: await getSelectionCatalog(pool) };
+      schema: { tags: ['AI 智选'], summary: '获取智选公共条件', querystring: {
+        type: 'object', additionalProperties: false, properties: { locale: { type: 'string', pattern: '^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$', maxLength: 35 } },
+      } }
+    }, async request => {
+      const locale = (request.query as { locale?: string }).locale ?? request.headers['accept-language']?.split(',')[0]?.split(';')[0]?.trim() ?? 'zh-CN';
+      return { code: 0, data: await getSelectionCatalog(pool, locale) };
     });
 
     selection.post<{ Body: ParseSelectionInput }>('/requirements/parse', {

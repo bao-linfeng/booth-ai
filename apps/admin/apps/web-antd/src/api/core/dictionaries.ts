@@ -22,12 +22,19 @@ export interface DictionaryItemRecord {
   dictionaryId: string;
   itemValue: string;
   itemLabel: string;
+  labels: Record<string, string>;
+  aliases: DictionaryAlias[];
+  lengthMm: null | number;
+  widthMm: null | number;
+  heightMm: null | number;
   description: null | string;
   enabled: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface DictionaryAlias { locale: string; text: string; }
 
 export interface DictionaryListParams {
   page?: number;
@@ -68,6 +75,8 @@ export interface CreateDictionaryItemInput {
   description?: null | string;
   enabled?: boolean;
   sortOrder?: number;
+  labels?: Record<string, string>;
+  aliases?: DictionaryAlias[];
 }
 
 export interface UpdateDictionaryItemInput {
@@ -75,6 +84,8 @@ export interface UpdateDictionaryItemInput {
   description?: null | string;
   enabled?: boolean;
   sortOrder?: number;
+  labels?: Record<string, string>;
+  aliases?: DictionaryAlias[];
 }
 
 export function getDictionaryListApi(params: DictionaryListParams) {
