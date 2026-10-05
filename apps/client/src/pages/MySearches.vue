@@ -6,7 +6,7 @@ import { cva } from 'class-variance-authority'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue'
 import { Pagination, PaginationList, PaginationPrev, PaginationNext } from '@/components/ui/pagination'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
 import { generationText, jobStatusLabels, jobTone, requirementSummary, summarizeGeneration } from '@/features/searches/summary'
@@ -245,12 +245,13 @@ onMounted(() => load())
         </template>
       </template>
     </main>
-    <Dialog :open="!!expandedImage" @update:open="value => { if (!value) expandedImage = undefined }">
-      <DialogContent class="max-h-[90dvh] max-w-5xl overflow-y-auto">
-        <DialogTitle>{{ expandedImage?.label }}</DialogTitle>
-        <DialogDescription>本次检索中的方案与生成成果预览。</DialogDescription>
-        <img v-if="expandedImage" :src="expandedImage.url" :alt="expandedImage.label" class="max-h-[75dvh] w-full object-contain" />
-      </DialogContent>
-    </Dialog>
+    <ImagePreviewDialog
+      :open="!!expandedImage"
+      :src="expandedImage?.url"
+      :alt="expandedImage?.label"
+      :title="expandedImage?.label"
+      description="本次检索中的方案与生成成果预览。"
+      @update:open="value => { if (!value) expandedImage = undefined }"
+    />
   </SelectionShell>
 </template>

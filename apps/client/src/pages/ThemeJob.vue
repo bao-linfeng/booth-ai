@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
 import { cn } from '@/lib/utils'
 import { useAsyncJob } from '@/composables/useAsyncJob'
@@ -71,6 +72,7 @@ const isFailed = computed(() => jobData.value?.status === 'failed')
 const isPartial = computed(() => jobData.value?.status === 'partially_succeeded')
 
 const previewResultId = ref<string | null>(null)
+const imagePreviewOpen = ref(false)
 const activeResultIndex = computed(() => Math.max(0, jobData.value?.results.findIndex(result => result.resultId === previewResultId.value) ?? 0))
 const activeResult = computed(() => jobData.value?.results[activeResultIndex.value] ?? null)
 const selectedResultId = computed(() => jobData.value?.selection.resultId)
@@ -265,9 +267,9 @@ const failureReason = computed(() => {
                 <Badge v-if="activeResult?.resultId === selectedResultId && !selectionUncertain" variant="outline" class="gap-1 border-success/30 text-success"><CheckCircle2 class="size-3.5" />已选定效果</Badge>
                 <Badge v-else variant="secondary">仅预览</Badge>
               </div>
-              <div v-if="activeResult" class="aspect-video overflow-hidden rounded-md bg-image-surface">
+              <button v-if="activeResult" type="button" class="aspect-video w-full overflow-hidden rounded-md bg-image-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" :aria-label="`放大第 ${activeResultIndex + 1} 张主题效果`" @click="imagePreviewOpen = true">
                 <img :src="activeResult.previewUrl" :alt="`正在预览的第 ${activeResultIndex + 1} 张主题效果`" class="h-full w-full object-contain" />
-              </div>
+              </button>
               <div class="grid grid-cols-2 gap-3 sm:grid-cols-4" role="group" aria-label="切换效果预览">
                 <button
                   v-for="(result, index) in jobData.results" :key="result.resultId"
@@ -344,5 +346,12 @@ const failureReason = computed(() => {
         </div>
       </template>
     </main>
+    <ImagePreviewDialog
+      v-model:open="imagePreviewOpen"
+      :src="activeResult?.previewUrl"
+      :alt="`正在预览的第 ${activeResultIndex + 1} 张主题效果`"
+      :title="`第 ${activeResultIndex + 1} 张主题效果`"
+      :description="`共 ${jobData?.results.length ?? 0} 张生成效果。`"
+    />
   </SelectionShell>
 </template>

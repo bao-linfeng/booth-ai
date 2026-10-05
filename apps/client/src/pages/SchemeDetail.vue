@@ -16,7 +16,7 @@ import {
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import ImagePreviewDialog from "@/components/ImagePreviewDialog.vue";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import SelectionShell from "@/features/selection/SelectionShell.vue";
 import SchemeGallery from "@/features/selection/SchemeGallery.vue";
@@ -533,20 +533,26 @@ onMounted(async () => {
           </TabsContent>
         </Tabs>
 
-        <Dialog v-model:open="previewOpen">
-          <DialogContent class="max-h-[90dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto rounded-lg p-4 sm:p-6" @close-auto-focus="restorePreviewFocus">
-            <DialogTitle class="break-all pr-7 text-base">{{ previewAsset?.name }}</DialogTitle>
-            <DialogDescription>标准方案配套资料预览，具体项目施工资料需另行确认。</DialogDescription>
-            <template v-if="previewAsset">
-              <p v-if="previewImageError" role="alert" class="py-12 text-center text-sm text-muted-foreground">图片加载失败，请关闭后重试或下载原文件。</p>
-              <img v-else-if="previewAsset.mimeType.startsWith('image/')" :src="previewAsset.url" :alt="previewAsset.name" class="max-h-[65dvh] w-full object-contain" @error="previewImageError = true" />
-              <div v-else-if="previewAsset.mimeType === 'application/pdf'" class="space-y-4 rounded-lg bg-muted/40 p-4">
-                <p class="text-sm leading-relaxed">PDF 原件将在新标签页中打开，可使用浏览器的阅读与下载功能。当前弹窗可按 Escape 关闭。</p>
-                <Button as-child variant="outline" class="h-auto min-h-11 max-w-full whitespace-normal"><a :href="previewAsset.url" target="_blank" rel="noopener noreferrer">新标签页查看 PDF 原件<ArrowUpRight class="size-4" aria-hidden="true" /></a></Button>
-              </div>
-            </template>
-          </DialogContent>
-        </Dialog>
+        <ImagePreviewDialog
+          v-model:open="previewOpen"
+          :src="previewAsset?.mimeType.startsWith('image/') ? previewAsset.url : undefined"
+          :alt="previewAsset?.name"
+          :title="previewAsset?.name"
+          description="标准方案配套资料预览，具体项目施工资料需另行确认。"
+          content-class="max-h-[90dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto rounded-lg p-4 sm:p-6"
+          image-class="max-h-[65dvh] w-full object-contain"
+          :image-error="previewImageError"
+          error-message="图片加载失败，请关闭后重试或下载原文件。"
+          @image-error="previewImageError = true"
+          @close-auto-focus="restorePreviewFocus"
+        >
+          <template #content v-if="previewAsset && previewAsset.mimeType === 'application/pdf'">
+            <div class="space-y-4 rounded-lg bg-muted/40 p-4">
+              <p class="text-sm leading-relaxed">PDF 原件将在新标签页中打开，可使用浏览器的阅读与下载功能。当前弹窗可按 Escape 关闭。</p>
+              <Button as-child variant="outline" class="h-auto min-h-11 max-w-full whitespace-normal"><a :href="previewAsset.url" target="_blank" rel="noopener noreferrer">新标签页查看 PDF 原件<ArrowUpRight class="size-4" aria-hidden="true" /></a></Button>
+            </div>
+          </template>
+        </ImagePreviewDialog>
 
         <div ref="shortcutBar" aria-label="方案快捷操作" class="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:hidden">
           <div class="mx-auto flex max-w-2xl flex-wrap items-stretch gap-3">
