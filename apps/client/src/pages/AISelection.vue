@@ -1,9 +1,9 @@
 ﻿<script setup lang="ts">
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowRight, Sparkles, ShieldCheck, Pencil, MessageCircle, Search, LoaderCircle, CircleAlert, ArrowUpRight, Check, Coins } from 'lucide-vue-next'
+import { ArrowRight, Sparkles, ShieldCheck, Pencil, MessageCircle, Search, LoaderCircle, CircleAlert, ArrowUpRight, Check, Coins, RotateCcw } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -49,7 +49,6 @@ const state = ref<SelectionState>('idle')
 const previewMode = ref('idle')
 const editing = ref(false)
 const confirmedClarifications = ref<Record<number, string>>({})
-const editorVisible = computed(() => editing.value || state.value === 'idle' || state.value === 'error')
 const outcomeVisible = computed(() => state.value === 'results' || state.value === 'empty')
 const manualOpen = ref(false)
 const manualName = ref('')
@@ -96,6 +95,8 @@ function confirmClarification(index: number) {
 const liveCatalog = ref<Catalog | null>(null)
 const liveItems = ref<MatchItem[]>([])
 const liveMatchData = ref<MatchResponse | null>(null)
+const inspirationResults = computed(() => state.value === 'results' && (isPreview.value ? previewMode.value === 'random' : liveMatchData.value?.mode === 'random'))
+const editorVisible = computed(() => editing.value || state.value === 'idle' || state.value === 'error' || inspirationResults.value || (outcomeVisible.value && stale.value))
 const liveClarifications = ref<ParseResponse['clarifications']>([])
 const parseResult = ref<ParseResponse | null>(null)
 const parsedText = ref<string | null>(null)
@@ -442,7 +443,9 @@ const chips = computed(() => {
     r.areaM2 ? `${r.areaM2} ㎡` : '', 
     r.maxHeightMm ? `限高 ${r.maxHeightMm / 1000} m` : '',
     r.openingCount ? `${r.openingCount} 面开口` : '', 
-    ...currentCatalog.styles.filter(option => r.styleIds.includes(option.id)).map(option => option.label)
+    ...currentCatalog.styles.filter(option => r.styleIds.includes(option.id)).map(option => option.label),
+    ...currentCatalog.industries.filter(option => r.industryIds.includes(option.id)).map(option => option.label),
+    ...currentCatalog.zones.filter(option => r.zoneIds.includes(option.id) || r.requiredZoneIds.includes(option.id)).map(option => option.label)
   ].filter(Boolean)
 })
 
@@ -678,59 +681,55 @@ onMounted(() => {
 
 <template>
   <MainLayout>
-    <main id="main-content" class="studio-page">
-      <section class="grid items-end gap-8 border-b pb-8 md:pb-10 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <div class="space-y-5">
-          <p class="studio-eyebrow flex items-center gap-3"><span class="h-px w-8 bg-primary" />灵通 · AI 智选 / EXHIBITION DESIGN</p>
-          <h1 :class="state === 'idle' ? 'max-w-2xl text-[30px] font-semibold leading-[1.3] tracking-tight md:text-[42px]' : 'studio-title'">{{ state === 'idle' ? '好展台，从选对方案开始' : state === 'needs_clarification' ? '确认需求，让方案更合适' : '发现适合您的空间方案' }}</h1>
-          <p class="max-w-xl text-base leading-7 text-muted-foreground">{{ state === 'idle' ? '从一份参展想法，到看得见的空间。描述需求，发现适合您的展台方案，再逐步确认品牌表达与落地细节。' : '先选方案，再按需调整品牌主题或申请报价。' }}</p>
+    <main id="main-content" class="studio-page !space-y-6 !py-6 md:!py-8">
+      <section class="flex flex-wrap items-end justify-between gap-4 border-b pb-5">
+        <div class="space-y-2">
+          <p class="flex items-center gap-3 text-xs font-medium text-muted-foreground"><span class="h-px w-8 bg-primary" />灵通 · AI 智选 / EXHIBITION DESIGN</p>
+          <h1 class="text-[28px] font-semibold leading-snug md:text-[32px]">{{ state === 'needs_clarification' ? '确认需求，让方案更合适' : '发现适合您的展台方案' }}</h1>
+          <p class="text-sm leading-6 text-muted-foreground">{{ editorVisible ? '描述参展想法，匹配展台方案，再按需调整品牌主题或申请报价。' : '先选方案，再按需调整品牌主题或申请报价。' }}</p>
         </div>
-        <div class="space-y-5 lg:border-l lg:pl-7">
-          <ol v-if="state === 'idle'" class="space-y-3 text-sm" aria-label="方案选型流程">
-            <li class="flex items-center gap-3"><span class="font-mono text-xs text-primary">01</span>描述需求<span class="ml-auto text-xs text-muted-foreground">从尺寸与想法开始</span></li>
-            <li class="flex items-center gap-3"><span class="font-mono text-xs text-muted-foreground">02</span>比较方案<span class="ml-auto text-xs text-muted-foreground">看效果，核对差异</span></li>
-            <li class="flex items-center gap-3"><span class="font-mono text-xs text-muted-foreground">03</span>确认落地<span class="ml-auto text-xs text-muted-foreground">调整品牌，申请报价</span></li>
-          </ol>
-          <p class="flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck class="size-4 shrink-0 text-success" />免费匹配 · 无需登录 · 不扣积分</p>
-        </div>
+        <p class="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck class="size-4 shrink-0 text-success" />免费匹配 · 无需登录 · 不扣积分</p>
       </section>
       <Card v-if="!isPreview && catalogState !== 'ready'" :role="catalogState === 'error' ? 'alert' : 'status'"><CardContent class="flex items-center justify-between gap-4 p-5 text-sm"><span>{{ catalogState === 'loading' ? '正在加载选型条件…' : '选型条件加载失败，请重试。' }}</span><Button v-if="catalogState === 'error'" variant="outline" @click="loadCatalog">重新加载</Button></CardContent></Card>
-      <Card v-if="interruptedRequest && !isPreview" role="status"><CardContent class="p-5 text-sm">上次请求因页面离开而中断，输入已恢复。点击“查找方案”继续。</CardContent></Card>
+      <Card v-if="interruptedRequest && !isPreview" role="status"><CardContent class="p-5 text-sm">上次请求因页面离开而中断，输入已恢复。点击“匹配方案”继续。</CardContent></Card>
       <Card v-if="isPreview" class="border-dashed"><CardHeader class="pb-3"><CardTitle class="text-sm">UI 静态预览</CardTitle><CardDescription>示例编号与空间示意仅用于界面评审，不代表真实匹配。</CardDescription></CardHeader><CardContent class="flex flex-wrap gap-2"><Button v-for="option in previewStates" :key="option.id" size="sm" :variant="previewMode === option.id ? 'default' : 'outline'" :aria-pressed="previewMode === option.id" @click="choosePreview(option.id)">{{ option.label }}</Button></CardContent></Card>
       <div id="selection-stage" tabindex="-1" class="min-w-0 scroll-mt-24 space-y-6 focus:outline-none">
           <section v-if="!editorVisible" class="space-y-3 border-b pb-6" aria-label="当前需求摘要">
             <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="min-w-0 flex-1 space-y-2"><h2 class="text-sm font-medium">{{ stale && outcomeVisible ? '已修改的需求' : '当前需求' }}</h2><p class="line-clamp-2 break-words text-sm text-muted-foreground">{{ text || '从展位条件开始匹配；未填写的条件将在结果中提示。' }}</p></div>
-              <Button variant="outline" size="sm" :disabled="busy" aria-controls="requirement-editor" :aria-expanded="editorVisible" @click="editRequirement"><Pencil class="mr-2 size-3.5" />编辑需求</Button>
+              <div class="min-w-0 flex-1 space-y-2"><h2 class="text-sm font-medium">当前需求</h2><p v-if="text" class="line-clamp-2 break-words text-sm text-muted-foreground">{{ text }}</p></div>
+              <Button variant="outline" size="sm" :disabled="busy" aria-controls="requirement-editor" :aria-expanded="editorVisible" @click="editRequirement"><Pencil class="mr-2 size-3.5" />修改需求</Button>
             </div>
             <div v-if="chips.length" class="flex flex-wrap gap-2"><Badge v-for="chip in chips" :key="chip" variant="outline">{{ chip }}</Badge></div>
             <details v-if="conditionRows.length" class="text-xs"><summary class="cursor-pointer text-muted-foreground focus-visible:outline focus-visible:outline-ring">查看全部 {{ conditionRows.length }} 项条件</summary><dl class="mt-3 grid gap-3 sm:grid-cols-2"><div v-for="row in conditionRows" :key="row.field" class="min-w-0"><dt class="text-muted-foreground">{{ row.label }}</dt><dd class="mt-1 break-words">{{ row.value }}</dd></div></dl></details>
           </section>
-          <Card v-if="editorVisible" id="requirement-editor" class="overflow-hidden border-0 shadow-none">
-            <CardHeader class="px-5 pb-5 pt-6 sm:px-8 sm:pt-8">
-              <div class="space-y-2"><CardTitle class="flex items-center gap-2 text-xl"><Sparkles class="size-5 text-primary" />您想要怎样的展台？</CardTitle><CardDescription class="leading-6">描述需求或直接选条件，也可以留空寻找灵感。</CardDescription></div>
-            </CardHeader>
-            <CardContent class="space-y-5 px-5 sm:px-8">
+          <section v-if="editorVisible" id="requirement-editor" class="space-y-4 border-b pb-5" aria-labelledby="requirement-heading">
+            <h2 id="requirement-heading" class="flex items-center gap-2 text-lg font-semibold"><Sparkles class="size-5 text-primary" />您想要怎样的展台？</h2>
+            <div class="space-y-3">
               <Label for="requirement-text" class="sr-only">一句话描述需求</Label>
-              <Textarea id="requirement-text" :model-value="text" maxlength="1000" :disabled="busy" class="min-h-32 resize-y bg-background/60 p-4 text-base leading-7" placeholder="例如：长6米、宽3米，两面开口，限高4.5米，希望有洽谈区……" @update:model-value="text = String($event)" />
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="text-xs text-muted-foreground">试试：</span>
-                <Button variant="secondary" size="sm" :disabled="busy" @click="text = '长6米、宽3米，现代简约风格，需要洽谈区'">简约洽谈空间<ArrowUpRight class="ml-1 size-3" /></Button>
-                <Button variant="secondary" size="sm" :disabled="busy" @click="text = '医疗健康行业，必须有储藏间'">医疗 · 带储藏间<ArrowUpRight class="ml-1 size-3" /></Button>
+              <Textarea id="requirement-text" :model-value="text" :rows="3" maxlength="1000" :disabled="busy" class="min-h-24 resize-y bg-card p-3 text-base leading-6 focus-visible:ring-1" placeholder="例如：长6米、宽3米，两面开口，希望有洽谈区" @update:model-value="text = String($event)" />
+              <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-xs text-muted-foreground">试试：</span>
+                  <Button variant="ghost" size="sm" :disabled="busy" @click="text = '长6米、宽3米，现代简约风格，需要洽谈区'">简约洽谈空间<ArrowUpRight class="ml-1 size-3" /></Button>
+                  <Button variant="ghost" size="sm" :disabled="busy" @click="text = '医疗健康行业，必须有储藏间'">医疗 · 带储藏间<ArrowUpRight class="ml-1 size-3" /></Button>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-muted-foreground"><span>{{ text.length }} / 1000</span><Button v-if="text || parseResult" variant="ghost" size="sm" :disabled="busy" @click="clearText">清空描述</Button></div>
               </div>
-              <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><span>文字识别后可核对 · {{ text.length }} / 1000</span><Button variant="ghost" size="sm" :disabled="busy || (!text && !parseResult)" @click="clearText">清空描述</Button></div>
-              <div class="border-t pt-5"><RequirementForm v-model="requirement" :catalog="catalog" :disabled="busy || (!isPreview && catalogState !== 'ready')" @reset="reset" /></div>
               <p v-if="textChangedSinceParse" class="text-sm text-warning" role="status">描述已修改，查找时会重新识别文字；仅修改条件则直接使用修改后的值。</p>
               <p v-if="requirementError" class="text-sm text-destructive" role="alert">{{ requirementError }}</p>
-            </CardContent>
-            <CardFooter class="flex-wrap justify-between gap-4 border-t px-5 py-5 sm:px-8">
-              <p class="text-sm text-muted-foreground">条件不全也可先看参考方案</p>
-              <div class="flex flex-wrap gap-2">
-                <Button v-if="editing && state !== 'idle' && state !== 'error'" variant="ghost" @click="editing = false">收起编辑</Button>
-                <Button :disabled="!canSearch" class="gap-2" @click="submit"><Search class="size-4" />{{ outcomeVisible ? '按新需求重新匹配' : '查找方案' }}<ArrowRight class="size-4" /></Button>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <Button v-if="!text.trim() && !conditionRows.length" variant="ghost" :disabled="!canSearch" @click="submit">先看展台灵感<ArrowUpRight class="ml-1 size-4" /></Button>
+                <Button v-else variant="ghost" size="sm" :disabled="busy" @click="reset"><RotateCcw class="mr-1 size-3.5" />重置需求</Button>
               </div>
-            </CardFooter>
-          </Card>
+              <div class="flex flex-wrap gap-2">
+                <Button v-if="editing && !stale && !inspirationResults && state !== 'idle' && state !== 'error'" variant="ghost" @click="editing = false">收起编辑</Button>
+                <Button :disabled="!canSearch" class="gap-2" @click="submit"><Search class="size-4" />{{ outcomeVisible && !inspirationResults ? '重新匹配方案' : '匹配方案' }}<ArrowRight class="size-4" /></Button>
+              </div>
+            </div>
+            <div class="border-t pt-4"><RequirementForm v-model="requirement" :catalog="catalog" :disabled="busy || (!isPreview && catalogState !== 'ready')" /></div>
+          </section>
           
           <Card v-if="state === 'needs_clarification'" class="border-warning/25 bg-warning/5"><CardHeader><CardTitle class="flex items-center gap-2 text-lg"><CircleAlert class="size-5 text-warning" />请先确认，我们是否理解正确？</CardTitle><CardDescription>{{ isPreview ? '澄清状态示例：“6×3”尚不能确定左右跨度和前后进深。' : '解析过程中遇到模糊要求，需您确认。' }}</CardDescription></CardHeader><CardContent class="space-y-4">
             <template v-if="isPreview">
@@ -764,7 +763,7 @@ onMounted(() => {
           </div>
           
           <Card v-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? '正在识别您的需求' : '正在查找适合的方案' }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? '加载状态预览，可使用顶部工具栏切换。' : '正在匹配方案，请稍后。' }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>
-             <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '先发现一些灵感' : '为您找到的空间方案' }}</h2><Badge variant="secondary">{{ (isPreview ? previewMode === 'random' : liveMatchData?.mode === 'random') ? '随机推荐 · 适用条件待确认' : (isPreview ? '1 套直接采用 · 2 套参考' : `${liveMatchData?.counts.direct ?? 0} 套直接采用 · ${liveMatchData?.counts.reference ?? 0} 套参考`) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" @answer-applicability="answerApplicability" /><p class="text-xs leading-relaxed text-muted-foreground">“可直接采用”指已提供结构条件与审核方案一致，不替代具体项目的报馆及施工确认。</p></section>
+              <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? '先看看展台灵感' : '为您找到的空间方案' }}</h2><Badge variant="secondary">{{ inspirationResults ? '灵感推荐 · 尚未按需求筛选' : (isPreview ? '1 套直接采用 · 2 套参考' : `${liveMatchData?.counts.direct ?? 0} 套直接采用 · ${liveMatchData?.counts.reference ?? 0} 套参考`) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" @answer-applicability="answerApplicability" /><p class="text-xs leading-relaxed text-muted-foreground">“可直接采用”指已提供结构条件与审核方案一致，不替代具体项目的报馆及施工确认。</p></section>
           <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? '当前组合暂时没有合适的方案' : '暂时未能完成匹配' }}</h2><div v-if="state === 'empty'" class="max-w-md space-y-1 text-sm leading-relaxed text-muted-foreground"><p v-for="reason in liveMatchData?.reasons ?? ['您的需求已保留。可主动修改条件，或交给专业顾问。']" :key="reason">{{ reason }}</p></div><p v-else class="max-w-md text-sm leading-relaxed text-muted-foreground">输入已保留，请重试。服务异常不代表没有匹配方案。</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="editRequirement">修改条件</Button><Button v-else :disabled="!canSearch" @click="submit">重试</Button><Button variant="outline" @click="manualOpen = true">转人工</Button></div></CardContent></Card>
           <div class="flex flex-wrap items-center justify-between gap-4 border-t pt-5"><div class="flex items-center gap-3"><MessageCircle class="size-5 shrink-0 text-muted-foreground" /><p class="text-sm text-muted-foreground">尺寸特殊、需求复杂？让顾问一起梳理。</p></div><Button variant="ghost" @click="manualOpen = true">转人工沟通<ArrowUpRight class="ml-2 size-4" /></Button></div>
           <div v-if="authStore.isLoggedIn && !isPreview" class="flex items-center justify-end gap-2 text-xs text-muted-foreground"><span>账户积分</span><div class="relative"><Button size="sm" variant="ghost" :disabled="creditsLoading || isSigningIn || signedInToday" @click="handleSignIn"><Check v-if="signedInToday" class="mr-1 size-3.5" /><Coins v-else class="mr-1 size-3.5" />{{ signedInToday ? '今日已签到' : '每日签到' }}</Button><Transition name="reward-float"><span v-if="showRewardAnimation" class="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-sm font-medium text-primary">+{{ rewardAmount }} 积分</span></Transition></div></div>

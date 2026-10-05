@@ -14,7 +14,7 @@ for (const name of ['window', 'document', 'navigator', 'Document', 'DocumentFrag
 registerTS(() => ts)
 const root = fileURLToPath(new URL('../', import.meta.url))
 const server = await createServer({
-  root, configFile: false, server: { middlewareMode: true },
+  root, configFile: false, server: { middlewareMode: true, hmr: false },
   optimizeDeps: { noDiscovery: true, include: [] },
   resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
   plugins: [{
@@ -103,16 +103,27 @@ test('RequirementField: invalid precision is accessible and valid precision clea
 test('RequirementForm: common sizes deduplicate length/width and selection/clear preserve height', async () => {
   const mounted = mount(RequirementForm, {}, { maxHeightMm: 4250 })
   async function open() {
-    const trigger = mounted.container.querySelector('[aria-label="常用尺寸"]')
+    const trigger = mounted.container.querySelector('[aria-label="展位尺寸"]')
     assert.ok(trigger)
     trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await nextTick(); await nextTick()
     return [...document.querySelectorAll('[role="option"]')]
   }
   try {
+    assert.equal(mounted.container.querySelector('#requirement-maxHeightMm'), null)
+    const more = [...mounted.container.querySelectorAll('button')].find(button => button.textContent.includes('更多条件'))
+    assert.ok(more)
+    assert.equal(more.getAttribute('aria-expanded'), 'false')
+    assert.match(more.textContent, /已填 1 类/)
+    more.click()
+    await nextTick(); await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 30))
+    await nextTick()
+    assert.equal(more.getAttribute('aria-expanded'), 'true')
+    assert.equal(mounted.container.querySelector('#requirement-maxHeightMm').value, '4.25')
     let options = await open()
-    assert.deepEqual(options.map(option => option.textContent.trim()), ['不选常用尺寸', '6 × 3 m', '3 × 6 m'])
-    options.find(option => option.textContent.trim() === '6 × 3 m').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    assert.deepEqual(options.map(option => option.textContent.trim()), ['不限', '6×3 m', '3×6 m'])
+    options.find(option => option.textContent.trim() === '6×3 m').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await new Promise(resolve => setTimeout(resolve, 0))
     await nextTick(); await nextTick()
     assert.equal(mounted.emitted.at(-1).lengthMm, 6000)
@@ -122,7 +133,7 @@ test('RequirementForm: common sizes deduplicate length/width and selection/clear
     assert.equal(mounted.container.querySelector('#requirement-maxHeightMm').value, '4.25')
     assert.match(mounted.container.textContent, /面积 18 ㎡/)
     options = await open()
-    options.find(option => option.textContent.trim() === '不选常用尺寸').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    options.find(option => option.textContent.trim() === '不限').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await new Promise(resolve => setTimeout(resolve, 0))
     await nextTick(); await nextTick()
     assert.equal(mounted.emitted.at(-1).lengthMm, null)
