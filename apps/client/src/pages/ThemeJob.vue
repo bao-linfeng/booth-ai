@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import SelectionShell from '@/features/selection/SelectionShell.vue'
 import { cn } from '@/lib/utils'
+import { useAsyncJob } from '@/composables/useAsyncJob'
 import { createThemeJobEventsTicket, getThemeJob, openThemeJobEvents, saveThemeSelection, type ThemeJob } from '@/services/api/theme-jobs'
 
 const route = useRoute()
@@ -22,100 +23,44 @@ const refreshingSelection = ref(false)
 const selectionUncertain = ref(false)
 const selectionNotice = ref<{ tone: 'success' | 'warning' | 'error'; message: string } | null>(null)
 const savingResultNumber = ref(0)
-
-let events: EventSource | null = null
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let disposed = false
-let connecting = false
-let fetchPromise: Promise<boolean> | null = null
-let refreshRequested = false
-
-onMounted(() => {
-  void fetchJob(true)
-})
-
-onUnmounted(() => {
-  disposed = true
-  stopEvents()
-})
-
-function stopEvents() {
-  events?.close()
-  events = null
-  if (reconnectTimer) clearTimeout(reconnectTimer)
-  reconnectTimer = null
-}
-
-function scheduleReconnect() {
-  stopEvents()
-  if (disposed || !isPending.value) return
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null
-    void fetchJob()
-  }, 3000)
-}
-
-function fetchJob(initial = false): Promise<boolean> {
-  if (disposed) return Promise.resolve(false)
-  if (fetchPromise) {
-    refreshRequested = true
-    return fetchPromise
-  }
-  fetchPromise = loadJob(initial).finally(() => {
-    fetchPromise = null
-    if (refreshRequested) {
-      refreshRequested = false
-      if (!disposed && isPending.value) void fetchJob()
-    }
-  })
-  return fetchPromise
-}
-
-async function loadJob(initial: boolean): Promise<boolean> {
-  if (initial) loading.value = true
-  error.value = false
-  try {
-    const res = await getThemeJob(jobId)
-    if (disposed) return false
-    if (jobData.value && res.selection.revision < jobData.value.selection.revision) {
-      res.selection = jobData.value.selection
-    }
-    jobData.value = res
-    if (isPending.value) {
-      if (!events && !connecting) void connectEvents()
-    } else {
-      stopEvents()
-    }
-    return true
-  } catch (e) {
-    console.error('Failed to load job', e)
-    if (initial) error.value = true
-    else scheduleReconnect()
-    return false
-  } finally {
-    if (initial) loading.value = false
-  }
-}
-
-async function connectEvents() {
-  if (disposed || !isPending.value || events || connecting) return
-  connecting = true
-  try {
-    const ticket = await createThemeJobEventsTicket(jobId)
-    if (disposed || !isPending.value) return
-    events = openThemeJobEvents(jobId, ticket, () => { void fetchJob() }, scheduleReconnect)
-  } catch (e) {
-    console.error('Failed to connect theme job events', e)
-    scheduleReconnect()
-  } finally {
-    connecting = false
-  }
-}
 
 const isPending = computed(() => {
   if (!jobData.value) return false
   return ['pending', 'queued', 'running', 'settling'].includes(jobData.value.status)
 })
+
+const asyncJob = useAsyncJob<ThemeJob>({
+  fetch: getThemeJob,
+  createEventsTicket: createThemeJobEventsTicket,
+  openEvents: openThemeJobEvents,
+  isPending: data => ['pending', 'queued', 'running', 'settling'].includes(data.status),
+  onData: data => {
+    error.value = false
+    if (jobData.value && data.selection.revision < jobData.value.selection.revision) {
+      data.selection = jobData.value.selection
+    }
+    jobData.value = data
+  },
+  onError: (_error, initial) => {
+    console.error('Failed to load theme job', _error)
+    if (initial) error.value = true
+  },
+  reconnectDelay: (_error, initial) => initial ? null : 3000,
+})
+
+function fetchJob(initial = false) {
+  if (initial) loading.value = true
+  return asyncJob.refresh(initial).finally(() => {
+    if (initial) loading.value = false
+  })
+}
+
+onMounted(() => {
+  loading.value = true
+  void asyncJob.start(jobId).finally(() => { loading.value = false })
+})
+onUnmounted(() => { disposed = true })
 
 const isFinished = computed(() => {
   if (!jobData.value) return false

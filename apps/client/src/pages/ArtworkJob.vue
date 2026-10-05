@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import { createArtworkJob, createArtworkJobEventsTicket, directionLabels, downloadArtwork, getArtworkJob, getArtworkJobs, getArtworkOffer, openArtworkJobEvents, type ArtworkContext, type ArtworkJob, type ArtworkOffer, type ArtworkSubmission } from '@/services/api/artwork-jobs'
 import { getThemeJob } from '@/services/api/theme-jobs'
 import { bindProjectArtworks, getMyProject, type MyProjectDetail } from '@/services/api/projects'
+import { useAsyncJob } from '@/composables/useAsyncJob'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,11 +26,6 @@ const busy = ref(false)
 const downloading = ref('')
 const error = ref('')
 const bound = ref(false)
-let timer: ReturnType<typeof setTimeout> | undefined
-let events: EventSource | undefined
-let connectingVersion: number | undefined
-let fetchingVersion: number | undefined
-let refreshRequestedVersion: number | undefined
 let epoch = 0
 let destroyed = false
 const isRunning = computed(() => !!job.value && ['pending', 'queued', 'running', 'settling'].includes(job.value.status))
@@ -42,62 +38,36 @@ const reasonLabels: Record<string, string> = { ARTWORK_RESOLUTION_TOO_LOW: '输�
 
 function statusOf(failure: unknown) { return (failure as { response?: { status?: number } }).response?.status }
 function login() { void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } }) }
-function cancelPoll() { if (timer) clearTimeout(timer); timer = undefined }
 function alive(version: number) { return !destroyed && version === epoch }
-function stopEvents() { events?.close(); events = undefined; cancelPoll() }
-function scheduleReconnect(version: number, delay = 3000) {
-  if (!alive(version)) return
-  stopEvents()
-  if (isRunning.value) timer = setTimeout(() => void fetchJob(version), delay)
-}
-async function connectEvents(version: number, id: string) {
-  if (!alive(version) || !isRunning.value || events || connectingVersion === version) return
-  connectingVersion = version
-  try {
-    const ticket = await createArtworkJobEventsTicket(id)
-    if (!alive(version) || !isRunning.value) return
-    events = openArtworkJobEvents(id, ticket, () => { if (alive(version)) void fetchJob(version) }, () => scheduleReconnect(version))
-  } catch {
-    scheduleReconnect(version)
-  } finally { if (connectingVersion === version) connectingVersion = undefined }
-}
-async function fetchJob(version = epoch) {
-  if (!alive(version)) return
-  if (fetchingVersion === version) { refreshRequestedVersion = version; return }
-  fetchingVersion = version
-  cancelPoll()
-  const id = String(route.params.jobId)
-  try {
-    const data = await getArtworkJob(id)
-    if (!alive(version)) return
+const asyncJob = useAsyncJob<ArtworkJob>({
+  fetch: getArtworkJob,
+  createEventsTicket: createArtworkJobEventsTicket,
+  openEvents: openArtworkJobEvents,
+  isPending: data => ['pending', 'queued', 'running', 'settling'].includes(data.status),
+  onData: data => {
     job.value = data
     reference.value = data.referencePreviewUrl ?? ''
     context.value = { schemeCode: data.schemeCode, ...data.themeSelection }
     error.value = ''
-    if (isRunning.value) {
-      if (!events) void connectEvents(version, id)
-    } else stopEvents()
-  } catch (failure: unknown) {
-    if (!alive(version)) return
+  },
+  onError: failure => {
     error.value = statusOf(failure) === 404 ? '任务不存在或不属于当前账户。' : '任务状态读取失败，请刷新重试。'
-    if (statusOf(failure) === 401 || statusOf(failure) === 404) stopEvents()
-    else scheduleReconnect(version, 5000)
-  } finally {
-    if (fetchingVersion === version) fetchingVersion = undefined
-    if (refreshRequestedVersion === version) {
-      refreshRequestedVersion = undefined
-      if (alive(version) && isRunning.value) void fetchJob(version)
-    }
-  }
+  },
+  reconnectDelay: failure => [401, 404].includes(statusOf(failure) ?? 0) ? null : 5000,
+})
+function fetchJob(initial = false) {
+  const id = String(route.params.jobId)
+  if (!route.params.jobId) return Promise.resolve(false)
+  return asyncJob.start(id, initial)
 }
 async function load() {
   const version = ++epoch
-  stopEvents()
+  asyncJob.stop()
   job.value = undefined; offer.value = undefined; project.value = undefined; context.value = undefined; history.value = []; pending.value = undefined
   loading.value = true; error.value = ''; bound.value = false
   if (!auth.isLoggedIn) { loading.value = false; return }
   try {
-    if (route.params.jobId) await fetchJob(version)
+    if (route.params.jobId) await fetchJob(true)
     else {
       const themeJobId = String(route.query.themeJobId ?? '')
       const theme = await getThemeJob(themeJobId)
@@ -182,7 +152,7 @@ async function download(assetId?: string, direction?: string) {
 onMounted(() => void load())
 watch(() => route.fullPath, () => void load())
 watch(() => auth.currentUser?.id, () => void load())
-onUnmounted(() => { destroyed = true; epoch++; stopEvents() })
+onUnmounted(() => { destroyed = true; epoch++; asyncJob.stop() })
 </script>
 
 <template>
