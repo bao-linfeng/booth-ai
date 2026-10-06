@@ -99,7 +99,7 @@ export interface SchemeDetail {
   code: string
   images: SchemeImage[]
   specifications: Specifications
-  applicabilityNotes: string
+  description: string
   resources: Record<string, boolean>
   actions: Record<string, 'available' | 'requiresLogin' | 'requiresAuthorization' | 'unavailable'>
 }

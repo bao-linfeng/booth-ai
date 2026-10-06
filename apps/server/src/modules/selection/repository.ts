@@ -19,6 +19,7 @@ interface CandidateRow {
   zoneIds: string[] | null;
   featureIds: string[] | null;
   keywords: string[] | null;
+  description: string | null;
   conditions: Record<string, unknown> | null;
   bomVerified: boolean;
 }
@@ -85,7 +86,7 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
       s.height_mm AS "heightMm", s.area_sqm::float8 AS "areaM2", s.opening_count AS "openingCount",
       s.product_system_id::text AS "productSystemId", s.style_id::text AS "styleId",
       s.industry_ids::text[] AS "industryIds", s.budget_tier_id::text AS "budgetTierId", s.zone_ids::text[] AS "zoneIds",
-      s.feature_ids::text[] AS "featureIds", s.keywords, s.applicable_conditions AS conditions,
+      s.feature_ids::text[] AS "featureIds", s.keywords, s.description, s.applicable_conditions AS conditions,
       EXISTS (SELECT 1 FROM scheme_boms b WHERE b.scheme_id = s.id AND b.status = 'verified') AS "bomVerified"
     FROM schemes s
     WHERE s.publish_status = 'published'
@@ -159,7 +160,7 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
       keywords: row.keywords ?? [],
       labelsConfirmed: row.conditions.labelsConfirmed === true,
       applicabilityRules: rules as { id: string; expectedValue: boolean }[],
-      applicabilityNotes: typeof row.conditions.publicNotes === 'string' ? row.conditions.publicNotes : '',
+      description: row.description ?? '',
     });
   }
   return { candidates, diagnostics };

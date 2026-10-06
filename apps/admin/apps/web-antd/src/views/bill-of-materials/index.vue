@@ -435,9 +435,10 @@ defineExpose({ open });
   <Modal
     :title="`${mode === 'detail' ? '清单详情' : '编辑清单'} · ${currentCode}`"
     class="w-[min(1400px,96vw)]"
+    content-class="overflow-hidden"
     :footer="false"
   >
-    <div v-loading="bomLoading" class="max-h-[75vh] space-y-4 overflow-y-auto">
+    <div v-loading="bomLoading" class="space-y-4">
       <!-- 状态栏 -->
       <div
         class="border-border bg-muted/50 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3"
@@ -636,7 +637,7 @@ defineExpose({ open });
           :pagination="{ pageSize: 20, showSizeChanger: false }"
           size="small"
           row-key="id"
-          :scroll="{ x: 1400 }"
+          :scroll="{ x: 1400, y: 'calc(75vh - 220px)' }"
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'action'">

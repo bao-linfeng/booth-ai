@@ -283,7 +283,7 @@ const item = computed(() => {
       code: matched.code,
       images: matched.images,
       specifications: matched.specifications,
-      applicabilityNotes: t('schemeDetail.applicabilityNote'),
+      description: t('schemeDetail.previewDescription'),
       resources: {
         model: true,
         bom: true,
@@ -412,14 +412,9 @@ onMounted(async () => {
             <TabsTrigger value="resources" class="px-2 py-2.5 sm:px-6">{{ t('schemeDetail.tabAssets') }}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="description" class="mt-6">
-            <div class="grid gap-6 py-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-12">
-              <div><h2 class="text-lg font-semibold">{{ t('schemeDetail.descriptionTitle') }}</h2><p class="mt-2 text-sm text-muted-foreground">{{ t('schemeDetail.descriptionHint') }}</p></div>
-              <div class="min-w-0 space-y-5 text-sm leading-7">
-                <p class="whitespace-pre-line break-words">{{ item.applicabilityNotes || t('schemeDetail.noDescription') }}</p>
-                <p class="border-l-2 border-primary/40 pl-4 text-muted-foreground">{{ t('schemeDetail.descriptionDisclaimer') }}</p>
-              </div>
-            </div>
+          <TabsContent value="description" class="mt-6 min-w-0 space-y-5">
+            <div class="space-y-1"><h2 class="text-lg font-semibold">{{ t('schemeDetail.descriptionTitle') }}</h2><p class="text-sm text-muted-foreground">{{ t('schemeDetail.descriptionHint') }}</p></div>
+            <p class="max-w-3xl whitespace-pre-line break-words text-sm leading-7">{{ item.description || t('schemeDetail.noDescription') }}</p>
           </TabsContent>
 
           <TabsContent value="bom" class="mt-6 min-w-0 space-y-5">

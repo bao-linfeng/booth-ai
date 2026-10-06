@@ -299,7 +299,7 @@
     "legend": "Standkriterien",
     "title": "Standkriterien",
     "optional": "· Optional",
-    "sizeLabel": "Designmaße · Länge×Breite×Höhe (m)",
+    "sizeLabel": "Standmaße · L×B×H (m)",
     "sizePlaceholder": "Keine Einschränkung",
     "areaHint": "Bereich {value} ㎡",
     "moreConditions": "Weitere Kriterien",
@@ -376,10 +376,9 @@
     "tabDescription": "Designbeschreibung",
     "tabBom": "Stückliste",
     "tabAssets": "Zeichnungen und Vermögenswerte",
-    "descriptionTitle": "Hinweise zur Anwendbarkeit",
+    "descriptionTitle": "Designbeschreibung",
     "descriptionHint": "Verstehen Sie das Design und bestätigen Sie dann Ihre Ausstellungsanforderungen.",
-    "noDescription": "Es liegen keine weiteren Hinweise zur Anwendbarkeit vor.",
-    "descriptionDisclaimer": "Beim direkten Öffnen der Detailseite werden nur Designangaben angezeigt; Dies bedeutet nicht, dass das Design Ihren Ausstellungsanforderungen entspricht. Überprüfen Sie vor der Auswahl die Höhenbeschränkung des Veranstaltungsortes, die Anzahl der offenen Seiten und die Bauvorschriften.",
+    "noDescription": "Noch keine Designbeschreibung vorhanden.",
     "bomTitle": "Stückliste",
     "bomHint": "Sehen Sie sich die Materialien für das Standarddesign an oder laden Sie die vollständige Liste herunter.",
     "bomPreviewNote": "Statische Muster enthalten keine echte Stückliste. Bitte überprüfen Sie ein veröffentlichtes Design.",
@@ -456,7 +455,7 @@
     "errorLinkFailed": "Der Download-Link kann nicht abgerufen werden. Bitte versuchen Sie es erneut",
     "errorPreviewFailed": "Die Vorschau konnte nicht geladen werden. Bitte versuchen Sie es erneut",
     "errorDownloadFailed": "Download fehlgeschlagen. Bitte versuchen Sie es erneut",
-    "applicabilityNote": "Dies sind die überprüften öffentlichen Anwendbarkeitshinweise für das Design. Überprüfen Sie vor der Auswahl die Höhenbeschränkung des Veranstaltungsortes, die Anzahl der offenen Seiten und die Bauvorschriften."
+    "previewDescription": "Hier steht die Kurzbeschreibung des Designs mit Größe, offenen Seiten und passenden Einsatzbereichen."
   },
   "schemeTheme": {
     "backToScheme": "Zurück zu den Designdetails",

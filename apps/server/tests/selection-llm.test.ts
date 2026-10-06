@@ -131,7 +131,7 @@ test('natural language produces the same requirement and matching as sidebar val
   const candidate = {
     code: 'matching', specifications: { lengthMm: 6000, widthMm: 3000, heightMm: 4000, areaM2: 18, openingCount: 2, productSystemId: 'system', productSystemLabel: '铝型材体系' },
     images: [], styleId: 'modern', industryIds: ['medical'], budgetTierId: 'budget', zoneIds: ['talk'], featureIds: ['screen'],
-    keywords: [], labelsConfirmed: true, applicabilityRules: [{ id: 'hanging', expectedValue: false }], applicabilityNotes: '',
+    keywords: [], labelsConfirmed: true, applicabilityRules: [{ id: 'hanging', expectedValue: false }], description: '',
   };
   const pool = [candidate, { ...candidate, code: 'excluded', zoneIds: ['talk', 'storage'] }];
   const match = matchSchemes(pool, result.requirement, 'filtered', true);

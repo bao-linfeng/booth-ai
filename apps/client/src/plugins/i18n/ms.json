@@ -281,7 +281,7 @@
     "legend": "Kriteria reruai",
     "title": "Kriteria reruai",
     "optional": "· Pilihan",
-    "sizeLabel": "Dimensi reka bentuk · Panjang×Lebar×Tinggi (m)",
+    "sizeLabel": "Saiz reruai · P×L×T (m)",
     "sizePlaceholder": "Tiada had",
     "areaHint": "Luas {value} m²",
     "moreConditions": "Kriteria lanjut",
@@ -358,10 +358,9 @@
     "tabDescription": "Penerangan reka bentuk",
     "tabBom": "Senarai bahan",
     "tabAssets": "Lukisan dan bahan",
-    "descriptionTitle": "Panduan penggunaan",
+    "descriptionTitle": "Penerangan reka bentuk",
     "descriptionHint": "Kenali reka bentuk dan sahkan syarat pameran anda.",
-    "noDescription": "Tiada panduan penggunaan tambahan.",
-    "descriptionDisclaimer": "Paparan butiran terus hanya menunjukkan spesifikasi reka bentuk dan tidak mengesahkan kesesuaiannya untuk pameran anda. Semak had ketinggian venue, sisi terbuka dan peraturan pembinaan sebelum memilih.",
+    "noDescription": "Tiada penerangan reka bentuk lagi.",
     "bomTitle": "Senarai bahan",
     "bomHint": "Semak bahan reka bentuk standard atau muat turun senarai penuh.",
     "bomPreviewNote": "Contoh statik tidak menyediakan senarai bahan sebenar. Lihat reka bentuk terbitan.",
@@ -438,7 +437,7 @@
     "errorLinkFailed": "Gagal mendapatkan pautan muat turun. Cuba lagi",
     "errorPreviewFailed": "Gagal memuatkan pratonton. Cuba lagi",
     "errorDownloadFailed": "Muat turun gagal. Cuba lagi",
-    "applicabilityNote": "Panduan penggunaan awam yang diluluskan untuk reka bentuk ini dipaparkan di sini. Sahkan had tinggi venue, sisi terbuka dan peraturan pembinaan sebelum memilih."
+    "previewDescription": "Di sini dipaparkan penerangan ringkas reka bentuk: saiz, sisi terbuka dan kegunaan yang sesuai."
   },
   "schemeTheme": {
     "backToScheme": "Kembali ke butiran reka bentuk",

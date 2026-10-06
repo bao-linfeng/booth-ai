@@ -42,7 +42,7 @@ function selectSize(id: string | null) {
     <h3 class="text-sm font-medium">{{ t('requirementForm.title') }} <span class="font-normal text-muted-foreground">{{ t('requirementForm.optional') }}</span></h3>
     <div class="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
       <div class="min-w-0 space-y-2">
-        <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{{ t('requirementForm.sizeLabel') }}</label>
+        <label class="block truncate text-sm font-medium leading-5 peer-disabled:cursor-not-allowed peer-disabled:opacity-70" :title="t('requirementForm.sizeLabel')">{{ t('requirementForm.sizeLabel') }}</label>
         <OptionSelect :label="t('requirementForm.boothSpaceSelectLabel')" :placeholder="t('requirementForm.sizePlaceholder')" :disabled="disabled" :model-value="selectedSize" :options="commonSizes" @update:model-value="selectSize" />
       </div>
       <RequirementField v-for="field in primaryFields" :id="`requirement-${field}`" :key="field" :field="field" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />

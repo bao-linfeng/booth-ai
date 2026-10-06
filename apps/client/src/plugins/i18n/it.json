@@ -376,10 +376,9 @@
     "tabDescription": "Descrizione piano",
     "tabBom": "Lista materiali",
     "tabAssets": "Disegni e materiali",
-    "descriptionTitle": "Condizioni di utilizzo",
+    "descriptionTitle": "Descrizione piano",
     "descriptionHint": "Studia il piano prima di confermare le condizioni fieristiche.",
-    "noDescription": "Nessuna nota aggiuntiva sulle condizioni di utilizzo.",
-    "descriptionDisclaimer": "L'apertura dei dettagli mostra solo le specifiche. Prima di selezionare, verifica altezza max, numero di aperture e norme di allestimento.",
+    "noDescription": "Nessuna descrizione del piano disponibile.",
     "bomTitle": "Lista materiali",
     "bomHint": "Visualizza i materiali del piano standard o scarica la lista completa.",
     "bomPreviewNote": "Gli esempi statici non forniscono una lista materiali reale.",
@@ -456,7 +455,7 @@
     "errorLinkFailed": "Errore recupero link. Riprova",
     "errorPreviewFailed": "Errore caricamento anteprima. Riprova",
     "errorDownloadFailed": "Errore download. Riprova",
-    "applicabilityNote": "Descrizione pubblica delle condizioni di utilizzo approvate. Prima di selezionare, verifica altezza max, aperture e norme di allestimento."
+    "previewDescription": "Qui compare la descrizione breve del piano: dimensioni, lati aperti e usi adatti."
   },
   "schemeTheme": {
     "backToScheme": "Torna ai dettagli piano",

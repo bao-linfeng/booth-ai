@@ -376,10 +376,9 @@
     "tabDescription": "方案说明",
     "tabBom": "物料清单",
     "tabAssets": "图纸与素材",
-    "descriptionTitle": "适用说明",
+    "descriptionTitle": "方案说明",
     "descriptionHint": "了解方案，再确认参展条件。",
-    "noDescription": "暂无补充适用说明。",
-    "descriptionDisclaimer": "直接打开详情仅展示方案规格，不代表方案已符合您的参展条件。选择前请确认场馆限高、开口面数以及搭建规范。",
+    "noDescription": "暂无方案说明。",
     "bomTitle": "物料清单",
     "bomHint": "查看标准方案用料，或下载完整清单。",
     "bomPreviewNote": "静态示例不提供真实物料清单，请在已发布方案中查看。",
@@ -456,7 +455,7 @@
     "errorLinkFailed": "下载链接获取失败，请重试",
     "errorPreviewFailed": "预览加载失败，请重试",
     "errorDownloadFailed": "下载失败，请重试",
-    "applicabilityNote": "此处展示方案经审核的公开适用说明。选择前请确认场馆限高、开口面数以及搭建规范。"
+    "previewDescription": "此处展示方案的一句话描述，概括尺寸、开口与适用场景。"
   },
   "schemeTheme": {
     "backToScheme": "返回方案详情",

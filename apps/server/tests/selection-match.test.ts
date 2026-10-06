@@ -10,7 +10,7 @@ const candidate: Candidate = {
     openingCount: 2, productSystemId: 'fs62', productSystemLabel: 'FS62',
   },
   images: [], styleId: null, industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
-  labelsConfirmed: true, applicabilityRules: [], applicabilityNotes: '',
+  labelsConfirmed: true, applicabilityRules: [], description: '',
 };
 
 test('complete size selection excludes differing heights and rotated footprints independently of venue height', () => {

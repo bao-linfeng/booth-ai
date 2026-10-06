@@ -376,10 +376,9 @@
     "tabDescription": "プラン説明",
     "tabBom": "材料リスト",
     "tabAssets": "図面・素材",
-    "descriptionTitle": "適用説明",
+    "descriptionTitle": "プラン説明",
     "descriptionHint": "プランを理解してから出展条件を確認してください。",
-    "noDescription": "追加の適用説明はありません。",
-    "descriptionDisclaimer": "詳細を直接開くとプランの仕様のみが表示されます。施設の最高高さ・開口数・設置規定を選択前に確認してください。",
+    "noDescription": "プラン説明はまだありません。",
     "bomTitle": "材料リスト",
     "bomHint": "標準プランの材料を確認するか、完全なリストをダウンロード。",
     "bomPreviewNote": "静的サンプルは実際の材料リストを提供しません。",
@@ -456,7 +455,7 @@
     "errorLinkFailed": "ダウンロードリンクの取得に失敗しました。再試行してください",
     "errorPreviewFailed": "プレビューの読み込みに失敗しました。再試行してください",
     "errorDownloadFailed": "ダウンロードに失敗しました。再試行してください",
-    "applicabilityNote": "審査済みの公開適用説明です。施設の最高高さ・開口数・設置規定を選択前に確認してください。"
+    "previewDescription": "ここにはプランの一言説明（サイズ・開口・適した用途）が表示されます。"
   },
   "schemeTheme": {
     "backToScheme": "プラン詳細に戻る",

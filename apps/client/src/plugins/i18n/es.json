@@ -376,10 +376,9 @@
     "tabDescription": "Descripción del plan",
     "tabBom": "Lista de materiales",
     "tabAssets": "Planos y materiales",
-    "descriptionTitle": "Condiciones de uso",
+    "descriptionTitle": "Descripción del plan",
     "descriptionHint": "Estudia el plan antes de confirmar las condiciones de la feria.",
-    "noDescription": "Sin notas adicionales de condiciones de uso.",
-    "descriptionDisclaimer": "Abrir los detalles muestra solo las especificaciones. Antes de seleccionar, verifica la altura máxima, número de aperturas y normas de montaje.",
+    "noDescription": "Aún no hay descripción del plan.",
     "bomTitle": "Lista de materiales",
     "bomHint": "Consulta los materiales del plan estándar o descarga la lista completa.",
     "bomPreviewNote": "Los ejemplos estáticos no proporcionan lista de materiales real.",
@@ -456,7 +455,7 @@
     "errorLinkFailed": "Error al obtener el enlace. Inténtalo de nuevo",
     "errorPreviewFailed": "Error al cargar vista previa. Inténtalo de nuevo",
     "errorDownloadFailed": "Error de descarga. Inténtalo de nuevo",
-    "applicabilityNote": "Descripción pública de condiciones de uso aprobadas. Antes de seleccionar, verifica altura máxima, aperturas y normas de montaje."
+    "previewDescription": "Aquí se muestra la descripción breve del plan: tamaño, lados abiertos y usos adecuados."
   },
   "schemeTheme": {
     "backToScheme": "Volver a detalles del plan",

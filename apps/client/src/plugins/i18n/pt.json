@@ -281,7 +281,7 @@
     "legend": "Critérios do estande",
     "title": "Critérios do estande",
     "optional": "· Opcional",
-    "sizeLabel": "Dimensões do projeto · C × L × A (m)",
+    "sizeLabel": "Dimensões do estande · C×L×A (m)",
     "sizePlaceholder": "Sem restrição",
     "areaHint": "Área {value} m²",
     "moreConditions": "Mais critérios",
@@ -358,10 +358,9 @@
     "tabDescription": "Descrição",
     "tabBom": "Lista de materiais",
     "tabAssets": "Desenhos e arquivos",
-    "descriptionTitle": "Orientações de uso",
+    "descriptionTitle": "Descrição",
     "descriptionHint": "Conheça o projeto e confirme as condições da feira.",
-    "noDescription": "Nenhuma orientação adicional disponível.",
-    "descriptionDisclaimer": "Abrir os detalhes diretamente mostra apenas as especificações e não confirma que o projeto atende às condições da sua feira. Verifique a altura máxima, os lados abertos e as regras de montagem antes de escolher.",
+    "noDescription": "Ainda não há descrição.",
     "bomTitle": "Lista de materiais",
     "bomHint": "Consulte os materiais do projeto padrão ou baixe a lista completa.",
     "bomPreviewNote": "O exemplo estático não oferece uma lista real. Consulte um projeto publicado.",
@@ -438,7 +437,7 @@
     "errorLinkFailed": "Não foi possível obter o link. Tente novamente",
     "errorPreviewFailed": "Não foi possível carregar a prévia. Tente novamente",
     "errorDownloadFailed": "Falha no download. Tente novamente",
-    "applicabilityNote": "Aqui estão as orientações públicas aprovadas para este projeto. Confirme a altura máxima do local, os lados abertos e as regras de montagem antes de escolher."
+    "previewDescription": "Aqui aparece a descrição curta do projeto: tamanho, lados abertos e usos indicados."
   },
   "schemeTheme": {
     "backToScheme": "Voltar aos detalhes do projeto",

@@ -93,7 +93,7 @@ export interface Candidate {
   keywords: string[];
   labelsConfirmed: boolean;
   applicabilityRules: { id: string; expectedValue: boolean; }[];
-  applicabilityNotes: string;
+  description: string;
 }
 
 export interface PendingConfirmation {

@@ -13,7 +13,7 @@ const candidate: Candidate = {
     openingCount: 2, productSystemId: 'fs62', productSystemLabel: 'FS62',
   },
   images: [], styleId: null, industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
-  labelsConfirmed: true, applicabilityRules: [], applicabilityNotes: '',
+  labelsConfirmed: true, applicabilityRules: [], description: '',
 };
 const catalog = {
   boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [],

@@ -47,22 +47,25 @@ export async function registerClientBomRoutes(app: FastifyInstance, pool: pg.Poo
     if (!bom || bom.status !== 'verified') throw bomError('BOM_NOT_AVAILABLE', 409);
 
     return {
-      schemeCode,
-      revision: bom.revision,
-      status: 'verified',
-      verifiedAt: bom.verifiedAt,
-      items: bom.items.map(item => ({
-        id: item.id,
-        ordinal: item.ordinal,
-        productName: item.productName,
-        productModel: item.productModel,
-        specificationMm: item.specificationMm,
-         quantity: item.quantity,
-         sourceUnit: item.sourceUnit,
-        erpCode: item.erpCode,
-        totalWeightKg: item.totalWeightKg,
-         measurementKind: item.measurementKind,
-      })),
+      code: 0,
+      data: {
+        schemeCode,
+        revision: bom.revision,
+        status: 'verified',
+        verifiedAt: bom.verifiedAt,
+        items: bom.items.map(item => ({
+          id: item.id,
+          ordinal: item.ordinal,
+          productName: item.productName,
+          productModel: item.productModel,
+          specificationMm: item.specificationMm,
+          quantity: item.quantity,
+          sourceUnit: item.sourceUnit,
+          erpCode: item.erpCode,
+          totalWeightKg: item.totalWeightKg,
+          measurementKind: item.measurementKind,
+        })),
+      },
     };
   });
 

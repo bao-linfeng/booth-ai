@@ -299,7 +299,7 @@
     "legend": "Booth criteria",
     "title": "Booth criteria",
     "optional": "· Optional",
-    "sizeLabel": "Design dimensions · Length×Width×Height (m)",
+    "sizeLabel": "Booth size · L×W×H (m)",
     "boothSpaceSelectLabel": "Booth Dimensions",
     "sizePlaceholder": "No restriction",
     "areaHint": "Area {value} ㎡",
@@ -376,10 +376,9 @@
     "tabDescription": "Design description",
     "tabBom": "Bill of materials",
     "tabAssets": "Drawings and assets",
-    "descriptionTitle": "Applicability notes",
+    "descriptionTitle": "Design description",
     "descriptionHint": "Understand the design, then confirm your exhibition requirements.",
-    "noDescription": "No additional applicability notes are available.",
-    "descriptionDisclaimer": "Opening the detail page directly only shows design specifications; it does not mean the design meets your exhibition requirements. Before choosing, confirm the venue height limit, number of open sides and construction regulations.",
+    "noDescription": "No design description yet.",
     "bomTitle": "Bill of materials",
     "bomHint": "Review materials for the standard design or download the complete list.",
     "bomPreviewNote": "Static samples do not include a real bill of materials. Please check a published design.",
@@ -456,7 +455,7 @@
     "errorLinkFailed": "Unable to retrieve the download link. Please try again",
     "errorPreviewFailed": "Unable to load the preview. Please try again",
     "errorDownloadFailed": "Download failed. Please try again",
-    "applicabilityNote": "These are the reviewed public applicability notes for the design. Before choosing, confirm the venue height limit, number of open sides and construction regulations."
+    "previewDescription": "This shows the design's one-line description, summarising size, open sides and suitable uses."
   },
   "schemeTheme": {
     "backToScheme": "Back to design details",

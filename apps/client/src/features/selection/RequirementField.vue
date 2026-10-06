@@ -90,7 +90,7 @@ function answer(id: string, value: string | null) {
 
 <template>
   <div :class="cn('min-w-0', inline ? 'grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-4' : 'space-y-2')">
-    <Label :for="numericFields.includes(field) || field === 'keywords' ? id : undefined" :class="cn(inline && 'sm:leading-5 sm:text-muted-foreground', inline && (isSelect ? 'sm:pt-3' : 'sm:pt-2'))">{{ labels[field] }}</Label>
+    <Label :for="numericFields.includes(field) || field === 'keywords' ? id : undefined" :title="inline ? undefined : labels[field]" :class="cn(inline ? 'sm:leading-5 sm:text-muted-foreground' : 'block truncate leading-5', inline && (isSelect ? 'sm:pt-3' : 'sm:pt-2'))">{{ labels[field] }}</Label>
     <template v-if="numericFields.includes(field)"><Input :id="id" type="number" inputmode="decimal" :min="field === 'areaM2' ? 0.000001 : 0.001" :max="field === 'areaM2' ? 1000000 : 1000" :step="field === 'areaM2' ? 0.000001 : 0.001" :model-value="numericValue" :disabled="disabled" :aria-invalid="!!numericError" :aria-describedby="numericError ? `${id}-error` : undefined" :placeholder="t('requirementForm.fieldPlaceholder')" @update:model-value="updateNumber" /><p v-if="numericError" :id="`${id}-error`" class="text-xs text-destructive">{{ numericError }}</p></template>
     <div v-else-if="isSelect" :class="cn(inline && 'sm:max-w-xs')"><OptionSelect :label="labels[field]" :model-value="modelValue[field] === null ? null : String(modelValue[field])" :options="options" :disabled="disabled" @update:model-value="update(field === 'openingCount' && $event !== null ? Number($event) : $event)" /></div>
     <div v-else class="flex flex-wrap gap-2">

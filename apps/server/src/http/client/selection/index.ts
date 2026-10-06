@@ -109,7 +109,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
           code: candidate.code,
           images: candidate.images,
           specifications: candidate.specifications,
-          applicabilityNotes: candidate.applicabilityNotes,
+          description: candidate.description,
           resources: { model: availability.model, bom: true, renderings: candidate.images.length > 0, masks: candidate.images.length === 3, drawings: availability.drawing, artworks: availability.artwork },
           actions: {
             theme: 'available',

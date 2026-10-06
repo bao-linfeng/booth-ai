@@ -376,10 +376,9 @@
     "tabDescription": "Description",
     "tabBom": "Liste des matériaux",
     "tabAssets": "Plans et visuels",
-    "descriptionTitle": "Conditions d'utilisation",
+    "descriptionTitle": "Description",
     "descriptionHint": "Comprenez le stand avant de confirmer les conditions d'exposition.",
-    "noDescription": "Aucune note d'utilisation supplémentaire.",
-    "descriptionDisclaimer": "L'ouverture des détails affiche uniquement les spécifications. Confirmez la hauteur max, le nombre d'ouvertures et les règles de montage avant de sélectionner.",
+    "noDescription": "Aucune description pour le moment.",
     "bomTitle": "Liste des matériaux",
     "bomHint": "Consultez les matériaux du stand standard ou téléchargez la liste complète.",
     "bomPreviewNote": "Les exemples statiques ne fournissent pas de vraie liste de matériaux.",
@@ -456,7 +455,7 @@
     "errorLinkFailed": "Échec de l'obtention du lien. Veuillez réessayer.",
     "errorPreviewFailed": "Échec du chargement de l'aperçu. Veuillez réessayer.",
     "errorDownloadFailed": "Échec du téléchargement. Veuillez réessayer.",
-    "applicabilityNote": "Description d'utilisation publique approuvée. Confirmez la hauteur max, le nombre d'ouvertures et les règles de montage avant de sélectionner."
+    "previewDescription": "Ici s'affiche la description courte du stand : dimensions, côtés ouverts et usages adaptés."
   },
   "schemeTheme": {
     "backToScheme": "Retour aux détails du stand",
