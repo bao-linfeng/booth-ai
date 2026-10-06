@@ -450,14 +450,6 @@
     "reloadScheme": "Recarregar projeto",
     "canvasAriaLabel": "Tela do projeto original",
     "originalImageTitle": "Imagem original",
-    "noOriginalImage": "Nenhuma imagem original",
-    "angleLabel": "Ângulo",
-    "originalImageAlt": "Projeto original · Ângulo {angle}",
-    "staticNoGenerate": "O exemplo estático não permite geração real",
-    "noAvailableImage": "Este projeto não tem imagem original disponível",
-    "currentOriginal": "Original · Sem alterações",
-    "selectAngleAriaLabel": "Escolher ângulo da imagem original",
-    "currentImage": "Imagem original atual",
     "themeTitle": "Renove a expressão da marca, preservando o espaço",
     "themeDesc": "Ajuste cores, pôsteres e artes da marca, preservando ao máximo a estrutura e os materiais originais. O projeto define as áreas editáveis; não é possível selecionar regiões personalizadas.",
     "themeDisclaimer": "As imagens de IA servem apenas para discutir o projeto. Você também pode solicitar um orçamento diretamente com o projeto padrão.",
@@ -534,8 +526,7 @@
     "errorNetworkConfirm": "Ainda não foi possível confirmar a criação da tarefa. Confirme novamente; a mesma solicitação será reutilizada para evitar duplicações. Seus dados permanecem nesta página.",
     "errorMaskUnavailable": "Não há área editável disponível para esta vista. Escolha outra imagem original.",
     "errorTemplateUnavailable": "Este estilo está indisponível no momento. Ajuste suas preferências visuais.",
-    "errorBlocked": "Não é possível gerar com estas configurações agora. Ajuste suas preferências ou tente mais tarde.",
-    "selectAngleLabel": "Selecionar ângulo {index}"
+    "errorBlocked": "Não é possível gerar com estas configurações agora. Ajuste suas preferências ou tente mais tarde."
   },
   "themeJob": {
     "back": "Voltar",

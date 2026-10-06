@@ -12,9 +12,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import MainLayout from '@/layouts/MainLayout.vue'
-import BoothIllustration from '@/features/selection/BoothIllustration.vue'
+import SchemeGallery from '@/features/selection/SchemeGallery.vue'
+import { previewItems } from '@/features/selection/preview'
 import { apiFetch } from '@/lib/api-client'
-import { cn } from '@/lib/utils'
 import { getThemeOffer, createThemeJob, type ThemeOffer, type ThemeJobSubmission } from '@/services/api/theme-jobs'
 import { getThemeModels, type ThemeModel } from '@/services/api/theme-models'
 import type { SchemeDetail } from '@/features/selection/types'
@@ -38,8 +38,12 @@ const loadingScheme = ref(true)
 const schemeError = ref(false)
 const images = computed(() => schemeData.value?.images || [])
 const selectedAssetId = ref('')
-const selectedImageUrl = computed(() => images.value.find(image => image.assetId === selectedAssetId.value)?.url)
-const selectedImageIndex = computed(() => images.value.findIndex(image => image.assetId === selectedAssetId.value) + 1)
+const previewVariant = Math.max(0, previewItems.findIndex(item => item.code === schemeCode))
+const galleryImages = computed(() => isPreview.value ? previewItems[previewVariant]?.images ?? [] : images.value)
+const activeImageIndex = computed({
+  get: () => Math.max(0, galleryImages.value.findIndex(image => image.assetId === selectedAssetId.value)),
+  set: (index: number) => { selectedAssetId.value = galleryImages.value[index]?.assetId ?? '' },
+})
 const themeModels = ref<ThemeModel[]>([])
 const loadingModels = ref(false)
 const modelsError = ref(false)
@@ -194,9 +198,10 @@ function removeColor(index: number) {
   void nextTick(() => {
     const nextIndex = Math.min(index, brandColors.value.length - 1)
     document.getElementById(nextIndex >= 0 ? `theme-color-${nextIndex}` : 'theme-add-color')?.focus()
-})
-watch(appLocale, () => { if (!isPreview.value) void loadCatalog() })
+  })
 }
+
+watch(appLocale, () => { if (!isPreview.value) void loadCatalog() })
 
 function handleLogin() {
   void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } })
@@ -284,26 +289,8 @@ function setDialogOpen(open: boolean) {
       </div>
       <div v-else class="grid items-start gap-8 xl:gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section :aria-label="t('schemeTheme.canvasAriaLabel')" class="min-w-0 space-y-5 lg:sticky lg:top-24">
-          <div class="flex items-center justify-between gap-3 text-sm">
-            <h2 class="font-medium">{{ t('schemeTheme.originalImageTitle') }}</h2>
-            <span class="text-muted-foreground">{{ images.length ? `${t('schemeTheme.angleLabel')} ${selectedImageIndex} / ${images.length}` : t('schemeTheme.noOriginalImage') }}</span>
-          </div>
-          <div class="relative flex aspect-video items-center justify-center overflow-hidden rounded-md bg-image-surface">
-            <img v-if="selectedImageUrl" :src="selectedImageUrl" class="size-full object-contain" :alt="t('schemeTheme.originalImageAlt', { angle: selectedImageIndex })" />
-            <div v-else class="space-y-3 text-center text-muted-foreground">
-              <BoothIllustration class="mx-auto size-32 opacity-40" />
-              <p class="text-sm">{{ isPreview ? t('schemeTheme.staticNoGenerate') : t('schemeTheme.noAvailableImage') }}</p>
-            </div>
-            <span class="absolute left-4 top-4 rounded-full border bg-background/90 px-3 py-1 text-xs">{{ t('schemeTheme.currentOriginal') }}</span>
-          </div>
-          <div v-if="images.length > 1" class="grid grid-cols-3 gap-3 sm:grid-cols-4" :aria-label="t('schemeTheme.selectAngleAriaLabel')">
-            <button v-for="(image, index) in images" :key="image.assetId" type="button"
-              :class="cn('min-w-0 overflow-hidden rounded-lg border-2 bg-muted/30 p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60', selectedAssetId === image.assetId ? 'border-primary' : 'border-transparent hover:border-border')"
-              :aria-label="t('schemeTheme.selectAngleLabel', { index: index + 1 })" :aria-pressed="selectedAssetId === image.assetId" :disabled="formLocked" @click="selectedAssetId = image.assetId">
-              <img :src="image.thumbnailUrl || image.url" class="aspect-video w-full object-contain" :alt="`${t('schemeTheme.angleLabel')} ${index + 1}`" />
-              <span class="block py-1 text-xs">{{ t('schemeTheme.angleLabel') }} {{ index + 1 }}<span v-if="selectedAssetId === image.assetId" class="block font-medium">{{ t('schemeTheme.currentImage') }}</span></span>
-            </button>
-          </div>
+          <h2 class="text-sm font-medium">{{ t('schemeTheme.originalImageTitle') }}</h2>
+          <SchemeGallery v-model:active="activeImageIndex" :images="galleryImages" :code="schemeCode" :preview="isPreview" :variant="previewVariant" :disabled="creatingJob || confirmDialogOpen" />
           <div class="flex items-start gap-3 border-t pt-5">
             <Sparkles class="mt-0.5 size-4 shrink-0 text-primary" />
             <div class="space-y-2 text-sm leading-relaxed text-muted-foreground">

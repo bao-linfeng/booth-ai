@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import BoothIllustration from './BoothIllustration.vue'
 import type { SchemeImage } from './types'
 import { useI18n } from 'vue-i18n'
-const props = withDefaults(defineProps<{ images: SchemeImage[]; code: string; preview?: boolean; variant?: number }>(), { preview: false, variant: 0 })
+const props = withDefaults(defineProps<{ images: SchemeImage[]; code: string; preview?: boolean; variant?: number; disabled?: boolean }>(), { preview: false, variant: 0, disabled: false })
 const { t } = useI18n()
 const active = defineModel<number>('active', { default: 0 })
 const expanded = ref(false)
@@ -46,7 +46,7 @@ watch(() => [props.code, currentImage.value?.thumbnailUrl, currentImage.value?.u
       <span v-if="images.length" class="absolute bottom-3 end-3 flex items-center gap-1.5 rounded bg-background/90 px-2 py-1 text-xs"><Expand class="size-3.5" aria-hidden="true" />{{ t('gallery.enlarge') }}</span>
     </Button>
     <div v-if="images.length" class="grid max-w-md grid-cols-3 gap-3" role="group" :aria-label="t('gallery.switchImages', { code })">
-      <Button v-for="(image, index) in images" :key="image.assetId" variant="ghost" :class="cn('h-auto min-w-0 flex-col gap-0 overflow-hidden rounded-sm border-b-2 bg-image-surface p-0', active === index ? 'border-primary' : 'border-transparent')" :aria-label="t('gallery.viewImage', { index: index + 1 })" :aria-pressed="active === index" @click="active = index">
+      <Button v-for="(image, index) in images" :key="image.assetId" variant="ghost" :class="cn('h-auto min-w-0 flex-col gap-0 overflow-hidden rounded-sm border-b-2 bg-image-surface p-0', active === index ? 'border-primary' : 'border-transparent')" :aria-label="t('gallery.viewImage', { index: index + 1 })" :aria-pressed="active === index" :disabled="disabled" @click="active = index">
         <div v-if="preview" class="aspect-video w-full [&>svg.booth-illustration]:h-full [&>svg.booth-illustration]:w-full"><BoothIllustration :variant="variant" :view="index" class="h-full w-full" /></div>
         <img v-else :src="image.thumbnailUrl" alt="" loading="lazy" class="aspect-video w-full object-contain" />
         <span class="w-full bg-background py-2 text-xs">{{ t('gallery.angle', { index: index + 1 }) }}<span v-if="active === index" class="block font-medium">{{ t('gallery.currentAngle') }}</span></span>
@@ -60,7 +60,7 @@ watch(() => [props.code, currentImage.value?.thumbnailUrl, currentImage.value?.u
         <div v-else-if="!currentImage || originalFailed" class="flex min-h-48 flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.originalUnavailable') : t('gallery.noEffectImage') }}</div>
         <img v-else :key="currentImage.url" :src="currentImage.url" :alt="t('gallery.originalEffectAlt', { code, index: active + 1 })" class="max-h-[65dvh] w-full object-contain" @error="originalFailed = true" />
         <div class="flex flex-wrap justify-center gap-2" role="group" :aria-label="t('gallery.switchEnlargedAngle')">
-          <Button v-for="(_, index) in images" :key="index" :variant="active === index ? 'default' : 'outline'" :aria-pressed="active === index" @click="active = index">{{ t('gallery.angle', { index: index + 1 }) }}</Button>
+          <Button v-for="(_, index) in images" :key="index" :variant="active === index ? 'default' : 'outline'" :aria-pressed="active === index" :disabled="disabled" @click="active = index">{{ t('gallery.angle', { index: index + 1 }) }}</Button>
         </div>
       </DialogContent>
     </Dialog>

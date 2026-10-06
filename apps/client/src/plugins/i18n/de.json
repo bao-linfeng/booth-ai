@@ -468,14 +468,6 @@
     "reloadScheme": "Design neu laden",
     "canvasAriaLabel": "Leinwand mit originellem Design",
     "originalImageTitle": "Originalwiedergabe",
-    "noOriginalImage": "Noch kein Originalbild",
-    "angleLabel": "Standpunkt",
-    "originalImageAlt": "Originaldesign · Viewpoint {angle}",
-    "staticNoGenerate": "Statische Beispiele unterstützen die tatsächliche Generierung nicht",
-    "noAvailableImage": "Für dieses Design ist derzeit kein Originalbild verfügbar",
-    "currentOriginal": "Originalbild · Unverändert",
-    "selectAngleAriaLabel": "Wählen Sie den ursprünglichen Bildansichtspunkt",
-    "currentImage": "Aktuelles Originalbild",
     "themeTitle": "Erfrischen Sie Ihren Markenausdruck unter Beibehaltung der räumlichen Gestaltung",
     "themeDesc": "Passen Sie Markenfarben, Plakate und Displaygrafiken an und bewahren Sie dabei die ursprüngliche Struktur und Materialien so weit wie möglich. Bearbeitbare Bereiche hängen vom Design ab; Die benutzerdefinierte Bereichsauswahl wird nicht unterstützt.",
     "themeDisclaimer": "AI-Renderings dienen nur der Designbesprechung. Sie können auch direkt ein Standangebot mit dem Standarddesign anfordern.",
@@ -552,8 +544,7 @@
     "errorNetworkConfirm": "Die Aufgabenerstellung wurde noch nicht bestätigt. Bitte bestätigen Sie erneut; Dieselbe Anfrage wird wiederverwendet, um doppelte Aufgaben zu vermeiden. Ihre Eingabe bleibt auf dieser Seite.",
     "errorMaskUnavailable": "Für diese Ansicht ist kein bearbeitbarer Bereich verfügbar. Wählen Sie ein anderes Originalbild.",
     "errorTemplateUnavailable": "Dieser Stil ist derzeit nicht verfügbar. Passen Sie Ihre visuellen Präferenzen an.",
-    "errorBlocked": "Diese Einstellungen können derzeit nicht generiert werden. Passen Sie Ihre Präferenzen an oder versuchen Sie es später erneut.",
-    "selectAngleLabel": "Blickwinkel {index} auswählen"
+    "errorBlocked": "Diese Einstellungen können derzeit nicht generiert werden. Passen Sie Ihre Präferenzen an oder versuchen Sie es später erneut."
   },
   "themeJob": {
     "back": "Zurück",

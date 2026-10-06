@@ -468,14 +468,6 @@
     "reloadScheme": "Ricarica piano",
     "canvasAriaLabel": "Canvas piano originale",
     "originalImageTitle": "Render originale",
-    "noOriginalImage": "Nessuna immagine originale",
-    "angleLabel": "Vista",
-    "originalImageAlt": "Piano originale · Vista {angle}",
-    "staticNoGenerate": "Gli esempi statici non supportano la generazione reale",
-    "noAvailableImage": "Nessuna immagine originale disponibile per questo piano",
-    "currentOriginal": "Originale · Non modificato",
-    "selectAngleAriaLabel": "Seleziona vista",
-    "currentImage": "Immagine attuale",
     "themeTitle": "Rinnova l'espressione del brand, mantieni il design spaziale",
     "themeDesc": "Regola colori, poster e visual mantenendo struttura e materiali del piano originale.",
     "themeDisclaimer": "Gli effetti AI sono per la discussione del piano. Puoi anche richiedere un preventivo con il piano standard.",
@@ -552,8 +544,7 @@
     "errorNetworkConfirm": "Stato attività non confermato. Riprova per evitare duplicati. Dati salvati.",
     "errorMaskUnavailable": "Nessuna area modificabile disponibile per questa vista. Scegli un altro originale.",
     "errorTemplateUnavailable": "Questo stile non è al momento disponibile. Modifica le preferenze visive.",
-    "errorBlocked": "Queste impostazioni non possono essere generate ora. Modifica le preferenze o riprova più tardi.",
-    "selectAngleLabel": "Seleziona l'angolazione {index}"
+    "errorBlocked": "Queste impostazioni non possono essere generate ora. Modifica le preferenze o riprova più tardi."
   },
   "themeJob": {
     "back": "Indietro",

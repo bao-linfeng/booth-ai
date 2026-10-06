@@ -450,14 +450,6 @@
     "reloadScheme": "Muat semula reka bentuk",
     "canvasAriaLabel": "Kanvas reka bentuk asal",
     "originalImageTitle": "Imej reka bentuk asal",
-    "noOriginalImage": "Tiada imej asal",
-    "angleLabel": "Sudut",
-    "originalImageAlt": "Reka bentuk asal · Sudut {angle}",
-    "staticNoGenerate": "Contoh statik tidak menyokong penjanaan sebenar",
-    "noAvailableImage": "Tiada imej asal tersedia untuk reka bentuk ini",
-    "currentOriginal": "Imej asal · Belum dilaraskan",
-    "selectAngleAriaLabel": "Pilih sudut imej asal",
-    "currentImage": "Imej asal semasa",
     "themeTitle": "Segarkan identiti jenama sambil mengekalkan reka bentuk ruang",
     "themeDesc": "Laraskan visual dengan warna jenama, poster dan paparan sambil mengekalkan struktur dan bahan asal sedaya upaya. Kawasan boleh disunting ditentukan oleh reka bentuk; pemilihan kawasan tersuai tidak disokong.",
     "themeDisclaimer": "Hasil AI hanya untuk perbincangan reka bentuk; anda juga boleh memohon sebut harga terus menggunakan reka bentuk standard.",
@@ -534,8 +526,7 @@
     "errorNetworkConfirm": "Penciptaan tugas belum dapat disahkan. Sahkan sekali lagi; permintaan sama akan digunakan untuk mengelakkan pendua. Maklumat anda kekal pada halaman ini.",
     "errorMaskUnavailable": "Tiada kawasan boleh sunting untuk pandangan ini. Pilih imej asal yang lain.",
     "errorTemplateUnavailable": "Gaya ini tidak tersedia buat sementara. Laraskan pilihan visual anda.",
-    "errorBlocked": "Tetapan ini tidak dapat dijana sekarang. Laraskan pilihan atau cuba lagi kemudian.",
-    "selectAngleLabel": "Pilih sudut {index}"
+    "errorBlocked": "Tetapan ini tidak dapat dijana sekarang. Laraskan pilihan atau cuba lagi kemudian."
   },
   "themeJob": {
     "back": "Kembali",

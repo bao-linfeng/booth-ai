@@ -468,14 +468,6 @@
     "reloadScheme": "Recharger le stand",
     "canvasAriaLabel": "Canevas du stand original",
     "originalImageTitle": "Visuel original",
-    "noOriginalImage": "Aucun visuel original",
-    "angleLabel": "Vue",
-    "originalImageAlt": "Stand original · Vue {angle}",
-    "staticNoGenerate": "Les exemples statiques ne permettent pas de génération réelle",
-    "noAvailableImage": "Aucun visuel disponible pour ce stand",
-    "currentOriginal": "Original · Non modifié",
-    "selectAngleAriaLabel": "Sélectionner la vue",
-    "currentImage": "Visuel actuel",
     "themeTitle": "Rafraîchissez votre expression de marque",
     "themeDesc": "Ajustez les couleurs, affiches et éléments visuels tout en préservant la structure du stand.",
     "themeDisclaimer": "Les rendus AI sont à titre indicatif. Vous pouvez aussi demander un devis avec le stand standard.",
@@ -552,8 +544,7 @@
     "errorNetworkConfirm": "Statut de création non confirmé. Réessayez pour éviter les doublons. Vos données sont conservées.",
     "errorMaskUnavailable": "Aucune zone modifiable pour cette vue. Choisissez une autre image originale.",
     "errorTemplateUnavailable": "Ce style est momentanément indisponible. Modifiez vos préférences visuelles.",
-    "errorBlocked": "Ces paramètres ne peuvent pas être générés actuellement. Modifiez vos préférences ou réessayez plus tard.",
-    "selectAngleLabel": "Sélectionner l'angle {index}"
+    "errorBlocked": "Ces paramètres ne peuvent pas être générés actuellement. Modifiez vos préférences ou réessayez plus tard."
   },
   "themeJob": {
     "back": "Retour",

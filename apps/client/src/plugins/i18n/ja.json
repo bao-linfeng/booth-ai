@@ -468,14 +468,6 @@
     "reloadScheme": "プランを再読み込み",
     "canvasAriaLabel": "元プランのキャンバス",
     "originalImageTitle": "元の完成イメージ",
-    "noOriginalImage": "元画像なし",
-    "angleLabel": "視点",
-    "originalImageAlt": "元プラン・視点{angle}",
-    "staticNoGenerate": "静的サンプルは実際の生成を提供しません",
-    "noAvailableImage": "このプランには利用可能な元画像がありません",
-    "currentOriginal": "元画像・未調整",
-    "selectAngleAriaLabel": "視点を選択",
-    "currentImage": "現在の画像",
     "themeTitle": "ブランド表現を刷新し、空間デザインを継続",
     "themeDesc": "ブランドカラー・ポスター・展示ビジュアルを調整しつつ、元プランの構造と素材をできる限り保持します。",
     "themeDisclaimer": "AI効果はプラン検討用です。標準プランで直接見積依頼もできます。",
@@ -552,8 +544,7 @@
     "errorNetworkConfirm": "タスクの作成が確認できませんでした。同じリクエストを再利用するため再試行してください。入力内容は保持されています。",
     "errorMaskUnavailable": "この視点には編集可能な領域がありません。別の元画像を選択してください。",
     "errorTemplateUnavailable": "このスタイルは現在利用できません。視覚設定を変更してください。",
-    "errorBlocked": "現在の条件では生成できません。設定を変更するか、しばらくしてから再試行してください。",
-    "selectAngleLabel": "アングル {index} を選択"
+    "errorBlocked": "現在の条件では生成できません。設定を変更するか、しばらくしてから再試行してください。"
   },
   "themeJob": {
     "back": "戻る",
