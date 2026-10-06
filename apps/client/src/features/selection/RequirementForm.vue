@@ -27,7 +27,7 @@ function selectSize(id: string | null) {
   <fieldset :disabled="disabled" class="min-w-0 space-y-3">
     <legend class="sr-only">{{ t('requirementForm.legend') }}</legend>
     <h3 class="text-sm font-medium">{{ t('requirementForm.title') }} <span class="font-normal text-muted-foreground">{{ t('requirementForm.optional') }}</span></h3>
-    <div class="grid grid-cols-2 gap-3 sm:gap-4">
+    <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
       <div class="min-w-0 space-y-2">
         <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{{ t('requirementForm.sizeLabel') }}</label>
         <OptionSelect :label="t('requirementForm.boothSpaceSelectLabel')" :placeholder="t('requirementForm.sizePlaceholder')" :disabled="disabled" :model-value="selectedSize" :options="commonSizes" @update:model-value="selectSize" />
@@ -37,7 +37,7 @@ function selectSize(id: string | null) {
     <p v-if="modelValue.areaM2" class="text-xs text-muted-foreground">{{ t('requirementForm.areaHint', { value: modelValue.areaM2 }) }}</p>
     <Accordion type="single" collapsible>
       <AccordionItem value="more" class="border-b-0 border-t">
-        <AccordionTrigger class="py-3 text-sm hover:no-underline"><span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><SlidersHorizontal class="size-4 shrink-0" />{{ t('requirementForm.moreConditions') }}<span class="text-xs font-normal text-muted-foreground">{{ moreCount ? t('requirementForm.moreCount', { count: moreCount }) : t('requirementForm.morePlaceholder') }}</span></span></AccordionTrigger>
+        <AccordionTrigger class="gap-3 py-3 text-start text-sm hover:no-underline"><span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><SlidersHorizontal class="size-4 shrink-0" />{{ t('requirementForm.moreConditions') }}<span class="text-xs font-normal text-muted-foreground">{{ moreCount ? t('requirementForm.moreCount', { count: moreCount }) : t('requirementForm.morePlaceholder') }}</span></span></AccordionTrigger>
         <AccordionContent class="space-y-6 pt-2">
           <div class="grid gap-6 sm:grid-cols-2">
             <RequirementField v-for="field in moreFields" :id="`requirement-${field}`" :key="field" :field="field" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />

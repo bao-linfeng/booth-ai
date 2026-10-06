@@ -42,8 +42,8 @@ watch(() => [props.code, currentImage.value?.thumbnailUrl, currentImage.value?.u
       <div v-if="preview" class="h-full w-full [&>svg.booth-illustration]:h-full [&>svg.booth-illustration]:w-full"><BoothIllustration :variant="variant" :view="active" class="h-full w-full" /></div>
       <span v-else-if="!currentImage || failed" class="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.imageUnavailable') : t('gallery.noEffectImage') }}</span>
       <img v-else :key="currentImage.thumbnailUrl" :src="currentImage.thumbnailUrl" :alt="t('gallery.effectAlt', { code, index: active + 1 })" class="h-full w-full object-contain" loading="lazy" @error="failed = true" />
-      <span v-if="images.length" class="absolute bottom-3 left-3 rounded bg-background/90 px-2 py-1 font-mono text-xs">{{ active + 1 }} / {{ images.length }}</span>
-      <span v-if="images.length" class="absolute bottom-3 right-3 flex items-center gap-1.5 rounded bg-background/90 px-2 py-1 text-xs"><Expand class="size-3.5" aria-hidden="true" />{{ t('gallery.enlarge') }}</span>
+      <span v-if="images.length" class="absolute bottom-3 start-3 rounded bg-background/90 px-2 py-1 font-mono text-xs"><bdi dir="ltr">{{ active + 1 }} / {{ images.length }}</bdi></span>
+      <span v-if="images.length" class="absolute bottom-3 end-3 flex items-center gap-1.5 rounded bg-background/90 px-2 py-1 text-xs"><Expand class="size-3.5" aria-hidden="true" />{{ t('gallery.enlarge') }}</span>
     </Button>
     <div v-if="images.length" class="grid max-w-md grid-cols-3 gap-3" role="group" :aria-label="t('gallery.switchImages', { code })">
       <Button v-for="(image, index) in images" :key="image.assetId" variant="ghost" :class="cn('h-auto min-w-0 flex-col gap-0 overflow-hidden rounded-sm border-b-2 bg-image-surface p-0', active === index ? 'border-primary' : 'border-transparent')" :aria-label="t('gallery.viewImage', { index: index + 1 })" :aria-pressed="active === index" @click="active = index">
@@ -54,7 +54,7 @@ watch(() => [props.code, currentImage.value?.thumbnailUrl, currentImage.value?.u
     </div>
     <Dialog v-model:open="expanded">
       <DialogContent class="max-h-[90dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto rounded-lg p-4 sm:p-6" @close-auto-focus="restorePreviewFocus">
-        <DialogTitle class="break-all pr-6 text-base">{{ code }} · {{ images.length ? active + 1 : 0 }} / {{ images.length }}</DialogTitle>
+        <DialogTitle class="break-all pe-6 text-start text-base"><bdi dir="ltr">{{ code }} · {{ images.length ? active + 1 : 0 }} / {{ images.length }}</bdi></DialogTitle>
         <DialogDescription>{{ preview ? t('gallery.previewSpace') : t('gallery.schemeImageNote') }}</DialogDescription>
         <BoothIllustration v-if="preview" :variant="variant" :view="active" class="w-full" />
         <div v-else-if="!currentImage || originalFailed" class="flex min-h-48 flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.originalUnavailable') : t('gallery.noEffectImage') }}</div>

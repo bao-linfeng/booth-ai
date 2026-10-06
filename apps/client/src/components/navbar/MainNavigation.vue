@@ -7,6 +7,7 @@ import { ArrowRight, FolderOpen, History, Menu, MessageSquare, Sparkles } from '
 import { Navbar, NavbarBrand } from '@/components/navbar'
 import { ThemingSettings } from '@/components/theming'
 import LanguageToggle from '@/components/LanguageToggle.vue'
+import { appLocale } from '@/plugins/i18n'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
@@ -55,7 +56,7 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
       <div class="flex min-w-0 items-center gap-8 xl:gap-12">
         <NavbarBrand class="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" :aria-label="t('controls.brandHome')">
           <img src="/logo.png" :alt="t('controls.brandLogo')" class="h-7 w-auto max-w-20 object-contain sm:h-8 sm:max-w-24" />
-          <span class="hidden border-l border-border pl-3 text-sm font-semibold tracking-wide sm:block">{{ t('controls.brandName') }}</span>
+          <span class="hidden border-s border-border ps-3 text-sm font-semibold tracking-wide sm:block">{{ t('controls.brandName') }}</span>
         </NavbarBrand>
 
         <nav :aria-label="t('nav.mainNav')" class="hidden h-16 items-center gap-6 lg:flex xl:gap-8">
@@ -74,14 +75,14 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
         </nav>
       </div>
 
-      <div class="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 sm:gap-2">
+      <div class="ms-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 sm:gap-2">
         <Button variant="ghost" size="sm" as-child class="hidden lg:inline-flex">
           <RouterLink
             to="/manual-request"
             :aria-current="route.path === '/manual-request' ? 'page' : undefined"
             :class="cn(route.path === '/manual-request' && 'bg-accent text-accent-foreground')"
           >
-            <MessageSquare class="mr-2 size-4" aria-hidden="true" />
+            <MessageSquare class="me-2 size-4" aria-hidden="true" />
             {{ t('nav.contactAdvisor') }}
           </RouterLink>
         </Button>
@@ -96,8 +97,8 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
               <Menu class="size-5" aria-hidden="true" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" class="flex w-[340px] max-w-[calc(100vw-24px)] flex-col gap-0 overflow-y-auto p-0">
-            <SheetHeader class="border-b px-6 pb-6 pt-8 text-left">
+          <SheetContent :side="appLocale === 'ar' ? 'right' : 'left'" class="flex w-[340px] max-w-[calc(100vw-24px)] flex-col gap-0 overflow-y-auto p-0">
+            <SheetHeader class="border-b px-6 pb-6 pt-8 text-start sm:text-start">
               <SheetTitle>{{ t('nav.brand') }}</SheetTitle>
               <SheetDescription>{{ t('nav.brandSlogan') }}</SheetDescription>
             </SheetHeader>
@@ -132,7 +133,7 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
                   <div class="text-sm font-semibold">{{ t('nav.contactAdvisor') }}</div>
                   <p class="text-xs text-muted-foreground">{{ t('nav.contactAdvisorDesc') }}</p>
                 </div>
-                <ArrowRight class="size-4 shrink-0" aria-hidden="true" />
+                <ArrowRight class="size-4 shrink-0 rtl:-scale-x-100" aria-hidden="true" />
               </RouterLink>
             </div>
           </SheetContent>
