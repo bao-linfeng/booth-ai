@@ -304,7 +304,7 @@
     "areaHint": "Superficie {value} ㎡",
     "moreConditions": "Altre condizioni",
     "moreCount": "{count} categorie compilate",
-    "morePlaceholder": "Altezza max, stile, settore e budget",
+    "morePlaceholder": "Stile, settore, zone e sistema prodotti",
     "moreNote": "Le dimensioni dello stand sono filtrate con precisione su L, l, A. L'altezza massima del locale si inserisce separatamente. Il sistema prodotti è un filtro rigido; stile, settore, zone e budget influenzano l'ordinamento. Il budget materiali non include montaggio, trasporto ecc.",
     "fieldPlaceholder": "Facoltativo",
     "fieldNoOptions": "Nessuna opzione disponibile. Modifica la descrizione e rianalizza.",

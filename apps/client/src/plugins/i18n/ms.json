@@ -286,7 +286,7 @@
     "areaHint": "Luas {value} m²",
     "moreConditions": "Kriteria lanjut",
     "moreCount": "{count} kategori diisi",
-    "morePlaceholder": "Had tinggi, gaya, industri dan bajet",
+    "morePlaceholder": "Gaya, industri, zon dan sistem produk",
     "moreNote": "Dimensi reka bentuk ditapis tepat mengikut gabungan panjang, lebar dan tinggi. Panjang ialah arah kiri-kanan dan lebar arah depan-belakang. Isikan had ketinggian venue secara berasingan; tinggi reka bentuk tidak mengisi had tersebut. Sistem produk digunakan untuk penapisan ketat; gaya, industri, zon fungsi dan bajet bahan digunakan untuk pemeringkatan. Bajet bahan tidak termasuk pembinaan atau pengangkutan dan bukan sebut harga sebenar.",
     "fieldPlaceholder": "Pilihan",
     "fieldNoOptions": "Tiada pilihan buat masa ini. Ubah penerangan teks dan huraikan semula.",

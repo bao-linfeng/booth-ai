@@ -305,7 +305,7 @@
     "areaHint": "面积 {value} ㎡",
     "moreConditions": "更多条件",
     "moreCount": "已填 {count} 类",
-    "morePlaceholder": "限高、风格、行业与预算",
+    "morePlaceholder": "风格、行业、分区与产品体系",
     "moreNote": "方案尺寸按长、宽、高整体精确筛选。长为左右方向，宽为前后方向。场馆限高另外填写，方案高度不会代填限高。产品体系用于严格筛选；风格、行业、功能分区和材料预算用于排序。材料预算不含搭建、运输等费用，不代表实际报价。",
     "fieldPlaceholder": "选填",
     "fieldNoOptions": "暂无可选项，可修改文字描述后重新解析。",

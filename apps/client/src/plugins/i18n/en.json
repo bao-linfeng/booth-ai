@@ -305,7 +305,7 @@
     "areaHint": "Area {value} ㎡",
     "moreConditions": "More criteria",
     "moreCount": "{count} categories completed",
-    "morePlaceholder": "Maximum height, style, industry and budget",
+    "morePlaceholder": "Style, industry, zones and product system",
     "moreNote": "Design dimensions are filtered by an exact match of length, width and height together. Length runs left to right; width runs front to back. Enter the venue height limit separately; the design height does not automatically fill this field. The product system is a strict filter; style, industry, functional zones and material budget are used for ranking. The material budget excludes installation, transport and other costs and is not an actual quotation.",
     "fieldPlaceholder": "Optional",
     "fieldNoOptions": "No options are currently available. Revise the description and parse it again.",

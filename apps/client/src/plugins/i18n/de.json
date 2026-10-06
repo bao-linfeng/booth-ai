@@ -304,7 +304,7 @@
     "areaHint": "Bereich {value} ㎡",
     "moreConditions": "Weitere Kriterien",
     "moreCount": "{count} Kategorien abgeschlossen",
-    "morePlaceholder": "Maximale Höhe, Stil, Branche und Budget",
+    "morePlaceholder": "Stil, Branche, Zonen und Produktsystem",
     "moreNote": "Designabmessungen werden nach einer exakten Übereinstimmung von Länge, Breite und Höhe gefiltert. Die Länge verläuft von links nach rechts; Die Breite verläuft von vorne nach hinten. Geben Sie die Höhenbegrenzung des Veranstaltungsortes separat ein. Die Designhöhe füllt dieses Feld nicht automatisch aus. Das Produktsystem ist ein strenger Filter; Für das Ranking werden Stil, Branche, Funktionsbereiche und Materialbudget herangezogen. Das Materialbudget schließt Installations-, Transport- und sonstige Kosten aus und stellt kein tatsächliches Angebot dar.",
     "fieldPlaceholder": "Optional",
     "fieldNoOptions": "Derzeit sind keine Optionen verfügbar. Überarbeiten Sie die Beschreibung und analysieren Sie sie erneut.",

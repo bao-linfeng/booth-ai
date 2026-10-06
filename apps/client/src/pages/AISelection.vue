@@ -732,7 +732,8 @@ onMounted(() => {
               <p v-if="textChangedSinceParse" class="text-sm text-warning" role="status">{{ t('selection.textChangedNotice') }}</p>
               <p v-if="requirementError" class="text-sm text-destructive" role="alert">{{ requirementError }}</p>
             </div>
-            <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="border-t pt-4"><RequirementForm v-model="requirement" :catalog="catalog" :disabled="busy || (!isPreview && catalogState !== 'ready')" /></div>
+            <div class="sticky bottom-0 z-10 -mx-5 !-mb-5 flex flex-wrap items-center justify-between gap-3 rounded-b-lg border-t bg-card/95 px-5 py-4 backdrop-blur supports-[backdrop-filter]:bg-card/80 md:-mx-6 md:!-mb-6 md:px-6">
               <div class="flex items-center gap-2">
                  <Button v-if="!text.trim() && !conditionRows.length" variant="ghost" :disabled="!canSearch" @click="submit">{{ t('selection.inspirationFirst') }}<ArrowUpRight class="ms-1 size-4 rtl:-scale-x-100" /></Button>
                  <Button v-else variant="ghost" size="sm" :disabled="busy" @click="reset"><RotateCcw class="me-1 size-3.5" />{{ t('selection.resetRequirement') }}</Button>
@@ -742,7 +743,6 @@ onMounted(() => {
                  <Button :disabled="!canSearch" class="gap-2" @click="submit"><Search class="size-4" />{{ outcomeVisible && !inspirationResults ? t('selection.rematch') : t('selection.match') }}<ArrowRight class="size-4 rtl:-scale-x-100" /></Button>
               </div>
             </div>
-            <div class="border-t pt-4"><RequirementForm v-model="requirement" :catalog="catalog" :disabled="busy || (!isPreview && catalogState !== 'ready')" /></div>
           </section>
           
           <Card v-if="state === 'needs_clarification'" class="border-warning/25 bg-warning/5"><CardHeader><CardTitle class="flex items-center gap-2 text-lg"><CircleAlert class="size-5 text-warning" />{{ t('selection.clarifyTitle') }}</CardTitle><CardDescription>{{ isPreview ? t('selection.clarifySubtitleExample') : t('selection.clarifySubtitleLive') }}</CardDescription></CardHeader><CardContent class="space-y-4">

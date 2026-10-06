@@ -286,7 +286,7 @@
     "areaHint": "Área {value} m²",
     "moreConditions": "Mais critérios",
     "moreCount": "{count} categorias preenchidas",
-    "morePlaceholder": "Altura máxima, estilo, setor e orçamento",
+    "morePlaceholder": "Estilo, setor, áreas e sistema de produtos",
     "moreNote": "As dimensões são filtradas pela combinação exata de comprimento, largura e altura. O comprimento vai da esquerda à direita e a largura da frente ao fundo. Informe separadamente a altura máxima do local; a altura do projeto não a preenche automaticamente. O sistema de produtos é um filtro estrito; estilo, setor, áreas funcionais e orçamento de materiais definem a ordem dos resultados. O orçamento de materiais não inclui montagem ou transporte e não representa um orçamento efetivo.",
     "fieldPlaceholder": "Opcional",
     "fieldNoOptions": "Nenhuma opção disponível. Edite a descrição e analise o texto novamente.",

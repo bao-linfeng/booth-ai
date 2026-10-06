@@ -304,7 +304,7 @@
     "areaHint": "Surface {value} ㎡",
     "moreConditions": "Plus de conditions",
     "moreCount": "{count} catégorie(s) renseignée(s)",
-    "morePlaceholder": "Hauteur max, style, secteur et budget",
+    "morePlaceholder": "Style, secteur, zones et système de produits",
     "moreNote": "Les dimensions du stand sont filtrées avec précision (L, l, H). La hauteur max du lieu est renseignée séparément. Le système de produits est un filtre strict ; le style, le secteur, les zones fonctionnelles et le budget matériaux servent au classement. Le budget matériaux n'inclut pas l'installation, le transport, etc.",
     "fieldPlaceholder": "Optionnel",
     "fieldNoOptions": "Aucune option disponible. Modifiez la description et ré-analysez.",

@@ -5,13 +5,15 @@ import { Check } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import OptionSelect from './OptionSelect.vue'
 import type { Catalog, Requirement } from './types'
 
-const props = defineProps<{ modelValue: Requirement; field: keyof Requirement; catalog: Catalog; disabled?: boolean; id: string }>()
+const props = defineProps<{ modelValue: Requirement; field: keyof Requirement; catalog: Catalog; disabled?: boolean; id: string; inline?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: Requirement] }>()
 const { t } = useI18n()
 const numericFields = ['lengthMm', 'widthMm', 'maxHeightMm', 'areaM2']
+const isSelect = computed(() => ['boothSpaceId', 'openingCount', 'productSystemId', 'budgetTierId'].includes(props.field))
 const labels = computed((): Record<keyof Requirement, string> => ({
   boothSpaceId: t('requirementForm.fieldBoothSpaceId'),
   lengthMm: t('requirementForm.fieldLengthMm'),
@@ -87,10 +89,10 @@ function answer(id: string, value: string | null) {
 </script>
 
 <template>
-  <div class="min-w-0 space-y-2">
-    <Label :for="numericFields.includes(field) || field === 'keywords' ? id : undefined">{{ labels[field] }}</Label>
+  <div :class="cn('min-w-0', inline ? 'grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-4' : 'space-y-2')">
+    <Label :for="numericFields.includes(field) || field === 'keywords' ? id : undefined" :class="cn(inline && 'sm:leading-5 sm:text-muted-foreground', inline && (isSelect ? 'sm:pt-3' : 'sm:pt-2'))">{{ labels[field] }}</Label>
     <template v-if="numericFields.includes(field)"><Input :id="id" type="number" inputmode="decimal" :min="field === 'areaM2' ? 0.000001 : 0.001" :max="field === 'areaM2' ? 1000000 : 1000" :step="field === 'areaM2' ? 0.000001 : 0.001" :model-value="numericValue" :disabled="disabled" :aria-invalid="!!numericError" :aria-describedby="numericError ? `${id}-error` : undefined" :placeholder="t('requirementForm.fieldPlaceholder')" @update:model-value="updateNumber" /><p v-if="numericError" :id="`${id}-error`" class="text-xs text-destructive">{{ numericError }}</p></template>
-    <OptionSelect v-else-if="field === 'boothSpaceId' || field === 'openingCount' || field === 'productSystemId' || field === 'budgetTierId'" :label="labels[field]" :model-value="modelValue[field] === null ? null : String(modelValue[field])" :options="options" :disabled="disabled" @update:model-value="update(field === 'openingCount' && $event !== null ? Number($event) : $event)" />
+    <div v-else-if="isSelect" :class="cn(inline && 'sm:max-w-xs')"><OptionSelect :label="labels[field]" :model-value="modelValue[field] === null ? null : String(modelValue[field])" :options="options" :disabled="disabled" @update:model-value="update(field === 'openingCount' && $event !== null ? Number($event) : $event)" /></div>
     <div v-else class="flex flex-wrap gap-2">
       <Button v-for="option in options" :key="option.id" type="button" size="sm" :disabled="disabled" :variant="(modelValue[field] as string[]).includes(option.id) ? 'selected' : 'outline'" :aria-pressed="(modelValue[field] as string[]).includes(option.id)" @click="toggle(option.id)"><Check v-if="(modelValue[field] as string[]).includes(option.id)" aria-hidden="true" />{{ option.label }}</Button>
       <p v-if="!options.length" class="text-xs text-muted-foreground">{{ t('requirementForm.fieldNoOptions') }}</p>
