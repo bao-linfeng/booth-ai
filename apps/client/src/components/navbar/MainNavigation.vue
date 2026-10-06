@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
 import { ArrowRight, FolderOpen, History, Menu, MessageSquare, Sparkles } from 'lucide-vue-next'
 import { Navbar, NavbarBrand } from '@/components/navbar'
@@ -12,32 +13,33 @@ import { cn } from '@/lib/utils'
 import UserAvatar from './UserAvatar.vue'
 
 const route = useRoute()
+const { t } = useI18n()
 const mobileMenuOpen = ref(false)
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 
-const navigationItems = [
+const navigationItems = computed(() => [
   {
-    label: 'AI 智选',
+    label: t('nav.aiSelection'),
     to: '/ai-selection',
     icon: Sparkles,
-    description: '描述需求，找到适合您的展台方案',
+    description: t('nav.aiSelectionDesc'),
     paths: ['/', '/ai-selection', '/schemes', '/theme-jobs', '/artwork-jobs'],
   },
   {
-    label: '检索记录',
+    label: t('nav.mySearches'),
     to: '/my-searches',
     icon: History,
-    description: '回看匹配方案与生成成果',
+    description: t('nav.mySearchesDesc'),
     paths: ['/my-searches'],
   },
   {
-    label: '我的项目',
+    label: t('nav.myProjects'),
     to: '/my-projects',
     icon: FolderOpen,
-    description: '查看申请记录与项目进展',
+    description: t('nav.myProjectsDesc'),
     paths: ['/my-projects'],
   },
-]
+])
 
 function isActive(paths: string[]) {
   return paths.some(path => route.path === path || route.path.startsWith(`${path}/`))
@@ -51,12 +53,12 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
   <Navbar size="lg" class="relative top-auto h-auto min-h-16 border-border/80 bg-background/95 py-2 lg:sticky lg:top-0 lg:py-0">
     <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
       <div class="flex min-w-0 items-center gap-8 xl:gap-12">
-        <NavbarBrand class="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="灵通 AI 展台首页">
-          <img src="/logo.png" alt="灵通" class="h-7 w-auto max-w-20 object-contain sm:h-8 sm:max-w-24" />
-          <span class="hidden border-l border-border pl-3 text-sm font-semibold tracking-wide sm:block">AI 展台</span>
+        <NavbarBrand class="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" :aria-label="t('controls.brandHome')">
+          <img src="/logo.png" :alt="t('controls.brandLogo')" class="h-7 w-auto max-w-20 object-contain sm:h-8 sm:max-w-24" />
+          <span class="hidden border-l border-border pl-3 text-sm font-semibold tracking-wide sm:block">{{ t('controls.brandName') }}</span>
         </NavbarBrand>
 
-        <nav aria-label="主导航" class="hidden h-16 items-center gap-6 lg:flex xl:gap-8">
+        <nav :aria-label="t('nav.mainNav')" class="hidden h-16 items-center gap-6 lg:flex xl:gap-8">
           <RouterLink
             v-for="item in navigationItems"
             :key="item.to"
@@ -80,7 +82,7 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
             :class="cn(route.path === '/manual-request' && 'bg-accent text-accent-foreground')"
           >
             <MessageSquare class="mr-2 size-4" aria-hidden="true" />
-            联系顾问
+            {{ t('nav.contactAdvisor') }}
           </RouterLink>
         </Button>
         <span class="mx-1 hidden h-5 w-px bg-border lg:block" aria-hidden="true" />
@@ -90,16 +92,16 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
 
         <Sheet v-model:open="mobileMenuOpen">
           <SheetTrigger as-child>
-            <Button variant="ghost" size="icon" class="lg:hidden" aria-label="打开导航菜单">
+            <Button variant="ghost" size="icon" class="lg:hidden" :aria-label="t('nav.openMenu')">
               <Menu class="size-5" aria-hidden="true" />
             </Button>
           </SheetTrigger>
           <SheetContent side="left" class="flex w-[340px] max-w-[calc(100vw-24px)] flex-col gap-0 overflow-y-auto p-0">
             <SheetHeader class="border-b px-6 pb-6 pt-8 text-left">
-              <SheetTitle>灵通 AI 展台</SheetTitle>
-              <SheetDescription>从方案选型到项目落地</SheetDescription>
+              <SheetTitle>{{ t('nav.brand') }}</SheetTitle>
+              <SheetDescription>{{ t('nav.brandSlogan') }}</SheetDescription>
             </SheetHeader>
-            <nav aria-label="移动端主导航" class="space-y-2 p-4">
+            <nav :aria-label="t('nav.mobileNav')" class="space-y-2 p-4">
               <RouterLink
                 v-for="item in navigationItems"
                 :key="item.to"
@@ -127,8 +129,8 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
               >
                 <MessageSquare class="size-5 shrink-0" aria-hidden="true" />
                 <div class="flex-1 space-y-1">
-                  <div class="text-sm font-semibold">联系顾问</div>
-                  <p class="text-xs text-muted-foreground">提交特殊需求，获取人工协助</p>
+                  <div class="text-sm font-semibold">{{ t('nav.contactAdvisor') }}</div>
+                  <p class="text-xs text-muted-foreground">{{ t('nav.contactAdvisorDesc') }}</p>
                 </div>
                 <ArrowRight class="size-4 shrink-0" aria-hidden="true" />
               </RouterLink>

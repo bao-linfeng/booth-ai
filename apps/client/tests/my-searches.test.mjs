@@ -8,14 +8,19 @@ import ts from 'typescript'
 import { createServer, transformWithEsbuild } from 'vite'
 
 const window = new Window({ url: 'http://localhost/' })
-for (const name of ['window', 'document', 'navigator', 'history', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+for (const name of ['window', 'document', 'navigator', 'history', 'localStorage', 'sessionStorage', 'Storage', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   Object.defineProperty(globalThis, name, { configurable: true, value: name === 'window' ? window : ['getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame'].includes(name) ? window[name].bind(window) : window[name] })
 }
 registerTS(() => ts)
 const server = await createServer({
   root: fileURLToPath(new URL('../', import.meta.url)), configFile: false,
   server: { middlewareMode: true, hmr: false }, optimizeDeps: { noDiscovery: true, include: [] },
-  resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('../src', import.meta.url)),
+      'vue-i18n': fileURLToPath(new URL('./mock-i18n.ts', import.meta.url)),
+    },
+  },
   plugins: [{
     name: 'test-my-searches', enforce: 'pre',
     resolveId(id) {

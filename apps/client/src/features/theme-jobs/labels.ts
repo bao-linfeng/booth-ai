@@ -1,31 +1,40 @@
 import type { ThemeJob } from '@/services/api/theme-jobs'
+import type { ComposerTranslation } from 'vue-i18n'
 
-export const themeJobStatusLabels: Record<ThemeJob['status'], string> = {
-  pending: '等待处理', queued: '排队中', running: '生成中', settling: '结算中',
-  succeeded: '生成完成', partially_succeeded: '部分完成', failed: '生成失败',
+export function getThemeJobStatusLabels(t: ComposerTranslation): Record<ThemeJob['status'], string> {
+  return {
+    pending: t('searches.jobPending'),
+    queued: t('searches.jobQueued'),
+    running: t('searches.jobRunning'),
+    settling: t('searches.jobSettling'),
+    succeeded: t('themeJob.statusSucceeded'),
+    partially_succeeded: t('searches.jobPartialSuccess'),
+    failed: t('searches.jobFailed'),
+  }
 }
 
-export function phaseText(job: ThemeJob | null) {
-  if (!job) return '加载中...'
-  if (job.status === 'queued') return '排队中'
-  if (job.status === 'running') return 'AI 正在生成'
-  if (job.status === 'settling') return '正在结算'
-  return job.phase || '请稍候'
+export function phaseText(job: ThemeJob | null, t: ComposerTranslation): string {
+  if (!job) return t('common.loading')
+  if (job.status === 'queued') return t('searches.jobQueued')
+  if (job.status === 'running') return t('themeJob.phaseGenerating')
+  if (job.status === 'settling') return t('searches.jobSettling')
+  if (job.phase === 'rendering') return t('themeJob.phaseGenerating')
+  return job.phase || t('common.loading')
 }
 
-export function failureReasonText(reason?: string | null) {
-  if (!reason) return '未知错误'
+export function failureReasonText(reason: string | null | undefined, t: ComposerTranslation): string {
+  if (!reason) return t('common.unknown')
   const labels: Record<string, string> = {
-    INSUFFICIENT_CREDITS: '积分不足',
-    PROVIDER_ERROR: 'AI 服务商暂不可用',
-    INTERNAL_ERROR: '系统内部错误',
+    INSUFFICIENT_CREDITS: t('themeJob.failureInsufficientCredits'),
+    PROVIDER_ERROR: t('themeJob.failureProviderError'),
+    INTERNAL_ERROR: t('themeJob.failureInternalError'),
   }
   return labels[reason] || reason
 }
 
-export function blockedReasonText(reasons: string[]) {
-  if (reasons.includes('MODEL_UNAVAILABLE')) return '平台生成服务暂不可用，请稍后重试。'
-  if (reasons.includes('MASK_UNAVAILABLE')) return '该视角暂无可用编辑区域，请选择其他原图。'
-  if (reasons.includes('TEMPLATE_UNAVAILABLE')) return '当前风格暂不可用，请调整视觉偏好。'
-  return '当前条件暂不可生成，请调整偏好或稍后重试。'
+export function blockedReasonText(reasons: string[], t: ComposerTranslation): string {
+  if (reasons.includes('MODEL_UNAVAILABLE')) return t('schemeTheme.errorServiceUnavailable')
+  if (reasons.includes('MASK_UNAVAILABLE')) return t('schemeTheme.errorMaskUnavailable')
+  if (reasons.includes('TEMPLATE_UNAVAILABLE')) return t('schemeTheme.errorTemplateUnavailable')
+  return t('schemeTheme.errorBlocked')
 }

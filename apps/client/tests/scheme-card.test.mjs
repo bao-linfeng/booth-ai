@@ -16,9 +16,14 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const server = await createServer({
   root, configFile: false, server: { middlewareMode: true },
   optimizeDeps: { noDiscovery: true, include: [] },
-  resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('../src', import.meta.url)),
+      'vue-i18n': fileURLToPath(new URL('./mock-i18n.ts', import.meta.url)),
+    },
+  },
   plugins: [{
-    name: 'test-client-sfc',
+    name: 'test-client-sfc', enforce: 'pre',
     resolveId(id) { if (id === 'virtual:test-vue') return '\0test-vue' },
     load(id) { if (id === '\0test-vue') return "export { createApp, h, nextTick } from 'vue'; export { createRouter, createMemoryHistory } from 'vue-router'" },
     async transform(source, id) {

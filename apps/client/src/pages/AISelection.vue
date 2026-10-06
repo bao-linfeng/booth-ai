@@ -1,6 +1,8 @@
 ﻿<script setup lang="ts">
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { appLocale } from '@/plugins/i18n'
 import { ArrowRight, Sparkles, ShieldCheck, Pencil, MessageCircle, Search, LoaderCircle, CircleAlert, ArrowUpRight, Check, Coins, RotateCcw } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
@@ -19,6 +21,7 @@ import { emptyRequirement, type SelectionState, type Catalog, type MatchItem, ty
 import { previewCatalog, previewItems, previewStates } from '@/features/selection/preview'
 import { apiFetch } from '@/lib/api-client'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
@@ -62,9 +65,9 @@ const requirementError = computed(() => {
   if ((['lengthMm', 'widthMm', 'maxHeightMm'] as const).some(field => {
     const value = r[field]
     return value !== null && (!Number.isInteger(value) || value <= 0 || value > 1_000_000)
-  })) return '长、宽和限高需在 0.001–1000 米之间，最多保留三位小数。'
-  if (r.areaM2 !== null && (!Number.isFinite(r.areaM2) || r.areaM2 <= 0 || r.areaM2 > 1_000_000)) return '面积需大于 0 且不超过 1,000,000 ㎡。'
-  if (r.lengthMm && r.widthMm && r.areaM2 !== null && Math.abs(r.areaM2 - r.lengthMm * r.widthMm / 1_000_000) > 0.000001) return '面积与长宽不一致，请修正长宽或面积。'
+  })) return t('selection.validationDimensions')
+  if (r.areaM2 !== null && (!Number.isFinite(r.areaM2) || r.areaM2 <= 0 || r.areaM2 > 1_000_000)) return t('selection.validationArea')
+  if (r.lengthMm && r.widthMm && r.areaM2 !== null && Math.abs(r.areaM2 - r.lengthMm * r.widthMm / 1_000_000) > 0.000001) return t('selection.validationAreaMismatch')
   return ''
 })
 const canSearch = computed(() => !busy.value && !requirementError.value && (isPreview.value || catalogState.value === 'ready'))
@@ -88,7 +91,7 @@ function clarificationValue(field: string) {
 function confirmClarification(index: number) {
   const item = liveClarifications.value[index]
   if (!item || !clarificationFields(item.field).length || requirementError.value) return
-  if (item.question.includes('长宽方向') && (!requirement.value.lengthMm || !requirement.value.widthMm)) return
+  if (isDimensionClarification(item.field) && (!requirement.value.lengthMm || !requirement.value.widthMm)) return
   confirmedClarifications.value[index] = clarificationValue(item.field)
 }
 
@@ -231,6 +234,7 @@ function safeReadSelection(): PersistedSelection | null {
     return null
   }
 }
+watch(appLocale, () => { void loadCatalog() })
 
 function safeWriteSelection(value: PersistedSelection) {
   try { sessionStorage.setItem(selectionSessionKey, JSON.stringify(value)) } catch { return }
@@ -366,30 +370,34 @@ const unresolvedClarifications = computed(() => liveClarifications.value.filter(
   if (confirmedClarifications.value[index] === clarificationValue(item.field)) return false
   const field = item.field as keyof Requirement
   if (!(field in requirement.value)) return true
-  if (item.field === 'lengthMm' && item.question.includes('长宽方向')) {
+  if (isDimensionClarification(item.field)) {
     return !requirement.value.lengthMm || !requirement.value.widthMm ||
       (requirement.value.lengthMm === parsedRequirement.value.lengthMm && requirement.value.widthMm === parsedRequirement.value.widthMm)
   }
   return JSON.stringify(requirement.value[field]) === JSON.stringify(parsedRequirement.value[field])
 }))
+
+function isDimensionClarification(field: string) {
+  return field === 'lengthMm' || field === 'widthMm'
+}
 const canConfirm = computed(() => canSearch.value && !!parsedRequirement.value && !textChangedSinceParse.value && !unresolvedClarifications.value.length)
 const sourceRows = computed(() => parseResult.value ? Object.entries(parseResult.value.fieldSources)
-  .filter(([field, source]) => source.source !== 'form' || displayValue(field, requirement.value[field as keyof Requirement]) !== '未填写' ||
+  .filter(([field, source]) => source.source !== 'form' || displayValue(field, requirement.value[field as keyof Requirement]) !== t('selection.fieldNotFilled') ||
     (parsedRequirement.value && JSON.stringify(requirement.value[field as keyof Requirement]) !== JSON.stringify(parsedRequirement.value[field as keyof Requirement])))
   .map(([field, source]) => ({
     field,
     label: fieldLabel(field),
-    source: parsedRequirement.value && JSON.stringify(requirement.value[field as keyof Requirement]) !== JSON.stringify(parsedRequirement.value[field as keyof Requirement]) ? '人工修正' : { form: '表单', text: '文字识别', derived: '自动计算' }[source.source],
+    source: parsedRequirement.value && JSON.stringify(requirement.value[field as keyof Requirement]) !== JSON.stringify(parsedRequirement.value[field as keyof Requirement]) ? t('selection.sourceManual') : { form: t('selection.sourceForm'), text: t('selection.sourceText'), derived: t('selection.sourceDerived') }[source.source],
     value: displayValue(field, requirement.value[field as keyof Requirement]),
     evidence: source.evidence
   })) : [])
 const items = computed(() => isPreview.value 
-  ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: [{ type: 'missing_field' as const, message: '尺寸、开口面数、限高和适用条件待确认' }] } : item)
+  ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: [{ type: 'missing_field' as const, message: t('selection.missingFieldsNotice') }] } : item)
   : liveItems.value
 )
 const manualQuestions = computed(() => [...new Set([
   ...unresolvedClarifications.value.map(item => item.question),
-  ...(parseResult.value?.unhandledText.map(item => `未识别：${item}`) ?? []),
+  ...(parseResult.value?.unhandledText.map(item => t('selection.unrecognizedItem', { item })) ?? []),
   ...(!stale.value && liveMatchData.value?.status === 'no_match' ? liveMatchData.value.reasons : []),
 ])].slice(0, 30))
 const manualOriginalText = computed(() => [text.value.trim(), manualDescription.value.trim()].filter(Boolean).join('\n'))
@@ -439,11 +447,11 @@ const chips = computed(() => {
   const currentCatalog = catalog.value
   return [
     currentCatalog.boothSpaces.find(space => space.id === r.boothSpaceId)?.label ?? '',
-    r.lengthMm ? `长 ${r.lengthMm / 1000} m` : '',
-    r.widthMm ? `宽 ${r.widthMm / 1000} m` : '',
+    r.lengthMm ? t('selection.dimLength', { value: r.lengthMm / 1000 }) : '',
+    r.widthMm ? t('selection.dimWidth', { value: r.widthMm / 1000 }) : '',
     r.areaM2 ? `${r.areaM2} ㎡` : '', 
-    r.maxHeightMm ? `限高 ${r.maxHeightMm / 1000} m` : '',
-    r.openingCount ? `${r.openingCount} 面开口` : '', 
+    r.maxHeightMm ? t('selection.dimMaxHeight', { value: r.maxHeightMm / 1000 }) : '',
+    r.openingCount ? t('selection.dimOpening', { count: r.openingCount }) : '', 
     ...currentCatalog.styles.filter(option => r.styleIds.includes(option.id)).map(option => option.label),
     ...currentCatalog.industries.filter(option => r.industryIds.includes(option.id)).map(option => option.label),
     ...currentCatalog.zones.filter(option => r.zoneIds.includes(option.id) || r.requiredZoneIds.includes(option.id)).map(option => option.label)
@@ -452,7 +460,7 @@ const chips = computed(() => {
 
 const conditionRows = computed(() => Object.entries(requirement.value)
   .map(([field, value]) => ({ field, label: fieldLabel(field), value: displayValue(field, value) }))
-  .filter(row => row.value !== '未填写'))
+  .filter(row => row.value !== t('selection.fieldNotFilled')))
 
 function clearText() {
   text.value = ''
@@ -464,22 +472,25 @@ function clearText() {
 }
 
 const fieldLabels: Record<keyof Requirement, string> = {
-  boothSpaceId: '方案尺寸（长×宽×高）',
-  lengthMm: '展位长', widthMm: '展位宽', maxHeightMm: '场馆限高', areaM2: '面积',
-  openingCount: '开口面数', productSystemId: '产品体系',
-  styleIds: '设计风格', industryIds: '适用行业', budgetTierId: '材料预算',
-  zoneIds: '功能分区', featureIds: '特色功能', keywords: '关键词',
-  requiredZoneIds: '必须分区', requiredFeatureIds: '必须特色',
-  excludedZoneIds: '禁止分区', excludedFeatureIds: '禁止特色', applicabilityAnswers: '适用条件'
+  boothSpaceId: 'requirementForm.fieldBoothSpaceId',
+  lengthMm: 'requirementForm.fieldLengthMm', widthMm: 'requirementForm.fieldWidthMm', maxHeightMm: 'requirementForm.fieldMaxHeightMm', areaM2: 'requirementForm.fieldAreaM2',
+  openingCount: 'requirementForm.fieldOpeningCount', productSystemId: 'requirementForm.fieldProductSystemId',
+  styleIds: 'requirementForm.fieldStyleIds', industryIds: 'requirementForm.fieldIndustryIds', budgetTierId: 'requirementForm.fieldBudgetTierId',
+  zoneIds: 'requirementForm.fieldZoneIds', featureIds: 'requirementForm.fieldFeatureIds', keywords: 'requirementForm.fieldKeywords',
+  requiredZoneIds: 'requirementForm.fieldRequiredZoneIds', requiredFeatureIds: 'requirementForm.fieldRequiredFeatureIds',
+  excludedZoneIds: 'requirementForm.fieldExcludedZoneIds', excludedFeatureIds: 'requirementForm.fieldExcludedFeatureIds', applicabilityAnswers: 'requirementForm.fieldApplicabilityAnswers'
 }
-function fieldLabel(field: string) { return fieldLabels[field as keyof Requirement] ?? field }
+function fieldLabel(field: string) {
+  const key = fieldLabels[field as keyof Requirement]
+  return key ? t(key) : field
+}
 function displayValue(field: string, value: unknown): string {
-  if (value === null || value === undefined || (Array.isArray(value) && !value.length)) return '未填写'
+  if (value === null || value === undefined || (Array.isArray(value) && !value.length)) return t('selection.fieldNotFilled')
   if (typeof value === 'number') return ['lengthMm', 'widthMm', 'maxHeightMm'].includes(field) ? `${value / 1000} m` : field === 'areaM2' ? `${value} ㎡` : String(value)
   const options = [...catalog.value.boothSpaces, ...catalog.value.productSystems, ...catalog.value.styles, ...catalog.value.industries, ...catalog.value.budgetTiers, ...catalog.value.zones, ...catalog.value.features]
   const label = (id: string) => options.find(option => option.id === id)?.label ?? id
   if (Array.isArray(value)) return value.map(id => label(String(id))).join('、')
-  if (typeof value === 'object') return Object.entries(value).map(([id, answer]) => `${catalog.value.applicabilityQuestions.find(question => question.id === id)?.label ?? id}：${answer ? '是' : '否'}`).join('、') || '未填写'
+  if (typeof value === 'object') return Object.entries(value).map(([id, answer]) => `${catalog.value.applicabilityQuestions.find(question => question.id === id)?.label ?? id}：${answer ? t('common.yes') : t('common.no')}`).join('、') || t('selection.fieldNotFilled')
   return label(String(value))
 }
 
@@ -526,7 +537,7 @@ function choosePreview(value: string) {
   previewMode.value = value
   if (value === 'results' || value === 'needs_clarification') {
     requirement.value = { ...emptyRequirement(), lengthMm: 6000, widthMm: 3000, areaM2: 18, maxHeightMm: 4500, openingCount: 2, styleIds: ['modern-minimal'], productSystemId: 'fs62' }
-    text.value = '长6米，宽3米，两面开口，现代简约风格，需要洽谈区。'
+    text.value = t('selection.conditionPlaceholder')
   } else if (value === 'random' || value === 'idle') clearSelectionMemory()
   state.value = value === 'random' ? 'results' : value as SelectionState
   snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
@@ -537,7 +548,7 @@ async function loadCatalog() {
   const sequence = ++catalogSequence
   catalogState.value = 'loading'
   try {
-    const locale = navigator.language || 'zh-CN'
+    const locale = appLocale.value
     const res = await apiFetch<{ code: number; data: Catalog }>(`/api/v1/client/catalog/options?locale=${encodeURIComponent(locale)}`)
     if (sequence !== catalogSequence) return
     if (res.code !== 0) throw new Error('Catalog unavailable')
@@ -687,98 +698,98 @@ onMounted(() => {
     <main id="main-content" class="studio-page !space-y-6 !py-6 md:!py-8">
       <section class="flex flex-wrap items-end justify-between gap-4 border-b pb-5">
         <div class="space-y-2">
-          <p class="flex items-center gap-3 text-xs font-medium text-muted-foreground"><span class="h-px w-8 bg-primary" />灵通 · AI 智选 / EXHIBITION DESIGN</p>
-          <h1 class="text-[28px] font-semibold leading-snug md:text-[32px]">{{ state === 'needs_clarification' ? '确认需求，让方案更合适' : '发现适合您的展台方案' }}</h1>
-          <p class="text-sm leading-6 text-muted-foreground">{{ editorVisible ? '描述参展想法，匹配展台方案，再按需调整品牌主题或申请报价。' : '先选方案，再按需调整品牌主题或申请报价。' }}</p>
+          <p class="flex items-center gap-3 text-xs font-medium text-muted-foreground"><span class="h-px w-8 bg-primary" />{{ t('selection.pageTitle') }}</p>
+          <h1 class="text-[28px] font-semibold leading-snug md:text-[32px]">{{ state === 'needs_clarification' ? t('selection.headingWithClarify') : t('selection.headingDefault') }}</h1>
+          <p class="text-sm leading-6 text-muted-foreground">{{ editorVisible ? t('selection.subheadingWithClarify') : t('selection.subheadingDefault') }}</p>
         </div>
-        <p class="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck class="size-4 shrink-0 text-success" />免费匹配 · 无需登录 · 不扣积分</p>
+        <p class="flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck class="size-4 shrink-0 text-success" />{{ t('selection.badge') }}</p>
       </section>
-      <Card v-if="!isPreview && catalogState !== 'ready'" :role="catalogState === 'error' ? 'alert' : 'status'"><CardContent class="flex items-center justify-between gap-4 p-5 text-sm"><span>{{ catalogState === 'loading' ? '正在加载选型条件…' : '选型条件加载失败，请重试。' }}</span><Button v-if="catalogState === 'error'" variant="outline" @click="loadCatalog">重新加载</Button></CardContent></Card>
-      <Card v-if="interruptedRequest && !isPreview" role="status"><CardContent class="p-5 text-sm">上次请求因页面离开而中断，输入已恢复。点击“匹配方案”继续。</CardContent></Card>
-      <Card v-if="isPreview" class="border-dashed"><CardHeader class="pb-3"><CardTitle class="text-sm">UI 静态预览</CardTitle><CardDescription>示例编号与空间示意仅用于界面评审，不代表真实匹配。</CardDescription></CardHeader><CardContent class="flex flex-wrap gap-2"><Button v-for="option in previewStates" :key="option.id" size="sm" :variant="previewMode === option.id ? 'default' : 'outline'" :aria-pressed="previewMode === option.id" @click="choosePreview(option.id)">{{ option.label }}</Button></CardContent></Card>
+      <Card v-if="!isPreview && catalogState !== 'ready'" :role="catalogState === 'error' ? 'alert' : 'status'"><CardContent class="flex items-center justify-between gap-4 p-5 text-sm"><span>{{ catalogState === 'loading' ? t('selection.catalogLoading') : t('selection.catalogError') }}</span><Button v-if="catalogState === 'error'" variant="outline" @click="loadCatalog">{{ t('selection.catalogReload') }}</Button></CardContent></Card>
+      <Card v-if="interruptedRequest && !isPreview" role="status"><CardContent class="p-5 text-sm">{{ t('selection.interruptedNotice') }}</CardContent></Card>
+      <Card v-if="isPreview" class="border-dashed"><CardHeader class="pb-3"><CardTitle class="text-sm">{{ t('selection.previewMode') }}</CardTitle><CardDescription>{{ t('selection.previewNotice') }}</CardDescription></CardHeader><CardContent class="flex flex-wrap gap-2"><Button v-for="option in previewStates" :key="option.id" size="sm" :variant="previewMode === option.id ? 'default' : 'outline'" :aria-pressed="previewMode === option.id" @click="choosePreview(option.id)">{{ t(option.labelKey) }}</Button></CardContent></Card>
       <div id="selection-stage" tabindex="-1" class="min-w-0 scroll-mt-24 space-y-6 focus:outline-none">
-          <section v-if="!editorVisible" class="space-y-3 border-b pb-6" aria-label="当前需求摘要">
+          <section v-if="!editorVisible" class="space-y-3 border-b pb-6" :aria-label="t('selection.currentRequirementAriaLabel')">
             <div class="flex flex-wrap items-center justify-between gap-3">
-              <div class="min-w-0 flex-1 space-y-2"><h2 class="text-sm font-medium">当前需求</h2><p v-if="text" class="line-clamp-2 break-words text-sm text-muted-foreground">{{ text }}</p></div>
-              <Button variant="outline" size="sm" :disabled="busy" aria-controls="requirement-editor" :aria-expanded="editorVisible" @click="editRequirement"><Pencil class="mr-2 size-3.5" />修改需求</Button>
+              <div class="min-w-0 flex-1 space-y-2"><h2 class="text-sm font-medium">{{ t('selection.currentRequirement') }}</h2><p v-if="text" class="line-clamp-2 break-words text-sm text-muted-foreground">{{ text }}</p></div>
+              <Button variant="outline" size="sm" :disabled="busy" aria-controls="requirement-editor" :aria-expanded="editorVisible" @click="editRequirement"><Pencil class="mr-2 size-3.5" />{{ t('selection.editRequirement') }}</Button>
             </div>
             <div v-if="chips.length" class="flex flex-wrap gap-2"><Badge v-for="chip in chips" :key="chip" variant="outline">{{ chip }}</Badge></div>
-            <details v-if="conditionRows.length" class="text-xs"><summary class="cursor-pointer text-muted-foreground focus-visible:outline focus-visible:outline-ring">查看全部 {{ conditionRows.length }} 项条件</summary><dl class="mt-3 grid gap-3 sm:grid-cols-2"><div v-for="row in conditionRows" :key="row.field" class="min-w-0"><dt class="text-muted-foreground">{{ row.label }}</dt><dd class="mt-1 break-words">{{ row.value }}</dd></div></dl></details>
+            <details v-if="conditionRows.length" class="text-xs"><summary class="cursor-pointer text-muted-foreground focus-visible:outline focus-visible:outline-ring">{{ t('selection.viewAllConditions', { n: conditionRows.length }) }}</summary><dl class="mt-3 grid gap-3 sm:grid-cols-2"><div v-for="row in conditionRows" :key="row.field" class="min-w-0"><dt class="text-muted-foreground">{{ row.label }}</dt><dd class="mt-1 break-words">{{ row.value }}</dd></div></dl></details>
           </section>
           <section v-if="editorVisible" id="requirement-editor" class="space-y-4 border-b pb-5" aria-labelledby="requirement-heading">
-            <h2 id="requirement-heading" class="flex items-center gap-2 text-lg font-semibold"><Sparkles class="size-5 text-primary" />您想要怎样的展台？</h2>
+            <h2 id="requirement-heading" class="flex items-center gap-2 text-lg font-semibold"><Sparkles class="size-5 text-primary" />{{ t('selection.inputTitle') }}</h2>
             <div class="space-y-3">
-              <Label for="requirement-text" class="sr-only">一句话描述需求</Label>
-              <Textarea id="requirement-text" :model-value="text" :rows="3" maxlength="1000" :disabled="busy" class="min-h-24 resize-y bg-card p-3 text-base leading-6 focus-visible:ring-1" placeholder="例如：长6米、宽3米，两面开口，希望有洽谈区" @update:model-value="text = String($event)" />
+              <Label for="requirement-text" class="sr-only">{{ t('selection.inputLabel') }}</Label>
+              <Textarea id="requirement-text" :model-value="text" :rows="3" maxlength="1000" :disabled="busy" class="min-h-24 resize-y bg-card p-3 text-base leading-6 focus-visible:ring-1" :placeholder="t('selection.inputPlaceholder')" @update:model-value="text = String($event)" />
               <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-xs text-muted-foreground">试试：</span>
-                  <Button variant="ghost" size="sm" :disabled="busy" @click="text = '长6米、宽3米，现代简约风格，需要洽谈区'">简约洽谈空间<ArrowUpRight class="ml-1 size-3" /></Button>
-                  <Button variant="ghost" size="sm" :disabled="busy" @click="text = '医疗健康行业，必须有储藏间'">医疗 · 带储藏间<ArrowUpRight class="ml-1 size-3" /></Button>
+                  <span class="text-xs text-muted-foreground">{{ t('selection.exampleHint') }}</span>
+                  <Button variant="ghost" size="sm" :disabled="busy" @click="text = t('selection.example1Text')">{{ t('selection.example1Label') }}<ArrowUpRight class="ml-1 size-3" /></Button>
+                  <Button variant="ghost" size="sm" :disabled="busy" @click="text = t('selection.example2Text')">{{ t('selection.example2Label') }}<ArrowUpRight class="ml-1 size-3" /></Button>
                 </div>
-                <div class="flex items-center gap-2 text-xs text-muted-foreground"><span>{{ text.length }} / 1000</span><Button v-if="text || parseResult" variant="ghost" size="sm" :disabled="busy" @click="clearText">清空描述</Button></div>
+                <div class="flex items-center gap-2 text-xs text-muted-foreground"><span>{{ text.length }} / 1000</span><Button v-if="text || parseResult" variant="ghost" size="sm" :disabled="busy" @click="clearText">{{ t('selection.clearInput') }}</Button></div>
               </div>
-              <p v-if="textChangedSinceParse" class="text-sm text-warning" role="status">描述已修改，查找时会重新识别文字；仅修改条件则直接使用修改后的值。</p>
+              <p v-if="textChangedSinceParse" class="text-sm text-warning" role="status">{{ t('selection.textChangedNotice') }}</p>
               <p v-if="requirementError" class="text-sm text-destructive" role="alert">{{ requirementError }}</p>
             </div>
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div class="flex items-center gap-2">
-                <Button v-if="!text.trim() && !conditionRows.length" variant="ghost" :disabled="!canSearch" @click="submit">先看展台灵感<ArrowUpRight class="ml-1 size-4" /></Button>
-                <Button v-else variant="ghost" size="sm" :disabled="busy" @click="reset"><RotateCcw class="mr-1 size-3.5" />重置需求</Button>
+                <Button v-if="!text.trim() && !conditionRows.length" variant="ghost" :disabled="!canSearch" @click="submit">{{ t('selection.inspirationFirst') }}<ArrowUpRight class="ml-1 size-4" /></Button>
+                <Button v-else variant="ghost" size="sm" :disabled="busy" @click="reset"><RotateCcw class="mr-1 size-3.5" />{{ t('selection.resetRequirement') }}</Button>
               </div>
               <div class="flex flex-wrap gap-2">
-                <Button v-if="editing && !stale && !inspirationResults && state !== 'idle' && state !== 'error'" variant="ghost" @click="editing = false">收起编辑</Button>
-                <Button :disabled="!canSearch" class="gap-2" @click="submit"><Search class="size-4" />{{ outcomeVisible && !inspirationResults ? '重新匹配方案' : '匹配方案' }}<ArrowRight class="size-4" /></Button>
+                <Button v-if="editing && !stale && !inspirationResults && state !== 'idle' && state !== 'error'" variant="ghost" @click="editing = false">{{ t('selection.collapseEdit') }}</Button>
+                <Button :disabled="!canSearch" class="gap-2" @click="submit"><Search class="size-4" />{{ outcomeVisible && !inspirationResults ? t('selection.rematch') : t('selection.match') }}<ArrowRight class="size-4" /></Button>
               </div>
             </div>
             <div class="border-t pt-4"><RequirementForm v-model="requirement" :catalog="catalog" :disabled="busy || (!isPreview && catalogState !== 'ready')" /></div>
           </section>
           
-          <Card v-if="state === 'needs_clarification'" class="border-warning/25 bg-warning/5"><CardHeader><CardTitle class="flex items-center gap-2 text-lg"><CircleAlert class="size-5 text-warning" />请先确认，我们是否理解正确？</CardTitle><CardDescription>{{ isPreview ? '澄清状态示例：“6×3”尚不能确定左右跨度和前后进深。' : '解析过程中遇到模糊要求，需您确认。' }}</CardDescription></CardHeader><CardContent class="space-y-4">
+          <Card v-if="state === 'needs_clarification'" class="border-warning/25 bg-warning/5"><CardHeader><CardTitle class="flex items-center gap-2 text-lg"><CircleAlert class="size-5 text-warning" />{{ t('selection.clarifyTitle') }}</CardTitle><CardDescription>{{ isPreview ? t('selection.clarifySubtitleExample') : t('selection.clarifySubtitleLive') }}</CardDescription></CardHeader><CardContent class="space-y-4">
             <template v-if="isPreview">
-              <div class="flex flex-wrap gap-2"><Button variant="outline" @click="requirement = { ...requirement, lengthMm: 6000, widthMm: 3000, areaM2: 18 }">长 6 m × 宽 3 m</Button><Button variant="outline" @click="requirement = { ...requirement, lengthMm: 3000, widthMm: 6000, areaM2: 18 }">长 3 m × 宽 6 m</Button></div>
+              <div class="flex flex-wrap gap-2"><Button variant="outline" @click="requirement = { ...requirement, lengthMm: 6000, widthMm: 3000, areaM2: 18 }">{{ t('selection.dimLength', { value: 6 }) }} × {{ t('selection.dimWidth', { value: 3 }) }}</Button><Button variant="outline" @click="requirement = { ...requirement, lengthMm: 3000, widthMm: 6000, areaM2: 18 }">{{ t('selection.dimLength', { value: 3 }) }} × {{ t('selection.dimWidth', { value: 6 }) }}</Button></div>
             </template>
             <template v-else>
               <div class="space-y-3">
                 <div v-for="(clarification, i) in liveClarifications" :key="i" class="space-y-4 rounded-lg border bg-muted/20 p-4 text-sm text-foreground">
-                  <p :class="unresolvedClarifications.includes(clarification) ? 'font-medium text-warning' : 'text-muted-foreground'">{{ clarification.question }} <span v-if="!unresolvedClarifications.includes(clarification)">· 已确认</span></p>
+                  <p :class="unresolvedClarifications.includes(clarification) ? 'font-medium text-warning' : 'text-muted-foreground'">{{ clarification.question }} <span v-if="!unresolvedClarifications.includes(clarification)">{{ t('selection.confirmed') }}</span></p>
                   <template v-if="clarificationFields(clarification.field).length">
                     <div class="grid gap-4 sm:grid-cols-2"><RequirementField v-for="field in clarificationFields(clarification.field)" :id="`clarification-${i}-${field}`" :key="field" v-model="requirement" :field="field" :catalog="catalog" :disabled="busy" /></div>
-                    <Button v-if="unresolvedClarifications.includes(clarification)" variant="outline" size="sm" :disabled="!canSearch || (clarification.question.includes('长宽方向') && (!requirement.lengthMm || !requirement.widthMm))" @click="confirmClarification(i)">确认使用当前值</Button>
+                    <Button v-if="unresolvedClarifications.includes(clarification)" variant="outline" size="sm" :disabled="!canSearch || (isDimensionClarification(clarification.field) && (!requirement.lengthMm || !requirement.widthMm))" @click="confirmClarification(i)">{{ t('selection.confirmCurrentValue') }}</Button>
                   </template>
-                  <template v-else><p v-if="parseResult?.unhandledText.length" class="break-words text-muted-foreground">未识别：{{ parseResult.unhandledText.join('、') }}</p><Label :for="`clarification-text-${i}`">修改需求描述</Label><Textarea :id="`clarification-text-${i}`" v-model="text" maxlength="1000" :disabled="busy" /><Button variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">重新解析文字</Button></template>
+                  <template v-else><p v-if="parseResult?.unhandledText.length" class="break-words text-muted-foreground">{{ t('selection.unrecognized') }}{{ parseResult.unhandledText.join('、') }}</p><Label :for="`clarification-text-${i}`">{{ t('selection.editRequirementText') }}</Label><Textarea :id="`clarification-text-${i}`" v-model="text" maxlength="1000" :disabled="busy" /><Button variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">{{ t('selection.reparse') }}</Button></template>
                 </div>
-                <p v-if="!liveClarifications.length" class="text-sm text-muted-foreground">{{ liveMatchData?.reasons.join('；') || '请补充或修改需求后重新匹配。' }}</p>
-                <Button v-if="!liveClarifications.length" variant="outline" @click="editRequirement">修改需求</Button>
+                <p v-if="!liveClarifications.length" class="text-sm text-muted-foreground">{{ liveMatchData?.reasons.join('；') || t('selection.clarifyError') }}</p>
+                <Button v-if="!liveClarifications.length" variant="outline" @click="editRequirement">{{ t('selection.editRequirement') }}</Button>
               </div>
             </template>
              <p v-if="requirementError" class="text-sm text-destructive" role="alert">{{ requirementError }}</p>
-             <p v-if="textChangedSinceParse" class="text-sm text-warning">描述已修改，请先重新解析文字。</p>
-             <p class="text-xs leading-relaxed text-muted-foreground">在上方直接修正条件；若当前值已正确，可点击“确认使用当前值”。手动修正不会被旧文字再次覆盖。</p><div class="flex flex-wrap gap-2"><Button :disabled="isPreview ? !canSearch : !canConfirm" @click="confirm">确认并继续匹配<ArrowRight class="ml-2 size-4" /></Button><Button v-if="textChangedSinceParse" variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">重新解析文字</Button><Button variant="outline" @click="manualOpen = true">转人工确认</Button></div></CardContent></Card>
+             <p v-if="textChangedSinceParse" class="text-sm text-warning">{{ t('selection.textChangedParsePending') }}</p>
+             <p class="text-xs leading-relaxed text-muted-foreground">{{ t('selection.clarifyGuide') }}</p><div class="flex flex-wrap gap-2"><Button :disabled="isPreview ? !canSearch : !canConfirm" @click="confirm">{{ t('selection.confirmAndMatch') }}<ArrowRight class="ml-2 size-4" /></Button><Button v-if="textChangedSinceParse" variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">{{ t('selection.reparse') }}</Button><Button variant="outline" @click="manualOpen = true">{{ t('selection.transferManual') }}</Button></div></CardContent></Card>
 
           <details v-if="!isPreview && parseResult && !busy" class="rounded-lg border px-4 py-3 text-sm">
-            <summary class="cursor-pointer text-muted-foreground focus-visible:outline focus-visible:outline-ring">识别依据与条件来源</summary>
-            <div class="space-y-4 pt-4"><p class="text-xs text-muted-foreground">核对文字覆盖的条件；仅修改表单后直接匹配，旧文字不会再次覆盖。</p><p v-if="parseResult.degraded" class="text-xs text-muted-foreground">当前使用规则识别；未识别文字需修正或转人工确认。</p><dl class="grid gap-3 sm:grid-cols-2"><div v-for="row in sourceRows" :key="row.field" class="min-w-0 border-t pt-3"><dt class="flex items-center justify-between gap-2 font-medium"><span>{{ row.label }}</span><Badge variant="outline">{{ row.source }}</Badge></dt><dd class="mt-1 break-words">{{ row.value }}</dd><p v-if="row.evidence" class="mt-1 break-words text-xs text-muted-foreground">依据：{{ row.evidence }}</p></div></dl><div v-if="parseResult.overrides.length" class="space-y-2"><strong class="text-xs">文字覆盖了表单条件</strong><p v-for="override in parseResult.overrides" :key="override.field" class="break-words text-xs">{{ fieldLabel(override.field) }}：{{ displayValue(override.field, override.previousValue) }} → {{ displayValue(override.field, override.value) }} · 依据：{{ override.evidence }}</p></div><p v-if="parseResult.unhandledText.length" class="break-words text-xs text-warning">未识别：{{ parseResult.unhandledText.join('、') }}</p><Button size="sm" variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">重新解析文字</Button></div>
+            <summary class="cursor-pointer text-muted-foreground focus-visible:outline focus-visible:outline-ring">{{ t('selection.sourceTitle') }}</summary>
+            <div class="space-y-4 pt-4"><p class="text-xs text-muted-foreground">{{ t('selection.sourceGuideForm') }}</p><p v-if="parseResult.degraded" class="text-xs text-muted-foreground">{{ t('selection.sourceGuideRules') }}</p><dl class="grid gap-3 sm:grid-cols-2"><div v-for="row in sourceRows" :key="row.field" class="min-w-0 border-t pt-3"><dt class="flex items-center justify-between gap-2 font-medium"><span>{{ row.label }}</span><Badge variant="outline">{{ row.source }}</Badge></dt><dd class="mt-1 break-words">{{ row.value }}</dd><p v-if="row.evidence" class="mt-1 break-words text-xs text-muted-foreground">{{ t('selection.sourceBasis') }}{{ row.evidence }}</p></div></dl><div v-if="parseResult.overrides.length" class="space-y-2"><strong class="text-xs">{{ t('selection.sourceOverride') }}</strong><p v-for="override in parseResult.overrides" :key="override.field" class="break-words text-xs">{{ fieldLabel(override.field) }}：{{ displayValue(override.field, override.previousValue) }} → {{ displayValue(override.field, override.value) }} · {{ t('selection.sourceBasis') }}{{ override.evidence }}</p></div><p v-if="parseResult.unhandledText.length" class="break-words text-xs text-warning">{{ t('selection.unrecognized') }}{{ parseResult.unhandledText.join('、') }}</p><Button size="sm" variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">{{ t('selection.reparse') }}</Button></div>
           </details>
           <div v-if="outcomeVisible && stale" role="status" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4">
-            <div class="min-w-0 space-y-1"><p class="flex items-center gap-2 text-sm font-medium"><CircleAlert class="size-4 shrink-0 text-warning" />当前为上次匹配结果</p><p class="text-xs text-muted-foreground">需求已修改，重新匹配后才会应用到下方方案。</p><p v-if="requirementError" class="text-sm text-destructive">{{ requirementError }}</p></div>
-            <Button :disabled="!canSearch" @click="submit">重新匹配<ArrowRight class="ml-2 size-4" /></Button>
+            <div class="min-w-0 space-y-1"><p class="flex items-center gap-2 text-sm font-medium"><CircleAlert class="size-4 shrink-0 text-warning" />{{ t('selection.staleResultNotice') }}</p><p class="text-xs text-muted-foreground">{{ t('selection.staleResultHint') }}</p><p v-if="requirementError" class="text-sm text-destructive">{{ requirementError }}</p></div>
+            <Button :disabled="!canSearch" @click="submit">{{ t('selection.rematchNow') }}<ArrowRight class="ml-2 size-4" /></Button>
           </div>
           
-          <Card v-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? '正在识别您的需求' : '正在查找适合的方案' }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? '加载状态预览，可使用顶部工具栏切换。' : '正在匹配方案，请稍后。' }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>
-              <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? '先看看展台灵感' : '为您找到的空间方案' }}</h2><Badge variant="secondary">{{ inspirationResults ? '灵感推荐 · 尚未按需求筛选' : (isPreview ? '1 套直接采用 · 2 套参考' : `${liveMatchData?.counts.direct ?? 0} 套直接采用 · ${liveMatchData?.counts.reference ?? 0} 套参考`) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" @answer-applicability="answerApplicability" /><p class="text-xs leading-relaxed text-muted-foreground">“可直接采用”指已提供结构条件与审核方案一致，不替代具体项目的报馆及施工确认。</p></section>
-          <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? '当前组合暂时没有合适的方案' : '暂时未能完成匹配' }}</h2><div v-if="state === 'empty'" class="max-w-md space-y-1 text-sm leading-relaxed text-muted-foreground"><p v-for="reason in liveMatchData?.reasons ?? ['您的需求已保留。可主动修改条件，或交给专业顾问。']" :key="reason">{{ reason }}</p></div><p v-else class="max-w-md text-sm leading-relaxed text-muted-foreground">输入已保留，请重试。服务异常不代表没有匹配方案。</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="editRequirement">修改条件</Button><Button v-else :disabled="!canSearch" @click="submit">重试</Button><Button variant="outline" @click="manualOpen = true">转人工</Button></div></CardContent></Card>
-          <div class="flex flex-wrap items-center justify-between gap-4 border-t pt-5"><div class="flex items-center gap-3"><MessageCircle class="size-5 shrink-0 text-muted-foreground" /><p class="text-sm text-muted-foreground">尺寸特殊、需求复杂？让顾问一起梳理。</p></div><Button variant="ghost" @click="manualOpen = true">转人工沟通<ArrowUpRight class="ml-2 size-4" /></Button></div>
-          <div v-if="authStore.isLoggedIn && !isPreview" class="flex items-center justify-end gap-2 text-xs text-muted-foreground"><span>账户积分</span><div class="relative"><Button size="sm" variant="ghost" :disabled="creditsLoading || isSigningIn || signedInToday" @click="handleSignIn"><Check v-if="signedInToday" class="mr-1 size-3.5" /><Coins v-else class="mr-1 size-3.5" />{{ signedInToday ? '今日已签到' : '每日签到' }}</Button><Transition name="reward-float"><span v-if="showRewardAnimation" class="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-sm font-medium text-primary">+{{ rewardAmount }} 积分</span></Transition></div></div>
+          <Card v-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? t('selection.loadingParsing') : t('selection.loadingMatching') }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? t('selection.loadingParsingHint') : t('selection.loadingMatchingHint') }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>
+              <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? t('selection.resultsHeadingInspiration') : t('selection.resultsHeadingMatched') }}</h2><Badge variant="secondary">{{ inspirationResults ? t('selection.resultsTagInspiration') : (isPreview ? t('selection.resultsDirect1') : t('selection.resultsDirectN', { direct: liveMatchData?.counts.direct ?? 0, reference: liveMatchData?.counts.reference ?? 0 })) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" @answer-applicability="answerApplicability" /><p class="text-xs leading-relaxed text-muted-foreground">{{ t('selection.resultsDirectNote') }}</p></section>
+          <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? t('selection.emptyTitle') : t('selection.emptyTitleError') }}</h2><div v-if="state === 'empty'" class="max-w-md space-y-1 text-sm leading-relaxed text-muted-foreground"><p v-for="reason in liveMatchData?.reasons ?? [t('selection.emptyHint')]" :key="reason">{{ reason }}</p></div><p v-else class="max-w-md text-sm leading-relaxed text-muted-foreground">{{ t('selection.emptyErrorHint') }}</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="editRequirement">{{ t('selection.editConditions') }}</Button><Button v-else :disabled="!canSearch" @click="submit">{{ t('common.retry') }}</Button><Button variant="outline" @click="manualOpen = true">{{ t('selection.transferToAdvisor') }}</Button></div></CardContent></Card>
+          <div class="flex flex-wrap items-center justify-between gap-4 border-t pt-5"><div class="flex items-center gap-3"><MessageCircle class="size-5 shrink-0 text-muted-foreground" /><p class="text-sm text-muted-foreground">{{ t('selection.advisorCta') }}</p></div><Button variant="ghost" @click="manualOpen = true">{{ t('selection.advisorCtaLink') }}<ArrowUpRight class="ml-2 size-4" /></Button></div>
+          <div v-if="authStore.isLoggedIn && !isPreview" class="flex items-center justify-end gap-2 text-xs text-muted-foreground"><span>{{ t('selection.creditsTitle') }}</span><div class="relative"><Button size="sm" variant="ghost" :disabled="creditsLoading || isSigningIn || signedInToday" @click="handleSignIn"><Check v-if="signedInToday" class="mr-1 size-3.5" /><Coins v-else class="mr-1 size-3.5" />{{ signedInToday ? t('selection.checkedIn') : t('selection.checkIn') }}</Button><Transition name="reward-float"><span v-if="showRewardAnimation" class="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-sm font-medium text-primary">{{ t('selection.creditsEarned', { amount: rewardAmount }) }}</span></Transition></div></div>
       </div>
     </main>
-    <Dialog v-model:open="manualOpen"><DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg"><DialogTitle>把需求交给专业顾问</DialogTitle><DialogDescription>确认原始需求后，继续填写展会、预算及联系方式，登录提交后建立人工项目。</DialogDescription>
-      <form class="space-y-4" @submit.prevent="submitManual"><Card><CardContent class="space-y-2 p-4 text-sm"><strong>需求摘要</strong><p class="break-words">{{ text || '暂无文字描述' }}</p><p class="text-xs text-muted-foreground">{{ chips.join(' · ') || '尚未填写结构条件' }}</p><p v-if="manualQuestions.length" class="text-xs text-muted-foreground">待确认：{{ manualQuestions.join('；') }}</p></CardContent></Card>
-        <div class="space-y-2"><Label for="manual-description">补充需求{{ text.trim() ? '（选填）' : '（必填）' }}</Label><Textarea id="manual-description" v-model="manualDescription" maxlength="1000" placeholder="还有哪些需求希望顾问了解？" /><p v-if="manualOriginalText.length > 1000" class="text-xs text-destructive">需求描述合计不能超过 1000 字</p></div>
-        <div class="space-y-2"><Label for="manual-name">联系人</Label><Input id="manual-name" v-model="manualName" maxlength="100" placeholder="您的称呼" autocomplete="name" required /></div>
-        <div class="space-y-2"><Label for="manual-contact">联系方式</Label><Input id="manual-contact" v-model="manualContact" maxlength="254" placeholder="手机号或邮箱" autocomplete="on" required /><p v-if="manualContact && !contactValid" class="text-xs text-destructive">请输入有效的手机号或邮箱地址</p></div>
-        <p v-if="isPreview" class="text-xs text-muted-foreground">静态预览不提交真实需求。</p>
-        <Button type="submit" class="w-full" :disabled="!canSubmitManual">继续填写完整申请</Button>
+    <Dialog v-model:open="manualOpen"><DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg"><DialogTitle>{{ t('selection.manualDialogTitle') }}</DialogTitle><DialogDescription>{{ t('selection.manualDialogDesc') }}</DialogDescription>
+      <form class="space-y-4" @submit.prevent="submitManual"><Card><CardContent class="space-y-2 p-4 text-sm"><strong>{{ t('selection.requirementSummaryLabel') }}</strong><p class="break-words">{{ text || t('selection.noTextDesc') }}</p><p class="text-xs text-muted-foreground">{{ chips.join(' · ') || t('selection.noStructureDesc') }}</p><p v-if="manualQuestions.length" class="text-xs text-muted-foreground">{{ t('selection.pendingConfirm') }}{{ manualQuestions.join('；') }}</p></CardContent></Card>
+        <div class="space-y-2"><Label for="manual-description">{{ t('selection.manualExtraDesc', { requirement: text.trim() ? t('common.optional') : t('common.required') }) }}</Label><Textarea id="manual-description" v-model="manualDescription" maxlength="1000" :placeholder="t('selection.manualExtraPlaceholder')" /><p v-if="manualOriginalText.length > 1000" class="text-xs text-destructive">{{ t('selection.manualDescLimit') }}</p></div>
+        <div class="space-y-2"><Label for="manual-name">{{ t('selection.manualName') }}</Label><Input id="manual-name" v-model="manualName" maxlength="100" :placeholder="t('selection.manualNamePlaceholder')" autocomplete="name" required /></div>
+        <div class="space-y-2"><Label for="manual-contact">{{ t('selection.manualContact') }}</Label><Input id="manual-contact" v-model="manualContact" maxlength="254" :placeholder="t('selection.manualContactPlaceholder')" autocomplete="on" required /><p v-if="manualContact && !contactValid" class="text-xs text-destructive">{{ t('selection.manualContactError') }}</p></div>
+        <p v-if="isPreview" class="text-xs text-muted-foreground">{{ t('selection.manualPreviewNote') }}</p>
+        <Button type="submit" class="w-full" :disabled="!canSubmitManual">{{ t('selection.manualContinue') }}</Button>
       </form></DialogContent></Dialog>
   </MainLayout>
 </template>

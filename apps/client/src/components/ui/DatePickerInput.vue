@@ -5,6 +5,8 @@ import type { DateValue } from '@internationalized/date'
 import { CalendarCell, CalendarCellTrigger, CalendarGrid, CalendarGridBody, CalendarGridHead, CalendarGridRow, CalendarHeadCell, CalendarHeader, CalendarHeading, CalendarNext, CalendarPrev, CalendarRoot, PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'radix-vue'
 import { CalendarIcon } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
+import { appLocale } from '@/plugins/i18n'
+import { useI18n } from 'vue-i18n'
 
 defineOptions({ inheritAttrs: false })
 
@@ -15,14 +17,15 @@ const props = withDefaults(defineProps<{
   min?: string
   disabled?: boolean
 }>(), {
-  placeholder: '选择日期',
+  placeholder: undefined,
 })
 
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const { t } = useI18n()
 
 const open = ref(false)
 
-const df = new DateFormatter('zh-CN', { dateStyle: 'medium' })
+const df = computed(() => new DateFormatter(appLocale.value === 'zh' ? 'zh-CN' : appLocale.value, { dateStyle: 'medium' }))
 
 const dateValue = computed<DateValue | undefined>(() => {
   try {
@@ -42,8 +45,8 @@ const minValue = computed<DateValue | undefined>(() => {
 
 const displayText = computed(() =>
   dateValue.value
-    ? df.format(dateValue.value.toDate(getLocalTimeZone()))
-    : props.placeholder
+    ? df.value.format(dateValue.value.toDate(getLocalTimeZone()))
+    : props.placeholder || t('controls.datePlaceholder')
 )
 
 function onSelect(val: DateValue | undefined) {
@@ -84,7 +87,7 @@ function onSelect(val: DateValue | undefined) {
           v-slot="{ grid, weekDays }"
           :model-value="dateValue"
           :min-value="minValue"
-          locale="zh-CN"
+          :locale="appLocale === 'zh' ? 'zh-CN' : appLocale"
           class="p-3"
           @update:model-value="onSelect"
         >

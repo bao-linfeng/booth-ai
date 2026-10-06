@@ -4,7 +4,6 @@ import type { QuoteRequest } from './quote-requests'
 
 export type { ProjectReceipt } from './quote-requests'
 export type ProjectStatus = 'pending' | 'following' | 'quoted' | 'won' | 'lost' | 'closed'
-export const statusLabels: Record<ProjectStatus,string> = { pending:'待跟进', following:'跟进中', quoted:'已报价', won:'已成交', lost:'未成交', closed:'已关闭' }
 export interface MyProject {
   projectId: string; projectNo: string; schemeCode: string | null; sourceType: 'quote_request' | 'manual_request'; status: ProjectStatus;
   exhibition: QuoteRequest['exhibition'] | null; createdAt: string; updatedAt: string

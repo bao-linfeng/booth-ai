@@ -3,6 +3,7 @@ import { Sun, Moon } from 'lucide-vue-next'
 import { ref, type HTMLAttributes } from 'vue'
 import { cn } from '@/lib/utils'
 import { type DarkModeVariants, darkModeVariants } from '.'
+import { useI18n } from 'vue-i18n'
 
 interface Props extends /* @vue-ignore */ DarkModeVariants {
   class?: HTMLAttributes['class']
@@ -14,6 +15,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const isDark = ref(document.documentElement.classList.contains('dark'))
+const { t } = useI18n()
 
 const toggleDarkMode = () => {
   isDark.value = !isDark.value
@@ -26,7 +28,7 @@ const toggleDarkMode = () => {
   <button
     type="button"
     :class="cn(darkModeVariants({ variant: props.variant, size: props.size }), props.class)"
-    :aria-label="isDark ? '切换为浅色模式' : '切换为深色模式'"
+    :aria-label="isDark ? t('appearance.lightMode') : t('appearance.darkMode')"
     @click="toggleDarkMode"
   >
     <Sun v-if="!isDark" class="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />

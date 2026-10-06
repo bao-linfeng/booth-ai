@@ -9,8 +9,10 @@ import { setupPinia } from '@/plugins/pinia/setup'
 
 initializeTheme()
 
-const app = createApp(App)
-setupPinia(app)
-setupI18n(app)
-app.use(router)
-app.mount('#app')
+;(async () => {
+  const app = createApp(App)
+  setupPinia(app)
+  await setupI18n(app)
+  app.use(router)
+  app.mount('#app')
+})()

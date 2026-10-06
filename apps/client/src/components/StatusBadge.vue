@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, type HTMLAttributes } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { cva } from 'class-variance-authority'
 import { Badge } from '@/components/ui/badge'
-import { jobStatusLabels } from '@/features/searches/summary'
-import { statusLabels, type ProjectStatus } from '@/services/api/projects'
+import { getThemeJobStatusLabels } from '@/features/theme-jobs/labels'
+import type { ProjectStatus } from '@/services/api/projects'
 import type { ThemeJob } from '@/services/api/theme-jobs'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +18,8 @@ const props = defineProps<{
   label?: string
   class?: HTMLAttributes['class']
 }>()
+const { t } = useI18n()
+const jobStatusLabels = computed(() => getThemeJobStatusLabels(t))
 
 const styles = cva('inline-flex shrink-0 items-center rounded-md border px-2 py-0.5 text-xs font-medium', {
   variants: {
@@ -40,13 +43,22 @@ const projectTones: Record<ProjectStatus, Tone> = {
   closed: 'muted',
 }
 
-const artworkLabels: Record<ArtworkStatus, string> = {
-  pending: '等待生成',
-  submitting: '正在生成',
-  generated: '验收与存储中',
-  succeeded: '已验收',
-  failed: '未通过',
-}
+const artworkLabels = computed<Record<ArtworkStatus, string>>(() => ({
+  pending: t('artworkJob.statusPending'),
+  submitting: t('artworkJob.statusSubmitting'),
+  generated: t('artworkJob.statusGenerated'),
+  succeeded: t('artworkJob.statusSucceeded'),
+  failed: t('artworkJob.statusFailed'),
+}))
+
+const projectLabels = computed<Record<ProjectStatus, string>>(() => ({
+  pending: t('projects.statusLabelPending'),
+  following: t('projects.statusLabelFollowing'),
+  quoted: t('projects.statusLabelQuoted'),
+  won: t('projects.statusLabelWon'),
+  lost: t('projects.statusLabelLost'),
+  closed: t('projects.statusLabelClosed'),
+}))
 
 const tone = computed<Tone>(() => {
   if (props.domain === 'project') return projectTones[props.status as ProjectStatus] ?? 'muted'
@@ -68,9 +80,9 @@ const tone = computed<Tone>(() => {
 })
 
 const defaultLabel = computed(() => {
-  if (props.domain === 'project') return statusLabels[props.status as ProjectStatus] ?? props.status
-  if (props.domain === 'artwork') return artworkLabels[props.status as ArtworkStatus] ?? props.status
-  return jobStatusLabels[props.status as JobStatus] ?? props.status
+  if (props.domain === 'project') return projectLabels.value[props.status as ProjectStatus] ?? props.status
+  if (props.domain === 'artwork') return artworkLabels.value[props.status as ArtworkStatus] ?? props.status
+  return jobStatusLabels.value[props.status as JobStatus] ?? props.status
 })
 </script>
 

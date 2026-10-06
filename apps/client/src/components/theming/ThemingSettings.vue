@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -13,27 +14,28 @@ import { useFont } from '@/composables/useFont'
 const formatRadius = (value: string) => value.replace('em', '')
 
 const isOpen = ref(false)
+const { t } = useI18n()
 
-const sheetContent = {
+const sheetContent = computed(() => ({
   header: {
-    title: '外观设置',
-    description: '调整此设备上的显示偏好'
+    title: t('appearance.title'),
+    description: t('appearance.description')
   },
   theme: {
-    title: '个性化外观',
+    title: t('appearance.personalize'),
     sections: [
       {
-        label: '主题配色',
+        label: t('appearance.colors'),
         type: 'colors',
         options: ['red', 'rose', 'orange', 'green', 'blue', 'violet']
       },
       {
-        label: '圆角大小',
+        label: t('appearance.radius'),
         type: 'radius',
         options: ['0', '0.3em', '0.5em', '0.75em', '1em']
       },
       {
-        label: '字体',
+        label: t('appearance.font'),
         type: 'font',
         options: [
           'Microsoft YaHei', 'Nunito', 'Inter', 'Roboto', 'Lato', 'Lexend', 'Urbanist',
@@ -42,22 +44,32 @@ const sheetContent = {
       }
     ]
   }
-}
+}))
 
-const colorLabels: Record<string, string> = {
-  red: '红色', rose: '玫瑰', orange: '橙色', green: '绿色', blue: '蓝色', violet: '紫色',
+const colorLabels = computed<Record<string, string>>(() => ({
+  red: t('appearance.red'), rose: t('appearance.rose'), orange: t('appearance.orange'),
+  green: t('appearance.green'), blue: t('appearance.blue'), violet: t('appearance.violet'),
+}))
+
+function getStoredState() {
+  try {
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      return JSON.parse(window.localStorage.getItem('currentState') || '{}')
+    }
+  } catch {}
+  return {}
 }
 
 const selectedFont = ref(
-  JSON.parse(localStorage.getItem('currentState') || '{}')?.sceleton?.config?.theme?.fontFamily?.sans?.[0] || 'Microsoft YaHei'
+  getStoredState()?.sceleton?.config?.theme?.fontFamily?.sans?.[0] || 'Microsoft YaHei'
 )
 const selectedColor = ref(currentTheme.value || 'green')
-const selectedRadius = ref(JSON.parse(localStorage.getItem('currentState') || '{}')?.sceleton?.radius || '0.5rem')
+const selectedRadius = ref(getStoredState()?.sceleton?.radius || '0.5rem')
 
 const { loadFont, updateFontLink } = useFont()
 
 const updateTheme = async () => {
-  const currentState = JSON.parse(localStorage.getItem('currentState') || '{}')
+  const currentState = getStoredState()
   
   if (!currentState.sceleton) currentState.sceleton = {}
   if (!currentState.sceleton.config) currentState.sceleton.config = {}
@@ -134,7 +146,11 @@ const updateTheme = async () => {
   document.documentElement.style.setProperty('--radius', selectedRadius.value)
   
   const serializedState = JSON.stringify(currentState, null, 2)
-  localStorage.setItem('currentState', serializedState)
+  try {
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      window.localStorage.setItem('currentState', serializedState)
+    }
+  } catch {}
   
   applyThemeClass(selectedColor.value)
 }
@@ -151,7 +167,7 @@ onMounted(() => {
 <template>
   <Sheet v-model:open="isOpen">
     <SheetTrigger as-child>
-      <Button variant="ghost" size="icon" aria-label="外观设置" title="外观设置">
+      <Button variant="ghost" size="icon" :aria-label="t('appearance.title')" :title="t('appearance.title')">
         <Settings2 class="size-4" aria-hidden="true" />
       </Button>
     </SheetTrigger>
@@ -165,15 +181,15 @@ onMounted(() => {
           <div class="space-y-6">
             <div class="flex items-center justify-between gap-4 border-b pb-6">
               <div class="space-y-1">
-                <h3 class="text-sm font-medium">明暗模式</h3>
-                <p class="text-xs text-muted-foreground">切换浅色或深色显示</p>
+                <h3 class="text-sm font-medium">{{ t('appearance.mode') }}</h3>
+                <p class="text-xs text-muted-foreground">{{ t('appearance.modeDescription') }}</p>
               </div>
               <DarkMode />
             </div>
             <div class="space-y-4">
               <h4 class="text-lg font-bold">{{ sheetContent.theme.title }}</h4>
               <div class="space-y-4">
-                <template v-for="section in sheetContent.theme.sections" :key="section.label">
+                  <template v-for="section in sheetContent.theme.sections" :key="section.type">
                   <div class="space-y-2">
                     <Label :id="`appearance-${section.type}`">{{ section.label }}</Label>
                     

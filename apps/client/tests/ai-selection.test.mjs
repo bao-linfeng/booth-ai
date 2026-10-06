@@ -16,7 +16,12 @@ registerTS(() => ts)
 const server = await createServer({
   root: fileURLToPath(new URL('../', import.meta.url)), configFile: false,
   server: { middlewareMode: true, hmr: false }, optimizeDeps: { noDiscovery: true, include: [] },
-  resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('../src', import.meta.url)),
+      'vue-i18n': fileURLToPath(new URL('./mock-i18n.ts', import.meta.url)),
+    },
+  },
   plugins: [{
     name: 'test-ai-selection', enforce: 'pre',
     resolveId(id) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, watch } from "vue";
+import { useI18n } from 'vue-i18n';
 import { useResizeObserver } from "@vueuse/core";
 import { useRoute } from "vue-router";
 import {
@@ -30,6 +31,7 @@ import {
 } from "@/services/api/bom";
 import { downloadSchemeArchive, getSchemeDeliverables, getSchemeDownload, type SchemeAssetType, type SchemeDeliverable } from "@/services/api/scheme-assets";
 
+const { t } = useI18n();
 const route = useRoute();
 const preview = computed(() => route.path.startsWith("/ai-selection/preview/"));
 const liveData = ref<SchemeDetail | null>(null);
@@ -114,7 +116,7 @@ async function fetchResource(type: SchemeAssetType) {
       fetchAssetUrls(type, result.items);
     }
   } catch {
-    if (request === resourceRequest && activeResource.value === type) resourceError.value = '资料加载失败，请重试';
+    if (request === resourceRequest && activeResource.value === type) resourceError.value = t('schemeDetail.errorLoadFailed');
   } finally {
     if (request === resourceRequest && activeResource.value === type) resourceLoading.value = false;
   }
@@ -132,7 +134,7 @@ async function downloadAllResources(type: SchemeAssetType) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${safeCode}@${type === 'drawings' ? '报馆图素材' : '平面素材'}.zip`;
+    link.download = `${safeCode}@${type === 'drawings' ? t('schemeDetail.artworkLabel') : t('schemeDetail.flatLabel')}.zip`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -151,22 +153,22 @@ async function downloadAllResources(type: SchemeAssetType) {
       resourceItems.value = [];
       resourceRevision.value = '';
       assetUrlMap.value = new Map();
-      downloadError.value = '资料已更新，请确认刷新后的列表，再重新下载。';
+      downloadError.value = t('schemeDetail.errorStale');
       await fetchResource(type);
     } else if (response?.status === 413) {
-      downloadError.value = '资料超过批量下载上限（30 个文件 / 50 MiB），请逐张下载或联系工作人员交接。';
+      downloadError.value = t('schemeDetail.errorZipLimit');
     } else if (reason === 'DELIVERABLE_FILENAME_CONFLICT' || reason === 'DELIVERABLE_FILENAME_INVALID') {
-      downloadError.value = '资料文件名重复或不符合规范，请联系工作人员修正后重试。';
+      downloadError.value = t('schemeDetail.errorFilename');
     } else if (reason === 'DELIVERABLES_INCOMPLETE') {
-      downloadError.value = '配套资料尚不完整，请联系工作人员补齐后重试。';
+      downloadError.value = t('schemeDetail.errorIncomplete');
     } else if (response?.status === 404) {
       previewAsset.value = null;
       resourceItems.value = [];
       resourceRevision.value = '';
       assetUrlMap.value = new Map();
-      downloadError.value = '方案或配套资料暂不可用，请刷新页面后重试。';
+      downloadError.value = t('schemeDetail.errorUnavailable');
     } else {
-      downloadError.value = '打包下载失败，可能有原件缺失或读取异常，请重试；持续失败请联系工作人员。';
+      downloadError.value = t('schemeDetail.errorZipFailed');
     }
   } finally {
     downloadingArchive.value = null;
@@ -187,7 +189,7 @@ async function downloadResource(type: SchemeAssetType | 'model', assetId?: strin
     link.click();
     link.remove();
   } catch {
-    downloadError.value = '下载链接获取失败，请重试';
+    downloadError.value = t('schemeDetail.errorLinkFailed');
   } finally {
     downloadingAsset.value = null;
   }
@@ -207,7 +209,7 @@ async function showResourcePreview(type: SchemeAssetType, asset: SchemeDeliverab
       previewAsset.value = { assetId: asset.assetId, name: asset.originalFilename || asset.name, url: link.downloadUrl, mimeType: link.mimeType };
     }
   } catch {
-    if (request === resourceRequest && activeResource.value === type) resourceError.value = '预览加载失败，请重试';
+    if (request === resourceRequest && activeResource.value === type) resourceError.value = t('schemeDetail.errorPreviewFailed');
   } finally {
     previewLoading.value = null;
   }
@@ -244,7 +246,7 @@ async function handleBomDownload() {
   bomRevisionChanged.value = false;
   try {
     const blob = await downloadClientBom(schemeCode, revision);
-    const filename = `${schemeCode.replace(/[\\/:*?"<>|]/g, '_')}@简化清单.xlsx`;
+    const filename = `${schemeCode.replace(/[\\/:*?"<>|]/g, '_')}@${t('controls.downloadBom')}.xlsx`;
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = filename;
@@ -252,10 +254,12 @@ async function handleBomDownload() {
     URL.revokeObjectURL(link.href);
   } catch (e: any) {
     // apiFetch 的 409 会 throw，检查 reason
-    if (e?.data?.error?.reason === 'BOM_REVISION_CHANGED' || e?.response?.status === 409) {
+    if (e?.data?.error?.reason === 'BOM_REVISION_CHANGED' || e?.response?.status === 409 || e?.status === 409) {
       bomRevisionChanged.value = true;
     } else {
-      alert('下载失败，请重试');
+      if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(t('schemeDetail.errorDownloadFailed'));
+      }
     }
   } finally {
     bomDownloading.value = false;
@@ -279,8 +283,7 @@ const item = computed(() => {
       code: matched.code,
       images: matched.images,
       specifications: matched.specifications,
-      applicabilityNotes:
-        "此处展示方案经审核的公开适用说明。选择前请确认场馆限高、开口面数以及搭建规范。",
+      applicabilityNotes: t('schemeDetail.applicabilityNote'),
       resources: {
         model: true,
         bom: true,
@@ -302,25 +305,25 @@ const item = computed(() => {
   return liveData.value;
 });
 
-const resources = [
-  { label: "三视图", icon: Layers3, type: 'drawings', available: 'drawings' },
-  { label: "标准平面素材", icon: Image, type: 'artworks', available: 'artworks' },
-] as const;
+const resources = computed(() => [
+  { label: t('schemeDetail.tabThreeViews'), icon: Layers3, type: 'drawings', available: 'drawings' },
+  { label: t('schemeDetail.tabFloorPlan'), icon: Image, type: 'artworks', available: 'artworks' },
+] as const);
 
 const schemeTitle = computed(() => {
   if (!item.value) return '';
   const spec = item.value.specifications;
-  return `${spec.lengthMm / 1000} × ${spec.widthMm / 1000} m · ${spec.productSystemLabel}展台`;
+  return `${spec.lengthMm / 1000} × ${spec.widthMm / 1000} m · ${t('schemeDetail.boothTitle', { code: spec.productSystemLabel })}`;
 });
 const specifications = computed(() => {
   if (!item.value) return [];
   const spec = item.value.specifications;
   return [
-    { label: '展位尺寸', value: `${spec.lengthMm / 1000} × ${spec.widthMm / 1000} m` },
-    { label: '占地面积', value: `${spec.areaM2} ㎡` },
-    { label: '方案实际高度', value: `${spec.heightMm / 1000} m` },
-    { label: '开口数量', value: `${spec.openingCount} 面` },
-    { label: '产品体系', value: spec.productSystemLabel },
+    { label: t('schemeDetail.specBoothSpace'), value: `${spec.lengthMm / 1000} × ${spec.widthMm / 1000} m` },
+    { label: t('schemeDetail.specArea'), value: `${spec.areaM2} ㎡` },
+    { label: t('schemeDetail.specHeight'), value: `${spec.heightMm / 1000} m` },
+    { label: t('schemeDetail.specOpenings'), value: `${spec.openingCount} ${t('schemeDetail.openingCount')}` },
+    { label: t('schemeDetail.specProductSystem'), value: spec.productSystemLabel },
   ];
 });
 const quoteLocation = computed(() => ({
@@ -355,31 +358,31 @@ onMounted(async () => {
     <main id="main-content" :style="{ '--scheme-actions-height': `${shortcutHeight}px` }" class="studio-page pb-[calc(var(--scheme-actions-height)+1.5rem)] md:pb-[calc(var(--scheme-actions-height)+1.5rem)] lg:pb-12">
       <header class="studio-header">
         <Button as-child variant="ghost" class="-ml-3">
-          <RouterLink :to="preview ? '/ai-selection/preview' : '/ai-selection'"><ArrowLeft class="mr-2 size-4" aria-hidden="true" />返回 AI 智选</RouterLink>
+          <RouterLink :to="preview ? '/ai-selection/preview' : '/ai-selection'"><ArrowLeft class="mr-2 size-4" aria-hidden="true" />{{ t('schemeDetail.backToSelection') }}</RouterLink>
         </Button>
         <div v-if="item" class="space-y-3">
           <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-            <span class="break-all font-mono">方案编号 {{ item.code }}</span>
-            <Badge v-if="preview" variant="secondary">静态示例 · 非已发布方案</Badge>
+            <span class="break-all font-mono">{{ t('schemeDetail.schemeCode') }} {{ item.code }}</span>
+            <Badge v-if="preview" variant="secondary">{{ t('schemeDetail.previewLabel') }}</Badge>
           </div>
           <h1 class="studio-title break-words">{{ schemeTitle }}</h1>
           <p class="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
             <span>{{ item.specifications.areaM2 }} ㎡</span>
-            <span>{{ item.specifications.openingCount }} 面开口</span>
-            <span>实际高度 {{ item.specifications.heightMm / 1000 }} m</span>
+            <span>{{ item.specifications.openingCount }} {{ t('schemeDetail.openingCount') }}</span>
+            <span>{{ t('schemeDetail.actualHeight') }} {{ item.specifications.heightMm / 1000 }} m</span>
           </p>
         </div>
       </header>
 
       <template v-if="item">
         <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:gap-12">
-          <section aria-label="方案效果图与多视角" class="min-w-0">
+          <section :aria-label="t('schemeDetail.galleryAriaLabel')" class="min-w-0">
             <SchemeGallery :images="item.images" :code="item.code" :preview="preview" :variant="Math.max(0, previewItems.findIndex(i => i.code === item?.code))" />
-            <p class="mt-3 text-xs leading-relaxed text-muted-foreground">{{ preview ? '空间示意，非真实方案效果图。' : '效果图用于空间与视觉参考，支持切换视角及放大查看。' }}</p>
+            <p class="mt-3 text-xs leading-relaxed text-muted-foreground">{{ preview ? t('schemeDetail.galleryPreviewNote') : t('schemeDetail.galleryNote') }}</p>
           </section>
 
           <aside aria-labelledby="scheme-summary" class="min-w-0 border-t pt-6 lg:border-t-0 lg:pt-0">
-            <h2 id="scheme-summary" class="text-lg font-semibold">方案摘要</h2>
+            <h2 id="scheme-summary" class="text-lg font-semibold">{{ t('schemeDetail.summaryTitle') }}</h2>
             <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-5 border-b pb-6">
               <div v-for="spec in specifications" :key="spec.label" class="min-w-0 space-y-1">
                 <dt class="text-xs text-muted-foreground">{{ spec.label }}</dt>
@@ -387,70 +390,70 @@ onMounted(async () => {
               </div>
             </dl>
             <div class="space-y-3 py-6">
-              <h3 class="font-medium">以此方案，开始报价</h3>
-              <p class="text-sm leading-relaxed text-muted-foreground">可直接使用标准方案申请报价，无需先生成主题或素材。</p>
-              <Button v-if="!preview" as-child size="lg" class="w-full"><RouterLink :to="quoteLocation">申请报价<ArrowUpRight class="ml-2 size-4" aria-hidden="true" /></RouterLink></Button>
-              <Button v-else disabled size="lg" class="w-full">示例方案不可申请报价</Button>
-              <p class="text-sm leading-relaxed text-muted-foreground">适用条件与方案差异需经专业确认后，才能进入项目施工交付。</p>
+              <h3 class="font-medium">{{ t('schemeDetail.quoteCallout') }}</h3>
+              <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.quoteNote') }}</p>
+              <Button v-if="!preview" as-child size="lg" class="w-full"><RouterLink :to="quoteLocation">{{ t('schemeDetail.requestQuote') }}<ArrowUpRight class="ml-2 size-4" aria-hidden="true" /></RouterLink></Button>
+              <Button v-else disabled size="lg" class="w-full">{{ t('schemeDetail.previewNoQuote') }}</Button>
+              <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.quoteDisclaimer') }}</p>
             </div>
             <div class="space-y-3 border-t pt-5">
-              <div class="flex items-center justify-between gap-3"><h3 class="text-sm font-medium">让空间呈现您的品牌</h3><span class="shrink-0 text-xs text-muted-foreground">可选</span></div>
-              <p class="text-sm leading-relaxed text-muted-foreground">以品牌色与视觉偏好探索不同主题。</p>
-              <Button v-if="item.actions?.theme !== 'unavailable'" as-child variant="outline" class="w-full"><RouterLink :to="themeLocation"><Palette class="mr-2 size-4" aria-hidden="true" />AI 换主题</RouterLink></Button>
-              <Button v-else disabled variant="outline" class="w-full">AI 换主题 · 暂不可用</Button>
+              <div class="flex items-center justify-between gap-3"><h3 class="text-sm font-medium">{{ t('schemeDetail.themeCallout') }}</h3><span class="shrink-0 text-xs text-muted-foreground">{{ t('schemeDetail.themeOptional') }}</span></div>
+              <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.themeDesc') }}</p>
+              <Button v-if="item.actions?.theme !== 'unavailable'" as-child variant="outline" class="w-full"><RouterLink :to="themeLocation"><Palette class="mr-2 size-4" aria-hidden="true" />{{ t('schemeDetail.themeBtn') }}</RouterLink></Button>
+              <Button v-else disabled variant="outline" class="w-full">{{ t('schemeDetail.themeUnavailable') }}</Button>
             </div>
           </aside>
         </div>
 
         <Tabs v-model="activeTab" class="min-w-0 border-t pt-6">
-          <TabsList aria-label="方案详细资料" class="grid h-auto w-full grid-cols-3 gap-1 sm:w-fit">
-            <TabsTrigger value="description" class="px-2 py-2.5 sm:px-6">方案说明</TabsTrigger>
-            <TabsTrigger value="bom" class="px-2 py-2.5 sm:px-6">物料清单</TabsTrigger>
-            <TabsTrigger value="resources" class="px-2 py-2.5 sm:px-6">图纸与素材</TabsTrigger>
+          <TabsList :aria-label="t('schemeDetail.tabsAriaLabel')" class="grid h-auto w-full grid-cols-3 gap-1 sm:w-fit">
+            <TabsTrigger value="description" class="px-2 py-2.5 sm:px-6">{{ t('schemeDetail.tabDescription') }}</TabsTrigger>
+            <TabsTrigger value="bom" class="px-2 py-2.5 sm:px-6">{{ t('schemeDetail.tabBom') }}</TabsTrigger>
+            <TabsTrigger value="resources" class="px-2 py-2.5 sm:px-6">{{ t('schemeDetail.tabAssets') }}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="description" class="mt-6">
             <div class="grid gap-6 py-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] md:gap-12">
-              <div><h2 class="text-lg font-semibold">适用说明</h2><p class="mt-2 text-sm text-muted-foreground">了解方案，再确认参展条件。</p></div>
+              <div><h2 class="text-lg font-semibold">{{ t('schemeDetail.descriptionTitle') }}</h2><p class="mt-2 text-sm text-muted-foreground">{{ t('schemeDetail.descriptionHint') }}</p></div>
               <div class="min-w-0 space-y-5 text-sm leading-7">
-                <p class="whitespace-pre-line break-words">{{ item.applicabilityNotes || '暂无补充适用说明。' }}</p>
-                <p class="border-l-2 border-primary/40 pl-4 text-muted-foreground">直接打开详情仅展示方案规格，不代表方案已符合您的参展条件。选择前请确认场馆限高、开口面数以及搭建规范。</p>
+                <p class="whitespace-pre-line break-words">{{ item.applicabilityNotes || t('schemeDetail.noDescription') }}</p>
+                <p class="border-l-2 border-primary/40 pl-4 text-muted-foreground">{{ t('schemeDetail.descriptionDisclaimer') }}</p>
               </div>
             </div>
           </TabsContent>
 
           <TabsContent value="bom" class="mt-6 min-w-0 space-y-5">
-            <div class="space-y-1"><h2 class="text-lg font-semibold">物料清单</h2><p class="text-sm text-muted-foreground">查看标准方案用料，或下载完整清单。</p></div>
-            <p v-if="preview" class="rounded-lg bg-muted/50 p-6 text-sm text-muted-foreground">静态示例不提供真实物料清单，请在已发布方案中查看。</p>
+            <div class="space-y-1"><h2 class="text-lg font-semibold">{{ t('schemeDetail.bomTitle') }}</h2><p class="text-sm text-muted-foreground">{{ t('schemeDetail.bomHint') }}</p></div>
+            <p v-if="preview" class="rounded-lg bg-muted/50 p-6 text-sm text-muted-foreground">{{ t('schemeDetail.bomPreviewNote') }}</p>
             <template v-else>
-              <p v-if="bomLoading" role="status" class="py-8 text-sm text-muted-foreground">正在加载清单…</p>
+              <p v-if="bomLoading" role="status" class="py-8 text-sm text-muted-foreground">{{ t('schemeDetail.bomLoading') }}</p>
               <div v-else-if="bomRevisionChanged" class="space-y-3">
-                <p role="status" class="text-sm">清单已更新，请刷新后重新下载。</p>
-                <Button size="sm" variant="outline" @click="fetchBom">刷新清单</Button>
+                <p role="status" class="text-sm">{{ t('schemeDetail.bomStale') }}</p>
+                <Button size="sm" variant="outline" @click="fetchBom">{{ t('schemeDetail.bomRefresh') }}</Button>
               </div>
               <div v-else-if="bomError" class="space-y-3">
-                <p role="alert" class="text-sm text-destructive">清单加载失败，请重试。</p>
-                <Button size="sm" variant="outline" @click="fetchBom">重试</Button>
+                <p role="alert" class="text-sm text-destructive">{{ t('schemeDetail.bomError') }}</p>
+                <Button size="sm" variant="outline" @click="fetchBom">{{ t('common.retry') }}</Button>
               </div>
-              <p v-else-if="!bomData" class="py-4 text-sm text-muted-foreground">当前方案暂无可用清单</p>
+              <p v-else-if="!bomData" class="py-4 text-sm text-muted-foreground">{{ t('schemeDetail.bomEmpty') }}</p>
               <div v-else class="space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-3">
-                  <span class="text-xs text-muted-foreground">共 {{ bomData.items.length }} 条 · 修订 {{ bomData.revision }}</span>
+                  <span class="text-xs text-muted-foreground">{{ t('schemeDetail.bomMeta', { count: bomData.items.length, revision: bomData.revision }) }}</span>
                   <Button size="sm" variant="outline" :aria-busy="bomDownloading" :disabled="bomDownloading" @click="handleBomDownload">
-                    <Loader2 v-if="bomDownloading" class="mr-2 size-4 animate-spin" aria-hidden="true" /><FileText v-else class="mr-2 size-4" aria-hidden="true" />{{ bomDownloading ? '下载中…' : '下载 XLSX' }}
+                    <Loader2 v-if="bomDownloading" class="mr-2 size-4 animate-spin" aria-hidden="true" /><FileText v-else class="mr-2 size-4" aria-hidden="true" />{{ bomDownloading ? t('schemeDetail.bomDownloading') : t('schemeDetail.bomDownload') }}
                   </Button>
                 </div>
-                <div role="region" aria-label="物料明细，可横向滚动" tabindex="0" class="max-w-full overflow-x-auto rounded-md bg-card p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <div role="region" :aria-label="t('schemeDetail.bomTableAriaLabel')" tabindex="0" class="max-w-full overflow-x-auto rounded-md bg-card p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <table class="w-full min-w-[760px] text-sm">
-                    <caption class="sr-only">标准方案物料明细</caption>
+                    <caption class="sr-only">{{ t('schemeDetail.bomTableCaption') }}</caption>
                     <thead>
                       <tr class="border-b text-left text-muted-foreground">
                         <th scope="col" class="pb-3 pr-4 font-medium">#</th>
-                        <th scope="col" class="pb-3 pr-4 font-medium">名称</th>
-                        <th scope="col" class="pb-3 pr-4 font-medium">型号</th>
-                        <th scope="col" class="pb-3 pr-4 font-medium">规格(mm)</th>
-                        <th scope="col" class="pb-3 pr-4 font-medium">数量</th>
-                        <th scope="col" class="pb-3 pr-4 font-medium">重量合计/kg</th>
+                        <th scope="col" class="pb-3 pr-4 font-medium">{{ t('schemeDetail.bomColName') }}</th>
+                        <th scope="col" class="pb-3 pr-4 font-medium">{{ t('schemeDetail.bomColModel') }}</th>
+                        <th scope="col" class="pb-3 pr-4 font-medium">{{ t('schemeDetail.bomColSpec') }}</th>
+                        <th scope="col" class="pb-3 pr-4 font-medium">{{ t('schemeDetail.bomColQty') }}</th>
+                        <th scope="col" class="pb-3 pr-4 font-medium">{{ t('schemeDetail.bomColWeight') }}</th>
                         <th scope="col" class="pb-3 font-medium">ERP</th>
                       </tr>
                     </thead>
@@ -467,43 +470,43 @@ onMounted(async () => {
                     </tbody>
                   </table>
                 </div>
-                <p v-if="bomData.items.length > 50" class="text-xs text-muted-foreground">显示前 50 条，下载 XLSX 获取完整清单</p>
+                <p v-if="bomData.items.length > 50" class="text-xs text-muted-foreground">{{ t('schemeDetail.bomTruncated') }}</p>
               </div>
             </template>
           </TabsContent>
 
           <TabsContent value="resources" class="mt-6 min-w-0 space-y-6">
-            <div class="space-y-1"><h2 class="text-lg font-semibold">图纸与素材</h2><p class="text-sm leading-relaxed text-muted-foreground">资料取自当前已发布方案，具体项目施工资料需另行确认。</p></div>
-            <div class="flex flex-wrap gap-3" role="group" aria-label="资料类别">
+            <div class="space-y-1"><h2 class="text-lg font-semibold">{{ t('schemeDetail.assetsTitle') }}</h2><p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.assetsHint') }}</p></div>
+            <div class="flex flex-wrap gap-3" role="group" :aria-label="t('schemeDetail.assetsTabsAriaLabel')">
               <Button v-for="resource in resources" :key="resource.type" :variant="activeResource === resource.type ? 'default' : 'outline'" :disabled="preview || !item.resources[resource.available]" :aria-expanded="activeResource === resource.type" aria-controls="scheme-resource-list" @click="toggleResource(resource.type)">
-                <component :is="resource.icon" class="mr-2 size-4" aria-hidden="true" />{{ resource.label }}<span v-if="!item.resources[resource.available]" class="ml-2 text-xs">暂无资料</span>
+                <component :is="resource.icon" class="mr-2 size-4" aria-hidden="true" />{{ resource.label }}<span v-if="!item.resources[resource.available]" class="ml-2 text-xs">{{ t('schemeDetail.assetsEmpty') }}</span>
               </Button>
-              <Button variant="outline" :disabled="preview || !item.resources.model || downloadBusy" :aria-busy="downloadingAsset === 'model'" @click="downloadResource('model')"><Box class="mr-2 size-4" aria-hidden="true" />{{ downloadingAsset === 'model' ? '获取下载链接…' : '下载 SKP 模型' }}</Button>
+              <Button variant="outline" :disabled="preview || !item.resources.model || downloadBusy" :aria-busy="downloadingAsset === 'model'" @click="downloadResource('model')"><Box class="mr-2 size-4" aria-hidden="true" />{{ downloadingAsset === 'model' ? t('schemeDetail.assetDownloadingSkp') : t('schemeDetail.assetDownloadSkp') }}</Button>
             </div>
-            <p v-if="preview" class="rounded-lg bg-muted/50 p-6 text-sm text-muted-foreground">静态示例不提供真实图纸与素材下载。</p>
+            <p v-if="preview" class="rounded-lg bg-muted/50 p-6 text-sm text-muted-foreground">{{ t('schemeDetail.assetsPreviewNote') }}</p>
             <div id="scheme-resource-list" class="min-w-0 space-y-5">
-              <p v-if="!preview && !activeResource" class="py-6 text-sm text-muted-foreground">选择资料类别，查看文件预览及下载。</p>
+              <p v-if="!preview && !activeResource" class="py-6 text-sm text-muted-foreground">{{ t('schemeDetail.assetsSelectCategory') }}</p>
               <template v-if="activeResource">
-                <p v-if="resourceLoading" role="status" class="py-8 text-sm text-muted-foreground">正在加载资料…</p>
+                <p v-if="resourceLoading" role="status" class="py-8 text-sm text-muted-foreground">{{ t('schemeDetail.assetsLoading') }}</p>
                 <template v-else>
-                  <div v-if="resourceError" role="alert" class="flex flex-wrap items-center gap-3 text-sm text-destructive"><p>{{ resourceError }}</p><Button variant="outline" size="sm" @click="fetchResource(activeResource)">重新加载资料</Button></div>
-                  <p v-if="!resourceError && !resourceItems.length" class="py-6 text-sm text-muted-foreground">暂无可用资料</p>
+                  <div v-if="resourceError" role="alert" class="flex flex-wrap items-center gap-3 text-sm text-destructive"><p>{{ resourceError }}</p><Button variant="outline" size="sm" @click="fetchResource(activeResource)">{{ t('schemeDetail.assetsReload') }}</Button></div>
+                  <p v-if="!resourceError && !resourceItems.length" class="py-6 text-sm text-muted-foreground">{{ t('schemeDetail.assetsUnavailable') }}</p>
                   <template v-if="resourceItems.length">
                     <div class="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
-                      <div><h3 class="text-sm font-medium">{{ resources.find(resource => resource.type === activeResource)?.label }} · {{ resourceItems.length }} 份</h3><p class="mt-1 text-xs text-muted-foreground">ZIP 打包下载，保留原文件名</p></div>
-                      <Button variant="outline" :disabled="downloadBusy || !resourceRevision" :aria-busy="downloadingArchive === activeResource" @click="downloadAllResources(activeResource)"><Loader2 v-if="downloadingArchive === activeResource" class="mr-2 size-4 animate-spin" aria-hidden="true" /><Download v-else class="mr-2 size-4" aria-hidden="true" />{{ downloadingArchive === activeResource ? '打包中…' : '下载全部' }}</Button>
+                      <div><h3 class="text-sm font-medium">{{ resources.find(resource => resource.type === activeResource)?.label }} · {{ t('schemeDetail.assetsCount', { count: resourceItems.length }) }}</h3><p class="mt-1 text-xs text-muted-foreground">{{ t('schemeDetail.assetsZipHint') }}</p></div>
+                      <Button variant="outline" :disabled="downloadBusy || !resourceRevision" :aria-busy="downloadingArchive === activeResource" @click="downloadAllResources(activeResource)"><Loader2 v-if="downloadingArchive === activeResource" class="mr-2 size-4 animate-spin" aria-hidden="true" /><Download v-else class="mr-2 size-4" aria-hidden="true" />{{ downloadingArchive === activeResource ? t('schemeDetail.assetsPacking') : t('schemeDetail.assetsDownloadAll') }}</Button>
                     </div>
                     <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                       <article v-for="asset in resourceItems" :key="asset.assetId" class="min-w-0 overflow-hidden border-b">
                         <div class="flex aspect-video items-center justify-center rounded-md bg-image-surface p-3">
                           <img v-if="asset.mimeType.startsWith('image/') && assetUrlMap.has(asset.assetId)" :src="assetUrlMap.get(asset.assetId)" :alt="asset.name" loading="lazy" class="h-full w-full object-contain" @error="assetUrlMap.delete(asset.assetId)" />
-                          <div v-else class="flex flex-col items-center gap-2 text-muted-foreground"><FileText class="size-8" aria-hidden="true" /><span class="text-xs">{{ asset.mimeType.startsWith('image/') ? '可点击预览查看原图' : asset.mimeType === 'application/pdf' ? 'PDF 文档' : '下载文件查看' }}</span></div>
+                          <div v-else class="flex flex-col items-center gap-2 text-muted-foreground"><FileText class="size-8" aria-hidden="true" /><span class="text-xs">{{ asset.mimeType.startsWith('image/') ? t('schemeDetail.assetPreviewClickable') : asset.mimeType === 'application/pdf' ? t('schemeDetail.assetPreviewPdf') : t('schemeDetail.assetPreviewNoPreview') }}</span></div>
                         </div>
                         <div class="space-y-3 p-4">
                           <div class="space-y-1"><h4 class="break-all text-sm font-medium">{{ asset.name }}</h4><p class="break-all text-xs leading-relaxed text-muted-foreground">{{ asset.originalFilename || asset.name }}</p></div>
                           <div class="flex flex-wrap gap-2">
-                            <Button v-if="asset.mimeType.startsWith('image/') || asset.mimeType === 'application/pdf'" variant="outline" size="sm" :disabled="!!previewLoading" :aria-label="`预览 ${asset.originalFilename || asset.name}`" :aria-busy="previewLoading === asset.assetId" @click="showResourcePreview(activeResource, asset, $event)"><Eye class="mr-1.5 size-4" aria-hidden="true" />{{ previewLoading === asset.assetId ? '加载中…' : '预览' }}</Button>
-                            <Button variant="outline" size="sm" :disabled="downloadBusy" :aria-label="`下载 ${asset.originalFilename || asset.name}`" @click="downloadResource(activeResource, asset.assetId)"><Download class="mr-1.5 size-4" aria-hidden="true" />{{ downloadingAsset === asset.assetId ? '获取中…' : '下载' }}</Button>
+                            <Button v-if="asset.mimeType.startsWith('image/') || asset.mimeType === 'application/pdf'" variant="outline" size="sm" :disabled="!!previewLoading" :aria-label="`${t('schemeDetail.assetPreviewBtn')} ${asset.originalFilename || asset.name}`" :aria-busy="previewLoading === asset.assetId" @click="showResourcePreview(activeResource, asset, $event)"><Eye class="mr-1.5 size-4" aria-hidden="true" />{{ previewLoading === asset.assetId ? t('schemeDetail.assetPreviewLoading') : t('schemeDetail.assetPreviewBtn') }}</Button>
+                            <Button variant="outline" size="sm" :disabled="downloadBusy" :aria-label="`${t('schemeDetail.assetDownloadBtn')} ${asset.originalFilename || asset.name}`" @click="downloadResource(activeResource, asset.assetId)"><Download class="mr-1.5 size-4" aria-hidden="true" />{{ downloadingAsset === asset.assetId ? t('schemeDetail.assetDownloadingBtn') : t('schemeDetail.assetDownloadBtn') }}</Button>
                           </div>
                         </div>
                       </article>
@@ -521,36 +524,36 @@ onMounted(async () => {
           :src="previewAsset?.mimeType.startsWith('image/') ? previewAsset.url : undefined"
           :alt="previewAsset?.name"
           :title="previewAsset?.name"
-          description="标准方案配套资料预览，具体项目施工资料需另行确认。"
+          :description="t('schemeDetail.previewDialogDesc')"
           content-class="max-h-[90dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto rounded-lg p-4 sm:p-6"
           image-class="max-h-[65dvh] w-full object-contain"
           :image-error="previewImageError"
-          error-message="图片加载失败，请关闭后重试或下载原文件。"
+          :error-message="t('schemeDetail.previewDialogImageError')"
           @image-error="previewImageError = true"
           @close-auto-focus="restorePreviewFocus"
         >
           <template #content v-if="previewAsset && previewAsset.mimeType === 'application/pdf'">
             <div class="space-y-4 rounded-lg bg-muted/40 p-4">
-              <p class="text-sm leading-relaxed">PDF 原件将在新标签页中打开，可使用浏览器的阅读与下载功能。当前弹窗可按 Escape 关闭。</p>
-              <Button as-child variant="outline" class="h-auto min-h-11 max-w-full whitespace-normal"><a :href="previewAsset.url" target="_blank" rel="noopener noreferrer">新标签页查看 PDF 原件<ArrowUpRight class="size-4" aria-hidden="true" /></a></Button>
+              <p class="text-sm leading-relaxed">{{ t('schemeDetail.pdfDialogNote') }}</p>
+              <Button as-child variant="outline" class="h-auto min-h-11 max-w-full whitespace-normal"><a :href="previewAsset.url" target="_blank" rel="noopener noreferrer">{{ t('schemeDetail.pdfOpenBtn') }}<ArrowUpRight class="size-4" aria-hidden="true" /></a></Button>
             </div>
           </template>
         </ImagePreviewDialog>
 
-        <div ref="shortcutBar" aria-label="方案快捷操作" class="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:hidden">
+        <div ref="shortcutBar" :aria-label="t('schemeDetail.fabAriaLabel')" class="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:hidden">
           <div class="mx-auto flex max-w-2xl flex-wrap items-stretch gap-3">
-            <Button v-if="item.actions?.theme !== 'unavailable'" as-child variant="outline" class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3"><RouterLink :to="themeLocation">AI 换主题</RouterLink></Button>
-            <Button v-if="!preview" as-child class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3"><RouterLink :to="quoteLocation">申请报价<ArrowUpRight class="size-4" aria-hidden="true" /></RouterLink></Button>
-            <Button v-else disabled class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3">示例不可报价</Button>
+            <Button v-if="item.actions?.theme !== 'unavailable'" as-child variant="outline" class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3"><RouterLink :to="themeLocation">{{ t('schemeDetail.fabTheme') }}</RouterLink></Button>
+            <Button v-if="!preview" as-child class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3"><RouterLink :to="quoteLocation">{{ t('schemeDetail.fabQuote') }}<ArrowUpRight class="size-4" aria-hidden="true" /></RouterLink></Button>
+            <Button v-else disabled class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3">{{ t('schemeDetail.fabPreviewNoQuote') }}</Button>
           </div>
         </div>
       </template>
 
       <section v-else class="flex min-h-80 flex-col items-center justify-center gap-4 p-6 text-center" aria-live="polite">
         <Box class="size-8 text-muted-foreground" aria-hidden="true" />
-        <h1 class="text-xl font-medium">{{ preview ? '未找到该示例' : errorState ? '方案详情加载失败' : '加载中…' }}</h1>
-        <p class="text-sm text-muted-foreground">{{ preview ? '请从静态预览方案卡片进入。' : errorState ? '公开详情将读取最新已发布数据，该方案可能已下架或不存在。' : '正在获取最新方案详情。' }}</p>
-        <Button v-if="errorState || preview" as-child><RouterLink to="/ai-selection">返回选型</RouterLink></Button>
+        <h1 class="text-xl font-medium">{{ preview ? t('schemeDetail.loadErrorNotFound') : errorState ? t('schemeDetail.loadErrorFailed') : t('schemeDetail.loadErrorLoading') }}</h1>
+        <p class="text-sm text-muted-foreground">{{ preview ? t('schemeDetail.loadErrorNotFoundHint') : errorState ? t('schemeDetail.loadErrorFailedHint') : t('schemeDetail.loadErrorLoadingHint') }}</p>
+        <Button v-if="errorState || preview" as-child><RouterLink to="/ai-selection">{{ t('schemeDetail.backToSelection2') }}</RouterLink></Button>
       </section>
     </main>
   </MainLayout>

@@ -8,7 +8,7 @@ import ts from 'typescript'
 import { createServer, transformWithEsbuild } from 'vite'
 
 const window = new Window({ url: 'http://localhost/' })
-for (const name of ['window', 'document', 'navigator', 'history', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+for (const name of ['window', 'document', 'navigator', 'history', 'localStorage', 'sessionStorage', 'Storage', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   Object.defineProperty(globalThis, name, { configurable: true, value: name === 'window' ? window : ['getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame'].includes(name) ? window[name].bind(window) : window[name] })
 }
 const downloads = []
@@ -18,19 +18,38 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const server = await createServer({
   root, configFile: false, server: { middlewareMode: true },
   optimizeDeps: { noDiscovery: true, include: [] },
-  resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('../src', import.meta.url)),
+      'vue-i18n': fileURLToPath(new URL('./mock-i18n.ts', import.meta.url)),
+    },
+  },
   plugins: [{
     name: 'test-scheme-detail',
     enforce: 'pre',
     resolveId(id) {
       if (id === 'virtual:test-vue') return '\0test-vue'
-      if (id === '@/features/selection/SelectionShell.vue' || id.endsWith('/features/selection/SelectionShell.vue')) return '\0test-shell'
+      if (id.endsWith('/features/selection/SelectionShell.vue') || id.endsWith('/layouts/MainLayout.vue')) return '\0test-shell'
       if (['/lib/api-client', '/services/api/bom', '/services/api/scheme-assets'].some(path => id.replaceAll('\\', '/').replace(/\.ts$/, '').endsWith(path))) return '\0test-api'
     },
     load(id) {
       if (id === '\0test-vue') return "export { createApp, h, nextTick } from 'vue'; export { createRouter, createMemoryHistory } from 'vue-router'"
       if (id === '\0test-shell') return "import { h } from 'vue'; export default { setup(_, { slots }) { return () => h('div', slots.default?.()) } }"
-      if (id === '\0test-api') return ['apiFetch', 'getClientBomApi', 'downloadClientBomApi', 'getSchemeDeliverables', 'getSchemeDownload', 'downloadSchemeArchive'].map(name => `export const ${name} = (...args) => globalThis.__schemeDetailApi.${name}(...args)`).join('\n')
+      if (id === '\0test-api') return ['apiFetch', 'getClientBom', 'downloadClientBom', 'getClientBomApi', 'downloadClientBomApi', 'getSchemeDeliverables', 'getSchemeDownload', 'downloadSchemeArchive'].map(name => {
+        const prop = name.endsWith('Api') ? name : name + 'Api'
+        if (name.startsWith('downloadClientBom')) {
+          return `export const ${name} = async (...args) => {
+            const fn = globalThis.__schemeDetailApi.${name} || globalThis.__schemeDetailApi.${prop};
+            const res = await fn(...args);
+            if (res && res.status >= 400) {
+              const data = await res.json().catch(() => ({}));
+              throw { status: res.status, data, response: res };
+            }
+            return res;
+          }`
+        }
+        return `export const ${name} = (...args) => (globalThis.__schemeDetailApi.${name} || globalThis.__schemeDetailApi.${prop})(...args)`
+      }).join('\n')
     },
     async transform(source, id) {
       if (!id.endsWith('.vue')) return
@@ -91,7 +110,7 @@ async function mount({ path = '/schemes/SC-6030?searchId=search-42', api = {} } 
 }
 
 function button(container, text) {
-  const found = [...container.querySelectorAll('button')].find(el => el.textContent.trim() === text)
+  const found = [...container.querySelectorAll('button')].find(el => el.textContent.trim() === text || (text === 'Close' && el.textContent.trim() === '关闭') || el.getAttribute('aria-label') === text)
   assert.ok(found, `Button not found: ${text}`)
   return found
 }

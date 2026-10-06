@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -19,7 +22,6 @@ const props = withDefaults(defineProps<{
   imageClass: 'max-h-[75dvh] w-full object-contain',
   contentClass: 'max-h-[90dvh] max-w-5xl overflow-y-auto',
   imageError: false,
-  errorMessage: '图片加载失败，请关闭后重试。',
 })
 
 const emit = defineEmits<{
@@ -36,7 +38,7 @@ const emit = defineEmits<{
       <DialogDescription v-if="props.description">{{ props.description }}</DialogDescription>
       <slot v-if="$slots.content" name="content" />
       <template v-else-if="props.src">
-        <p v-if="props.imageError" role="alert" class="py-12 text-center text-sm text-muted-foreground">{{ props.errorMessage }}</p>
+        <p v-if="props.imageError" role="alert" class="py-12 text-center text-sm text-muted-foreground">{{ props.errorMessage || t('controls.imageLoadError') }}</p>
         <img v-else :src="props.src" :alt="props.alt" :class="props.imageClass" @error="emit('image-error', $event)" />
       </template>
     </DialogContent>

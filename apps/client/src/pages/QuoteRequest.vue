@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { parseDate } from '@internationalized/date'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ArrowLeft, CheckCircle2, FileText, Loader2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,10 +22,12 @@ import type { MatchItem, Requirement } from '@/features/selection/types'
 import { apiFetch, lingtongPublicFetch } from '@/lib/api-client'
 import type { SchemeDetail } from '@/features/selection/types'
 import { emptyRequirement } from '@/features/selection/types'
-import { scopeOptions as scopes } from '@/features/projects/labels'
+import { getScopeOptions } from '@/features/projects/labels'
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
+const scopes = computed(() => getScopeOptions(t))
 const auth = useAuthStore()
 const code = String(route.params.code)
 const manual = route.name === 'ManualRequest'
@@ -85,22 +88,23 @@ watch(form, persist, { deep: true })
 watch(originalDescription, persist)
 const frozen = computed(() => busy.value || pending.value !== null || pendingManual.value !== null)
 const validationAttempted = ref(false)
-const descriptionError = computed(() => validationAttempted.value && manual && !originalDescription.value.trim() ? '请填写原始需求。' : '')
-function dateError(value: string, label: string) {
-  if (!value) return `请选择${label}。`
+const descriptionError = computed(() => validationAttempted.value && manual && !originalDescription.value.trim() ? t('quoteRequest.validationRequirement') : '')
+function dateError(value: string, key: 'validationStartDate' | 'validationEndDate') {
+  const label = t(`quoteRequest.${key}`)
+  if (!value) return t('quoteRequest.validationSelect', { label })
   try { if (parseDate(value).toString() === value) return '' } catch {}
-  return `${label}无效，请重新选择。`
+  return t('quoteRequest.validationInvalid', { label })
 }
-const startDateError = computed(() => validationAttempted.value ? dateError(form.startDate, '开展日期') : '')
+const startDateError = computed(() => validationAttempted.value ? dateError(form.startDate, 'validationStartDate') : '')
 const endDateError = computed(() => {
   if (!validationAttempted.value) return ''
-  const invalid = dateError(form.endDate, '结束日期')
+  const invalid = dateError(form.endDate, 'validationEndDate')
   if (invalid) return invalid
-  return !startDateError.value && form.endDate < form.startDate ? '结束日期不能早于开展日期。' : ''
+  return !startDateError.value && form.endDate < form.startDate ? t('quoteRequest.validationDateRange') : ''
 })
-const scopeError = computed(() => validationAttempted.value && !form.scopeCodes.length ? '请至少选择一项需求范围。' : '')
-const scopeNotesError = computed(() => validationAttempted.value && form.scopeCodes.includes('other') && !form.scopeNotes.trim() ? '请补充其他需求范围的说明。' : '')
-const contactError = computed(() => validationAttempted.value && !form.email.trim() && !form.phone.trim() ? '请填写邮箱或电话，至少一项。' : '')
+const scopeError = computed(() => validationAttempted.value && !form.scopeCodes.length ? t('quoteRequest.validationScope') : '')
+const scopeNotesError = computed(() => validationAttempted.value && form.scopeCodes.includes('other') && !form.scopeNotes.trim() ? t('quoteRequest.validationScopeNote') : '')
+const contactError = computed(() => validationAttempted.value && !form.email.trim() && !form.phone.trim() ? t('quoteRequest.validationContact') : '')
 
 function validateFields() {
   validationAttempted.value = true
@@ -157,24 +161,24 @@ async function loadContext() {
     }).catch(() => { standardPreview.value = '' })
     if (typeof route.query.bomRevision === 'string' && Number(route.query.bomRevision) !== context.value.bomRevision) {
       conflict.value = true
-      error.value = '您查看的清单已更新。请刷新资料并重新确认后提交。'
+      error.value = t('quoteRequest.errorBomStale')
     }
     const jobId = route.query.themeJobId
-    if (route.query.artworkJobId && typeof jobId !== 'string') throw new Error('素材必须关联主题')
+    if (route.query.artworkJobId && typeof jobId !== 'string') throw new Error(t('quoteRequest.errorArtworkNoTheme'))
     if (typeof jobId === 'string') {
-      if (!auth.isLoggedIn) { context.value = null; error.value = '请先登录，以读取您选择的主题效果。'; return }
+       if (!auth.isLoggedIn) { context.value = null; error.value = t('quoteRequest.errorLoginRequired'); return }
       const job = await getThemeJob(jobId)
       const result = job.results.find(result => result.resultId === job.selection.resultId)
-      if (job.schemeCode !== code || !result) throw new Error('主题结果不可用')
+       if (job.schemeCode !== code || !result) throw new Error(t('quoteRequest.errorThemeUnavailable'))
       theme.value = { themeJobId: jobId, resultId: result.resultId, selectionRevision: job.selection.revision }
       themePreview.value = result.previewUrl
       if (typeof route.query.artworkJobId === 'string') {
         const artwork = await getArtworkJob(route.query.artworkJobId)
-        if (artwork.deliveryStatus !== 'ready' || artwork.schemeCode !== code || artwork.themeSelection.themeJobId !== jobId || artwork.themeSelection.resultId !== result.resultId || artwork.themeSelection.selectionRevision !== job.selection.revision) throw new Error('素材与主题不一致')
+         if (artwork.deliveryStatus !== 'ready' || artwork.schemeCode !== code || artwork.themeSelection.themeJobId !== jobId || artwork.themeSelection.resultId !== result.resultId || artwork.themeSelection.selectionRevision !== job.selection.revision) throw new Error(t('quoteRequest.errorArtworkThemeMismatch'))
         artworkJobId.value = artwork.jobId
       }
     }
-  } catch { context.value = null; error.value = '方案或选定效果已变化，暂时无法申请，请返回确认后重试。' }
+  } catch { context.value = null; error.value = t('quoteRequest.errorSchemeChanged') }
   finally { loading.value = false }
 }
 async function refreshContext() {
@@ -191,7 +195,7 @@ async function submit() {
   if (manual) { await submitManual(); return }
   if (busy.value || (!context.value && !pending.value)) return
   if (!auth.isLoggedIn) { login(); return }
-  if (pending.value && draftOwner.value !== (auth.currentUser?.id ?? null)) { pending.value = null; error.value = '登录账户已变化，请重新确认本次申请。'; persist(); return }
+  if (pending.value && draftOwner.value !== (auth.currentUser?.id ?? null)) { pending.value = null; error.value = t('quoteRequest.errorAccountChanged'); persist(); return }
   draftOwner.value = auth.currentUser?.id ?? null
   error.value = ''
   if (!pending.value) {
@@ -215,15 +219,15 @@ async function submit() {
     if (status && status < 500 && status !== 408 && status !== 429) {
       pending.value = null
       conflict.value = status === 409
-      error.value = status === 409 ? '资料或主题选择已更新。您的表单已保留，请刷新资料并确认后再提交。' : status === 401 ? '登录已失效，请重新登录后提交。' : '请核对日期、正数材料预算、企业名称和联系方式后重试。'
-    } else { error.value = '暂未确认受理结果，已保留本次提交。请用下方按钮重试确认，避免重复创建项目。' }
+      error.value = status === 409 ? t('quoteRequest.errorDataChanged') : status === 401 ? t('quoteRequest.errorAuthFailed') : t('quoteRequest.errorFormInvalid')
+    } else { error.value = t('quoteRequest.errorNetworkSubmit') }
     persist()
   } finally { busy.value = false }
 }
 async function submitManual() {
   if (busy.value) return
   if (!auth.isLoggedIn) { login(); return }
-  if (pendingManual.value && draftOwner.value !== (auth.currentUser?.id ?? null)) { pendingManual.value = null; error.value = '登录账户已变化，请重新确认。'; persist(); return }
+  if (pendingManual.value && draftOwner.value !== (auth.currentUser?.id ?? null)) { pendingManual.value = null; error.value = t('quoteRequest.errorAccountChanged2'); persist(); return }
   draftOwner.value = auth.currentUser?.id ?? null
   error.value = ''
   if (!pendingManual.value) {
@@ -238,8 +242,8 @@ async function submitManual() {
   try { receipt.value = await submitManualRequest(pendingManual.value); pendingManual.value = null; persist() }
   catch (failure: unknown) {
     const status = (failure as { response?: { status?: number } }).response?.status
-    if (status && status < 500 && status !== 408 && status !== 429) { pendingManual.value = null; error.value = '请核对日期、预算、联系方式及登录状态，填写内容已保留。' }
-    else error.value = '暂未确认受理结果，请重试确认本次申请。'
+    if (status && status < 500 && status !== 408 && status !== 429) { pendingManual.value = null; error.value = t('quoteRequest.errorFormInvalid2') }
+    else error.value = t('quoteRequest.errorNetworkRetry')
     persist()
   } finally { busy.value = false }
 }
@@ -247,29 +251,29 @@ async function submitManual() {
 
 <template>
   <MainLayout><main id="main-content" class="studio-page">
-    <Button variant="ghost" as-child><RouterLink :to="manual ? '/ai-selection' : `/schemes/${encodeURIComponent(code)}`"><ArrowLeft class="mr-2 size-4" />{{ manual ? '返回智选' : '返回方案' }}</RouterLink></Button>
+    <Button variant="ghost" as-child><RouterLink :to="manual ? '/ai-selection' : `/schemes/${encodeURIComponent(code)}`"><ArrowLeft class="mr-2 size-4" />{{ manual ? t('quoteRequest.backToSelection') : t('quoteRequest.backToScheme') }}</RouterLink></Button>
     <template v-if="receipt">
       <Card class="border-success/25"><CardContent class="space-y-6 p-6 md:p-12">
-        <CheckCircle2 class="size-12 text-success" /><div><p class="mb-2 text-sm text-success">申请已受理</p><h1 class="studio-title">您的展台项目已建立</h1></div>
-        <dl class="grid gap-4 rounded-lg bg-muted p-5 sm:grid-cols-2"><div><dt class="text-sm text-muted-foreground">项目编号</dt><dd class="mt-1 font-mono text-xl">{{ receipt.projectNo }}</dd></div><div><dt class="text-sm text-muted-foreground">申请编号</dt><dd class="mt-1 break-all font-mono text-sm">{{ receipt.requestNo }}</dd></div></dl>
-        <p class="text-sm leading-6 text-muted-foreground">管理人员将根据本次申请联系您，核对需求后提供人工报价。当前状态为待跟进，受理回执不代表已出具报价。</p>
-        <p v-if="receipt.materialsStatus?.artworks === 'pending'" class="text-sm">已固定您选择的主题效果，配套平面素材待补充。</p>
-        <p v-if="artworkJobId && receipt.materialsStatus?.artworks === 'available'" class="text-sm">四面素材已固定到项目，可从项目详情查看与下载。</p>
-        <Button as-child><RouterLink :to="`/my-projects/${receipt.projectId}`">查看我的项目</RouterLink></Button>
-        <Button variant="outline" class="ml-3" @click="newRequest">填写另一份申请</Button>
+        <CheckCircle2 class="size-12 text-success" /><div><p class="mb-2 text-sm text-success">{{ t('quoteRequest.successTitle') }}</p><h1 class="studio-title">{{ t('quoteRequest.successSubtitle') }}</h1></div>
+        <dl class="grid gap-4 rounded-lg bg-muted p-5 sm:grid-cols-2"><div><dt class="text-sm text-muted-foreground">{{ t('quoteRequest.successProjectId') }}</dt><dd class="mt-1 font-mono text-xl">{{ receipt.projectNo }}</dd></div><div><dt class="text-sm text-muted-foreground">{{ t('quoteRequest.successRequestId') }}</dt><dd class="mt-1 break-all font-mono text-sm">{{ receipt.requestNo }}</dd></div></dl>
+        <p class="text-sm leading-6 text-muted-foreground">{{ t('quoteRequest.successNote') }}</p>
+        <p v-if="receipt.materialsStatus?.artworks === 'pending'" class="text-sm">{{ t('quoteRequest.successThemePending') }}</p>
+        <p v-if="artworkJobId && receipt.materialsStatus?.artworks === 'available'" class="text-sm">{{ t('quoteRequest.successArtworkFixed') }}</p>
+        <Button as-child><RouterLink :to="`/my-projects/${receipt.projectId}`">{{ t('quoteRequest.viewProjects') }}</RouterLink></Button>
+        <Button variant="outline" class="ml-3" @click="newRequest">{{ t('quoteRequest.submitAnother') }}</Button>
       </CardContent></Card>
     </template>
     <template v-else>
-      <header class="studio-header"><p class="studio-eyebrow">项目申请 / {{ manual ? '人工需求' : '报价服务' }}</p><h1 class="studio-title">{{ manual ? '特别的需求，交给专业的人' : '让方案进入您的展会' }}</h1><p class="text-base text-muted-foreground">填写实际需求，交由管理人员核对并人工报价。</p></header>
+      <header class="studio-header"><p class="studio-eyebrow">{{ t('quoteRequest.pageTitle') }}{{ manual ? t('quoteRequest.typeManual') : t('quoteRequest.typeQuote') }}</p><h1 class="studio-title">{{ manual ? t('quoteRequest.headingManual') : t('quoteRequest.headingQuote') }}</h1><p class="text-base text-muted-foreground">{{ t('quoteRequest.formDesc') }}</p></header>
       <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
         <form class="space-y-5" @submit.prevent="submit">
           <fieldset :disabled="frozen" class="studio-panel min-w-0 divide-y">
-            <section v-if="manual"><CardHeader><CardTitle class="text-lg">需求描述</CardTitle></CardHeader><CardContent class="space-y-3"><Textarea id="request-description" v-model="originalDescription" required maxlength="5000" class="min-h-32" aria-label="原始需求描述" :aria-invalid="!!descriptionError" :aria-describedby="descriptionError ? 'request-description-error' : undefined" placeholder="描述展位尺寸、功能、风格和需要确认的问题" /><p v-if="descriptionError" id="request-description-error" role="alert" class="text-sm text-destructive">{{ descriptionError }}</p><p v-for="question in unresolvedQuestions" :key="question" class="text-sm text-warning">待确认：{{ question }}</p><p class="text-sm text-muted-foreground">本次申请不指定方案；沟通确认后由管理人员关联并固定资料。</p></CardContent></section>
-            <section><CardHeader><CardTitle class="text-lg">01 / 展会信息</CardTitle></CardHeader><CardContent class="grid gap-5 sm:grid-cols-2">
-              <div class="space-y-2 sm:col-span-2"><Label for="exhibition">展会名称 *</Label><Input id="exhibition" v-model="form.exhibitionName" required maxlength="200" /></div>
+            <section v-if="manual"><CardHeader><CardTitle class="text-lg">{{ t('quoteRequest.requirementTitle') }}</CardTitle></CardHeader><CardContent class="space-y-3"><Textarea id="request-description" v-model="originalDescription" required maxlength="5000" class="min-h-32" :aria-label="t('quoteRequest.requirementTitle')" :aria-invalid="!!descriptionError" :aria-describedby="descriptionError ? 'request-description-error' : undefined" :placeholder="t('quoteRequest.requirementPlaceholder')" /><p v-if="descriptionError" id="request-description-error" role="alert" class="text-sm text-destructive">{{ descriptionError }}</p><p v-for="question in unresolvedQuestions" :key="question" class="text-sm text-warning">{{ t('quoteRequest.pendingConfirm') }}{{ question }}</p><p class="text-sm text-muted-foreground">{{ t('quoteRequest.manualNote') }}</p></CardContent></section>
+            <section><CardHeader><CardTitle class="text-lg">{{ t('quoteRequest.section1') }}</CardTitle></CardHeader><CardContent class="grid gap-5 sm:grid-cols-2">
+              <div class="space-y-2 sm:col-span-2"><Label for="exhibition">{{ t('quoteRequest.exhibitionName') }}</Label><Input id="exhibition" v-model="form.exhibitionName" required maxlength="200" /></div>
               <!-- 国家代码 -->
               <div class="space-y-2">
-                <Label for="country">国家代码 *</Label>
+                <Label for="country">{{ t('quoteRequest.countryCode') }}</Label>
                 <Select
                   :model-value="form.countryCode"
                   :disabled="loadingCountries || frozen"
@@ -277,7 +281,7 @@ async function submitManual() {
                   @update:model-value="form.countryCode = $event"
                 >
                   <SelectTrigger id="country" class="w-full">
-                    <SelectValue :placeholder="loadingCountries ? '加载中…' : '选择国家'" />
+                    <SelectValue :placeholder="loadingCountries ? t('quoteRequest.countryLoading') : t('quoteRequest.countryPlaceholder')" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem
@@ -293,7 +297,7 @@ async function submitManual() {
               
               <!-- 城市 -->
               <div class="space-y-2">
-                <Label for="city">城市 *</Label>
+                <Label for="city">{{ t('quoteRequest.cityLabel') }}</Label>
                 <Select
                   :model-value="form.city"
                   :disabled="!form.countryCode || loadingCities || frozen"
@@ -301,7 +305,7 @@ async function submitManual() {
                   @update:model-value="form.city = $event"
                 >
                   <SelectTrigger id="city" class="w-full">
-                    <SelectValue :placeholder="loadingCities ? '加载中…' : (form.countryCode ? '选择城市' : '请先选择国家')" />
+                    <SelectValue :placeholder="loadingCities ? t('quoteRequest.countryLoading') : (form.countryCode ? t('quoteRequest.cityLoadingOrSelect') : t('quoteRequest.cityWaitCountry'))" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem
@@ -314,35 +318,35 @@ async function submitManual() {
                   </SelectContent>
                 </Select>
               </div>
-              <div class="space-y-2"><Label for="request-start-date">开展日期 *</Label><DatePickerInput id="request-start-date" v-model="form.startDate" placeholder="选择开展日期" required :aria-invalid="!!startDateError" :aria-describedby="startDateError ? 'request-start-date-error' : undefined" /><p v-if="startDateError" id="request-start-date-error" role="alert" class="text-sm text-destructive">{{ startDateError }}</p></div>
-              <div class="space-y-2"><Label for="request-end-date">结束日期 *</Label><DatePickerInput id="request-end-date" v-model="form.endDate" :min="form.startDate" placeholder="选择结束日期" required :aria-invalid="!!endDateError" :aria-describedby="endDateError ? 'request-end-date-error' : undefined" /><p v-if="endDateError" id="request-end-date-error" role="alert" class="text-sm text-destructive">{{ endDateError }}</p></div>
+              <div class="space-y-2"><Label for="request-start-date">{{ t('quoteRequest.startDate') }}</Label><DatePickerInput id="request-start-date" v-model="form.startDate" :placeholder="t('quoteRequest.startDatePlaceholder')" required :aria-invalid="!!startDateError" :aria-describedby="startDateError ? 'request-start-date-error' : undefined" /><p v-if="startDateError" id="request-start-date-error" role="alert" class="text-sm text-destructive">{{ startDateError }}</p></div>
+              <div class="space-y-2"><Label for="request-end-date">{{ t('quoteRequest.endDate') }}</Label><DatePickerInput id="request-end-date" v-model="form.endDate" :min="form.startDate" :placeholder="t('quoteRequest.endDatePlaceholder')" required :aria-invalid="!!endDateError" :aria-describedby="endDateError ? 'request-end-date-error' : undefined" /><p v-if="endDateError" id="request-end-date-error" role="alert" class="text-sm text-destructive">{{ endDateError }}</p></div>
             </CardContent></section>
-            <section><CardHeader><CardTitle class="text-lg">02 / 需求与材料预算</CardTitle></CardHeader><CardContent class="space-y-5">
-              <div class="space-y-2"><p id="request-scopes-label" class="text-sm font-medium">需求范围 *</p><div id="request-scopes" role="group" aria-labelledby="request-scopes-label" :aria-describedby="scopeError ? 'request-scopes-error' : undefined" class="flex flex-wrap gap-4"><label v-for="scope in scopes" :key="scope.code" class="flex items-center gap-2 text-sm cursor-pointer"><Checkbox :checked="form.scopeCodes.includes(scope.code)" :aria-invalid="!!scopeError" :aria-describedby="scopeError ? 'request-scopes-error' : undefined" @update:checked="(v) => { if (v) form.scopeCodes.push(scope.code); else form.scopeCodes = form.scopeCodes.filter(c => c !== scope.code) }" />{{ scope.label }}</label></div><p v-if="scopeError" id="request-scopes-error" role="alert" class="text-sm text-destructive">{{ scopeError }}</p></div>
-              <div class="space-y-2"><Label for="scope">范围说明{{ form.scopeCodes.includes('other') ? ' *' : '' }}</Label><Textarea id="scope" v-model="form.scopeNotes" :required="form.scopeCodes.includes('other')" maxlength="2000" :aria-invalid="!!scopeNotesError" :aria-describedby="scopeNotesError ? 'request-scope-notes-error' : undefined" /><p v-if="scopeNotesError" id="request-scope-notes-error" role="alert" class="text-sm text-destructive">{{ scopeNotesError }}</p></div>
-              <div class="grid gap-4 sm:grid-cols-[120px_1fr]"><div class="space-y-2"><Label for="currency">币种 *</Label><Select :model-value="form.currency" @update:model-value="form.currency = $event"><SelectTrigger id="currency"><SelectValue placeholder="选择币种" /></SelectTrigger><SelectContent><SelectItem v-for="currency in ['CNY','USD','EUR','GBP','HKD','JPY','KRW','KWD']" :key="currency" :value="currency">{{ currency }}</SelectItem></SelectContent></Select></div><div class="space-y-2"><Label for="budget">材料购买预算 *</Label><Input id="budget" v-model="form.amount" required inputmode="decimal" pattern="(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,6})?" placeholder="如 30000" /></div></div>
-              <p class="studio-note">预算仅用于需求沟通，不等于报价；运输、搭建及税费由人工另行确认。</p>
+            <section><CardHeader><CardTitle class="text-lg">{{ t('quoteRequest.section2') }}</CardTitle></CardHeader><CardContent class="space-y-5">
+              <div class="space-y-2"><p id="request-scopes-label" class="text-sm font-medium">{{ t('quoteRequest.scopeLabel') }}</p><div id="request-scopes" role="group" aria-labelledby="request-scopes-label" :aria-describedby="scopeError ? 'request-scopes-error' : undefined" class="flex flex-wrap gap-4"><label v-for="scope in scopes" :key="scope.code" class="flex items-center gap-2 text-sm cursor-pointer"><Checkbox :checked="form.scopeCodes.includes(scope.code)" :aria-invalid="!!scopeError" :aria-describedby="scopeError ? 'request-scopes-error' : undefined" @update:checked="(v) => { if (v) form.scopeCodes.push(scope.code); else form.scopeCodes = form.scopeCodes.filter(c => c !== scope.code) }" />{{ scope.label }}</label></div><p v-if="scopeError" id="request-scopes-error" role="alert" class="text-sm text-destructive">{{ scopeError }}</p></div>
+              <div class="space-y-2"><Label for="scope">{{ t('quoteRequest.scopeNote') }}{{ form.scopeCodes.includes('other') ? ' *' : '' }}</Label><Textarea id="scope" v-model="form.scopeNotes" :required="form.scopeCodes.includes('other')" maxlength="2000" :aria-invalid="!!scopeNotesError" :aria-describedby="scopeNotesError ? 'request-scope-notes-error' : undefined" /><p v-if="scopeNotesError" id="request-scope-notes-error" role="alert" class="text-sm text-destructive">{{ scopeNotesError }}</p></div>
+              <div class="grid gap-4 sm:grid-cols-[120px_1fr]"><div class="space-y-2"><Label for="currency">{{ t('quoteRequest.currencyLabel') }}</Label><Select :model-value="form.currency" @update:model-value="form.currency = $event"><SelectTrigger id="currency"><SelectValue :placeholder="t('quoteRequest.currencyPlaceholder')" /></SelectTrigger><SelectContent><SelectItem v-for="currency in ['CNY','USD','EUR','GBP','HKD','JPY','KRW','KWD']" :key="currency" :value="currency">{{ currency }}</SelectItem></SelectContent></Select></div><div class="space-y-2"><Label for="budget">{{ t('quoteRequest.budgetLabel') }}</Label><Input id="budget" v-model="form.amount" required inputmode="decimal" pattern="(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,6})?" :placeholder="t('quoteRequest.budgetPlaceholder')" /></div></div>
+              <p class="studio-note">{{ t('quoteRequest.budgetNote') }}</p>
             </CardContent></section>
-            <section><CardHeader><CardTitle class="text-lg">03 / 联系方式</CardTitle></CardHeader><CardContent class="grid gap-5 sm:grid-cols-2">
-              <div class="space-y-2"><Label for="customer-type">客户类型 *</Label><Select :model-value="form.customerType" @update:model-value="form.customerType = $event as 'company' | 'individual'"><SelectTrigger id="customer-type"><SelectValue placeholder="选择类型" /></SelectTrigger><SelectContent><SelectItem value="individual">个人</SelectItem><SelectItem value="company">企业</SelectItem></SelectContent></Select></div>
-              <div class="space-y-2"><Label for="company">企业名称{{ form.customerType === 'company' ? ' *' : '' }}</Label><Input id="company" v-model="form.company" :required="form.customerType === 'company'" maxlength="200" /></div>
-              <div class="space-y-2 sm:col-span-2"><Label for="contact">联系人 *</Label><Input id="contact" v-model="form.contactName" required maxlength="100" autocomplete="name" /></div>
-              <div class="space-y-2"><Label for="email">邮箱（与电话至少一项）</Label><Input id="email" v-model="form.email" type="email" maxlength="254" autocomplete="email" :aria-invalid="!!contactError" :aria-describedby="contactError ? 'request-contact-error' : undefined" /></div>
-              <div class="space-y-2"><Label for="phone">电话（支持国际区号）</Label><Input id="phone" v-model="form.phone" type="tel" maxlength="30" autocomplete="tel" :aria-invalid="!!contactError" :aria-describedby="contactError ? 'request-contact-error' : undefined" /></div>
+            <section><CardHeader><CardTitle class="text-lg">{{ t('quoteRequest.section3') }}</CardTitle></CardHeader><CardContent class="grid gap-5 sm:grid-cols-2">
+              <div class="space-y-2"><Label for="customer-type">{{ t('quoteRequest.clientTypeLabel') }}</Label><Select :model-value="form.customerType" @update:model-value="form.customerType = $event as 'company' | 'individual'"><SelectTrigger id="customer-type"><SelectValue :placeholder="t('quoteRequest.clientTypePlaceholder')" /></SelectTrigger><SelectContent><SelectItem value="individual">{{ t('quoteRequest.clientTypePersonal') }}</SelectItem><SelectItem value="company">{{ t('quoteRequest.clientTypeEnterprise') }}</SelectItem></SelectContent></Select></div>
+              <div class="space-y-2"><Label for="company">{{ t('quoteRequest.enterpriseName') }}{{ form.customerType === 'company' ? ' *' : '' }}</Label><Input id="company" v-model="form.company" :required="form.customerType === 'company'" maxlength="200" /></div>
+              <div class="space-y-2 sm:col-span-2"><Label for="contact">{{ t('quoteRequest.contactName') }}</Label><Input id="contact" v-model="form.contactName" required maxlength="100" autocomplete="name" /></div>
+              <div class="space-y-2"><Label for="email">{{ t('quoteRequest.emailLabel') }}</Label><Input id="email" v-model="form.email" type="email" maxlength="254" autocomplete="email" :aria-invalid="!!contactError" :aria-describedby="contactError ? 'request-contact-error' : undefined" /></div>
+              <div class="space-y-2"><Label for="phone">{{ t('quoteRequest.phoneLabel') }}</Label><Input id="phone" v-model="form.phone" type="tel" maxlength="30" autocomplete="tel" :aria-invalid="!!contactError" :aria-describedby="contactError ? 'request-contact-error' : undefined" /></div>
               <p v-if="contactError" id="request-contact-error" role="alert" class="text-sm text-destructive sm:col-span-2">{{ contactError }}</p>
-              <div class="space-y-2 sm:col-span-2"><Label for="notes">补充说明</Label><Textarea id="notes" v-model="form.notes" maxlength="2000" /></div>
+              <div class="space-y-2 sm:col-span-2"><Label for="notes">{{ t('quoteRequest.remarksLabel') }}</Label><Textarea id="notes" v-model="form.notes" maxlength="2000" /></div>
             </CardContent></section>
           </fieldset>
           <p v-if="error" role="alert" class="rounded-md border border-destructive/30 p-4 text-sm text-destructive">{{ error }}</p>
-          <Button v-if="conflict" type="button" variant="outline" @click="refreshContext">刷新资料并重新确认</Button>
-          <Button v-if="!auth.isLoggedIn" type="button" @click="login">登录后提交申请</Button>
-          <Button v-else :disabled="busy || loading || (!manual && !pending && (!context || conflict))" type="submit" class="w-full sm:w-auto"><Loader2 v-if="busy" class="mr-2 size-4 animate-spin" />{{ busy ? '正在确认受理…' : pending || pendingManual ? '重试确认本次申请' : manual ? '确认并提交人工需求' : '确认并提交报价申请' }}</Button>
+          <Button v-if="conflict" type="button" variant="outline" @click="refreshContext">{{ t('quoteRequest.refreshAndConfirm') }}</Button>
+          <Button v-if="!auth.isLoggedIn" type="button" @click="login">{{ t('quoteRequest.loginToSubmit') }}</Button>
+          <Button v-else :disabled="busy || loading || (!manual && !pending && (!context || conflict))" type="submit" class="w-full sm:w-auto"><Loader2 v-if="busy" class="mr-2 size-4 animate-spin" />{{ busy ? t('quoteRequest.submitting') : pending || pendingManual ? t('quoteRequest.retrySubmit') : manual ? t('quoteRequest.submitManual') : t('quoteRequest.submitQuote') }}</Button>
         </form>
-        <aside class="space-y-4 lg:sticky lg:top-24"><section class="border-t"><CardHeader class="px-0"><FileText class="size-6 text-muted-foreground" /><CardTitle class="text-lg">{{ manual ? '人工需求承接' : '本次申请方案' }}</CardTitle></CardHeader><CardContent class="space-y-4 px-0 text-sm">
-          <p v-if="!manual" class="break-all font-mono">{{ code }}</p><p v-else>原文与确认条件分别保存。提交后建立项目，由管理员联系并核对适用方案。</p><p v-if="loading" class="text-muted-foreground">读取方案资料…</p>
-          <template v-else-if="context"><p>清单修订 {{ context.bomRevision }} · 方案修订 {{ context.schemeRevision }}</p><img v-if="themePreview || standardPreview" :src="themePreview || standardPreview" :alt="theme ? '本次选定主题效果' : '标准方案效果'" class="aspect-video w-full rounded-md object-contain" /><p>{{ theme ? '已带入您选择的主题效果' : '使用标准方案效果' }}</p><p v-if="theme" class="text-xs text-muted-foreground">主题平面素材尚待补充，不以标准素材代替。</p></template>
-          <div v-if="matchingSummary" class="space-y-2 border-t pt-4 text-sm"><p class="font-medium">{{ matchingSummary.matchType === 'direct' ? '匹配条件已带入' : '参考方案 · 适用性需确认' }}</p><p v-for="difference in matchingSummary.differences" :key="difference.field">{{ difference.requested }} → {{ difference.actual }}：{{ difference.reason }}</p><p v-for="confirmation in matchingSummary.pendingConfirmations" :key="confirmation.message">{{ confirmation.message }}</p></div>
-          <p class="border-t pt-4 text-sm leading-6 text-muted-foreground">提交时将固定当前资料。方案适用性、场馆规范和交付范围需经专业确认。</p>
+        <aside class="space-y-4 lg:sticky lg:top-24"><section class="border-t"><CardHeader class="px-0"><FileText class="size-6 text-muted-foreground" /><CardTitle class="text-lg">{{ manual ? t('quoteRequest.manualSideTitle') : t('quoteRequest.schemeSideTitle') }}</CardTitle></CardHeader><CardContent class="space-y-4 px-0 text-sm">
+          <p v-if="!manual" class="break-all font-mono">{{ code }}</p><p v-else>{{ t('quoteRequest.schemeSideNote') }}</p><p v-if="loading" class="text-muted-foreground">{{ t('quoteRequest.schemeLoading') }}</p>
+          <template v-else-if="context"><p>{{ t('quoteRequest.schemeMeta', { bomRevision: context.bomRevision, schemeRevision: context.schemeRevision }) }}</p><img v-if="themePreview || standardPreview" :src="themePreview || standardPreview" :alt="theme ? t('quoteRequest.themeEffectSelected') : t('quoteRequest.themeEffectStandard')" class="aspect-video w-full rounded-md object-contain" /><p>{{ theme ? t('quoteRequest.themeEffectWithTheme') : t('quoteRequest.themeEffectWithoutTheme') }}</p><p v-if="theme" class="text-xs text-muted-foreground">{{ t('quoteRequest.artworkPending') }}</p></template>
+          <div v-if="matchingSummary" class="space-y-2 border-t pt-4 text-sm"><p class="font-medium">{{ matchingSummary.matchType === 'direct' ? t('quoteRequest.requirementMatched') : t('quoteRequest.requirementReference') }}</p><p v-for="difference in matchingSummary.differences" :key="difference.field">{{ difference.requested }} → {{ difference.actual }}：{{ difference.reason }}</p><p v-for="confirmation in matchingSummary.pendingConfirmations" :key="confirmation.message">{{ confirmation.message }}</p></div>
+          <p class="border-t pt-4 text-sm leading-6 text-muted-foreground">{{ t('quoteRequest.schemeDisclaimer') }}</p>
         </CardContent></section></aside>
       </div>
     </template>

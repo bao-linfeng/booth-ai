@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { appLocale } from '@/plugins/i18n'
 import { ArrowLeft, ArrowUpRight, Loader2, Sparkles, X, Plus, Palette } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -22,6 +24,7 @@ import { blockedReasonText as getBlockedReasonText } from '@/features/theme-jobs
 
 const route = useRoute()
 const router = useRouter()
+const { t } = useI18n()
 const authStore = useAuthStore()
 const { balance, loading: loadingCredits, fetchBalance } = useCredits()
 const isLoggedIn = computed(() => authStore.isLoggedIn)
@@ -63,7 +66,7 @@ const confirmationTrigger = ref<HTMLElement | null>(null)
 const confirmation = ref<{ payload: ThemeJobSubmission; quote: NonNullable<ThemeOffer['offer']>; attempted: boolean } | null>(null)
 const formLocked = computed(() => isPreview.value || creatingJob.value || confirmDialogOpen.value)
 const invalidColors = computed(() => brandColors.value.some(color => !/^#[0-9a-f]{6}$/i.test(color)))
-const keywordError = computed(() => brandKeywords.value.length > limits.value.maxKeywordCharacters ? '品牌关键词超过字数限制，请精简后重试。' : '')
+const keywordError = computed(() => brandKeywords.value.length > limits.value.maxKeywordCharacters ? t('schemeTheme.keywordsLimitError') : '')
 const parameters = computed(() => ({
   schemeCode, sourceAssetId: selectedAssetId.value, searchId,
   input: { industryId: industryId.value, styleId: styleId.value, brandColors: [...brandColors.value], brandKeywords: brandKeywords.value },
@@ -73,7 +76,7 @@ const parameterKey = computed(() => JSON.stringify(parameters.value))
 const canFetchOffer = computed(() => !isPreview.value && isLoggedIn.value && !!selectedAssetId.value && !!industryId.value && !!styleId.value && !invalidColors.value && !keywordError.value)
 const blockedReasonText = computed(() => {
   if (!themeOffer.value || themeOffer.value.available) return ''
-  return getBlockedReasonText(themeOffer.value.blockedReasons)
+  return getBlockedReasonText(themeOffer.value.blockedReasons, t)
 })
 let offerRequest = 0
 let offerTimer: ReturnType<typeof setTimeout> | undefined
@@ -162,18 +165,18 @@ async function fetchOffer() {
     if (disposed || request !== offerRequest || key !== parameterKey.value) return null
     themeOffer.value = res
     limits.value = res.limits
-    if (res.available && !res.offer) offerError.value = '暂未取得有效积分费用，请重试。已填写内容保留在当前页面。'
+    if (res.available && !res.offer) offerError.value = t('schemeTheme.errorNoCost')
     return res
   } catch (error: unknown) {
     const failure = error as { data?: { error?: { reason?: string } }; response?: { status?: number }; statusCode?: number }
     if (!disposed && request === offerRequest) {
       const reason = failure.data?.error?.reason
-      let message = '积分费用获取失败，请检查网络后重试。'
-      if ((failure.response?.status ?? failure.statusCode) === 429) message = '操作较频繁，请稍等一分钟再重试获取积分。'
-      else if (reason === 'SOURCE_UNAVAILABLE') message = '所选原图已不可用，请选择其他视角或返回方案详情刷新。'
-      else if (reason === 'MODEL_UNAVAILABLE') message = '平台生成服务暂不可用，请稍后重试。'
-      else if (reason === 'SEARCH_UNAVAILABLE') message = '关联检索记录已不可用，请从方案详情重新进入。'
-      offerError.value = `${message}已填写内容保留在当前页面。`
+      let message = t('schemeTheme.errorCostFetch')
+      if ((failure.response?.status ?? failure.statusCode) === 429) message = t('schemeTheme.errorRateLimit')
+      else if (reason === 'SOURCE_UNAVAILABLE') message = t('schemeTheme.errorImageUnavailable')
+      else if (reason === 'MODEL_UNAVAILABLE') message = t('schemeTheme.errorServiceUnavailable')
+      else if (reason === 'SEARCH_UNAVAILABLE') message = t('schemeTheme.errorSearchUnavailable')
+      offerError.value = t('schemeTheme.errorGeneric', { message })
     }
     return null
   } finally {
@@ -191,7 +194,8 @@ function removeColor(index: number) {
   void nextTick(() => {
     const nextIndex = Math.min(index, brandColors.value.length - 1)
     document.getElementById(nextIndex >= 0 ? `theme-color-${nextIndex}` : 'theme-add-color')?.focus()
-  })
+})
+watch(appLocale, () => { if (!isPreview.value) void loadCatalog() })
 }
 
 function handleLogin() {
@@ -216,7 +220,7 @@ async function handleConfirm() {
   if (!current || creatingJob.value || needsNewOffer.value) return
   if (!current.attempted && Date.parse(current.quote.expiresAt) <= Date.now()) {
     needsNewOffer.value = true
-    jobError.value = '积分确认已过期，请重新获取积分并确认。已填写内容保留在当前页面。'
+    jobError.value = t('schemeTheme.errorExpired')
     return
   }
   creatingJob.value = true
@@ -232,14 +236,14 @@ async function handleConfirm() {
     const status = failure.response?.status ?? failure.statusCode
     if ((reason && ['OFFER_EXPIRED', 'OFFER_STALE', 'OFFER_MISMATCH'].includes(reason)) || status === 409) {
       needsNewOffer.value = true
-      jobError.value = '积分确认已过期或生成条件已更新，请重新获取积分并确认。已填写内容保留在当前页面。'
+      jobError.value = t('schemeTheme.errorExpiredOrChanged')
     } else if (status === 402) {
-      jobError.value = '可用积分不足，请补充积分后重试。已填写内容保留在当前页面。'
+      jobError.value = t('schemeTheme.errorInsufficientCredits')
       void fetchBalance()
     } else if (status === 429) {
-      jobError.value = '操作较频繁，请稍等一分钟再重试确认。已填写内容保留在当前页面。'
+      jobError.value = t('schemeTheme.errorRateLimitConfirm')
     } else {
-      jobError.value = '暂未确认任务是否创建成功，请重试确认；将复用同一请求，避免重复创建。已填写内容保留在当前页面。'
+      jobError.value = t('schemeTheme.errorNetworkConfirm')
     }
   } finally {
     creatingJob.value = false
@@ -256,153 +260,153 @@ function setDialogOpen(open: boolean) {
     <main id="main-content" class="studio-page">
       <header class="studio-header">
         <Button as-child variant="ghost" class="-ml-3">
-          <RouterLink :to="{ path: detailPath, query: searchId ? { searchId } : {} }"><ArrowLeft class="mr-2 size-4" />返回方案详情</RouterLink>
+          <RouterLink :to="{ path: detailPath, query: searchId ? { searchId } : {} }"><ArrowLeft class="mr-2 size-4" />{{ t('schemeTheme.backToScheme') }}</RouterLink>
         </Button>
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div class="min-w-0 flex-1 basis-64 space-y-2">
-            <p class="break-words text-xs tracking-widest text-muted-foreground">品牌视觉工作区 · 方案 {{ schemeCode }}</p>
-            <h1 class="studio-title">让展台呈现您的品牌</h1>
-            <p class="text-sm leading-relaxed text-muted-foreground">选择原图，调整品牌色与视觉偏好，再确认积分生成主题效果。</p>
+            <p class="break-words text-xs tracking-widest text-muted-foreground">{{ t('schemeTheme.pageTitle') }} {{ schemeCode }}</p>
+            <h1 class="studio-title">{{ t('schemeTheme.heading') }}</h1>
+            <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeTheme.subheading') }}</p>
           </div>
-          <Badge v-if="isPreview" variant="secondary">静态示例 · 不可提交</Badge>
+          <Badge v-if="isPreview" variant="secondary">{{ t('schemeTheme.previewLabel') }}</Badge>
           <Button v-else as-child variant="outline" class="shrink-0">
-            <RouterLink :to="{ path: `/schemes/${encodeURIComponent(schemeCode)}/quote`, query: { entryPoint: 'scheme_detail' } }">申请展台报价<ArrowUpRight class="ml-2 size-4" /></RouterLink>
+            <RouterLink :to="{ path: `/schemes/${encodeURIComponent(schemeCode)}/quote`, query: { entryPoint: 'scheme_detail' } }">{{ t('schemeTheme.quoteBtn') }}<ArrowUpRight class="ml-2 size-4" /></RouterLink>
           </Button>
         </div>
       </header>
 
       <section v-if="schemeError" role="alert" class="space-y-3 rounded-xl border border-destructive/30 bg-destructive/10 p-6">
-        <p>方案加载失败，请检查网络后重试。已填写内容保留在当前页面。</p>
-        <Button variant="outline" @click="loadScheme">重新加载方案</Button>
+        <p>{{ t('schemeTheme.schemeLoadError') }}</p>
+        <Button variant="outline" @click="loadScheme">{{ t('schemeTheme.reloadScheme') }}</Button>
       </section>
       <div v-else-if="loadingScheme" class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Skeleton class="aspect-[4/3] rounded-xl" /><Skeleton class="h-96 rounded-xl" />
       </div>
       <div v-else class="grid items-start gap-8 xl:gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <section aria-label="原始方案画布" class="min-w-0 space-y-5 lg:sticky lg:top-24">
+        <section :aria-label="t('schemeTheme.canvasAriaLabel')" class="min-w-0 space-y-5 lg:sticky lg:top-24">
           <div class="flex items-center justify-between gap-3 text-sm">
-            <h2 class="font-medium">原始效果图</h2>
-            <span class="text-muted-foreground">{{ images.length ? `视角 ${selectedImageIndex} / ${images.length}` : '暂无原图' }}</span>
+            <h2 class="font-medium">{{ t('schemeTheme.originalImageTitle') }}</h2>
+            <span class="text-muted-foreground">{{ images.length ? `${t('schemeTheme.angleLabel')} ${selectedImageIndex} / ${images.length}` : t('schemeTheme.noOriginalImage') }}</span>
           </div>
           <div class="relative flex aspect-video items-center justify-center overflow-hidden rounded-md bg-image-surface">
-            <img v-if="selectedImageUrl" :src="selectedImageUrl" class="size-full object-contain" :alt="`原始方案 · 视角 ${selectedImageIndex}`" />
+            <img v-if="selectedImageUrl" :src="selectedImageUrl" class="size-full object-contain" :alt="t('schemeTheme.originalImageAlt', { angle: selectedImageIndex })" />
             <div v-else class="space-y-3 text-center text-muted-foreground">
               <BoothIllustration class="mx-auto size-32 opacity-40" />
-              <p class="text-sm">{{ isPreview ? '静态示例不提供真实生成' : '该方案暂无可用原图' }}</p>
+              <p class="text-sm">{{ isPreview ? t('schemeTheme.staticNoGenerate') : t('schemeTheme.noAvailableImage') }}</p>
             </div>
-            <span class="absolute left-4 top-4 rounded-full border bg-background/90 px-3 py-1 text-xs">原图 · 未调整</span>
+            <span class="absolute left-4 top-4 rounded-full border bg-background/90 px-3 py-1 text-xs">{{ t('schemeTheme.currentOriginal') }}</span>
           </div>
-          <div v-if="images.length > 1" class="grid grid-cols-3 gap-3 sm:grid-cols-4" aria-label="选择原图视角">
+          <div v-if="images.length > 1" class="grid grid-cols-3 gap-3 sm:grid-cols-4" :aria-label="t('schemeTheme.selectAngleAriaLabel')">
             <button v-for="(image, index) in images" :key="image.assetId" type="button"
               :class="cn('min-w-0 overflow-hidden rounded-lg border-2 bg-muted/30 p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-60', selectedAssetId === image.assetId ? 'border-primary' : 'border-transparent hover:border-border')"
-              :aria-label="`选择视角 ${index + 1}`" :aria-pressed="selectedAssetId === image.assetId" :disabled="formLocked" @click="selectedAssetId = image.assetId">
-              <img :src="image.thumbnailUrl || image.url" class="aspect-video w-full object-contain" :alt="`视角 ${index + 1}`" />
-              <span class="block py-1 text-xs">视角 {{ index + 1 }}<span v-if="selectedAssetId === image.assetId" class="block font-medium">当前原图</span></span>
+              :aria-label="t('schemeTheme.selectAngleLabel', { index: index + 1 })" :aria-pressed="selectedAssetId === image.assetId" :disabled="formLocked" @click="selectedAssetId = image.assetId">
+              <img :src="image.thumbnailUrl || image.url" class="aspect-video w-full object-contain" :alt="`${t('schemeTheme.angleLabel')} ${index + 1}`" />
+              <span class="block py-1 text-xs">{{ t('schemeTheme.angleLabel') }} {{ index + 1 }}<span v-if="selectedAssetId === image.assetId" class="block font-medium">{{ t('schemeTheme.currentImage') }}</span></span>
             </button>
           </div>
           <div class="flex items-start gap-3 border-t pt-5">
             <Sparkles class="mt-0.5 size-4 shrink-0 text-primary" />
             <div class="space-y-2 text-sm leading-relaxed text-muted-foreground">
-              <h3 class="font-medium text-foreground">焕新品牌表达，延续空间设计</h3>
-              <p>围绕品牌色、海报与展示画面调整视觉，尽量保留原方案结构与材质。可编辑范围由方案决定，不支持自定义框选。</p>
-              <p>AI 效果仅供方案沟通；也可直接使用标准方案申请展台报价。</p>
+              <h3 class="font-medium text-foreground">{{ t('schemeTheme.themeTitle') }}</h3>
+              <p>{{ t('schemeTheme.themeDesc') }}</p>
+              <p>{{ t('schemeTheme.themeDisclaimer') }}</p>
             </div>
           </div>
         </section>
 
         <aside class="studio-panel min-w-0 overflow-hidden">
           <div class="space-y-1 border-b px-5 py-5 sm:px-6">
-            <h2 class="flex items-center gap-2 text-lg font-semibold"><Palette class="size-5 text-primary" />品牌与视觉偏好</h2>
-            <p class="text-sm text-muted-foreground">从品牌出发，探索新的展示风格。</p>
+            <h2 class="flex items-center gap-2 text-lg font-semibold"><Palette class="size-5 text-primary" />{{ t('schemeTheme.preferenceTitle') }}</h2>
+            <p class="text-sm text-muted-foreground">{{ t('schemeTheme.preferenceDesc') }}</p>
           </div>
           <div v-if="!isLoggedIn && !isPreview" class="space-y-4 p-6">
-            <p class="text-sm leading-relaxed text-muted-foreground">登录后设置品牌偏好、查看积分并生成主题效果。</p>
-            <Button class="w-full" @click="handleLogin">登录以继续</Button>
+            <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeTheme.loginPrompt') }}</p>
+            <Button class="w-full" @click="handleLogin">{{ t('schemeTheme.loginBtn') }}</Button>
           </div>
           <template v-else>
             <fieldset :disabled="formLocked" class="min-w-0 space-y-6 p-5 sm:p-6">
-              <legend class="sr-only">品牌与视觉偏好</legend>
+              <legend class="sr-only">{{ t('schemeTheme.preferenceTitle2') }}</legend>
               <div v-if="catalogError" role="alert" class="space-y-2 text-sm text-destructive">
-                <p>行业与风格加载失败，已填写内容保留在当前页面。</p>
-                <Button variant="outline" size="sm" :disabled="loadingCatalog" @click="loadCatalog">重试加载选项</Button>
+                <p>{{ t('schemeTheme.optionsLoadError') }}</p>
+                <Button variant="outline" size="sm" :disabled="loadingCatalog" @click="loadCatalog">{{ t('schemeTheme.retryLoadOptions') }}</Button>
               </div>
               <div class="grid grid-cols-2 gap-3">
                 <div class="min-w-0 space-y-2">
-                  <label for="theme-industry" class="text-sm font-medium">行业</label>
+                  <label for="theme-industry" class="text-sm font-medium">{{ t('schemeTheme.industryLabel') }}</label>
                   <Select v-model="industryId" :disabled="formLocked || loadingCatalog">
-                    <SelectTrigger id="theme-industry" class="min-w-0"><SelectValue placeholder="选择行业" /></SelectTrigger>
+                    <SelectTrigger id="theme-industry" class="min-w-0"><SelectValue :placeholder="t('schemeTheme.industryPlaceholder')" /></SelectTrigger>
                     <SelectContent><SelectItem v-for="option in catalogIndustries" :key="option.id" :value="option.id">{{ option.label }}</SelectItem></SelectContent>
                   </Select>
                 </div>
                 <div class="min-w-0 space-y-2">
-                  <label for="theme-style" class="text-sm font-medium">视觉风格</label>
+                  <label for="theme-style" class="text-sm font-medium">{{ t('schemeTheme.styleLabel') }}</label>
                   <Select v-model="styleId" :disabled="formLocked || loadingCatalog">
-                    <SelectTrigger id="theme-style" class="min-w-0"><SelectValue placeholder="选择风格" /></SelectTrigger>
+                    <SelectTrigger id="theme-style" class="min-w-0"><SelectValue :placeholder="t('schemeTheme.stylePlaceholder')" /></SelectTrigger>
                     <SelectContent><SelectItem v-for="option in catalogStyles" :key="option.id" :value="option.id">{{ option.label }}</SelectItem></SelectContent>
                   </Select>
                 </div>
               </div>
 
               <div class="space-y-3">
-                <div class="flex items-center justify-between gap-2"><h3 class="text-sm font-medium">品牌色</h3><span class="text-xs text-muted-foreground">{{ brandColors.length }} / {{ limits.maxBrandColors }}</span></div>
-                <p v-if="!brandColors.length" class="text-sm text-muted-foreground">添加品牌主色，让视觉更贴近您的品牌。</p>
+                <div class="flex items-center justify-between gap-2"><h3 class="text-sm font-medium">{{ t('schemeTheme.brandColorTitle') }}</h3><span class="text-xs text-muted-foreground">{{ brandColors.length }} / {{ limits.maxBrandColors }}</span></div>
+                <p v-if="!brandColors.length" class="text-sm text-muted-foreground">{{ t('schemeTheme.brandColorDesc') }}</p>
                 <div v-for="(color, index) in brandColors" :key="index" class="min-w-0 space-y-2">
                   <div class="flex min-w-0 items-center gap-2">
-                    <input type="color" :value="/^#[0-9a-f]{6}$/i.test(color) ? color : '#000000'" :aria-label="`选择品牌色 ${index + 1}`" class="size-10 shrink-0 cursor-pointer rounded border bg-background p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @input="brandColors[index] = ($event.target as HTMLInputElement).value" />
-                    <Input :id="`theme-color-${index}`" v-model="brandColors[index]" :aria-label="`品牌色 ${index + 1} 色值`" :aria-invalid="!/^#[0-9a-f]{6}$/i.test(color)" :aria-describedby="!/^#[0-9a-f]{6}$/i.test(color) ? `theme-color-${index}-error` : undefined" class="min-w-0 flex-1 font-mono uppercase" maxlength="7" />
-                    <Button variant="ghost" size="icon" class="shrink-0" :aria-label="`删除品牌色 ${index + 1}`" @click="removeColor(index)"><X class="size-4" /></Button>
+                    <input type="color" :value="/^#[0-9a-f]{6}$/i.test(color) ? color : '#000000'" :aria-label="t('schemeTheme.brandColorAriaLabel', { index: index + 1 })" class="size-10 shrink-0 cursor-pointer rounded border bg-background p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @input="brandColors[index] = ($event.target as HTMLInputElement).value" />
+                    <Input :id="`theme-color-${index}`" v-model="brandColors[index]" :aria-label="t('schemeTheme.brandColorValueAriaLabel', { index: index + 1 })" :aria-invalid="!/^#[0-9a-f]{6}$/i.test(color)" :aria-describedby="!/^#[0-9a-f]{6}$/i.test(color) ? `theme-color-${index}-error` : undefined" class="min-w-0 flex-1 font-mono uppercase" maxlength="7" />
+                    <Button variant="ghost" size="icon" class="shrink-0" :aria-label="t('schemeTheme.brandColorDeleteAriaLabel', { index: index + 1 })" @click="removeColor(index)"><X class="size-4" /></Button>
                   </div>
-                  <p v-if="!/^#[0-9a-f]{6}$/i.test(color)" :id="`theme-color-${index}-error`" role="alert" class="text-sm text-destructive">品牌色 {{ index + 1 }} 请填写完整的六位色值，例如 #1A6B52。</p>
+                  <p v-if="!/^#[0-9a-f]{6}$/i.test(color)" :id="`theme-color-${index}-error`" role="alert" class="text-sm text-destructive">{{ t('schemeTheme.brandColorError', { index: index + 1 }) }}</p>
                 </div>
-                <Button v-if="brandColors.length < limits.maxBrandColors" id="theme-add-color" variant="outline" size="sm" class="border-dashed" @click="addColor"><Plus class="mr-2 size-4" />添加品牌色</Button>
+                <Button v-if="brandColors.length < limits.maxBrandColors" id="theme-add-color" variant="outline" size="sm" class="border-dashed" @click="addColor"><Plus class="mr-2 size-4" />{{ t('schemeTheme.addBrandColor') }}</Button>
               </div>
 
               <div class="space-y-2">
-                <div class="flex items-center justify-between gap-2"><label for="theme-keywords" class="text-sm font-medium">品牌关键词 <span class="font-normal text-muted-foreground">选填</span></label><span class="text-xs tabular-nums text-muted-foreground">{{ brandKeywords.length }} / {{ limits.maxKeywordCharacters }}</span></div>
-                <Textarea id="theme-keywords" v-model="brandKeywords" placeholder="例如：智能科技、绿色环保、简洁现代" class="resize-none" :maxlength="limits.maxKeywordCharacters" :aria-invalid="!!keywordError" :aria-describedby="keywordError ? 'theme-keywords-error' : undefined" rows="3" />
+                <div class="flex items-center justify-between gap-2"><label for="theme-keywords" class="text-sm font-medium">{{ t('schemeTheme.keywordsLabel') }} <span class="font-normal text-muted-foreground">{{ t('schemeTheme.keywordsOptional') }}</span></label><span class="text-xs tabular-nums text-muted-foreground">{{ brandKeywords.length }} / {{ limits.maxKeywordCharacters }}</span></div>
+                <Textarea id="theme-keywords" v-model="brandKeywords" :placeholder="t('schemeTheme.keywordsPlaceholder')" class="resize-none" :maxlength="limits.maxKeywordCharacters" :aria-invalid="!!keywordError" :aria-describedby="keywordError ? 'theme-keywords-error' : undefined" rows="3" />
                 <p v-if="keywordError" id="theme-keywords-error" role="alert" class="text-sm text-destructive">{{ keywordError }}</p>
               </div>
 
               <div class="space-y-3 border-t pt-5">
-                <h3 class="text-sm font-medium">生成数量</h3>
-                <div class="grid grid-cols-4 gap-2" role="group" aria-label="生成数量">
-                  <Button v-for="count in limits.allowedCounts" :key="count" :variant="requestedCount === count ? 'default' : 'outline'" class="px-2" :aria-pressed="requestedCount === count" @click="requestedCount = count">{{ count }} 张</Button>
+                <h3 class="text-sm font-medium">{{ t('schemeTheme.countLabel') }}</h3>
+                <div class="grid grid-cols-4 gap-2" role="group" :aria-label="t('schemeTheme.countLabel')">
+                  <Button v-for="count in limits.allowedCounts" :key="count" :variant="requestedCount === count ? 'default' : 'outline'" class="px-2" :aria-pressed="requestedCount === count" @click="requestedCount = count">{{ count }} {{ t('schemeTheme.countUnit') }}</Button>
                 </div>
               </div>
             </fieldset>
 
             <div class="space-y-4 border-t bg-muted/30 p-5 sm:p-6">
-              <div class="flex items-center justify-between text-sm text-muted-foreground"><span>可用积分</span><span>{{ loadingCredits ? '读取中…' : balance === null ? '暂未获取' : `${balance} 积分` }}</span></div>
-              <Button v-if="!isPreview && !loadingCredits && balance === null" variant="outline" size="sm" @click="fetchBalance">重试查询余额</Button>
+              <div class="flex items-center justify-between text-sm text-muted-foreground"><span>{{ t('schemeTheme.balanceLabel') }}</span><span>{{ loadingCredits ? t('common.creditsLoading') : balance === null ? t('common.creditsUnknown') : `${balance} ${t('common.credits')}` }}</span></div>
+              <Button v-if="!isPreview && !loadingCredits && balance === null" variant="outline" size="sm" @click="fetchBalance">{{ t('schemeTheme.retryBalance') }}</Button>
               <div aria-live="polite" aria-atomic="true" :aria-busy="loadingOffer" class="space-y-3">
-                <p v-if="isPreview" class="text-sm text-muted-foreground">示例模式不获取积分费用。</p>
-                <p v-else-if="loadingOffer" role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 class="size-4 animate-spin" />正在更新积分费用…</p>
+                <p v-if="isPreview" class="text-sm text-muted-foreground">{{ t('schemeTheme.previewNoCredits') }}</p>
+                <p v-else-if="loadingOffer" role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 class="size-4 animate-spin" />{{ t('schemeTheme.updatingCost') }}</p>
                 <div v-else-if="offerError || blockedReasonText" role="alert" class="space-y-3 text-sm text-destructive">
-                  <p>{{ offerError || blockedReasonText }}</p><Button variant="outline" size="sm" :disabled="!canFetchOffer" @click="fetchOffer">重试获取积分</Button>
+                  <p>{{ offerError || blockedReasonText }}</p><Button variant="outline" size="sm" :disabled="!canFetchOffer" @click="fetchOffer">{{ t('schemeTheme.retryCost') }}</Button>
                 </div>
                 <template v-else-if="themeOffer?.offer">
-                  <p class="flex justify-between gap-2 text-sm"><span class="text-muted-foreground">{{ requestedCount }} 张 · 单张 {{ themeOffer.offer.unitCredits }} 积分</span></p>
-                  <div class="flex flex-wrap items-baseline justify-between gap-2"><span class="text-sm font-medium">最高锁定积分</span><p class="text-3xl font-semibold tabular-nums tracking-tight text-primary">{{ themeOffer.offer.maxCredits }} <span class="text-sm font-normal">积分</span></p></div>
-                  <p v-if="themeOffer.offer.cacheHit" class="text-sm text-muted-foreground">已有相同条件的生成结果，本次复用不扣积分。</p>
+                  <p class="flex justify-between gap-2 text-sm"><span class="text-muted-foreground">{{ requestedCount }} {{ t('schemeTheme.costPerSheet', { cost: themeOffer.offer.unitCredits }) }}</span></p>
+                  <div class="flex flex-wrap items-baseline justify-between gap-2"><span class="text-sm font-medium">{{ t('schemeTheme.maxLock') }}</span><p class="text-3xl font-semibold tabular-nums tracking-tight text-primary">{{ themeOffer.offer.maxCredits }} <span class="text-sm font-normal">{{ t('common.credits') }}</span></p></div>
+                  <p v-if="themeOffer.offer.cacheHit" class="text-sm text-muted-foreground">{{ t('schemeTheme.reuseNotice') }}</p>
                 </template>
-                <p v-else class="text-sm text-muted-foreground">费用待更新，请先选择原图并完善视觉偏好。</p>
+                <p v-else class="text-sm text-muted-foreground">{{ t('schemeTheme.costPending') }}</p>
               </div>
               <div ref="confirmationTrigger">
               <Button class="w-full" size="lg" :disabled="!canFetchOffer || loadingOffer || preparingConfirmation || creatingJob" @click="prepareConfirmation">
                 <Loader2 v-if="preparingConfirmation" class="mr-2 size-4 animate-spin" />
-                {{ isPreview ? '示例模式 · 不可提交' : confirmation?.attempted && !needsNewOffer ? '继续确认本次生成' : '确认积分并生成' }}
+                {{ isPreview ? t('schemeTheme.submitPreview') : confirmation?.attempted && !needsNewOffer ? t('schemeTheme.submitContinue') : t('schemeTheme.submitConfirm') }}
               </Button>
               </div>
               <p v-if="jobError && !confirmDialogOpen" role="alert" class="text-sm text-destructive">{{ jobError }}</p>
-              <p class="text-sm leading-6 text-muted-foreground">按实际成功张数结算，未成功部分释放积分。此处为 AI 生成积分，与展台服务报价无关。</p>
+              <p class="text-sm leading-6 text-muted-foreground">{{ t('schemeTheme.creditDisclaimer') }}</p>
               <details class="border-t pt-3 text-xs text-muted-foreground">
-                <summary class="cursor-pointer py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">模型由平台配置 · 查看说明</summary>
+                <summary class="cursor-pointer py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{{ t('schemeTheme.modelInfo') }}</summary>
                 <div class="mt-3 space-y-2 leading-relaxed">
-                  <p v-if="loadingModels">正在读取平台配置…</p>
-                  <template v-else-if="modelsError"><p>平台模型信息暂未获取。</p><Button size="sm" variant="outline" @click="loadModels">重试读取模型</Button></template>
-                  <p v-else-if="themeModels.length" class="break-words">当前平台首选模型：{{ themeModels[0].model }}</p>
-                  <p v-else>当前暂无可展示的模型配置。</p>
-                  <p>平台按配置顺序调用模型，必要时自动回退。首选模型不代表最终执行模型；积分以本次确认为准。</p>
+                  <p v-if="loadingModels">{{ t('schemeTheme.modelLoading') }}</p>
+                  <template v-else-if="modelsError"><p>{{ t('schemeTheme.modelUnknown') }}</p><Button size="sm" variant="outline" @click="loadModels">{{ t('schemeTheme.modelRetry') }}</Button></template>
+                  <p v-else-if="themeModels.length" class="break-words">{{ t('schemeTheme.modelPrimary') }}{{ themeModels[0].model }}</p>
+                  <p v-else>{{ t('schemeTheme.modelEmpty') }}</p>
+                  <p>{{ t('schemeTheme.modelNote') }}</p>
                 </div>
               </details>
             </div>
@@ -413,20 +417,20 @@ function setDialogOpen(open: boolean) {
 
     <Dialog :open="confirmDialogOpen" @update:open="setDialogOpen">
       <DialogContent class="max-h-[90dvh] overflow-y-auto" @escape-key-down="creatingJob && $event.preventDefault()" @interact-outside="creatingJob && $event.preventDefault()" @close-auto-focus="$event.preventDefault(); confirmationTrigger?.querySelector('button')?.focus()">
-        <DialogHeader><DialogTitle>确认积分并生成</DialogTitle><DialogDescription>请核对本次生成数量与积分。确认后将锁定积分，按实际成功张数结算。</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{{ t('schemeTheme.confirmDialogTitle') }}</DialogTitle><DialogDescription>{{ t('schemeTheme.confirmDialogDesc') }}</DialogDescription></DialogHeader>
         <div v-if="confirmation" class="space-y-4 py-2">
           <dl class="space-y-3 rounded-xl bg-muted/50 p-4 text-sm">
-            <div class="flex justify-between gap-4"><dt class="text-muted-foreground">生成数量</dt><dd>{{ confirmation.payload.requestedCount }} 张</dd></div>
-            <div class="flex justify-between gap-4"><dt class="text-muted-foreground">单张积分</dt><dd>{{ confirmation.quote.unitCredits }} 积分</dd></div>
-            <div class="flex justify-between gap-4 border-t pt-3 font-medium"><dt>最高锁定积分</dt><dd class="text-primary">{{ confirmation.quote.maxCredits }} 积分</dd></div>
+            <div class="flex justify-between gap-4"><dt class="text-muted-foreground">{{ t('schemeTheme.confirmCount') }}</dt><dd>{{ confirmation.payload.requestedCount }} {{ t('schemeTheme.confirmUnit') }}</dd></div>
+            <div class="flex justify-between gap-4"><dt class="text-muted-foreground">{{ t('schemeTheme.confirmCostPer') }}</dt><dd>{{ confirmation.quote.unitCredits }} {{ t('schemeTheme.confirmCredits') }}</dd></div>
+            <div class="flex justify-between gap-4 border-t pt-3 font-medium"><dt>{{ t('schemeTheme.confirmMaxLock') }}</dt><dd class="text-primary">{{ confirmation.quote.maxCredits }} {{ t('schemeTheme.confirmCredits') }}</dd></div>
           </dl>
-          <p class="text-sm leading-relaxed text-muted-foreground">{{ confirmation.quote.cacheHit ? '将复用已有结果，本次不扣积分。' : '生成失败的张数将在任务结算后释放对应积分。' }}</p>
+          <p class="text-sm leading-relaxed text-muted-foreground">{{ confirmation.quote.cacheHit ? t('schemeTheme.confirmReuseNote') : t('schemeTheme.confirmFailureNote') }}</p>
           <p v-if="jobError" role="alert" class="rounded-lg bg-destructive/10 p-3 text-sm leading-relaxed text-destructive">{{ jobError }}</p>
         </div>
         <DialogFooter>
-          <Button variant="outline" :disabled="creatingJob" @click="setDialogOpen(false)">返回调整</Button>
-          <Button v-if="needsNewOffer" :disabled="preparingConfirmation" @click="setDialogOpen(false); prepareConfirmation()">重新获取积分并确认</Button>
-          <Button v-else :disabled="creatingJob" @click="handleConfirm"><Loader2 v-if="creatingJob" class="mr-2 size-4 animate-spin" />{{ creatingJob ? '正在创建任务…' : jobError ? '重试确认生成' : '确认生成' }}</Button>
+          <Button variant="outline" :disabled="creatingJob" @click="setDialogOpen(false)">{{ t('schemeTheme.dialogBack') }}</Button>
+          <Button v-if="needsNewOffer" :disabled="preparingConfirmation" @click="setDialogOpen(false); prepareConfirmation()">{{ t('schemeTheme.dialogReget') }}</Button>
+          <Button v-else :disabled="creatingJob" @click="handleConfirm"><Loader2 v-if="creatingJob" class="mr-2 size-4 animate-spin" />{{ creatingJob ? t('schemeTheme.dialogGenerating') : jobError ? t('schemeTheme.dialogRetryConfirm') : t('schemeTheme.dialogConfirm') }}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

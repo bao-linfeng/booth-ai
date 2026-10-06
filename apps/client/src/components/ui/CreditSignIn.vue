@@ -5,20 +5,20 @@
     <CardHeader class="pb-2">
       <CardTitle class="flex items-center gap-2 text-lg font-semibold text-foreground">
         <Coins class="w-5 h-5 text-yellow-500" />
-        我的积分
+        {{ t('controls.myCredits') }}
       </CardTitle>
     </CardHeader>
 
     <CardContent>
       <div class="flex items-end justify-between">
         <div class="flex flex-col">
-          <span class="text-sm text-muted-foreground mb-1">当前余额</span>
+          <span class="text-sm text-muted-foreground mb-1">{{ t('controls.currentBalance') }}</span>
           <div v-if="loading && balance === null" class="h-9 w-24">
             <Skeleton class="h-full w-full rounded-md" />
           </div>
           <div v-else class="text-3xl font-bold tracking-tight text-foreground flex items-baseline gap-1">
             {{ balance ?? 0 }}
-            <span class="text-sm font-medium text-muted-foreground">分</span>
+            <span class="text-sm font-medium text-muted-foreground">{{ t('controls.creditUnit') }}</span>
           </div>
         </div>
 
@@ -34,7 +34,7 @@
           >
             <Check v-if="signedInToday" class="w-4 h-4 mr-2" />
             <Sparkles v-else class="w-4 h-4 mr-2" />
-            {{ signedInToday ? '今日已签到' : '每日签到' }}
+            {{ signedInToday ? t('controls.checkedInToday') : t('controls.dailyCheckIn') }}
           </Button>
 
           <!-- Reward Animation -->
@@ -60,8 +60,10 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Check, Coins, Sparkles } from 'lucide-vue-next'
 import { useCredits } from '@/composables/useCredits'
+import { useI18n } from 'vue-i18n'
 
 const { balance, loading, signedInToday, fetchBalance, signIn } = useCredits()
+const { t } = useI18n()
 
 const showRewardAnimation = ref(false)
 const rewardAmount = ref(0)

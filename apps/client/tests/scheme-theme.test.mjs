@@ -8,7 +8,7 @@ import ts from 'typescript'
 import { createServer, transformWithEsbuild } from 'vite'
 
 const window = new Window({ url: 'http://localhost/' })
-for (const name of ['window', 'document', 'navigator', 'history', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'HTMLSelectElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+for (const name of ['window', 'document', 'navigator', 'history', 'localStorage', 'sessionStorage', 'Storage', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'HTMLSelectElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   Object.defineProperty(globalThis, name, { configurable: true, value: name === 'window' ? window : ['getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame'].includes(name) ? window[name].bind(window) : window[name] })
 }
 registerTS(() => ts)
@@ -16,13 +16,18 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const server = await createServer({
   root, configFile: false, server: { middlewareMode: true, hmr: false },
   optimizeDeps: { noDiscovery: true, include: [] },
-  resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('../src', import.meta.url)),
+      'vue-i18n': fileURLToPath(new URL('./mock-i18n.ts', import.meta.url)),
+    },
+  },
   plugins: [{
     name: 'test-scheme-theme', enforce: 'pre',
     resolveId(id) {
       const path = id.replaceAll('\\', '/').replace(/\.ts$/, '')
       if (id === 'virtual:test-vue') return '\0test-vue'
-      if (path.endsWith('/features/selection/SelectionShell.vue')) return '\0test-shell'
+      if (path.endsWith('/features/selection/SelectionShell.vue') || path.endsWith('/layouts/MainLayout.vue')) return '\0test-shell'
       if (path.endsWith('/lib/api-client')) return '\0test-api'
       if (path.endsWith('/stores/auth')) return '\0test-auth'
       if (path.endsWith('/composables/useCredits')) return '\0test-credits'

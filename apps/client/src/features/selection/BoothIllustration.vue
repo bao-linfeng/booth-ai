@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { useId } from 'vue'
+import { useI18n } from 'vue-i18n'
 withDefaults(defineProps<{ variant?: number; view?: number }>(), { variant: 0, view: 0 })
 const gridId = useId()
+const { t } = useI18n()
 </script>
 
 <template>
-  <svg viewBox="0 0 960 540" role="img" aria-label="展位空间示意图，非真实方案效果图" class="booth-illustration">
+  <svg viewBox="0 0 960 540" role="img" :aria-label="t('schemeDetail.galleryPreviewNote')" class="booth-illustration">
     <defs>
       <pattern :id="gridId" width="48" height="27" patternUnits="userSpaceOnUse"><path d="M 48 0 L 0 0 0 27" fill="none" stroke="currentColor" stroke-width=".5" opacity=".1" /></pattern>
     </defs>
@@ -46,6 +48,6 @@ const gridId = useId()
       <path d="M153 115V325M467 36V182M796 176V320" stroke="hsl(var(--background) / .6)" stroke-width="4" />
     </g>
     <text x="30" y="505" font-size="11" letter-spacing="3" fill="hsl(var(--muted-foreground))">SPATIAL STUDY / {{ String(variant + 1).padStart(2, '0') }}</text>
-    <text x="930" y="505" text-anchor="end" font-size="12" fill="hsl(var(--muted-foreground))">空间示意 · 非真实效果图</text>
+    <text x="930" y="505" text-anchor="end" font-size="12" fill="hsl(var(--muted-foreground))">{{ t('schemeDetail.galleryPreviewNote') }}</text>
   </svg>
 </template>

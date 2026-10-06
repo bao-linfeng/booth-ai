@@ -3,11 +3,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { login as loginUser, logout } from '@/services/api/auth'
 import { fetchCurrentUser } from '@/services/api/user'
+import { useI18n } from 'vue-i18n'
 
 export function useAuth() {
   const router = useRouter()
   const route = useRoute()
   const authStore = useAuthStore()
+  const { t } = useI18n()
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -20,7 +22,7 @@ export function useAuth() {
       const redirect = route.query.redirect
       await router.push(typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/')
     } catch {
-      error.value = '登录失败，请检查用户名和密码'
+      error.value = t('auth.loginFailed')
     } finally {
       loading.value = false
     }

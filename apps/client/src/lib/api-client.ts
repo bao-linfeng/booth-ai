@@ -1,4 +1,5 @@
 import { ofetch } from 'ofetch'
+import { appLocale } from '@/plugins/i18n'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 const LINGTONG_API_URL = import.meta.env.VITE_LINGTONG_API_URL ?? 'https://api.lingtong.net.cn'
@@ -51,6 +52,7 @@ export const apiFetch = ofetch.create({
     await injectBearerToken(options)
     const headers = new Headers(options.headers as HeadersInit | undefined)
     headers.set('x-visitor-id', visitorId())
+    headers.set('Accept-Language', appLocale.value === 'zh' ? 'zh-CN' : appLocale.value)
     options.headers = headers
   },
 

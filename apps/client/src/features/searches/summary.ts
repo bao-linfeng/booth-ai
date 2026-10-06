@@ -1,13 +1,16 @@
 import type { SearchHistoryItem, SearchRecord, SearchTheme } from '@/services/api/searches'
+import type { ComposerTranslation } from 'vue-i18n'
 
-export const jobStatusLabels: Record<SearchTheme['status'], string> = {
-  pending: '等待生成',
-  queued: '排队中',
-  running: '生成中',
-  settling: '结算中',
-  succeeded: '已完成',
-  partially_succeeded: '部分完成',
-  failed: '生成失败',
+export function getJobStatusLabels(t: ComposerTranslation): Record<SearchTheme['status'], string> {
+  return {
+    pending: t('searches.jobPending'),
+    queued: t('searches.jobQueued'),
+    running: t('searches.jobRunning'),
+    settling: t('searches.jobSettling'),
+    succeeded: t('searches.jobSucceeded'),
+    partially_succeeded: t('searches.jobPartialSuccess'),
+    failed: t('searches.jobFailed'),
+  }
 }
 
 export type JobTone = 'done' | 'active' | 'failed'
@@ -35,22 +38,22 @@ export function summarizeGeneration(items: SearchHistoryItem[]): GenerationSumma
   return summary
 }
 
-export function generationText(summary: GenerationSummary) {
-  if (!summary.themes && !summary.artworks) return '尚未生成主题或四面素材'
+export function generationText(summary: GenerationSummary, t: ComposerTranslation): string {
+  if (!summary.themes && !summary.artworks) return t('searches.generationNone')
   return [
-    summary.themes ? `换主题 ${summary.themes} 套` : '',
-    summary.artworks ? `四面素材 ${summary.artworks} 套` : '',
-    summary.active ? `${summary.active} 项生成中` : '',
-    summary.failed ? `${summary.failed} 项失败` : '',
+    summary.themes ? t('searches.generationThemes', { count: summary.themes }) : '',
+    summary.artworks ? t('searches.generationArtworks', { count: summary.artworks }) : '',
+    summary.active ? t('searches.generationActive', { count: summary.active }) : '',
+    summary.failed ? t('searches.generationFailed', { count: summary.failed }) : '',
   ].filter(Boolean).join(' · ')
 }
 
-export function requirementSummary(requirement: SearchRecord['finalRequirement']) {
+export function requirementSummary(requirement: SearchRecord['finalRequirement'], t: ComposerTranslation) {
   const meters = (mm: number) => Number((mm / 1000).toFixed(3))
   return [
     requirement.lengthMm && requirement.widthMm ? `${meters(requirement.lengthMm)} × ${meters(requirement.widthMm)} m` : '',
     requirement.areaM2 ? `${requirement.areaM2} ㎡` : '',
-    requirement.openingCount ? `${requirement.openingCount} 面开口` : '',
-    requirement.maxHeightMm ? `限高 ${meters(requirement.maxHeightMm)} m` : '',
+    requirement.openingCount ? t('searches.requirementOpening', { count: requirement.openingCount }) : '',
+    requirement.maxHeightMm ? t('searches.requirementMaxHeight', { value: meters(requirement.maxHeightMm) }) : '',
   ].filter(Boolean)
 }

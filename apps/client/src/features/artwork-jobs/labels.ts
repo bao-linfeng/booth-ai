@@ -1,13 +1,23 @@
 import type { Direction } from '@/services/api/artwork-jobs'
+import type { ComposerTranslation } from 'vue-i18n'
 
-export const directionLabels: Record<Direction, string> = { front: '正面', back: '背面', left: '左侧', right: '右侧' }
+export function getDirectionLabels(t: ComposerTranslation): Record<Direction, string> {
+  return {
+    front: t('artworkJob.directionFront'),
+    back: t('artworkJob.directionBack'),
+    left: t('artworkJob.directionLeft'),
+    right: t('artworkJob.directionRight'),
+  }
+}
 
-export const reasonLabels: Record<string, string> = {
-  ARTWORK_RESOLUTION_TOO_LOW: '输出像素低于高清标准',
-  ARTWORK_FORMAT_INVALID: '输出格式无法验收',
-  ARTWORK_IMAGE_INVALID: '图片无法读取或解码',
-  ARTWORK_SIZE_INVALID: '图片大小不合格',
-  MODEL_UNAVAILABLE: '所选模型已不可用',
-  PROVIDER_OUTCOME_UNKNOWN: '服务商未返回可确认的结果',
-  PROCESSING_FAILED: '处理失败',
+export function getReasonLabels(t: ComposerTranslation): Record<string, string> {
+  return {
+    ARTWORK_RESOLUTION_TOO_LOW: t('artworkJob.reasonResolutionLow'),
+    ARTWORK_FORMAT_INVALID: t('artworkJob.reasonFormatInvalid'),
+    ARTWORK_IMAGE_INVALID: t('artworkJob.reasonImageInvalid'),
+    ARTWORK_SIZE_INVALID: t('artworkJob.reasonSizeInvalid'),
+    MODEL_UNAVAILABLE: t('artworkJob.reasonModelUnavailable'),
+    PROVIDER_OUTCOME_UNKNOWN: t('artworkJob.reasonProviderUnknown'),
+    PROCESSING_FAILED: t('artworkJob.reasonProcessingFailed'),
+  }
 }

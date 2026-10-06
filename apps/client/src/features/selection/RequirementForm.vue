@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { SlidersHorizontal } from 'lucide-vue-next'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
 import OptionSelect from './OptionSelect.vue'
@@ -8,6 +9,7 @@ import type { Catalog, Requirement } from './types'
 
 const props = defineProps<{ modelValue: Requirement; catalog: Catalog; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: Requirement] }>()
+const { t } = useI18n()
 const commonSizes = computed(() => props.catalog.boothSpaces)
 const selectedSize = computed(() => props.modelValue.boothSpaceId)
 const moreFields = ['maxHeightMm', 'productSystemId', 'styleIds', 'industryIds', 'zoneIds', 'featureIds', 'budgetTierId'] as const
@@ -23,24 +25,24 @@ function selectSize(id: string | null) {
 
 <template>
   <fieldset :disabled="disabled" class="min-w-0 space-y-3">
-    <legend class="sr-only">展位条件</legend>
-    <h3 class="text-sm font-medium">展位条件 <span class="font-normal text-muted-foreground">· 选填</span></h3>
+    <legend class="sr-only">{{ t('requirementForm.legend') }}</legend>
+    <h3 class="text-sm font-medium">{{ t('requirementForm.title') }} <span class="font-normal text-muted-foreground">{{ t('requirementForm.optional') }}</span></h3>
     <div class="grid grid-cols-2 gap-3 sm:gap-4">
       <div class="min-w-0 space-y-2">
-        <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">方案尺寸 · 长×宽×高（m）</label>
-        <OptionSelect label="方案尺寸" placeholder="不限" :disabled="disabled" :model-value="selectedSize" :options="commonSizes" @update:model-value="selectSize" />
+        <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{{ t('requirementForm.sizeLabel') }}</label>
+        <OptionSelect :label="t('requirementForm.boothSpaceSelectLabel')" :placeholder="t('requirementForm.sizePlaceholder')" :disabled="disabled" :model-value="selectedSize" :options="commonSizes" @update:model-value="selectSize" />
       </div>
       <RequirementField :id="`requirement-openingCount`" field="openingCount" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />
     </div>
-    <p v-if="modelValue.areaM2" class="text-xs text-muted-foreground">面积 {{ modelValue.areaM2 }} ㎡</p>
+    <p v-if="modelValue.areaM2" class="text-xs text-muted-foreground">{{ t('requirementForm.areaHint', { value: modelValue.areaM2 }) }}</p>
     <Accordion type="single" collapsible>
       <AccordionItem value="more" class="border-b-0 border-t">
-        <AccordionTrigger class="py-3 text-sm hover:no-underline"><span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><SlidersHorizontal class="size-4 shrink-0" />更多条件<span class="text-xs font-normal text-muted-foreground">{{ moreCount ? `已填 ${moreCount} 类` : '限高、风格、行业与预算' }}</span></span></AccordionTrigger>
+        <AccordionTrigger class="py-3 text-sm hover:no-underline"><span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><SlidersHorizontal class="size-4 shrink-0" />{{ t('requirementForm.moreConditions') }}<span class="text-xs font-normal text-muted-foreground">{{ moreCount ? t('requirementForm.moreCount', { count: moreCount }) : t('requirementForm.morePlaceholder') }}</span></span></AccordionTrigger>
         <AccordionContent class="space-y-6 pt-2">
           <div class="grid gap-6 sm:grid-cols-2">
             <RequirementField v-for="field in moreFields" :id="`requirement-${field}`" :key="field" :field="field" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />
           </div>
-          <p class="text-xs leading-6 text-muted-foreground">方案尺寸按长、宽、高整体精确筛选。长为左右方向，宽为前后方向。场馆限高另外填写，方案高度不会代填限高。产品体系用于严格筛选；风格、行业、功能分区和材料预算用于排序。材料预算不含搭建、运输等费用，不代表实际报价。</p>
+          <p class="text-xs leading-6 text-muted-foreground">{{ t('requirementForm.moreNote') }}</p>
         </AccordionContent>
       </AccordionItem>
     </Accordion>
