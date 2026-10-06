@@ -3,7 +3,7 @@ import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { appLocale } from '@/plugins/i18n'
-import { ArrowRight, Sparkles, ShieldCheck, Pencil, MessageCircle, Search, LoaderCircle, CircleAlert, ArrowUpRight, Check, Coins, RotateCcw } from 'lucide-vue-next'
+import { ArrowRight, Sparkles, ShieldCheck, Pencil, MessageCircle, Search, LoaderCircle, CircleAlert, ArrowUpRight, RotateCcw } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -25,25 +25,6 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-import { useCredits } from '@/composables/useCredits'
-
-const { loading: creditsLoading, signedInToday, fetchBalance, signIn } = useCredits()
-
-const isSigningIn = ref(false)
-const showRewardAnimation = ref(false)
-const rewardAmount = ref(0)
-
-async function handleSignIn() {
-  if (signedInToday.value || isSigningIn.value) return
-  isSigningIn.value = true
-  const result = await signIn()
-  isSigningIn.value = false
-  if (result.success && result.amount) {
-    rewardAmount.value = result.amount
-    showRewardAnimation.value = true
-    setTimeout(() => { showRewardAnimation.value = false }, 2000)
-  }
-}
 
 const isPreview = computed(() => route.path.startsWith('/ai-selection/preview'))
 const requirement = ref(emptyRequirement())
@@ -689,7 +670,6 @@ onMounted(() => {
   document.addEventListener('visibilitychange', refreshImagesWhenVisible)
   imageRefreshTimer = setInterval(refreshImagesWhenVisible, 60_000)
   if (!isPreview.value) loadCatalog()
-  if (authStore.isLoggedIn && !isPreview.value) fetchBalance()
 })
 </script>
 
@@ -780,7 +760,6 @@ onMounted(() => {
               <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? t('selection.resultsHeadingInspiration') : t('selection.resultsHeadingMatched') }}</h2><Badge variant="secondary">{{ inspirationResults ? t('selection.resultsTagInspiration') : (isPreview ? t('selection.resultsDirect1') : t('selection.resultsDirectN', { direct: liveMatchData?.counts.direct ?? 0, reference: liveMatchData?.counts.reference ?? 0 })) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :product-systems="isPreview ? undefined : catalog.productSystems" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" @answer-applicability="answerApplicability" /><p class="text-xs leading-relaxed text-muted-foreground">{{ t('selection.resultsDirectNote') }}</p></section>
           <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? t('selection.emptyTitle') : t('selection.emptyTitleError') }}</h2><div v-if="state === 'empty'" class="max-w-md space-y-1 text-sm leading-relaxed text-muted-foreground"><p v-for="reason in liveMatchData?.reasons ?? [t('selection.emptyHint')]" :key="reason">{{ reason }}</p></div><p v-else class="max-w-md text-sm leading-relaxed text-muted-foreground">{{ t('selection.emptyErrorHint') }}</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="editRequirement">{{ t('selection.editConditions') }}</Button><Button v-else :disabled="!canSearch" @click="submit">{{ t('common.retry') }}</Button><Button variant="outline" @click="manualOpen = true">{{ t('selection.transferToAdvisor') }}</Button></div></CardContent></Card>
           <div class="flex flex-wrap items-center justify-between gap-4 border-t pt-5"><div class="flex items-center gap-3"><MessageCircle class="size-5 shrink-0 text-muted-foreground" /><p class="text-sm text-muted-foreground">{{ t('selection.advisorCta') }}</p></div><Button variant="ghost" @click="manualOpen = true">{{ t('selection.advisorCtaLink') }}<ArrowUpRight class="ms-2 size-4 rtl:-scale-x-100" /></Button></div>
-          <div v-if="authStore.isLoggedIn && !isPreview" class="flex items-center justify-end gap-2 text-xs text-muted-foreground"><span>{{ t('selection.creditsTitle') }}</span><div class="relative"><Button size="sm" variant="ghost" :disabled="creditsLoading || isSigningIn || signedInToday" @click="handleSignIn"><Check v-if="signedInToday" class="mr-1 size-3.5" /><Coins v-else class="mr-1 size-3.5" />{{ signedInToday ? t('selection.checkedIn') : t('selection.checkIn') }}</Button><Transition name="reward-float"><span v-if="showRewardAnimation" class="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-sm font-medium text-primary">{{ t('selection.creditsEarned', { amount: rewardAmount }) }}</span></Transition></div></div>
       </div>
     </main>
     <Dialog v-model:open="manualOpen"><DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-lg"><DialogTitle>{{ t('selection.manualDialogTitle') }}</DialogTitle><DialogDescription>{{ t('selection.manualDialogDesc') }}</DialogDescription>
@@ -793,12 +772,3 @@ onMounted(() => {
       </form></DialogContent></Dialog>
   </MainLayout>
 </template>
-
-<style scoped>
-.reward-float-enter-active { transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
-.reward-float-leave-active { transition: all 0.4s ease-in; }
-.reward-float-enter-from { opacity: 0; transform: translate(-50%, 20px) scale(0.5); }
-.reward-float-enter-to { opacity: 1; transform: translate(-50%, 0) scale(1); }
-.reward-float-leave-from { opacity: 1; transform: translate(-50%, 0) scale(1); }
-.reward-float-leave-to { opacity: 0; transform: translate(-50%, -20px) scale(0.8); }
-</style>

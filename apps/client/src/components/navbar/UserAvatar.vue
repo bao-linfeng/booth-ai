@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { User, LogIn, LogOut, ChevronDown, Coins } from 'lucide-vue-next'
+import { User, LogIn, LogOut, ChevronDown, Coins, Check, Sparkles } from 'lucide-vue-next'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -22,7 +22,16 @@ const { t } = useI18n()
 const route = useRoute()
 const authStore = useAuthStore()
 const { logout } = useAuth()
-const { balance, fetchBalance } = useCredits()
+const { balance, loading: creditsLoading, signedInToday, fetchBalance, signIn } = useCredits()
+const rewardAmount = ref<number | null>(null)
+
+async function handleCheckIn(event: Event) {
+  // 保持菜单打开，让用户看到奖励和余额变化
+  event.preventDefault()
+  if (signedInToday.value || creditsLoading.value) return
+  const result = await signIn()
+  if (result.success && result.amount) rewardAmount.value = result.amount
+}
 
 watch(() => authStore.isLoggedIn, (isLoggedIn) => {
   if (isLoggedIn) {
@@ -53,18 +62,22 @@ const avatarFallback = computed(() => (authStore.displayName || '?').charAt(0))
       <span>{{ t('auth.login') }}</span>
     </router-link>
   </Button>
-  <DropdownMenu v-else>
+  <DropdownMenu v-else @update:open="(open: boolean) => { if (!open) rewardAmount = null }">
     <DropdownMenuTrigger as-child>
       <Button variant="ghost" size="sm" class="h-10 gap-2 px-2" :aria-label="t('auth.accountMenu')">
-        <Avatar class="h-8 w-8 rounded-full">
-          <AvatarImage :src="avatarUrl" :alt="authStore.displayName" />
-          <AvatarFallback class="bg-primary text-primary-foreground">{{ avatarFallback }}</AvatarFallback>
-        </Avatar>
+        <span class="relative">
+          <Avatar class="h-8 w-8 rounded-full">
+            <AvatarImage :src="avatarUrl" :alt="authStore.displayName" />
+            <AvatarFallback class="bg-primary text-primary-foreground">{{ avatarFallback }}</AvatarFallback>
+          </Avatar>
+          <span v-if="!signedInToday" class="absolute -end-0.5 -top-0.5 size-2.5 rounded-full border-2 border-background bg-primary sm:hidden" aria-hidden="true" />
+        </span>
         <div class="hidden min-w-0 flex-col items-start sm:flex">
           <span class="max-w-24 truncate text-sm font-medium leading-none">{{ authStore.displayName }}</span>
           <span class="text-xs text-muted-foreground mt-1 flex items-center gap-1">
             <Coins class="inline h-3 w-3 text-primary" aria-hidden="true" />
             {{ balance !== null ? `${balance} ${t('auth.credits')}` : '--' }}
+            <span v-if="!signedInToday" class="ms-1 rounded-full bg-primary/10 px-1.5 py-px text-[10px] font-medium leading-4 text-primary">{{ t('auth.checkInShort') }}</span>
           </span>
         </div>
         <ChevronDown class="ml-auto hidden h-4 w-4 text-muted-foreground sm:block" aria-hidden="true" />
@@ -86,6 +99,12 @@ const avatarFallback = computed(() => (authStore.displayName || '?').charAt(0))
       </DropdownMenuLabel>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
+        <DropdownMenuItem class="cursor-pointer" :disabled="creditsLoading || (signedInToday && rewardAmount === null)" @select="handleCheckIn">
+          <Check v-if="signedInToday" class="mr-2 h-4 w-4" aria-hidden="true" />
+          <Sparkles v-else class="mr-2 h-4 w-4 text-primary" aria-hidden="true" />
+          <span>{{ signedInToday ? t('auth.checkedIn') : t('auth.checkIn') }}</span>
+          <span v-if="rewardAmount !== null" class="ms-auto text-xs font-medium text-primary" role="status">{{ t('auth.creditsEarned', { amount: rewardAmount }) }}</span>
+        </DropdownMenuItem>
         <DropdownMenuItem as-child class="cursor-pointer">
           <RouterLink to="/profile">
             <User class="mr-2 h-4 w-4" aria-hidden="true" />
