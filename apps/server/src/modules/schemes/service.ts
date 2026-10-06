@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
 import { ensureSelectionSizes } from '../selection/sizes.js';
@@ -127,6 +128,29 @@ function calculatedArea(input: SchemeInput): number | null | undefined {
   return hasInput(input, 'areaM2') ? input.areaM2 : undefined;
 }
 
+function comparable(value: unknown): unknown {
+  if (value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) return null;
+  return value;
+}
+
+/** 返回与当前记录实际不同的输入字段；面积由长宽推导时不单独比较。 */
+function changedInputKeys(current: SchemeRow, input: SchemeInput): (keyof SchemeInput)[] {
+  const changed: (keyof SchemeInput)[] = [];
+  for (const key of Object.keys(columnByInput) as (keyof SchemeInput)[]) {
+    if (key === 'code' || key === 'areaM2' || !hasInput(input, key)) continue;
+    if (!isDeepStrictEqual(comparable(current[key]), comparable(input[key]))) changed.push(key);
+  }
+  const lengthMm = hasInput(input, 'lengthMm') ? input.lengthMm : current.lengthMm;
+  const widthMm = hasInput(input, 'widthMm') ? input.widthMm : current.widthMm;
+  const areaDerived = lengthMm !== null && lengthMm !== undefined && widthMm !== null && widthMm !== undefined;
+  if (hasInput(input, 'areaM2') && !areaDerived) {
+    const previous = current.areaM2 === null ? null : Number(current.areaM2);
+    const next = input.areaM2 ?? null;
+    if (previous === null || next === null ? previous !== next : Math.abs(previous - next) > 0.000001) changed.push('areaM2');
+  }
+  return changed;
+}
+
 function validateDimensions(input: SchemeInput): void {
   for (const value of [input.lengthMm, input.widthMm, input.heightMm]) {
     if (value !== undefined && value !== null && (!Number.isSafeInteger(value) || value < 1 || value > 2147483647)) throw requestError('Dimensions must be positive integer millimeters', 400);
@@ -240,15 +264,20 @@ export async function updateScheme(pool: pg.Pool, code: string, adminId: string,
 
 async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: string, input: SchemeInput, expectedRevision: number): Promise<SchemeRecord> {
   await validateSchemeDictionaryIds(pool, input);
+  const currentResult = await pool.query<SchemeRow>(`SELECT ${schemeColumns} FROM schemes WHERE code = $1 FOR UPDATE`, [code]);
+  const current = currentResult.rows[0];
+  if (!current) throw requestError('Scheme not found', 404);
+  if (current.editRevision !== expectedRevision) throw requestError('Scheme revision conflict', 409);
   if (input.areaM2 !== undefined && input.areaM2 !== null) {
-    const current = await pool.query<{ lengthMm: number | null; widthMm: number | null }>(
-      'SELECT length_mm AS "lengthMm", width_mm AS "widthMm" FROM schemes WHERE code = $1', [code]);
-    if (!current.rows[0]) throw requestError('Scheme not found', 404);
-    const lengthMm = hasInput(input, 'lengthMm') ? input.lengthMm : current.rows[0].lengthMm;
-    const widthMm = hasInput(input, 'widthMm') ? input.widthMm : current.rows[0].widthMm;
+    const lengthMm = hasInput(input, 'lengthMm') ? input.lengthMm : current.lengthMm;
+    const widthMm = hasInput(input, 'widthMm') ? input.widthMm : current.widthMm;
     if (lengthMm !== null && lengthMm !== undefined && widthMm !== null && widthMm !== undefined &&
       Math.abs(input.areaM2 - lengthMm * widthMm / 1_000_000) > 0.000001) throw requestError('Area conflicts with dimensions', 400);
   }
+  const changed = changedInputKeys(current, input);
+  if (changed.length === 0) return toSchemeRecord(current);
+  // 仅内部备注变更不影响匹配、资产与交付：不递增修订、不使审核失效、不下架
+  const notesOnly = changed.every(key => key === 'notes');
   const values: unknown[] = [];
   const updates: string[] = [];
   for (const key of Object.keys(columnByInput) as (keyof SchemeInput)[]) {
@@ -269,7 +298,8 @@ async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: st
   }
   if (updates.length === 0) throw requestError('No fields to update', 400);
   values.push(adminId);
-  updates.push(`updated_by = $${values.length}`, 'updated_at = now()', 'revision = revision + 1', "publish_status = CASE WHEN publish_status = 'published' THEN 'draft' ELSE publish_status END", "verification_status = 'unverified'");
+  updates.push(`updated_by = $${values.length}`, 'updated_at = now()');
+  if (!notesOnly) updates.push('revision = revision + 1', "publish_status = CASE WHEN publish_status = 'published' THEN 'draft' ELSE publish_status END", "verification_status = 'unverified'");
   values.push(code, expectedRevision);
   const result = await pool.query<SchemeRow>(`UPDATE schemes SET ${updates.join(', ')} WHERE code = $${values.length - 1} AND revision = $${values.length} RETURNING ${schemeColumns}`, values);
   const row = result.rows[0];
@@ -280,7 +310,7 @@ async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: st
       action: 'scheme.update',
       targetType: 'scheme',
       targetId: row.code,
-      detail: { revision: row.editRevision },
+      detail: { revision: row.editRevision, fields: changed },
     });
     return toSchemeRecord(row);
   }

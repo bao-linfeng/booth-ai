@@ -16,8 +16,14 @@ export interface ReadinessResult {
   publishStatus: string;
   verificationStatus: string;
   assets: ReadinessAssets;
+  /** 全部阻断项（含审核类） */
   blockers: string[];
+  /** 不含审核类的内容阻断项；非空时不能提交整体审核通过 */
+  coreBlockers: string[];
+  /** 内容和审核均通过，且方案未发布 */
   canPublish: boolean;
+  /** 内容和审核均通过，且方案已发布（在线可被匹配） */
+  canSelect: boolean;
 }
 
 export interface ReviewRecord {

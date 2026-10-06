@@ -45,26 +45,70 @@ test('draft route schema excludes publication and verification writes', async ()
   }
 });
 
-test('editing a published scheme atomically removes its publication and verification status', async () => {
-  let updateSql = '';
-  let auditValues: unknown[] | undefined;
+function publishedSchemeRow() {
+  return {
+    id: 'id', code: 'S-1', name: 'test', parentCode: null, lengthMm: 6000, widthMm: 3000, heightMm: 3500,
+    areaM2: '18.000000', openingCount: 2, productSystemId: null, styleId: null, industryIds: [], budgetTierId: null,
+    zoneIds: [], featureIds: [], description: null, keywords: null, source: null, visualTheme: null,
+    applicableConditions: { status: 'confirmed', rules: [], labelsConfirmed: true }, publishStatus: 'published',
+    verificationStatus: 'verified', notes: null, editRevision: 1, createdBy: null, updatedBy: null,
+    createdAt: new Date(), updatedAt: new Date(),
+  };
+}
+
+function updatePool(current: ReturnType<typeof publishedSchemeRow>) {
+  const recorded = { updateSql: '', auditValues: undefined as unknown[] | undefined };
   const pool = {
     query: async (sql: string, values?: unknown[]) => {
       if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql) || sql.includes('INSERT INTO dictionaries') || sql.includes('INSERT INTO dictionary_items')) return { rows: [], rowCount: 0 };
       if (sql.includes('FROM dictionary_items')) return { rows: [] };
-      if (sql.includes('INSERT INTO admin_audit_logs')) { auditValues = values; return { rows: [] }; }
+      if (sql.includes('FROM schemes WHERE code = $1 FOR UPDATE')) return { rows: [current] };
+      if (sql.includes('INSERT INTO admin_audit_logs')) { recorded.auditValues = values; return { rows: [] }; }
       if (sql.startsWith('UPDATE schemes SET')) {
-        updateSql = sql;
-        return { rows: [{ id: 'id', code: 'S-1', name: 'test', editRevision: 2, lengthMm: null, widthMm: null, heightMm: null, openingCount: null, createdAt: new Date(), updatedAt: new Date() }] };
+        recorded.updateSql = sql;
+        return { rows: [{ ...current, editRevision: sql.includes('revision = revision + 1') ? 2 : 1 }] };
       }
       throw new Error(`Unexpected query: ${sql}`);
     },
     connect: async () => ({ query: pool.query, release: () => {} }),
   } as unknown as pg.Pool;
+  return { pool, recorded };
+}
+
+test('editing a published scheme atomically removes its publication and verification status', async () => {
+  const { pool, recorded } = updatePool(publishedSchemeRow());
   await updateScheme(pool, 'S-1', adminId, { name: 'edited' }, 1);
-  assert.match(updateSql, /publish_status = CASE WHEN publish_status = 'published' THEN 'draft'/);
-  assert.match(updateSql, /verification_status = 'unverified'/);
-  assert.deepEqual(auditValues, [adminId, 'scheme.update', 'scheme', 'S-1', '{"revision":2}']);
+  assert.match(recorded.updateSql, /revision = revision \+ 1/);
+  assert.match(recorded.updateSql, /publish_status = CASE WHEN publish_status = 'published' THEN 'draft'/);
+  assert.match(recorded.updateSql, /verification_status = 'unverified'/);
+  assert.deepEqual(recorded.auditValues, [adminId, 'scheme.update', 'scheme', 'S-1', '{"revision":2,"fields":["name"]}']);
+});
+
+test('saving unchanged scheme fields keeps publication and revision without writing', async () => {
+  const current = publishedSchemeRow();
+  const { pool, recorded } = updatePool(current);
+  const result = await updateScheme(pool, 'S-1', adminId, {
+    name: 'test', lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: 18, openingCount: 2,
+    industryIds: [], keywords: [], description: '', applicableConditions: { labelsConfirmed: true, rules: [], status: 'confirmed' },
+  }, 1);
+  assert.equal(recorded.updateSql, '');
+  assert.equal(recorded.auditValues, undefined);
+  assert.equal(result.editRevision, 1);
+  assert.equal(result.publishStatus, 'published');
+});
+
+test('notes-only edit keeps publication and review revision', async () => {
+  const { pool, recorded } = updatePool(publishedSchemeRow());
+  const result = await updateScheme(pool, 'S-1', adminId, { name: 'test', notes: 'internal' }, 1);
+  assert.match(recorded.updateSql, /notes = /);
+  assert.doesNotMatch(recorded.updateSql, /revision = revision \+ 1|publish_status = |verification_status = /);
+  assert.equal(result.editRevision, 1);
+  assert.deepEqual(recorded.auditValues, [adminId, 'scheme.update', 'scheme', 'S-1', '{"revision":1,"fields":["notes"]}']);
+});
+
+test('stale revision is rejected before diffing scheme fields', async () => {
+  const { pool } = updatePool(publishedSchemeRow());
+  await assert.rejects(updateScheme(pool, 'S-1', adminId, { name: 'test' }, 0), { statusCode: 409 });
 });
 
 test('import update invalidates publication without trusting source verification claim', async () => {

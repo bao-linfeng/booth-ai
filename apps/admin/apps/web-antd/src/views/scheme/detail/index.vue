@@ -11,8 +11,8 @@ import type {
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { formatDate } from '@vben/utils';
 import { useAccess } from '@vben/access';
+import { cloneDeep, formatDate, isEqual } from '@vben/utils';
 
 import {
   Button as AButton,
@@ -28,6 +28,7 @@ import {
   Select as ASelect,
   Tabs as ATabs,
   Tag as ATag,
+  Tooltip as ATooltip,
   message,
 } from 'ant-design-vue';
 
@@ -64,12 +65,36 @@ const currentCode = computed(() =>
   route.params.code ? decodeURIComponent(route.params.code as string) : '',
 );
 
-const publishButtonDisabled = computed(() => {
-  const data = originalData.value;
+const isPublished = computed(
+  () => originalData.value?.publishStatus === 'published',
+);
+/** 内容阻断项未清空，不能提交整体审核通过 */
+const reviewBlocked = computed(
+  () => (readinessData.value?.coreBlockers.length ?? 0) > 0,
+);
+/** 内容已就绪，仅缺当前修订的整体审核通过记录 */
+const awaitingReview = computed(() => {
+  const readiness = readinessData.value;
   return (
-    data?.publishStatus === 'published' ||
-    data?.verificationStatus === 'verified'
+    !!readiness &&
+    !reviewBlocked.value &&
+    readiness.blockers.length > readiness.coreBlockers.length
   );
+});
+const readinessTag = computed(() => {
+  const readiness = readinessData.value;
+  if (!readiness) return null;
+  if (isPublished.value) {
+    return readiness.canSelect
+      ? { color: 'success', text: '在线可匹配' }
+      : { color: 'error', text: `${readiness.blockers.length} 项异常` };
+  }
+  if (readiness.canPublish) return { color: 'success', text: '可发布' };
+  if (awaitingReview.value) return { color: 'processing', text: '待整体审核' };
+  return {
+    color: 'warning',
+    text: `${readiness.coreBlockers.length} 项未就绪`,
+  };
 });
 
 const loading = ref(false);
@@ -100,6 +125,60 @@ const formData = reactive<CreateSchemeInput & { editRevision?: number }>({
 });
 
 const originalData = ref<null | SchemeRecord>(null);
+
+// 面积由长宽推导，不单独参与变更判断
+type EditableKey = Exclude<keyof UpdateSchemeInput, 'areaM2' | 'editRevision'>;
+const editableKeys = [
+  'name',
+  'parentCode',
+  'description',
+  'lengthMm',
+  'widthMm',
+  'heightMm',
+  'openingCount',
+  'productSystemId',
+  'styleId',
+  'industryIds',
+  'budgetTierId',
+  'keywords',
+  'notes',
+  'zoneIds',
+  'featureIds',
+  'source',
+] as const satisfies readonly EditableKey[];
+
+/** 空字符串、空数组与未填写视为同一值，避免回填差异被误判为修改 */
+function comparable(value: unknown): unknown {
+  if (
+    value === undefined ||
+    value === '' ||
+    (Array.isArray(value) && value.length === 0)
+  )
+    return null;
+  return value;
+}
+
+const arrayKeys = new Set<string>([
+  'featureIds',
+  'industryIds',
+  'keywords',
+  'zoneIds',
+]);
+
+const savedSnapshot = ref<Partial<Record<EditableKey, unknown>>>({});
+
+function takeSnapshot() {
+  savedSnapshot.value = Object.fromEntries(
+    editableKeys.map((key) => [key, cloneDeep(comparable(formData[key]))]),
+  );
+}
+
+const changedKeys = computed(() =>
+  editableKeys.filter(
+    (key) => !isEqual(comparable(formData[key]), savedSnapshot.value[key]),
+  ),
+);
+const isDirty = computed(() => changedKeys.value.length > 0);
 
 const modelAssets = ref<SchemeAsset[]>([]);
 const modelUploading = ref(false);
@@ -163,7 +242,10 @@ async function fetchOptions() {
   }
 }
 
-async function fetchDetail() {
+/**
+ * @param preserveEdits 仅刷新状态与修订号，保留表单中尚未保存的修改（如上传资产后）
+ */
+async function fetchDetail(preserveEdits = false) {
   if (isCreate.value || !currentCode.value) return;
   const requestCode = currentCode.value;
   const sequence = ++detailRequestSequence;
@@ -195,34 +277,24 @@ async function fetchDetail() {
     assetCounts.checklist = assets.filter((a) => a.type === 'checklist').length;
     modelAssets.value = assets.filter((a) => a.type === 'model');
 
-    // Populate form
-    Object.keys(formData).forEach((key) => {
-      const k = key as keyof typeof formData;
-      if (
-        k !== 'editRevision' &&
-        res[k as keyof SchemeRecord] !== undefined &&
-        res[k as keyof SchemeRecord] !== null
-      ) {
-        (formData as any)[k] =
-          k === 'areaM2' && res.areaM2 !== null
-            ? Number(res.areaM2)
-            : res[k as keyof SchemeRecord];
-      }
-    });
     formData.editRevision = res.editRevision;
+    if (preserveEdits && isDirty.value) return;
+    // 整体回填（含空值），避免切换方案时残留上一个方案的字段
+    const fields = formData as Record<string, unknown>;
+    for (const key of Object.keys(formData)) {
+      if (key === 'editRevision') continue;
+      const value = res[key as keyof SchemeRecord];
+      if (value === null || value === undefined) {
+        fields[key] = arrayKeys.has(key) ? [] : undefined;
+      } else {
+        fields[key] = key === 'areaM2' ? Number(value) : value;
+      }
+    }
+    takeSnapshot();
   } catch (error: any) {
     message.error(error.message || '获取方案详情失败');
   } finally {
     if (sequence === detailRequestSequence) loading.value = false;
-  }
-}
-
-async function fetchModelAssets() {
-  if (!currentCode.value || !hasAccessByCodes(['assets-models.read'])) return;
-  try {
-    modelAssets.value = await listSchemeAssetsApi(currentCode.value, 'model');
-  } catch {
-    modelAssets.value = [];
   }
 }
 
@@ -267,8 +339,8 @@ async function handleModelUpload() {
         file,
       });
       message.success('模型上传成功');
-      await fetchModelAssets();
-      assetCounts.model = modelAssets.value.length;
+      // 资产变更会使已发布方案下线、审核失效，需同步状态
+      await Promise.all([fetchDetail(true), fetchReadiness()]);
     } catch {
       message.error('上传失败');
     } finally {
@@ -307,22 +379,57 @@ async function handleSave() {
     return;
   }
 
+  if (!isCreate.value) {
+    const changed = changedKeys.value;
+    if (changed.length === 0) {
+      message.info('没有需要保存的修改');
+      return;
+    }
+    const notesOnly = changed.every((key) => key === 'notes');
+    if (isPublished.value && !notesOnly) {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        AModal.confirm({
+          title: '保存后方案将下线',
+          content:
+            '已发布方案修改业务内容后会自动下线，需要重新整体审核并发布。仅修改备注不受影响。',
+          okText: '保存并下线',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+      });
+      if (!confirmed) return;
+    }
+  }
+
   saving.value = true;
   try {
     if (isCreate.value) {
       const res = await createSchemeApi({ ...formData });
       message.success('创建成功');
       router.replace(`/scheme/detail/${encodeURIComponent(res.code)}`);
-    } else {
-      const { code: _code, ...editable } = formData;
+    } else if (originalData.value) {
+      // 只提交实际修改的字段，避免无变更保存递增修订
       const payload: UpdateSchemeInput = {
-        ...editable,
-        editRevision: formData.editRevision!,
+        ...Object.fromEntries(
+          changedKeys.value.map((key) => {
+            const value = formData[key];
+            return [
+              key,
+              Array.isArray(value) ? value : (comparable(value) ?? null),
+            ];
+          }),
+        ),
+        editRevision: originalData.value.editRevision,
       };
-      const res = await updateSchemeApi(currentCode.value, payload);
+      if (
+        changedKeys.value.some((key) => key === 'lengthMm' || key === 'widthMm')
+      )
+        payload.areaM2 = formData.areaM2 ?? null;
+      await updateSchemeApi(currentCode.value, payload);
       message.success('保存成功');
-      originalData.value = res;
-      formData.editRevision = res.editRevision;
+      await refreshStatus();
     }
   } catch (error: any) {
     if (
@@ -346,19 +453,31 @@ function handleBack() {
 async function fetchReadiness() {
   if (!hasAccessByCodes(['schemes.readiness'])) return;
   if (!currentCode.value) return;
+  const requestCode = currentCode.value;
+  const sequence = ++readinessRequestSequence;
   readinessLoading.value = true;
   try {
-    readinessData.value = await getSchemeReadinessApi(currentCode.value);
+    const result = await getSchemeReadinessApi(requestCode);
+    if (
+      sequence === readinessRequestSequence &&
+      requestCode === currentCode.value
+    )
+      readinessData.value = result;
   } catch (error: any) {
-    message.error(error?.message || '获取就绪状态失败');
+    if (sequence === readinessRequestSequence)
+      message.error(error?.message || '获取就绪状态失败');
   } finally {
-    readinessLoading.value = false;
+    if (sequence === readinessRequestSequence) readinessLoading.value = false;
   }
+}
+
+/** 审核、发布、下架后方案状态与就绪结果均会变化 */
+async function refreshStatus() {
+  await Promise.all([fetchDetail(), fetchReadiness()]);
 }
 
 function openReviewModal() {
   reviewRequestKey.value = crypto.randomUUID();
-  reviewForm.phase = 'overall';
   reviewForm.decision = 'pass';
   reviewForm.checks.assetsComplete = false;
   reviewForm.checks.bomVerified = false;
@@ -375,17 +494,16 @@ async function handleReviewSubmit() {
     await createSchemeReviewApi(currentCode.value, {
       requestKey: reviewRequestKey.value,
       schemeRevision: originalData.value.editRevision,
-      phase: reviewForm.phase,
+      phase: 'overall',
       decision: reviewForm.decision,
       checks: { ...reviewForm.checks },
-      notes: reviewForm.notes || null,
+      notes: reviewForm.notes.trim() || null,
     });
     message.success(
-      reviewForm.decision === 'pass' ? '审核通过' : '审核不通过已记录',
+      reviewForm.decision === 'pass' ? '审核通过，可发布方案' : '审核不通过已记录',
     );
     reviewModalVisible.value = false;
-    await fetchDetail();
-    await fetchReadiness();
+    await refreshStatus();
   } catch (error: any) {
     if (error?.response?.status === 409 || error?.status === 409) {
       message.error('方案已被修改，请刷新后重试');
@@ -402,8 +520,7 @@ async function handlePublish() {
   try {
     await publishSchemeApi(currentCode.value);
     message.success('方案已发布');
-    await fetchDetail();
-    await fetchReadiness();
+    await refreshStatus();
   } catch (error: any) {
     message.error(error?.message || '发布失败');
   } finally {
@@ -425,8 +542,7 @@ async function handleUnpublishSubmit() {
     );
     message.success('方案已下架');
     unpublishModalVisible.value = false;
-    await fetchDetail();
-    await fetchReadiness();
+    await refreshStatus();
   } catch (error: any) {
     message.error(error?.message || '下架失败');
   } finally {
@@ -435,16 +551,16 @@ async function handleUnpublishSubmit() {
 }
 
 let detailRequestSequence = 0;
+let readinessRequestSequence = 0;
 // 就绪检查
 const readinessLoading = ref(false);
 const readinessData = ref<null | ReadinessResult>(null);
 
-// 整体审核弹窗
+// 整体审核弹窗（阶段固定为 overall，确认项为审核人对人工判断部分的确认）
 const reviewModalVisible = ref(false);
 const reviewSubmitting = ref(false);
 const reviewRequestKey = ref('');
 const reviewForm = reactive({
-  phase: 'overall' as 'asset_verification' | 'overall',
   decision: 'pass' as 'pass' | 'reject',
   checks: {
     assetsComplete: false,
@@ -454,6 +570,11 @@ const reviewForm = reactive({
   },
   notes: '',
 });
+const reviewSubmitDisabled = computed(() =>
+  reviewForm.decision === 'pass'
+    ? reviewBlocked.value || !Object.values(reviewForm.checks).every(Boolean)
+    : !reviewForm.notes.trim(),
+);
 
 // 下架弹窗
 const unpublishModalVisible = ref(false);
@@ -466,31 +587,22 @@ const publishLoading = ref(false);
 watch(currentCode, () => {
   detailRequestSequence++;
   checklistRequestSequence++;
+  readinessRequestSequence++;
   originalData.value = null;
   checklistBom.value = null;
-  if (currentCode.value) {
-    fetchDetail();
-    if (activeTab.value === 'publish') fetchReadiness();
-  }
+  readinessData.value = null;
+  if (currentCode.value) refreshStatus();
 });
 
 watch(activeTab, (tab) => {
   if (tab === 'checklist' && currentCode.value && !checklistBom.value) {
     fetchChecklistBom();
   }
-  if (
-    tab === 'publish' &&
-    currentCode.value &&
-    !readinessData.value &&
-    !readinessLoading.value
-  ) {
-    fetchReadiness();
-  }
 });
 
 onMounted(() => {
   fetchOptions();
-  fetchDetail();
+  refreshStatus();
 });
 </script>
 
@@ -516,66 +628,90 @@ onMounted(() => {
           v-if="!isCreate && originalData"
           class="flex flex-wrap items-center gap-2"
         >
-          <ATag v-if="originalData.publishStatus === 'published'" color="green">
-            已发布
-          </ATag>
+          <ATag v-if="isPublished" color="green">已发布</ATag>
           <ATag
             v-else-if="originalData.publishStatus === 'unpublished'"
             color="orange"
           >
-            未发布
+            已下架
           </ATag>
           <ATag v-else>草稿</ATag>
 
           <ATag
-            v-if="originalData.verificationStatus === 'verified'"
-            color="green"
+            v-if="readinessTag"
+            :color="readinessTag.color"
+            class="cursor-pointer"
+            @click="activeTab = 'publish'"
           >
-            核验通过
+            {{ readinessTag.text }}
           </ATag>
-          <ATag
-            v-else-if="originalData.verificationStatus === 'failed'"
-            color="red"
-          >
-            核验失败
-          </ATag>
-          <ATag v-else>未核验</ATag>
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <AButton
-          :type="isCreate ? 'primary' : 'default'"
-          :loading="saving"
-          @click="handleSave"
-          v-access:code="[isCreate ? 'schemes.create' : 'schemes.update']"
-        >
-          保存草稿
-        </AButton>
-        <template v-if="!isCreate && originalData">
-          <AButton
-            v-if="originalData.publishStatus !== 'published'"
-            @click="openReviewModal"
-            v-access:code="['schemes.review']"
-          >
-            整体审核
-          </AButton>
+        <template v-if="isCreate">
           <AButton
             type="primary"
-            :loading="publishLoading"
-            :disabled="publishButtonDisabled"
-            @click="handlePublish"
-            v-access:code="['schemes.publish']"
+            :loading="saving"
+            @click="handleSave"
+            v-access:code="['schemes.create']"
           >
-            发布
+            创建方案
           </AButton>
+        </template>
+        <template v-else-if="originalData">
           <AButton
-            v-if="originalData.publishStatus === 'published'"
+            :disabled="!isDirty"
+            :loading="saving"
+            @click="handleSave"
+            v-access:code="['schemes.update']"
+          >
+            保存
+          </AButton>
+
+          <AButton
+            v-if="isPublished"
             danger
             @click="openUnpublishModal"
             v-access:code="['schemes.unpublish']"
           >
             下架
           </AButton>
+          <!-- 未发布：按就绪状态只给出下一步操作；无就绪权限时两者都显示，由服务端校验 -->
+          <template v-else>
+            <ATooltip
+              v-if="!readinessData?.canPublish"
+              :title="
+                isDirty
+                  ? '有未保存的修改，请先保存'
+                  : reviewBlocked
+                    ? '存在未就绪项，请先在「审核发布」中处理'
+                    : undefined
+              "
+            >
+              <AButton
+                :type="readinessData ? 'primary' : 'default'"
+                :disabled="isDirty || reviewBlocked"
+                @click="openReviewModal"
+                v-access:code="['schemes.review']"
+              >
+                整体审核
+              </AButton>
+            </ATooltip>
+            <ATooltip
+              v-if="!readinessData || readinessData.canPublish"
+              :title="isDirty ? '有未保存的修改，请先保存' : undefined"
+            >
+              <AButton
+                type="primary"
+                :disabled="isDirty"
+                :loading="publishLoading"
+                @click="handlePublish"
+                v-access:code="['schemes.publish']"
+              >
+                发布
+              </AButton>
+            </ATooltip>
+          </template>
         </template>
       </div>
     </div>
@@ -787,8 +923,7 @@ onMounted(() => {
                 />
               </AFormItem>
             </div>
-
-          </ATabPane>
+</ATabPane>
 
           <ATabPane
             v-if="!isCreate && hasAccessByCodes(['assets-models.read'])"
@@ -796,9 +931,7 @@ onMounted(() => {
             tab="模型"
           >
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <span class="text-muted-foreground text-sm"
-                >共 {{ modelAssets.length }} 个模型文件</span
-              >
+              <span class="text-muted-foreground text-sm">共 {{ modelAssets.length }} 个模型文件</span>
               <AButton
                 type="primary"
                 :loading="modelUploading"
@@ -1020,10 +1153,9 @@ onMounted(() => {
                   >
                     <span class="font-semibold">发布就绪状态</span>
                     <div class="flex flex-wrap items-center gap-2">
-                      <ATag v-if="readinessData.canPublish" color="success">
-                        可发布
+                      <ATag v-if="readinessTag" :color="readinessTag.color">
+                        {{ readinessTag.text }}
                       </ATag>
-                      <ATag v-else color="warning">未就绪</ATag>
                       <AButton
                         size="small"
                         :loading="readinessLoading"
@@ -1033,18 +1165,34 @@ onMounted(() => {
                       </AButton>
                     </div>
                   </div>
-                  <!-- 阻断项 -->
-                  <div v-if="readinessData.blockers.length > 0" class="mb-4">
+                  <!-- 阻断项：未发布时只列内容项，审核状态单独提示 -->
+                  <div
+                    v-if="
+                      (isPublished
+                        ? readinessData.blockers
+                        : readinessData.coreBlockers
+                      ).length > 0
+                    "
+                    class="mb-4"
+                  >
                     <div class="text-destructive mb-2 text-sm font-medium">
-                      发布阻断项
+                      {{ isPublished ? '上线异常项' : '未就绪项' }}
                     </div>
                     <div
-                      v-for="(blocker, i) in readinessData.blockers"
+                      v-for="(blocker, i) in isPublished
+                        ? readinessData.blockers
+                        : readinessData.coreBlockers"
                       :key="i"
                       class="text-destructive bg-destructive/10 mb-1 rounded px-3 py-2 text-sm"
                     >
                       {{ blocker }}
                     </div>
+                  </div>
+                  <div
+                    v-else-if="awaitingReview"
+                    class="text-primary bg-primary/10 mb-4 rounded px-3 py-2 text-sm"
+                  >
+                    内容已就绪，请点击页面顶部「整体审核」完成人工审核。
                   </div>
                   <!-- 资产汇总 -->
                   <div
@@ -1059,13 +1207,13 @@ onMounted(() => {
                           readinessData.assets.rendering.count
                         }}</span>
                         <ATag
-                          v-if="readinessData.assets.rendering.count >= 3"
+                          v-if="readinessData.assets.rendering.count === 3"
                           color="success"
                           class="text-xs"
                         >
                           ✓
                         </ATag>
-                        <ATag v-else color="error" class="text-xs">需≥3</ATag>
+                        <ATag v-else color="error" class="text-xs">需 3 张</ATag>
                       </div>
                     </div>
                     <div
@@ -1077,13 +1225,13 @@ onMounted(() => {
                           readinessData.assets.mask.count
                         }}</span>
                         <ATag
-                          v-if="readinessData.assets.mask.count >= 3"
+                          v-if="readinessData.assets.mask.count === 3"
                           color="success"
                           class="text-xs"
                         >
                           ✓
                         </ATag>
-                        <ATag v-else color="error" class="text-xs">需≥3</ATag>
+                        <ATag v-else color="error" class="text-xs">需 3 张</ATag>
                       </div>
                     </div>
                     <div
@@ -1138,36 +1286,13 @@ onMounted(() => {
                   </div>
                 </div>
 
-                <!-- 操作区 -->
-                <div class="flex flex-wrap gap-3">
-                  <AButton
-                    v-access:code="['schemes.review']"
-                    type="primary"
-                    ghost
-                    @click="openReviewModal"
-                  >
-                    整体审核
-                  </AButton>
-                  <AButton
-                    type="primary"
-                    :loading="publishLoading"
-                    :disabled="
-                      publishButtonDisabled || !readinessData.canPublish
-                    "
-                    @click="handlePublish"
-                    v-access:code="['schemes.publish']"
-                  >
-                    发布方案
-                  </AButton>
-                  <AButton
-                    v-if="originalData?.publishStatus === 'published'"
-                    danger
-                    @click="openUnpublishModal"
-                    v-access:code="['schemes.unpublish']"
-                  >
-                    下架方案
-                  </AButton>
-                </div>
+                <p class="text-muted-foreground m-0 text-sm">
+                  {{
+                    isPublished
+                      ? '方案已上线。修改业务内容或资产会使方案自动下线，需重新整体审核并发布；仅修改备注不受影响。'
+                      : '流程：处理全部未就绪项 → 整体审核通过 → 发布。操作按钮位于页面顶部。'
+                  }}
+                </p>
               </template>
             </div>
           </ATabPane>
@@ -1180,19 +1305,16 @@ onMounted(() => {
       v-model:open="reviewModalVisible"
       title="整体审核"
       :confirm-loading="reviewSubmitting"
+      :ok-button-props="{ disabled: reviewSubmitDisabled }"
       @ok="handleReviewSubmit"
       ok-text="提交"
       cancel-text="取消"
     >
       <div class="space-y-4">
+        <p class="text-muted-foreground m-0 text-sm">
+          系统已自动检查资产数量、清单核验与配对规格；以下确认项由审核人对实际内容质量逐项确认。审核结论绑定当前修订，后续修改业务内容或资产会使其失效。
+        </p>
         <AForm layout="vertical">
-          <AFormItem label="审核阶段">
-            <ARadioGroup v-model:value="reviewForm.phase">
-              <ARadio value="overall">整体审核</ARadio>
-              <ARadio value="asset_verification">资产核验</ARadio>
-            </ARadioGroup>
-          </AFormItem>
-
           <AFormItem label="审核结论">
             <ARadioGroup v-model:value="reviewForm.decision">
               <ARadio value="pass">通过</ARadio>
@@ -1200,28 +1322,39 @@ onMounted(() => {
             </ARadioGroup>
           </AFormItem>
 
-          <AFormItem label="确认项（通过时建议全选）">
-            <div class="space-y-2">
+          <AFormItem
+            v-if="reviewForm.decision === 'pass'"
+            label="审核确认（需全部勾选）"
+            required
+          >
+            <div class="flex flex-col gap-2">
               <ACheckbox v-model:checked="reviewForm.checks.assetsComplete">
-                六类资产完整：效果图≥3、蒙版≥3、模型已上传
+                六类资产内容正确：效果图、蒙版、模型、清单、报馆图、平面素材
               </ACheckbox>
               <ACheckbox v-model:checked="reviewForm.checks.bomVerified">
-                清单已核验：条目与模型逐项对应
+                清单条目与模型逐项对应，配套项完整
               </ACheckbox>
               <ACheckbox v-model:checked="reviewForm.checks.renderingsAndMasks">
-                效果图与蒙版一一配对、尺寸一致
+                效果图与蒙版逐一对齐，换色区域准确
               </ACheckbox>
               <ACheckbox v-model:checked="reviewForm.checks.drawingsComplete">
-                报馆图覆盖必需视向
+                报馆图覆盖必需视向，图纸内容正确
               </ACheckbox>
             </div>
           </AFormItem>
 
-          <AFormItem label="审核意见">
+          <AFormItem
+            :label="reviewForm.decision === 'pass' ? '审核意见（可选）' : '不通过原因'"
+            :required="reviewForm.decision === 'reject'"
+          >
             <ATextarea
               v-model:value="reviewForm.notes"
               :rows="3"
-              placeholder="不通过时请填写具体问题"
+              :placeholder="
+                reviewForm.decision === 'pass'
+                  ? '可填写补充说明'
+                  : '请填写具体问题，便于整改'
+              "
             />
           </AFormItem>
         </AForm>

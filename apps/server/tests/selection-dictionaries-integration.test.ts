@@ -62,6 +62,13 @@ test('size migration, Excel import, transactional CRUD and dictionary language p
   const before = await sizeValues();
   await assert.rejects(updateScheme(pool, manual.code, adminId, { heightMm: 4900 }, manual.editRevision), { statusCode: 409 });
   assert.deepEqual(await sizeValues(), before);
+  const unchanged = await updateScheme(pool, manual.code, adminId, {
+    name: '手动新增', lengthMm: 3000, widthMm: 6000, heightMm: 4300, areaM2: 18, openingCount: 2, industryIds: [], description: '',
+  }, edited.editRevision);
+  assert.equal(unchanged.editRevision, edited.editRevision);
+  const notesEdited = await updateScheme(pool, manual.code, adminId, { notes: '内部备注' }, edited.editRevision);
+  assert.equal(notesEdited.notes, '内部备注');
+  assert.equal(notesEdited.editRevision, edited.editRevision);
   const referencedSize = (await pool.query<{ id: string }>("SELECT id FROM dictionary_items WHERE item_value='3000-6000-4300'")).rows[0]!;
   await assert.rejects(deleteDictionaryItem(pool, referencedSize.id), { statusCode: 409 });
 

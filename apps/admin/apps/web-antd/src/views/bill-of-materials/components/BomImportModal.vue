@@ -148,7 +148,7 @@ defineExpose({ open });
         message="一份 Excel 对应一个方案；选择方案后上传并预览。替换清单将使核验失效。"
         :description="templateHint"
       />
-      <div>
+      <div class="mt-2">
         <div class="mb-1">关联方案</div>
         <Select
           v-model:value="schemeCode"

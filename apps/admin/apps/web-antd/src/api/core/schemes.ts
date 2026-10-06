@@ -95,7 +95,8 @@ export interface CreateSchemeInput {
   applicableConditions?: null | Record<string, unknown>;
 }
 
-export interface UpdateSchemeInput extends Omit<CreateSchemeInput, 'code'> {
+export interface UpdateSchemeInput
+  extends Partial<Omit<CreateSchemeInput, 'code'>> {
   editRevision: number;
 }
 
