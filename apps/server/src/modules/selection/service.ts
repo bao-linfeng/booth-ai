@@ -10,6 +10,7 @@ import type { SelectionIdentity } from '../selection-analytics/types.js';
 import { validateRequirement, type Requirement } from './domain.js';
 import { parseWithModels } from './llm.js';
 import { matchSchemes } from './match.js';
+import { DEFAULT_MESSAGE_LOCALE, type MessageLocale } from './messages/index.js';
 import { parseRequirement } from './parse.js';
 import { buildSelectionMessages } from './prompt.js';
 import { loadCandidatePool, loadCatalog, signImages, signMatchItems } from './repository.js';
@@ -42,7 +43,7 @@ export function getSelectionCatalog(pool: pg.Pool, locale = 'zh-CN') {
 }
 
 export async function parseSelection(pool: pg.Pool, config: Pick<Config, 'aiModelEncryptionKey'>,
-  input: ParseSelectionInput, identity: SelectionIdentity) {
+  input: ParseSelectionInput, identity: SelectionIdentity, locale: MessageLocale = DEFAULT_MESSAGE_LOCALE) {
   const startedAt = performance.now();
   const attemptId = await ensureAttempt(pool, input.attemptId, identity);
   const catalog = await getSelectionCatalog(pool);
@@ -53,8 +54,8 @@ export async function parseSelection(pool: pg.Pool, config: Pick<Config, 'aiMode
     source: template ? 'template' : 'default', templateId: template?.id ?? null, revision: template?.revision ?? null,
     defaultVersion: PROMPT_DEFAULT_VERSION, messages: buildSelectionMessages(input.text, catalog, template?.body),
   } : null;
-  const parsed = models.length ? await parseWithModels(input.text, form, catalog, models, undefined, template?.body)
-    : parseRequirement(input.text, form, catalog);
+  const parsed = models.length ? await parseWithModels(input.text, form, catalog, models, undefined, template?.body, locale)
+    : parseRequirement(input.text, form, catalog, [], locale);
   const data = { ...parsed, parser: parsed.parser as 'llm' | 'rules' | 'none', dictionaryVersion: catalog.dictionaryVersion };
   const parseId = await recordParse(pool, {
     attemptId, identity, inputText: input.text, formRequirement: form,
@@ -64,13 +65,13 @@ export async function parseSelection(pool: pg.Pool, config: Pick<Config, 'aiMode
 }
 
 export async function matchSelection(pool: pg.Pool, storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>,
-  input: MatchSelectionInput, identity: SelectionIdentity) {
+  input: MatchSelectionInput, identity: SelectionIdentity, locale: MessageLocale = DEFAULT_MESSAGE_LOCALE) {
   const startedAt = performance.now();
   const attemptId = await ensureAttempt(pool, input.attemptId, identity);
   const catalog = await getSelectionCatalog(pool);
   const requirement = validateRequirement(input.requirement, catalog);
   const { candidates, diagnostics } = await selectionDependency(() => loadCandidatePool(pool, catalog));
-   const result = matchSchemes(candidates, requirement, input.mode, input.inputContext.textProvided, diagnostics, catalog.applicabilityQuestions, catalog.boothSpaces);
+   const result = matchSchemes(candidates, requirement, input.mode, input.inputContext.textProvided, diagnostics, catalog.applicabilityQuestions, catalog.boothSpaces, locale);
   // Only the returned items (at most three) need presigned image URLs.
   const items = await selectionDependency(() => signMatchItems(storage, result.items));
   const data = {

@@ -204,3 +204,4 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - `src/modules/{admin,client,su}/` 只剩重构遗留的空目录，不要往里放代码；按业务领域放入对应模块
 - `tests/module-boundaries.test.ts` 检查依赖边界，详见 [`docs/server-module-boundaries.md`](../../docs/server-module-boundaries.md)
 - 新 Job 类型：在 `src/infra/queue.ts` 追加 `TASK_NAME` 常量，Worker 在 `src/worker.ts` 注册处理器
+- 智选匹配/解析返回给用户的提示文案（理由、差异、澄清问题等）集中在 `src/modules/selection/messages/`（12 种语言，以 `zh.ts` 的 key 为准，缺 key 会编译失败），按 `Accept-Language` 输出；新增文案不要在 match/parse/llm 里写死中文。

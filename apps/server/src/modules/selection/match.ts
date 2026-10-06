@@ -1,39 +1,42 @@
 import { randomInt } from 'node:crypto';
+import { DEFAULT_MESSAGE_LOCALE, message, type MessageKey, type MessageLocale } from './messages/index.js';
 import { isEmpty, invalid, rulesVersion, type ApplicabilityQuestionSummary, type BoothSpace, type Candidate, type MatchDiagnostics, type MatchItem, type PendingConfirmation, type Requirement } from './domain.js';
 
 type ExclusionKey = keyof MatchDiagnostics['exclusions'];
 type FilterExclusionKey = 'productSystem' | 'height' | 'applicability' | 'tags' | 'dimensions';
 type Evaluation = { misses: Record<FilterExclusionKey, boolean>; deviation: number };
 type RankedItem = { item: MatchItem; deviation: number; preference: number };
+type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
 
 const MAX_ITEMS = 3;
 const MAX_DIMENSION_DEVIATION = 0.3;
 
-const EXCLUSION_LABELS: Record<ExclusionKey, string> = {
-  unverifiedChecklist: '清单未核验', incompleteAssets: '资产不完整', invalidData: '基础数据或审核信息不完整',
-  productSystem: '产品体系不符', height: '超过场馆限高', applicability: '适用条件不符',
-  tags: '必选或禁用功能条件不符', dimensions: '尺寸不符或超出参考范围'
+const EXCLUSION_LABELS: Record<ExclusionKey, MessageKey> = {
+  unverifiedChecklist: 'excUnverifiedChecklist', incompleteAssets: 'excIncompleteAssets', invalidData: 'excInvalidData',
+  productSystem: 'excProductSystem', height: 'excHeight', applicability: 'excApplicability',
+  tags: 'excTags', dimensions: 'excDimensions'
 };
 const POOL_EXCLUSIONS: ExclusionKey[] = ['unverifiedChecklist', 'incompleteAssets', 'invalidData'];
 
 const intersects = (left: string[], right: string[]) => left.some(value => right.includes(value));
 
-export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean, poolDiagnostics?: MatchDiagnostics, applicabilityQuestions: ApplicabilityQuestionSummary[] = [], boothSpaces: BoothSpace[] = []) {
+export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean, poolDiagnostics?: MatchDiagnostics, applicabilityQuestions: ApplicabilityQuestionSummary[] = [], boothSpaces: BoothSpace[] = [], locale: MessageLocale = DEFAULT_MESSAGE_LOCALE) {
   const selectedSize = requirement.boothSpaceId ? boothSpaces.find(space => space.id === requirement.boothSpaceId) : undefined;
   if (requirement.boothSpaceId && !selectedSize) invalid('Unknown booth size');
   if (mode === 'random' && (textProvided || !isEmpty(requirement))) invalid('Random requires empty input');
 
   const diagnostics = createDiagnostics(candidates, poolDiagnostics);
-  const missingFields = findMissingFields(requirement);
+  const text: Translate = (key, params) => message(locale, key, params);
+  const missingFields = findMissingFields(requirement, text);
   const base = { mode, requirement, missingFields, rulesVersion };
 
   if (mode === 'filtered' && isEmpty(requirement)) {
-    return { ...base, status: 'needs_clarification', items: [], counts: { direct: 0, reference: 0, random: 0, total: 0 }, diagnostics, reasons: ['请至少提供一项可识别的条件'], suggestions: [] };
+    return { ...base, status: 'needs_clarification', items: [], counts: { direct: 0, reference: 0, random: 0, total: 0 }, diagnostics, reasons: [text('matchNeedCondition')], suggestions: [] };
   }
 
   const items = mode === 'random'
-    ? pickRandomItems(candidates)
-    : rankCandidates(candidates, requirement, missingFields, applicabilityQuestions, diagnostics, selectedSize);
+    ? pickRandomItems(candidates, text)
+    : rankCandidates(candidates, requirement, missingFields, applicabilityQuestions, diagnostics, text, selectedSize);
 
   const counts = {
     direct: items.filter(item => item.matchType === 'direct').length,
@@ -49,11 +52,11 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
     counts,
     diagnostics,
     reasons: !items.length
-      ? buildNoMatchReasons(mode, diagnostics)
+      ? buildNoMatchReasons(mode, diagnostics, text)
       : !counts.direct && mode === 'filtered'
-      ? ['未找到可直接采用方案，以下仅供参考']
+      ? [text('matchNoDirect')]
       : [],
-    suggestions: items.length ? [] : buildNoMatchSuggestions(diagnostics)
+    suggestions: items.length ? [] : buildNoMatchSuggestions(diagnostics, text)
   };
 }
 
@@ -65,12 +68,12 @@ function createDiagnostics(candidates: Candidate[], poolDiagnostics?: MatchDiagn
   };
 }
 
-function findMissingFields(requirement: Requirement): string[] {
+function findMissingFields(requirement: Requirement, text: Translate): string[] {
   return [
-    !requirement.lengthMm && '展位长',
-    !requirement.widthMm && '展位宽',
-    !requirement.maxHeightMm && '场馆限高',
-    !requirement.openingCount && '开口面数'
+    !requirement.lengthMm && text('missingLength'),
+    !requirement.widthMm && text('missingWidth'),
+    !requirement.maxHeightMm && text('missingMaxHeight'),
+    !requirement.openingCount && text('missingOpeningCount')
   ].filter((value): value is string => !!value);
 }
 
@@ -89,7 +92,7 @@ function toItem(candidate: Candidate, matchType: MatchItem['matchType']): MatchI
 
 // ---------- random ----------
 
-function pickRandomItems(candidates: Candidate[]): MatchItem[] {
+function pickRandomItems(candidates: Candidate[], text: Translate): MatchItem[] {
   const shuffled = [...candidates];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = randomInt(i + 1);
@@ -97,13 +100,13 @@ function pickRandomItems(candidates: Candidate[]): MatchItem[] {
   }
   return shuffled.slice(0, MAX_ITEMS).map(candidate => ({
     ...toItem(candidate, 'random'),
-    pendingConfirmations: [{ type: 'missing_field', message: '随机推荐，尺寸、开口面数、限高及适用条件待确认' }]
+    pendingConfirmations: [{ type: 'missing_field', message: text('matchRandomPending') }]
   }));
 }
 
 // ---------- filtered ----------
 
-function rankCandidates(candidates: Candidate[], requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[], diagnostics: MatchDiagnostics, selectedSize?: BoothSpace): MatchItem[] {
+function rankCandidates(candidates: Candidate[], requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[], diagnostics: MatchDiagnostics, text: Translate, selectedSize?: BoothSpace): MatchItem[] {
   const ranked: RankedItem[] = [];
 
   for (const candidate of candidates) {
@@ -112,8 +115,8 @@ function rankCandidates(candidates: Candidate[], requirement: Requirement, missi
     for (const key of missed) diagnostics.exclusions[key]++;
     if (missed.length) continue;
 
-    const item = buildMatchItem(candidate, requirement, missingFields, questions);
-    const { score, misses: preferenceMisses } = scorePreferences(candidate, requirement);
+    const item = buildMatchItem(candidate, requirement, missingFields, questions, text);
+    const { score, misses: preferenceMisses } = scorePreferences(candidate, requirement, text);
     item.preferenceMisses = preferenceMisses;
     ranked.push({ item, deviation, preference: score });
   }
@@ -159,20 +162,20 @@ function dimensionDeviation(candidate: Candidate, requirement: Requirement): num
 }
 
 /** 通过硬条件的候选：生成差异、待确认项，并在无差异无待确认时升级为 direct。 */
-function buildMatchItem(candidate: Candidate, requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[]): MatchItem {
+function buildMatchItem(candidate: Candidate, requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[], text: Translate): MatchItem {
   const item = toItem(candidate, 'reference');
-  item.pendingConfirmations = buildPendingConfirmations(candidate, requirement, missingFields, questions);
-  item.differences = buildDifferences(candidate, requirement);
+  item.pendingConfirmations = buildPendingConfirmations(candidate, requirement, missingFields, questions, text);
+  item.differences = buildDifferences(candidate, requirement, text);
 
   if (!item.differences.length && !item.pendingConfirmations.length) {
     item.matchType = 'direct';
-    item.reasons = ['长宽、开口与已提供结构条件一致', '方案实际高度未超过场馆限高', '所需适用条件已确认'];
+    item.reasons = [text('reasonSize'), text('reasonHeight'), text('reasonApplicability')];
   }
   return item;
 }
 
-function buildPendingConfirmations(candidate: Candidate, requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[]): PendingConfirmation[] {
-  const pending: PendingConfirmation[] = missingFields.map(field => ({ type: 'missing_field' as const, field, message: `需补充${field}` }));
+function buildPendingConfirmations(candidate: Candidate, requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[], text: Translate): PendingConfirmation[] {
+  const pending: PendingConfirmation[] = missingFields.map(field => ({ type: 'missing_field' as const, field, message: text('pendingMissing', { field }) }));
   for (const rule of candidate.applicabilityRules) {
     if (requirement.applicabilityAnswers[rule.id] !== undefined) continue;
     const question = questions.find(q => q.id === rule.id);
@@ -181,44 +184,44 @@ function buildPendingConfirmations(candidate: Candidate, requirement: Requiremen
       id: rule.id,
       label: question?.label,
       helpText: question?.helpText,
-      message: question ? `需确认：${question.label}` : `需确认适用条件：${rule.id}`,
+      message: question ? text('pendingQuestion', { label: question.label }) : text('pendingRule', { id: rule.id }),
     });
   }
   return pending;
 }
 
-function buildDifferences(candidate: Candidate, requirement: Requirement): MatchItem['differences'] {
+function buildDifferences(candidate: Candidate, requirement: Requirement, text: Translate): MatchItem['differences'] {
   const s = candidate.specifications;
   const differences: MatchItem['differences'] = [];
-  for (const [field, label] of [['lengthMm', '长'], ['widthMm', '宽']] as const) {
+  for (const [field, label] of [['lengthMm', text('lengthShort')], ['widthMm', text('widthShort')]] as const) {
     if (requirement[field] && requirement[field] !== s[field]) {
-      differences.push({ field, requested: `${label} ${requirement[field]! / 1000} m`, actual: `${label} ${s[field] / 1000} m`, reason: '尺寸不同，需重新设计并核验，不可直接施工' });
+      differences.push({ field, requested: `${label} ${requirement[field]! / 1000} m`, actual: `${label} ${s[field] / 1000} m`, reason: text('diffSize') });
     }
   }
   if (requirement.areaM2 && requirement.areaM2 !== s.areaM2) {
-    differences.push({ field: 'areaM2', requested: `${requirement.areaM2} ㎡`, actual: `${s.areaM2} ㎡`, reason: '面积与所需条件不同' });
+    differences.push({ field: 'areaM2', requested: `${requirement.areaM2} ㎡`, actual: `${s.areaM2} ㎡`, reason: text('diffArea') });
   }
   if (requirement.openingCount && requirement.openingCount !== s.openingCount) {
-    differences.push({ field: 'openingCount', requested: `${requirement.openingCount} 面`, actual: `${s.openingCount} 面`, reason: '开口数不同，需重新设计并核验' });
+    differences.push({ field: 'openingCount', requested: text('openingCount', { count: requirement.openingCount }), actual: text('openingCount', { count: s.openingCount }), reason: text('diffOpening') });
   }
   return differences;
 }
 
-function scorePreferences(candidate: Candidate, requirement: Requirement): { score: number; misses: string[] } {
+function scorePreferences(candidate: Candidate, requirement: Requirement, text: Translate): { score: number; misses: string[] } {
   let score = 0;
   const misses: string[] = [];
 
   if (requirement.styleIds.length) {
     if (candidate.styleId && requirement.styleIds.includes(candidate.styleId)) score += 3;
-    else misses.push('风格未命中所选偏好');
+    else misses.push(text('missStyle'));
   }
   if (requirement.industryIds.length) {
     if (intersects(requirement.industryIds, candidate.industryIds)) score += 2;
-    else misses.push('行业未命中所选偏好');
+    else misses.push(text('missIndustry'));
   }
   if (requirement.budgetTierId) {
     if (requirement.budgetTierId === candidate.budgetTierId) score += 2;
-    else misses.push('材料购买预算档位与偏好不同');
+    else misses.push(text('missBudget'));
   }
 
   score += Math.min(2, requirement.zoneIds.filter(id => candidate.zoneIds.includes(id)).length);
@@ -240,8 +243,8 @@ function compareRanked(a: RankedItem, b: RankedItem): number {
 
 // ---------- no match ----------
 
-function buildNoMatchReasons(mode: 'random' | 'filtered', diagnostics: MatchDiagnostics): string[] {
-  if (!diagnostics.reviewedPublished) return ['当前暂无已发布且审核有效的方案'];
+function buildNoMatchReasons(mode: 'random' | 'filtered', diagnostics: MatchDiagnostics, text: Translate): string[] {
+  if (!diagnostics.reviewedPublished) return [text('noPublished')];
 
   const order = Object.keys(EXCLUSION_LABELS) as ExclusionKey[];
   const orderedExclusions = order
@@ -249,16 +252,16 @@ function buildNoMatchReasons(mode: 'random' | 'filtered', diagnostics: MatchDiag
     .sort((a, b) => diagnostics.exclusions[b] - diagnostics.exclusions[a] || order.indexOf(a) - order.indexOf(b));
 
   return [
-    mode === 'random' ? '当前暂无可随机推荐的方案（各排除原因可重叠）' : '当前条件组合暂无可采用或参考的方案（各排除原因可重叠）',
-    ...orderedExclusions.map(key => `${EXCLUSION_LABELS[key]}：${diagnostics.exclusions[key]} 套${POOL_EXCLUSIONS.includes(key) ? '已发布方案' : '可用方案'}`)
+    mode === 'random' ? text('noMatchRandom') : text('noMatchFiltered'),
+    ...orderedExclusions.map(key => text(POOL_EXCLUSIONS.includes(key) ? 'excPoolLine' : 'excAvailableLine', { label: text(EXCLUSION_LABELS[key]), count: diagnostics.exclusions[key] }))
   ];
 }
 
-function buildNoMatchSuggestions(diagnostics: MatchDiagnostics): string[] {
+function buildNoMatchSuggestions(diagnostics: MatchDiagnostics, text: Translate): string[] {
   return [
-    ...(diagnostics.exclusions.dimensions ? ['可检查所选长宽高尺寸，或调整自定义长宽与面积后重新查询'] : []),
-    ...(diagnostics.exclusions.productSystem ? ['可检查所选产品体系，修改后重新查询'] : []),
-    ...(diagnostics.exclusions.tags ? ['可检查必选或禁用的功能条件，修改后重新查询'] : []),
-    '也可联系专业顾问确认可用方案'
+    ...(diagnostics.exclusions.dimensions ? [text('suggestDimensions')] : []),
+    ...(diagnostics.exclusions.productSystem ? [text('suggestProductSystem')] : []),
+    ...(diagnostics.exclusions.tags ? [text('suggestTags')] : []),
+    text('suggestAdvisor')
   ];
 }

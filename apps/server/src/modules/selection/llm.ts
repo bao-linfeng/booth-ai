@@ -1,6 +1,7 @@
 import { textAdapter } from '../../infra/ai/protocols.js';
 import type { ActiveAiModel } from '../../infra/ai/types.js';
 import { emptyRequirement, validateRequirement, type Catalog, type Requirement } from './domain.js';
+import { DEFAULT_MESSAGE_LOCALE, message, type MessageLocale } from './messages/index.js';
 import { parseRequirement } from './parse.js';
 import { buildSelectionMessages } from './prompt.js';
 
@@ -16,11 +17,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function mergeExtraction(text: string, form: Requirement, catalog: Catalog, raw: unknown) {
+export function mergeExtraction(text: string, form: Requirement, catalog: Catalog, raw: unknown, locale: MessageLocale = DEFAULT_MESSAGE_LOCALE) {
   if (!isRecord(raw) || !isRecord(raw.fields) || !Array.isArray(raw.unhandledText) ||
       Object.keys(raw).some(key => !['fields', 'unhandledText'].includes(key)) || raw.unhandledText.length > 20 ||
     raw.unhandledText.some(item => typeof item !== 'string' || !item.trim() || !text.includes(item)) || Object.keys(raw.fields).length > 18) throw new Error('Invalid extraction');
-  const rules = parseRequirement(text, form, catalog);
+  const rules = parseRequirement(text, form, catalog, [], locale);
   const requirement = structuredClone(rules.requirement);
   const fieldSources = { ...rules.fieldSources };
   const overrides = [...rules.overrides];
@@ -55,7 +56,7 @@ export function mergeExtraction(text: string, form: Requirement, catalog: Catalo
       field === 'excludedFeatureIds' ? ['featureIds', 'requiredFeatureIds'] : [];
     if (Array.isArray(value) && oppositeFields.some(opposite => fieldSources[opposite]?.source === 'text' &&
       (requirement[opposite as Field] as string[]).some(id => value.includes(id)))) {
-      clarifications.push({ field, reason: 'NEEDS_CONFIRMATION', question: '同一功能的正向和否定条件冲突，请确认。', candidates: [] });
+      clarifications.push({ field, reason: 'NEEDS_CONFIRMATION', question: message(locale, 'llmOpposite'), candidates: [] });
       continue;
     }
     if (fieldSources[field]?.source === 'text') {
@@ -64,13 +65,13 @@ export function mergeExtraction(text: string, form: Requirement, catalog: Catalo
         ? existing.every(id => value.includes(id))
         : JSON.stringify(existing) === JSON.stringify(value);
       if (!agrees) {
-        clarifications.push({ field, reason: 'NEEDS_CONFIRMATION', question: '文本识别与已有条件冲突，请确认最终值。', candidates: [] });
+        clarifications.push({ field, reason: 'NEEDS_CONFIRMATION', question: message(locale, 'llmExisting'), candidates: [] });
         continue;
       }
     }
     const prefix = text.slice(Math.max(0, text.indexOf(entry.evidence) - 10), text.indexOf(entry.evidence)).split(/[，,。；;\n]/).at(-1) ?? '';
     if (['zoneIds', 'featureIds', 'requiredZoneIds', 'requiredFeatureIds'].includes(field) && /(?:不要|不需要|禁止|不能有|不含|不能包含|无)\s*$/.test(prefix)) {
-      clarifications.push({ field, reason: 'NEEDS_CONFIRMATION', question: '否定条件与模型识别冲突，请确认。', candidates: [] });
+      clarifications.push({ field, reason: 'NEEDS_CONFIRMATION', question: message(locale, 'llmNegation'), candidates: [] });
       continue;
     }
     const nextValue = field === 'applicabilityAnswers' ? { ...requirement.applicabilityAnswers, ...value as Record<string, boolean> } : value;
@@ -83,35 +84,35 @@ export function mergeExtraction(text: string, form: Requirement, catalog: Catalo
   if (requirement.lengthMm && requirement.widthMm) {
     const area = requirement.lengthMm * requirement.widthMm / 1_000_000;
     if (fieldSources.areaM2?.source === 'text' && requirement.areaM2 !== null && Math.abs(requirement.areaM2 - area) > 0.000001) {
-      clarifications.push({ field: 'areaM2', reason: 'NEEDS_CONFIRMATION', question: '面积与长宽乘积冲突，请确认。', candidates: [] });
+      clarifications.push({ field: 'areaM2', reason: 'NEEDS_CONFIRMATION', question: message(locale, 'llmAreaConflict'), candidates: [] });
     }
     requirement.areaM2 = area;
     fieldSources.areaM2 = { source: 'derived' };
   }
   try { Object.assign(requirement, validateRequirement(requirement, catalog)); } catch { throw new Error('Invalid extraction'); }
   const unhandledText = [...new Set([
-    ...parseRequirement(text, form, catalog, [...handled]).unhandledText,
+    ...parseRequirement(text, form, catalog, [...handled], locale).unhandledText,
     ...raw.unhandledText as string[],
   ])];
-  if (unhandledText.length) clarifications.push({ field: 'text', reason: 'NEEDS_CONFIRMATION', question: '部分文字尚未可靠识别，请确认。', candidates: [] });
+  if (unhandledText.length) clarifications.push({ field: 'text', reason: 'NEEDS_CONFIRMATION', question: message(locale, 'llmUnhandled'), candidates: [] });
   return { ...rules, status: clarifications.length ? 'needs_clarification' : 'ready', requirement, parser: 'llm', degraded: false,
     fieldSources, overrides, clarifications, unhandledText, warnings: [] };
 }
 
 export async function parseWithModels(text: string, form: Requirement, catalog: Catalog, models: ActiveAiModel[],
-  extract: typeof requestExtraction = requestExtraction, templateBody?: string) {
+  extract: typeof requestExtraction = requestExtraction, templateBody?: string, locale: MessageLocale = DEFAULT_MESSAGE_LOCALE) {
   const deadline = Date.now() + 2800;
   for (const model of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const remaining = deadline - Date.now();
-      if (remaining < 200) return parseRequirement(text, form, catalog);
+      if (remaining < 200) return parseRequirement(text, form, catalog, [], locale);
       try {
         const raw = await extract(model, text, catalog, AbortSignal.timeout(Math.min(1800, remaining)), templateBody);
-        return mergeExtraction(text, form, catalog, raw);
+        return mergeExtraction(text, form, catalog, raw, locale);
       } catch {
         // A second attempt is bounded; the rule parser remains available when both models fail.
       }
     }
   }
-  return parseRequirement(text, form, catalog);
+  return parseRequirement(text, form, catalog, [], locale);
 }

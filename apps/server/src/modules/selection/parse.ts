@@ -1,5 +1,6 @@
 import { emptyRequirement, rulesVersion, type Catalog, type Option, type Requirement } from './domain.js';
 import { dictionaryTerms, normalizeDictionaryTerm } from './dictionary-language.js';
+import { DEFAULT_MESSAGE_LOCALE, message, type MessageKey, type MessageLocale } from './messages/index.js';
 
 type FieldSource = { source: 'form' | 'text' | 'derived'; evidence?: string };
 type Override = { field: string; previousValue: unknown; value: unknown; evidence: string };
@@ -17,9 +18,11 @@ interface ParseContext {
   consume(match: RegExpMatchArray): void;
   consumeRange(start: number, end: number): void;
   clarify(field: string, question: string): void;
+  /** 按请求语言取文案。 */
+  t(key: MessageKey, params?: Record<string, string | number>): string;
 }
 
-function createContext(text: string, form: Requirement): ParseContext {
+function createContext(text: string, form: Requirement, locale: MessageLocale): ParseContext {
   const requirement = structuredClone(form);
   const fieldSources: Record<string, FieldSource> = {};
   const overrides: Override[] = [];
@@ -43,12 +46,13 @@ function createContext(text: string, form: Requirement): ParseContext {
     },
     consume: match => consumed.push([match.index!, match.index! + match[0].length]),
     consumeRange: (start, end) => consumed.push([start, end]),
-    clarify: (field, question) => clarifications.push({ field, reason: 'NEEDS_CONFIRMATION', question, candidates: [] })
+    clarify: (field, question) => clarifications.push({ field, reason: 'NEEDS_CONFIRMATION', question, candidates: [] }),
+    t: (key, params) => message(locale, key, params)
   };
 }
 
-export function parseRequirement(text: string, form: Requirement, catalog: Catalog, recognizedEvidence: string[] = []) {
-  const ctx = createContext(text, form);
+export function parseRequirement(text: string, form: Requirement, catalog: Catalog, recognizedEvidence: string[] = [], locale: MessageLocale = DEFAULT_MESSAGE_LOCALE) {
+  const ctx = createContext(text, form, locale);
 
   parseDimensions(ctx);
   parseBoothSize(ctx, catalog);
@@ -62,10 +66,10 @@ export function parseRequirement(text: string, form: Requirement, catalog: Catal
 
   const unhandledText = findUnhandledText(ctx);
   if (unhandledText.length) {
-    ctx.clarify('text', '部分文字尚未可靠识别，请在表单补充条件，或转人工确认。');
+    ctx.clarify('text', ctx.t('parseUnhandledRules'));
   }
   if (!ctx.consumed.length && ctx.text) {
-    ctx.clarify('text', '未识别到可靠条件，请补充明确尺寸或选择表单条件。');
+    ctx.clarify('text', ctx.t('parseNoReliable'));
   }
 
   return {
@@ -77,7 +81,7 @@ export function parseRequirement(text: string, form: Requirement, catalog: Catal
     overrides: ctx.overrides,
     clarifications: ctx.clarifications,
     unhandledText,
-    warnings: [{ code: 'RULES_ONLY', message: '本次使用规则识别；未识别内容需人工确认。' }],
+    warnings: [{ code: 'RULES_ONLY', message: ctx.t('parseWarningRulesOnly') }],
     rulesVersion
   };
 }
@@ -90,11 +94,11 @@ function parseDimensions(ctx: ParseContext) {
     const values = matches.map(match => Number(match[1]) * (/毫米|mm/i.test(match[2]!) ? 1 : /厘米|cm/i.test(match[2]!) ? 10 : 1000));
 
     if (new Set(values).size > 1) {
-      ctx.clarify(field, '同一尺寸出现多个数值，请在表单确认最终值。');
+      ctx.clarify(field, ctx.t('parseDimMultiple'));
     } else if (matches[0]) {
       const value = values[0]!;
       if (!Number.isInteger(value) || value <= 0 || value > 1_000_000) {
-        ctx.clarify(field, '尺寸需为正数，精确到毫米，请修正。');
+        ctx.clarify(field, ctx.t('parseDimInvalid'));
       } else {
         ctx.set(field, value, matches[0][0]);
       }
@@ -109,11 +113,11 @@ function parseBoothSize(ctx: ParseContext, catalog: Catalog): void {
   if (!matches.length) return;
   const heights = [...new Set(matches.map(match => Number(match[1]) * (/毫米|mm/i.test(match[2]!) ? 1 : /厘米|cm/i.test(match[2]!) ? 10 : 1000)))];
   if (ctx.fieldSources.lengthMm?.source !== 'text' || ctx.fieldSources.widthMm?.source !== 'text' || heights.length !== 1) {
-    ctx.clarify('boothSpaceId', '方案高度须与明确的长、宽一起选择完整尺寸，请确认。');
+    ctx.clarify('boothSpaceId', ctx.t('parseHeightNeedsSize'));
   } else {
     const size = catalog.boothSpaces.find(space => space.lengthMm === ctx.requirement.lengthMm && space.widthMm === ctx.requirement.widthMm && space.heightMm === heights[0]);
     if (size) ctx.set('boothSpaceId', size.id, matches[0]![0]);
-    else ctx.clarify('boothSpaceId', '没有对应的完整方案尺寸，请选择已有尺寸或转人工确认。');
+    else ctx.clarify('boothSpaceId', ctx.t('parseHeightNoSize'));
   }
   matches.forEach(ctx.consume);
 }
@@ -122,7 +126,7 @@ function parseBoothSize(ctx: ParseContext, catalog: Catalog): void {
 function parseArea(ctx: ParseContext): boolean {
   const matches = [...ctx.text.matchAll(/(?:面积\s*(?:为|是|=|：)?\s*)?(\d+(?:\.\d+)?)\s*(?:平方米|平米|㎡|m²)/gi)];
   if (new Set(matches.map(match => Number(match[1]))).size > 1) {
-    ctx.clarify('areaM2', '出现多个面积，请确认最终面积。');
+    ctx.clarify('areaM2', ctx.t('parseAreaMultiple'));
   } else if (matches[0]) {
     ctx.set('areaM2', Number(matches[0][1]), matches[0][0]);
   }
@@ -133,7 +137,7 @@ function parseArea(ctx: ParseContext): boolean {
 /** “6×3”这类没有标明方向的长宽，只提示确认，不自行赋值。 */
 function flagAmbiguousDimensions(ctx: ParseContext) {
   for (const match of ctx.text.matchAll(/\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*(?:米|m))?/g)) {
-    ctx.clarify('lengthMm', `“${match[0]}”的长宽方向不明确，请按左右为长、前后为宽确认。`);
+    ctx.clarify('lengthMm', ctx.t('parseDirection', { text: match[0] }));
     ctx.consume(match);
   }
 }
@@ -145,7 +149,7 @@ function parseOpenings(ctx: ParseContext) {
   const counts = matches.map(match => match[0] === '岛式' ? 4 : OPENING_NUMERALS[match[1]!] ?? Number(match[1]));
 
   if (new Set(counts).size > 1) {
-    ctx.clarify('openingCount', '开口面数存在冲突，请确认。');
+    ctx.clarify('openingCount', ctx.t('parseOpeningConflict'));
   } else if (matches[0]) {
     ctx.set('openingCount', counts[0]!, matches[0][0]);
   }
@@ -218,7 +222,7 @@ function scanDictionary(ctx: ParseContext, field: DictionaryField, options: Opti
   for (const match of accepted) {
     const same = accepted.filter(other => other.start === match.start && other.end === match.end);
     if (new Set(same.map(other => other.id)).size > 1) {
-      ctx.clarify(field, `“${ctx.text.slice(match.start, match.end)}”存在多个候选，请确认。`);
+      ctx.clarify(field, ctx.t('parseCandidates', { text: ctx.text.slice(match.start, match.end) }));
       ctx.consumeRange(match.start, match.end);
       continue;
     }
@@ -227,7 +231,7 @@ function scanDictionary(ctx: ParseContext, field: DictionaryField, options: Opti
     const negative = NEGATIVE_PREFIX.test(prefix) || /^(?:は|が|を)?\s*(?:不要|必要ない|いらない|なし)/u.test(suffix);
     const strong = STRONG_PREFIX.test(prefix) || /^(?:は|が)?\s*必須/u.test(suffix);
     if (supportsTagConstraints) (negative ? hits.excluded : strong ? hits.required : hits.found).push(match.id);
-    else if (negative || strong) ctx.clarify(field, '该分类不支持否定或强制条件，请确认。');
+    else if (negative || strong) ctx.clarify(field, ctx.t('parseNoConstraints'));
     else hits.found.push(match.id);
     ctx.consumeRange(match.start, match.end);
   }
@@ -238,16 +242,16 @@ function applyDictionaryHits(ctx: ParseContext, field: DictionaryField, { found,
   if (found.length) {
     const unique = [...new Set(found)];
     if (field === 'productSystemId' || field === 'budgetTierId') {
-      if (unique.length > 1) ctx.clarify(field, '识别到多个单选条件，请确认。');
-      else ctx.set(field, unique[0]!, '原文中的字典名称');
+      if (unique.length > 1) ctx.clarify(field, ctx.t('parseMultiSingle'));
+      else ctx.set(field, unique[0]!, ctx.t('evidenceDictionary'));
     } else {
-      ctx.set(field, unique, '原文中的字典名称');
+      ctx.set(field, unique, ctx.t('evidenceDictionary'));
     }
   }
 
   if (field === 'zoneIds' || field === 'featureIds') {
-    if (required.length) ctx.set(field === 'zoneIds' ? 'requiredZoneIds' : 'requiredFeatureIds', [...new Set(required)], '原文明确必须项');
-    if (excluded.length) ctx.set(field === 'zoneIds' ? 'excludedZoneIds' : 'excludedFeatureIds', [...new Set(excluded)], '原文明确禁止项');
+    if (required.length) ctx.set(field === 'zoneIds' ? 'requiredZoneIds' : 'requiredFeatureIds', [...new Set(required)], ctx.t('evidenceRequired'));
+    if (excluded.length) ctx.set(field === 'zoneIds' ? 'excludedZoneIds' : 'excludedFeatureIds', [...new Set(excluded)], ctx.t('evidenceExcluded'));
   }
 }
 
@@ -259,7 +263,7 @@ function deriveArea(ctx: ParseContext, areaMentioned: boolean) {
 
   const area = requirement.lengthMm * requirement.widthMm / 1_000_000;
   if (areaMentioned && requirement.areaM2 !== area) {
-    ctx.clarify('areaM2', '文字面积与长宽乘积冲突，请修正。');
+    ctx.clarify('areaM2', ctx.t('parseAreaTextConflict'));
   }
   requirement.areaM2 = area;
   ctx.fieldSources.areaM2 = { source: 'derived' };
@@ -268,7 +272,7 @@ function deriveArea(ctx: ParseContext, areaMentioned: boolean) {
 function checkRequiredExcludedConflict(ctx: ParseContext) {
   const { requirement } = ctx;
   if (requirement.requiredZoneIds.some(id => requirement.excludedZoneIds.includes(id)) || requirement.requiredFeatureIds.some(id => requirement.excludedFeatureIds.includes(id))) {
-    ctx.clarify('keywords', '同一功能同时被要求和禁止，请修正。');
+    ctx.clarify('keywords', ctx.t('parseKeywordConflict'));
   }
 }
 

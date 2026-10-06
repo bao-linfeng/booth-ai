@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import type { Config } from '../../../config.js';
@@ -6,8 +6,12 @@ import type { createStorage } from '../../../infra/storage.js';
 import { requirementSchema } from '../../../modules/selection/domain.js';
 import { getSelectionCatalog, getSelectionScheme, matchSelection, parseSelection,
   type MatchSelectionInput, type ParseSelectionInput } from '../../../modules/selection/service.js';
+import { resolveMessageLocale } from '../../../modules/selection/messages/index.js';
 import { getVisitorId } from './identity.js';
 import { rateLimit } from '../../rate-limits.js';
+
+/** 匹配/解析结果里的提示文案跟随 Accept-Language，缺省或不支持的语言回退中文。 */
+const requestMessageLocale = (request: FastifyRequest) => resolveMessageLocale(request.headers['accept-language']?.split(',')[0]?.split(';')[0]);
 
 export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>, config: Config) {
   await app.register(async selection => {
@@ -43,7 +47,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
     }, async request => {
       const visitorId = getVisitorId(request);
       const userId = request.principal?.localId ?? null;
-      const data = await parseSelection(pool, config, request.body, { visitorId, userId });
+      const data = await parseSelection(pool, config, request.body, { visitorId, userId }, requestMessageLocale(request));
       request.log.info({ attemptId: data.attemptId, parseId: data.parseId, degraded: data.degraded }, 'selection parse recorded');
       return { code: 0, data };
     });
@@ -73,7 +77,7 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
     }, async request => {
       const visitorId = getVisitorId(request);
       const userId = request.principal?.localId ?? null;
-      const data = await matchSelection(pool, storage, request.body, { visitorId, userId });
+      const data = await matchSelection(pool, storage, request.body, { visitorId, userId }, requestMessageLocale(request));
 
       request.log.info({
         rulesVersion: data.rulesVersion,
