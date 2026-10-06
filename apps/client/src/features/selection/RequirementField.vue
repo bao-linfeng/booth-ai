@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Check } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -91,7 +92,7 @@ function answer(id: string, value: string | null) {
     <template v-if="numericFields.includes(field)"><Input :id="id" type="number" inputmode="decimal" :min="field === 'areaM2' ? 0.000001 : 0.001" :max="field === 'areaM2' ? 1000000 : 1000" :step="field === 'areaM2' ? 0.000001 : 0.001" :model-value="numericValue" :disabled="disabled" :aria-invalid="!!numericError" :aria-describedby="numericError ? `${id}-error` : undefined" :placeholder="t('requirementForm.fieldPlaceholder')" @update:model-value="updateNumber" /><p v-if="numericError" :id="`${id}-error`" class="text-xs text-destructive">{{ numericError }}</p></template>
     <OptionSelect v-else-if="field === 'boothSpaceId' || field === 'openingCount' || field === 'productSystemId' || field === 'budgetTierId'" :label="labels[field]" :model-value="modelValue[field] === null ? null : String(modelValue[field])" :options="options" :disabled="disabled" @update:model-value="update(field === 'openingCount' && $event !== null ? Number($event) : $event)" />
     <div v-else class="flex flex-wrap gap-2">
-      <Button v-for="option in options" :key="option.id" type="button" size="sm" :disabled="disabled" :variant="(modelValue[field] as string[]).includes(option.id) ? 'secondary' : 'outline'" :aria-pressed="(modelValue[field] as string[]).includes(option.id)" @click="toggle(option.id)">{{ option.label }}</Button>
+      <Button v-for="option in options" :key="option.id" type="button" size="sm" :disabled="disabled" :variant="(modelValue[field] as string[]).includes(option.id) ? 'selected' : 'outline'" :aria-pressed="(modelValue[field] as string[]).includes(option.id)" @click="toggle(option.id)"><Check v-if="(modelValue[field] as string[]).includes(option.id)" aria-hidden="true" />{{ option.label }}</Button>
       <p v-if="!options.length" class="text-xs text-muted-foreground">{{ t('requirementForm.fieldNoOptions') }}</p>
     </div>
   </div>

@@ -6,7 +6,8 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <div class="min-h-screen bg-background text-foreground">
+  <div class="min-h-screen text-foreground">
+    <div class="app-backdrop" aria-hidden="true" />
       <a href="#main-content" class="sr-only z-[100] rounded-md bg-card text-sm focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:px-4 focus:py-3">{{ t('controls.skipToContent') }}</a>
     <MainNavigation />
     <slot />

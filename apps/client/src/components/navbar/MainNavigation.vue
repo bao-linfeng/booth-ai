@@ -51,7 +51,7 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
 </script>
 
 <template>
-  <Navbar size="lg" class="relative top-auto h-auto min-h-16 border-border/80 bg-background/95 py-2 lg:sticky lg:top-0 lg:py-0">
+  <Navbar size="lg" class="relative top-auto h-auto min-h-16 border-border/70 bg-card/80 py-2 supports-[backdrop-filter]:bg-card/70 lg:sticky lg:top-0 lg:py-0">
     <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
       <div class="flex min-w-0 items-center gap-8 xl:gap-12">
         <NavbarBrand class="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" :aria-label="t('controls.brandHome')">

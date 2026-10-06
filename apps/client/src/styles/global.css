@@ -7,15 +7,15 @@
     --radius: 0.5rem;
     --font-sans: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
     /* semantic color fallbacks — overridden per theme in themes.css */
-    --success: 152 64% 28%;
-    --warning: 32 88% 32%;
-    --info: 211 76% 39%;
+    --success: 158 72% 27%;
+    --warning: 32 90% 33%;
+    --info: 214 80% 42%;
   }
 
   html.dark {
-    --success: 152 58% 65%;
-    --warning: 38 92% 68%;
-    --info: 211 86% 73%;
+    --success: 155 60% 58%;
+    --warning: 38 92% 64%;
+    --info: 212 90% 70%;
   }
 
   * {
@@ -32,7 +32,7 @@
   }
 
   ::selection {
-    background: hsl(var(--primary) / 0.16);
+    background: hsl(var(--primary) / 0.18);
   }
 }
 
@@ -54,7 +54,24 @@
   }
 
   .studio-panel {
-    @apply rounded-lg border-0 bg-card text-card-foreground shadow-none;
+    @apply rounded-lg border-0 bg-card text-card-foreground shadow-none ring-1 ring-border/70;
+  }
+
+  /* 页面背景层：CAD 画布式点阵 + 顶部主色微光，向下渐隐；固定定位不随滚动重绘 */
+  .app-backdrop {
+    @apply pointer-events-none fixed inset-0 -z-10;
+    background-image:
+      radial-gradient(70% 480px at 50% -160px, hsl(var(--primary) / 0.09), transparent 70%),
+      radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.07) 1px, transparent 0);
+    background-size: 100% 100%, 22px 22px;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 220px, transparent 640px);
+    mask-image: linear-gradient(to bottom, #000 0, #000 220px, transparent 640px);
+  }
+
+  html.dark .app-backdrop {
+    background-image:
+      radial-gradient(70% 520px at 50% -160px, hsl(var(--primary) / 0.16), transparent 70%),
+      radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.08) 1px, transparent 0);
   }
 
   .studio-note {

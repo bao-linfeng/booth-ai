@@ -19,7 +19,8 @@ const handleLogin = async () => {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen p-4 min-w-screen bg-background">
+  <div class="flex items-center justify-center min-h-screen p-4 min-w-screen">
+    <div class="app-backdrop" aria-hidden="true" />
     <main class="flex flex-col gap-6 w-full max-w-sm">
       <div class="flex flex-col items-center gap-2 text-center">
         <h1 class="text-2xl font-bold tracking-tight">{{ t('nav.brand') }}</h1>

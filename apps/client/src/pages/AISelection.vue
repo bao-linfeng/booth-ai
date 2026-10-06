@@ -716,11 +716,11 @@ onMounted(() => {
             <div v-if="chips.length" class="flex flex-wrap gap-2"><Badge v-for="chip in chips" :key="chip" variant="outline">{{ chip }}</Badge></div>
             <details v-if="conditionRows.length" class="text-xs"><summary class="cursor-pointer text-muted-foreground focus-visible:outline focus-visible:outline-ring">{{ t('selection.viewAllConditions', { n: conditionRows.length }) }}</summary><dl class="mt-3 grid gap-3 sm:grid-cols-2"><div v-for="row in conditionRows" :key="row.field" class="min-w-0"><dt class="text-muted-foreground">{{ row.label }}</dt><dd class="mt-1 break-words">{{ row.value }}</dd></div></dl></details>
           </section>
-          <section v-if="editorVisible" id="requirement-editor" class="space-y-4 border-b pb-5" aria-labelledby="requirement-heading">
+          <section v-if="editorVisible" id="requirement-editor" class="studio-panel space-y-4 border p-5 md:p-6" aria-labelledby="requirement-heading">
             <h2 id="requirement-heading" class="flex items-center gap-2 text-lg font-semibold"><Sparkles class="size-5 text-primary" />{{ t('selection.inputTitle') }}</h2>
             <div class="space-y-3">
               <Label for="requirement-text" class="sr-only">{{ t('selection.inputLabel') }}</Label>
-               <Textarea id="requirement-text" dir="auto" :model-value="text" :rows="3" maxlength="1000" :disabled="busy" class="min-h-24 resize-y bg-card p-3 text-base leading-6 focus-visible:ring-1" :placeholder="t('selection.inputPlaceholder')" @update:model-value="text = String($event)" />
+               <Textarea id="requirement-text" dir="auto" :model-value="text" :rows="3" maxlength="1000" :disabled="busy" class="min-h-24 resize-y bg-background p-3 text-base leading-6 focus-visible:ring-2 focus-visible:ring-primary/40" :placeholder="t('selection.inputPlaceholder')" @update:model-value="text = String($event)" />
               <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="text-xs text-muted-foreground">{{ t('selection.exampleHint') }}</span>
