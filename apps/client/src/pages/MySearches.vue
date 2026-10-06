@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { appLocale } from '@/plugins/i18n'
 import { History, Search, ArrowRight, Image, Loader2, Palette, PanelsTopLeft, ChevronDown } from 'lucide-vue-next'
@@ -12,15 +11,12 @@ import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue'
 import { Pagination, PaginationList, PaginationPrev, PaginationNext } from '@/components/ui/pagination'
 import MainLayout from '@/layouts/MainLayout.vue'
 import { generationText, getJobStatusLabels, requirementSummary, summarizeGeneration } from '@/features/searches/summary'
-import { useAuthStore } from '@/stores/auth'
 import { getMySearches, type SearchPage, type SearchTheme, type SearchArtwork } from '@/services/api/searches'
 import { getDirectionLabels } from '@/features/artwork-jobs/labels'
 
 const { t } = useI18n()
 const directionLabels = computed(() => getDirectionLabels(t))
 const jobStatusLabels = computed(() => getJobStatusLabels(t))
-const router = useRouter()
-const authStore = useAuthStore()
 
 const pageSize = 20
 const thumbnailLimit = 4
@@ -38,7 +34,6 @@ function getJobLabel(job: SearchTheme | SearchArtwork) {
 }
 
 async function load(next = page.value) {
-  if (!authStore.isLoggedIn) return
   loading.value = true
   error.value = ''
   page.value = next
@@ -50,10 +45,6 @@ async function load(next = page.value) {
   } finally {
     loading.value = false
   }
-}
-
-function login() {
-  void router.push({ path: '/auth/sign-in', query: { redirect: '/my-searches' } })
 }
 
 function toggle(id: string) {
@@ -91,15 +82,6 @@ onMounted(() => load())
         </Button>
       </header>
 
-      <Card v-if="!authStore.isLoggedIn">
-        <CardContent class="space-y-4 p-8">
-          <History class="size-8 text-primary" />
-          <p>{{ t('searches.loginPrompt') }}</p>
-          <Button @click="login">{{ t('searches.loginBtn') }}</Button>
-        </CardContent>
-      </Card>
-
-      <template v-else>
         <div v-if="loading && !list" role="status" class="flex items-center gap-3 p-6">
           <Loader2 class="size-5 animate-spin" />{{ t('searches.loading') }}
         </div>
@@ -238,7 +220,6 @@ onMounted(() => load())
             </div>
           </div>
         </template>
-      </template>
     </main>
     <ImagePreviewDialog
       :open="!!expandedImage"

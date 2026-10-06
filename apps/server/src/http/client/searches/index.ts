@@ -2,8 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import type { createStorage } from '../../../infra/storage.js';
-import { clientUserId } from '../../authentication.js';
-import { listUserSearches } from '../../../modules/selection-analytics/queries.js';
+import { getProvidedVisitorId } from '../selection/identity.js';
+import { listClientSearches } from '../../../modules/selection-analytics/queries.js';
 import { listSearchJobs } from '../../../modules/generation/search-jobs.js';
 
 type SearchSnapshotItem = {
@@ -44,12 +44,14 @@ export async function registerClientSearchRoutes(app: FastifyInstance, pool: pg.
     },
   }, async (request, reply) => {
     reply.header('Cache-Control', 'private, no-store');
-    const userId = clientUserId(request);
+    const userId = request.principal?.localId;
+    const visitorId = getProvidedVisitorId(request);
+    if (!userId && !visitorId) throw Object.assign(new Error('A valid x-visitor-id header is required'), { statusCode: 400 });
     const page = request.query.page ?? 1;
     const pageSize = request.query.pageSize ?? 20;
-    const result = await listUserSearches(pool, userId, { page, pageSize });
+    const result = await listClientSearches(pool, userId ? { userId } : { visitorId: visitorId! }, { page, pageSize });
     const snapshotItems = result.data.flatMap(search => asSnapshotItems(search.resultSnapshot));
-    const jobs = await listSearchJobs(pool, storage, userId, result.data.map(search => search.id));
+    const jobs = userId ? await listSearchJobs(pool, storage, userId, result.data.map(search => search.id)) : null;
     const assetIds = [...new Set(snapshotItems.map(getFirstImageAssetId).filter((assetId): assetId is string => Boolean(assetId)))];
     const versions = assetIds.length === 0 ? [] : (await pool.query<{ assetId: string; objectKey: string }>(
       `SELECT DISTINCT ON (v.asset_id) v.asset_id::text AS "assetId",v.object_key AS "objectKey"
@@ -75,8 +77,8 @@ export async function registerClientSearchRoutes(app: FastifyInstance, pool: pg.
             matchType: item.matchType,
             specifications: item.specifications,
             thumbnail: signedUrls.get(getFirstImageAssetId(item) ?? '') ?? '',
-            theme: typeof item.code === 'string' ? jobs.get(search.id)?.get(item.code)?.theme ?? null : null,
-            artwork: typeof item.code === 'string' ? jobs.get(search.id)?.get(item.code)?.artwork ?? null : null,
+            theme: typeof item.code === 'string' ? jobs?.get(search.id)?.get(item.code)?.theme ?? null : null,
+            artwork: typeof item.code === 'string' ? jobs?.get(search.id)?.get(item.code)?.artwork ?? null : null,
           })),
           createdAt: search.createdAt,
         })),

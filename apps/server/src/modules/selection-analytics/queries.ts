@@ -2,9 +2,9 @@ import type pg from 'pg';
 import { searchFilter } from './filters.js';
 import type { SearchQuery } from './types.js';
 
-export async function listUserSearches(
+export async function listClientSearches(
   pool: pg.Pool,
-  userId: string,
+  identity: { userId: string } | { visitorId: string },
   query: { page: number; pageSize: number },
 ): Promise<{
   data: Array<{
@@ -24,12 +24,14 @@ export async function listUserSearches(
   page: number;
   pageSize: number;
 }> {
+  const ownerColumn = 'userId' in identity ? 'user_id' : 'visitor_id';
+  const ownerId = 'userId' in identity ? identity.userId : identity.visitorId;
   const [count, rows] = await Promise.all([
     pool.query<{ total: number }>(
       `SELECT count(*)::int AS total
        FROM selection_searches
-       WHERE user_id = $1 AND status = 'matched'`,
-      [userId],
+        WHERE ${ownerColumn} = $1 AND status = 'matched'`,
+      [ownerId],
     ),
     pool.query<{
       id: string;
@@ -49,10 +51,10 @@ export async function listUserSearches(
         random_count AS "randomCount", result_count AS "resultCount",
         result_snapshot AS "resultSnapshot", created_at AS "createdAt"
        FROM selection_searches
-       WHERE user_id = $1 AND status = 'matched'
-       ORDER BY created_at DESC
+        WHERE ${ownerColumn} = $1 AND status = 'matched'
+        ORDER BY created_at DESC, id DESC
        LIMIT $2 OFFSET $3`,
-      [userId, query.pageSize, (query.page - 1) * query.pageSize],
+      [ownerId, query.pageSize, (query.page - 1) * query.pageSize],
     ),
   ]);
 

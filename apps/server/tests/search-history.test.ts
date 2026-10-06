@@ -9,6 +9,7 @@ import type { createStorage } from '../src/infra/storage.js';
 import { registerClientSearchRoutes } from '../src/http/client/searches/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';
 import { listSearchJobs } from '../src/modules/generation/search-jobs.js';
+import { listClientSearches } from '../src/modules/selection-analytics/queries.js';
 import { assertThemeSearch, themeRequestHash, type ThemeParameters } from '../src/modules/generation/theme/service.js';
 
 const storage = { signDownload: async (key: string) => `https://assets.example/${key}` } as ReturnType<typeof createStorage>;
@@ -21,6 +22,7 @@ test('search history returns one inline theme and its artwork previews per searc
   const pool = { query: async (sql: string, params: unknown[]) => {
     assert.equal(params[0], userId);
     if (sql.includes('session_version')) return { rows: [{ enabled: true, roles: [], sessionVersion: 1 }] };
+    if (sql.includes('FROM selection_searches')) assert.match(sql, /WHERE user_id = \$1/);
     if (sql.includes('count(*)')) return { rows: [{ total: 1 }] };
     if (sql.includes('FROM selection_searches')) return { rows: [{
       id: searchId, status: 'matched', mode: 'filtered', inputText: '', finalRequirement: {},
@@ -38,7 +40,7 @@ test('search history returns one inline theme and its artwork previews per searc
   registerAuthentication(app, pool, redis, 'client');
   t.after(() => app.close());
   await registerClientSearchRoutes(app, pool, redis, storage);
-  const response = await app.inject({ url: '/me/searches', headers: { authorization: 'Bearer test' } });
+  const response = await app.inject({ url: '/me/searches', headers: { authorization: 'Bearer test', 'x-visitor-id': 'v_another_browser_123456' } });
   assert.equal(response.statusCode, 200);
   assert.equal(response.headers['cache-control'], 'private, no-store');
   const items = response.json().data.items[0].items;
@@ -50,12 +52,64 @@ test('search history returns one inline theme and its artwork previews per searc
   assert.ok(!response.body.includes('objectKey'));
 });
 
-test('search history rejects unauthenticated requests before reading generation records', async t => {
+test('search history rejects missing or invalid visitor identity before querying records', async t => {
   const app = Fastify();
   t.after(() => app.close());
   const pool = { query: async () => { assert.fail('Unauthenticated request queried the database'); } } as unknown as pg.Pool;
   await registerClientSearchRoutes(app, pool, { get: async () => null } as unknown as Redis, storage);
-  assert.equal((await app.inject({ url: '/me/searches' })).statusCode, 401);
+  for (const visitorId of [undefined, 'short', 'invalid visitor id']) {
+    assert.equal((await app.inject({ url: '/me/searches', headers: visitorId ? { 'x-visitor-id': visitorId } : {} })).statusCode, 400);
+  }
+});
+
+test('visitor search history uses browser identity and pagination without reading private generation records', async t => {
+  const visitorId = 'v_browser_1234567890';
+  const searchId = randomUUID();
+  const assetId = randomUUID();
+  const pool = { query: async (sql: string, params: unknown[]) => {
+    if (sql.includes('FROM asset_versions')) {
+      assert.deepEqual(params, [[assetId]]);
+      return { rows: [{ assetId, objectKey: 'original.png' }] };
+    }
+    assert.match(sql, /FROM selection_searches/);
+    assert.match(sql, /WHERE visitor_id = \$1 AND status = 'matched'/);
+    if (sql.includes('count(*)')) {
+      assert.deepEqual(params, [visitorId]);
+      return { rows: [{ total: 3 }] };
+    }
+    assert.deepEqual(params, [visitorId, 2, 2]);
+    return { rows: [{ id: searchId, status: 'matched', mode: 'filtered', inputText: 'test', finalRequirement: {},
+      directCount: 1, referenceCount: 0, randomCount: 0, resultCount: 1,
+      resultSnapshot: [{ code: 'SCHEME-A', matchType: 'direct', specifications: {}, images: [{ assetId }] }],
+      createdAt: '2026-10-01T02:00:00.000Z' }] };
+  } } as unknown as pg.Pool;
+  const redis = { get: async () => { assert.fail('Visitor request read a session'); } } as unknown as Redis;
+  const app = Fastify();
+  t.after(() => app.close());
+  registerAuthentication(app, pool, redis, 'client');
+  await registerClientSearchRoutes(app, pool, redis, storage);
+  const response = await app.inject({ url: '/me/searches?page=2&pageSize=2', headers: { 'x-visitor-id': visitorId } });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['cache-control'], 'private, no-store');
+  const data = response.json().data;
+  assert.equal(data.total, 3);
+  assert.equal(data.page, 2);
+  assert.equal(data.pageSize, 2);
+  assert.equal(data.items[0].id, searchId);
+  assert.equal(data.items[0].items[0].thumbnail, 'https://assets.example/original.png');
+  assert.equal(data.items[0].items[0].theme, null);
+  assert.equal(data.items[0].items[0].artwork, null);
+});
+
+test('search history does not downgrade an invalid session to browser identity', async t => {
+  const app = Fastify();
+  t.after(() => app.close());
+  const pool = { query: async () => { assert.fail('Invalid session queried search history'); } } as unknown as pg.Pool;
+  const redis = { get: async () => null } as unknown as Redis;
+  registerAuthentication(app, pool, redis, 'client');
+  await registerClientSearchRoutes(app, pool, redis, storage);
+  const response = await app.inject({ url: '/me/searches', headers: { authorization: 'Bearer expired', 'x-visitor-id': 'v_browser_1234567890' } });
+  assert.equal(response.statusCode, 401);
 });
 
 test('empty search history does not query generation tables', async () => {
@@ -99,6 +153,11 @@ test('search previews: migration backfill, distinct searches, latest theme, sele
        VALUES($1,$2,'test',$3,'filtered','matched','{}',$4,'test','test',0,$5)`,
       [id, attempt, user, JSON.stringify([{ code }]), `2026-10-01T0${index * 2 + 1}:00:00.000Z`],
     );
+    assert.equal((await listClientSearches(pool, { visitorId: 'test' }, { page: 1, pageSize: 1 })).total, 2);
+    assert.deepEqual((await listClientSearches(pool, { visitorId: 'test' }, { page: 2, pageSize: 1 })).data.map(row => row.id), [searches[0]]);
+    assert.equal((await listClientSearches(pool, { visitorId: 'other-browser' }, { page: 1, pageSize: 20 })).total, 0);
+    assert.equal((await listClientSearches(pool, { userId: user }, { page: 1, pageSize: 20 })).total, 2);
+    assert.equal((await listClientSearches(pool, { userId: other }, { page: 1, pageSize: 20 })).total, 0);
     async function asset(key: string) {
       const id = randomUUID();
       await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name) VALUES($1,$2,'rendering',$3)", [id, scheme, key]);
