@@ -49,9 +49,9 @@ test('migration 045 extends prompt templates in an isolated schema without chang
 
     const after = await pool.query('SELECT id,purpose,body,variables FROM prompt_templates WHERE id=$1', [existing]);
     assert.deepEqual(after.rows, before.rows);
-    const purposeCheck = await pool.query("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname='prompt_templates_purpose_check'");
+    const purposeCheck = await pool.query("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname='prompt_templates_purpose_check' AND connamespace=current_schema()::regnamespace");
     assert.match(purposeCheck.rows[0].definition, /filter/);
-    const scopeCheck = await pool.query("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname='prompt_templates_filter_scope_check'");
+    const scopeCheck = await pool.query("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname='prompt_templates_filter_scope_check' AND connamespace=current_schema()::regnamespace");
     assert.match(scopeCheck.rows[0].definition, /filter/);
 
     const filterId = randomUUID();

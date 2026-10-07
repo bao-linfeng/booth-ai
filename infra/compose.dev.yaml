@@ -142,15 +142,36 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  # 标准检查：类型检查 → 重建 booth_test 并迁移 → 全量测试（集成测试必须执行，缺变量即失败）→ 构建。
+  # 测试只使用独立库 booth_test 与 Redis 15 号库，不触碰开发数据。
   check:
     <<: *server
     profiles: [tools]
+    environment:
+      <<: *server-env
+      REQUIRE_INTEGRATION_TESTS: '1'
+      PROJECT_TEST_DATABASE_URL: &test-db postgres://booth:${POSTGRES_PASSWORD:?Run scripts/setup.ps1 first}@postgres:5432/booth_test
+      THEME_TEST_DATABASE_URL: *test-db
+      CREDIT_TEST_DATABASE_URL: *test-db
+      ARTWORK_TEST_DATABASE_URL: *test-db
+      ASSET_TEST_DATABASE_URL: *test-db
+      BOM_TEST_DATABASE_URL: *test-db
+      SELECTION_TEST_DATABASE_URL: *test-db
+      AI_MODEL_TEST_DATABASE_URL: *test-db
+      PROMPT_TEMPLATE_TEST_DATABASE_URL: *test-db
+      ADMIN_ROLE_TEST_DATABASE_URL: *test-db
+      THEME_TEST_REDIS_URL: redis://:${REDIS_PASSWORD:?Run scripts/setup.ps1 first}@redis:6379/15
     volumes:
       - ../apps/server/src:/app/src:ro
       - ../apps/server/migrations:/app/migrations:ro
       - ../apps/server/tests:/app/tests:ro
       - ../docs/source:/docs/source:ro
-    command: [/bin/sh, -ec, 'npm run check && npm run test && npm run build']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: [/bin/sh, -ec, 'npm run check && npx tsx tests/setup-integration-db.ts && npm run test && npm run build']
 
   smoke:
     <<: *server

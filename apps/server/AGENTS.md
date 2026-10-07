@@ -31,7 +31,7 @@ npm run dev:api        # tsx watch src/api.ts（API，watch 模式）
 npm run dev:worker     # tsx watch src/worker.ts（Worker，watch 模式）
 npm run check          # tsc --noEmit（两套 tsconfig，源码 + 测试同时检查）
 npm run build          # tsc → dist/
-npm test               # tsx --test tests/*.test.ts（不需要外部服务）
+npm test               # tsx --test tests/*.test.ts（宿主机无测试库变量时集成测试会 skip，完整检查用 Docker check）
 npx tsx --test tests/app.test.ts   # 单文件测试
 npm run migrate        # 手动跑 DB 迁移（需 DB 已启动）
 npm run smoke          # E2E 冒烟（需 Postgres + Redis + Silo S3 全部在线）
@@ -194,9 +194,12 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - Runner：Node 原生 `node:test`，**不是 Jest/Vitest**
 - `tests/app.test.ts`：`fastify.inject()` 路由测试，无需外部服务
 - `npm run smoke`：需要 Postgres 17、Redis 7.4、Silo S3 全部运行
-- `*-integration.test.ts` 及部分 DB 测试在环境变量缺失时会 `skip`（`npm test` 与 Docker `check` 默认都不设置），**测试通过不代表它们跑过**。按需设置 `PROJECT_` / `THEME_` / `CREDIT_` / `ARTWORK_` / `ASSET_` / `BOM_` / `PROMPT_TEMPLATE_` / `AI_MODEL_` / `ADMIN_ROLE_` + `TEST_DATABASE_URL`，以及 `THEME_TEST_REDIS_URL`
-- 测试库用独立数据库（如 `booth_test`），不要指向开发库 `booth`。积分、生成任务、角色迁移等测试会自建临时 schema 并逐个执行迁移；BOM、通知收件箱等测试直接使用 `public`，需要先对测试库运行 `migrate`
-- 修改核心逻辑后必须确保 `npm run check && npm test` 通过
+- **标准检查是 Docker `check` 服务**（命令见根目录 `AGENTS.md`）：`npm run check` → `tests/setup-integration-db.ts` → `npm test` → `npm run build`。它注入全部 `*_TEST_DATABASE_URL`（统一指向独立库 `booth_test`）与 `THEME_TEST_REDIS_URL`（Redis 15 号库），并设置 `REQUIRE_INTEGRATION_TESTS=1`，因此集成测试必须执行，结果应为 `skipped 0`。
+- `tests/setup-integration-db.ts` 每次检查都会删除并重建 `booth_test`、在 `public` 执行全部迁移（BOM、通知收件箱等测试直接使用 `public`），并清空 Redis 测试库；脚本只接受名称以 `_test` 结尾的库和非 0 号 Redis 库，不会触碰开发库 `booth`。
+- 宿主机直接 `npm test` 时这些变量缺失，集成测试会 `skip`，**本地通过不代表集成测试跑过**；`tests/integration-env.test.ts` 在 `REQUIRE_INTEGRATION_TESTS=1` 时校验变量齐全，缺项直接失败。变量清单从测试源码中的 `process.env.*_TEST_(DATABASE|REDIS)_URL` 自动收集（`tests/integration-env.ts`），新增集成测试变量后须同步加到 `infra/compose.dev.yaml` 的 `check` 服务。
+- 集成测试按文件并行，读系统目录（`pg_constraint`、`information_schema` 等）时必须限定当前 schema（如 `connamespace = current_schema()::regnamespace`），否则会读到其他测试的临时 schema。
+- **新增权限码必须同时追加迁移补授给 `ROLE_ADMIN`**（参考 `072_grant_sign_in_config_to_admin.sql`，已拥有时不改 revision）。`admin-roles-integration.test.ts` 断言执行全部迁移后 ROLE_ADMIN 拥有全部权限码，漏写迁移会失败；只执行到某个历史迁移的测试要按该迁移当时的权限集合断言（见 `introducedAfter061`）。
+- 修改核心逻辑后必须确保 `check` 服务通过（推送前 lefthook 也会在 `apps/server`、`infra` 有改动时执行它）
 
 ---
 
