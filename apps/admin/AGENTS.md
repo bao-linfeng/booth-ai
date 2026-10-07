@@ -45,8 +45,9 @@ pnpm check:type            # turbo run typecheck（全部包）
 pnpm check                 # check:circular → check:dep → check:type → check:cspell
 
 # 测试
-pnpm test:unit             # vitest run --dom（happy-dom 环境）
-pnpm vitest run <path/to/test.ts>  # 单文件
+pnpm test:antd             # 只跑 web-antd 业务测试（apps/web-antd/src 下的 *.test.ts）
+pnpm test:unit             # vitest run --dom（全部包，含框架层）
+pnpm vitest run --dom <path/to/test.ts>  # 单文件
 
 # 格式化 / 代码质量
 pnpm lint                  # vsh lint（eslint + oxlint）
@@ -190,6 +191,12 @@ views/<module>/list/
 接口请求及入参 / 返回类型放在 `api/` 对应业务模块，页面不直接拼接 HTTP 请求。
 
 参考：`views/scheme/list/index.vue`、`views/scheme/list/options.ts` 以及该目录下的 `components/SchemeFormModal.vue`、`SchemeDetailModal.vue`、`SchemeImportModal.vue`。
+
+### 业务测试
+
+- **检查流程**：改动 `apps/web-antd/src` 后依次跑 `pnpm -F @vben/web-antd run typecheck`、`pnpm test:antd`，两者都通过才算完成。
+- 组件测试与被测组件同目录放在 `__tests__/`。Vben 表单/弹窗与 ant-design-vue 用替身隔离，业务逻辑（请求幂等键、`expectedRevision`、Schema `dependencies`、只读/权限守卫）保持真实；项目模块的替身见 `views/projects/__tests__/fake-vben.ts`。
+- 组件新增 `useAccess`、store 等依赖时须同步更新其测试的 mock，否则测试会因缺少 Pinia 等运行环境直接失败。
 
 ### 环境变量（web-antd）
 

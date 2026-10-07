@@ -4,6 +4,8 @@ import { createApp, defineComponent, h, nextTick } from 'vue';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import UserDetailModal from '../UserDetailModal.vue';
+
 interface GridOptions {
   gridOptions: {
     pagerConfig: { currentPage: number; pageSize: number };
@@ -38,6 +40,10 @@ const tabsContextKey = Symbol('tabs-context');
 
 vi.mock('#/api/core/credits', () => apiMocks);
 vi.mock('#/api/core/user-manage', () => apiMocks);
+// 积分流水需要 credits.read；本用例覆盖有权限时的懒加载与分页
+vi.mock('@vben/access', () => ({
+  useAccess: () => ({ hasAccessByCodes: () => true }),
+}));
 
 vi.mock('@vben/common-ui', async () => {
   const { defineComponent, h } = await import('vue');
@@ -152,11 +158,11 @@ vi.mock('#/adapter/vxe-table', async () => {
   return {
     useVbenVxeGrid: (options: GridOptions) => {
       let currentInstance:
+        | undefined
         | {
             mounted: boolean;
             queryCalls: Array<{ currentPage: number; pageSize: number }>;
-          }
-        | undefined;
+          };
       const reload = vi.fn(() => {
         if (!currentInstance?.mounted) {
           console.error(
@@ -244,8 +250,6 @@ vi.mock('#/adapter/vxe-table', async () => {
   };
 });
 
-import UserDetailModal from '../UserDetailModal.vue';
-
 type DetailModal = ComponentPublicInstance & {
   open: (userId: string) => Promise<void>;
 };
@@ -300,15 +304,6 @@ async function mountModal() {
   return { host, modal };
 }
 
-afterEach(() => {
-  activeApp?.unmount();
-  activeApp = undefined;
-  document.body.innerHTML = '';
-  gridState.instances.length = 0;
-  vi.clearAllMocks();
-  vi.restoreAllMocks();
-});
-
 beforeEach(() => {
   apiMocks.getUserDetailApi.mockImplementation(async (id: string) => user(id));
   apiMocks.getUserCreditBalanceApi.mockResolvedValue({ balance: 100 });
@@ -330,7 +325,16 @@ beforeEach(() => {
   );
 });
 
-describe('UserDetailModal credit transactions', () => {
+afterEach(() => {
+  activeApp?.unmount();
+  activeApp = undefined;
+  document.body.innerHTML = '';
+  gridState.instances.length = 0;
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+});
+
+describe('user detail modal credit transactions', () => {
   it('loads lazily, keeps the grid mounted across tabs, paginates, and resets for another user', async () => {
     const consoleError = vi
       .spyOn(console, 'error')
