@@ -31,7 +31,6 @@ interface SchemeQueryRow {
   lengthMm: number; widthMm: number; heightMm: number; openingCount: number;
   publishStatus: string; verificationStatus: string;
   areaM2: string | null; productSystemId: string | null;
-  applicableConditions: Record<string, unknown> | null;
 }
 
 export async function captureScheme(client: pg.PoolClient, input: Pick<QuoteInput, 'schemeCode' | 'schemeRevision' | 'bomRevision' | 'drawingRevision' | 'artworkRevision' | 'artworkJobId' | 'themeSelection' | 'requirementContext'>, userId: string | null) {
@@ -41,8 +40,7 @@ export async function captureScheme(client: pg.PoolClient, input: Pick<QuoteInpu
        opening_count AS "openingCount", publish_status AS "publishStatus",
        verification_status AS "verificationStatus",
        area_sqm::text AS "areaM2",
-       product_system_id::text AS "productSystemId",
-       applicable_conditions AS "applicableConditions"
+       product_system_id::text AS "productSystemId"
      FROM schemes WHERE code=$1 FOR NO KEY UPDATE`, [input.schemeCode])).rows[0];
   if (!scheme) throw projectError('SCHEME_UNAVAILABLE');
   if (input.schemeRevision !== undefined && input.schemeRevision !== scheme.revision) throw projectError('SCHEME_REVISION_CHANGED');

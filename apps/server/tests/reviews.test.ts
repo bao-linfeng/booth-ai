@@ -9,7 +9,6 @@ const scheme = {
   verificationStatus: 'unverified', updatedAt: new Date('2026-01-01T00:00:00Z'),
   lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: '18',
   openingCount: 2, productSystemId: 'system-id',
-  applicableConditions: { status: 'confirmed', rules: [], labelsConfirmed: true },
 };
 
 const assetTime = new Date('2026-01-01T00:00:00Z');
@@ -148,9 +147,9 @@ test('publish refuses assets changed after the overall review', async () => {
   await assert.rejects(publishScheme(pool, 'S-1', adminId), { statusCode: 400, message: '审核后资产发生变化' });
 });
 
-test('passing an overall review requires complete assets and confirmed applicability', async () => {
+test('passing an overall review requires complete assets and verified scheme data', async () => {
   const pool = poolFor(sql => {
-    if (sql.includes('FROM schemes WHERE code')) return { rows: [{ ...scheme, applicableConditions: null }] };
+    if (sql.includes('FROM schemes WHERE code')) return { rows: [{ ...scheme, openingCount: null }] };
     if (sql.includes('FROM scheme_reviews')) return { rows: [] };
     if (sql.includes('FROM scheme_baseline_assets')) return { rows: assets };
     if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
@@ -158,7 +157,7 @@ test('passing an overall review requires complete assets and confirmed applicabi
   });
   await assert.rejects(createReview(pool, 'S-1', adminId, {
     requestKey: 'overall-pass', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: { assetsComplete: true, bomVerified: true, renderingsAndMasks: true, drawingsComplete: true },
-  }), { statusCode: 400, message: '适用条件未确认' });
+  }), { statusCode: 400, message: '开口面数未核对' });
 });
 
 test('a complete draft can receive an overall pass before publication', async () => {
@@ -189,23 +188,6 @@ test('overall pass rejects unchecked evidence before writing a review', async ()
   await assert.rejects(createReview(pool, 'S-1', adminId, {
     requestKey: 'unchecked', schemeRevision: 2, phase: 'overall', decision: 'pass', checks: { assetsComplete: true },
   }), { statusCode: 400, message: 'Overall review checks must all pass' });
-});
-
-test('unconfigured applicability questions cannot be published as invisible candidates', async () => {
-  const pool = poolFor(sql => {
-    if (sql.includes('FROM schemes WHERE code')) return { rows: [{ ...scheme, applicableConditions: {
-      status: 'confirmed', rules: [{ id: 'venue-restriction', expectedValue: true }], labelsConfirmed: true,
-    } }] };
-    if (sql.includes('FROM scheme_baseline_assets')) return { rows: assets };
-    if (sql.includes('JOIN scheme_boms')) return { rows: [{ status: 'verified' }] };
-    if (sql.includes('FROM scheme_reviews')) return { rows: [passedReview] };
-    if (sql.includes('FROM applicability_questions')) return { rows: [] };
-    throw new Error(`Unexpected query: ${sql}`);
-  });
-  const readiness = await getSchemeReadiness(pool, 'S-1');
-  assert.ok(readiness.blockers.includes('UNKNOWN_APPLICABILITY_QUESTIONS'));
-  assert.ok(readiness.unknownApplicabilityQuestionIds.includes('venue-restriction'));
-  assert.equal(readiness.canPublish, false);
 });
 
 test('publish rejects an already published scheme with a conflict', async () => {

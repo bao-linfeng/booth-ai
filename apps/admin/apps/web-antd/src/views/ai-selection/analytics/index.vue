@@ -14,7 +14,7 @@ import {
 } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
-import { Card, DatePicker, Segmented } from 'ant-design-vue';
+import { Card, DatePicker, Divider, Segmented } from 'ant-design-vue';
 
 import { getSchemeSearchStatisticsApi } from '#/api/core/scheme-searches';
 
@@ -25,8 +25,10 @@ const range = ref<[string, string] | undefined>();
 const granularity = ref<Granularity>('date');
 const trendRef = ref<EchartsUIType>();
 const termRef = ref<EchartsUIType>();
+const termPieRef = ref<EchartsUIType>();
 const { renderEcharts: renderTrend } = useEcharts(trendRef);
 const { renderEcharts: renderTerms } = useEcharts(termRef);
+const { renderEcharts: renderTermPie } = useEcharts(termPieRef);
 
 const overviewItems = computed(() => {
   const overview = statistics.value?.overview;
@@ -120,6 +122,39 @@ async function load() {
       data: datesInTerms.map((date) => termCount.get(`${date}:${term}`) ?? 0),
     })),
   });
+
+  const termTotal = new Map<string, number>();
+  for (const item of data.popularTerms) {
+    termTotal.set(item.term, (termTotal.get(item.term) || 0) + item.count);
+  }
+  const top5Terms = Array.from(termTotal.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, value]) => ({ name, value }));
+
+  renderTermPie({
+    legend: { bottom: '2%', left: 'center' },
+    series: [
+      {
+        animationDelay() {
+          return Math.random() * 100;
+        },
+        animationEasing: 'exponentialInOut',
+        animationType: 'scale',
+        avoidLabelOverlap: false,
+        color: ['#0f766e', '#0891b2', '#7c3aed', '#db2777', '#ea580c'],
+        data: top5Terms,
+        emphasis: { label: { fontSize: '12', fontWeight: 'bold', show: true } },
+        itemStyle: { borderRadius: 10, borderWidth: 2 },
+        label: { position: 'center', show: false },
+        labelLine: { show: false },
+        name: '总量分布',
+        radius: ['40%', '65%'],
+        type: 'pie',
+      },
+    ],
+    tooltip: { trigger: 'item' },
+  });
 }
 
 function updateGranularity(value: number | string) {
@@ -187,14 +222,18 @@ onMounted(load);
     </div>
 
     <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-      <div>
-        <Card title="检索趋势">
-          <EchartsUI ref="trendRef" height="340px" />
+      <div class="flex flex-col">
+        <Card title="检索趋势" class="flex-1">
+          <EchartsUI ref="trendRef" height="520px" />
         </Card>
       </div>
-      <div>
-        <Card title="热门需求词" extra="AI 筛选 · 按日期">
-          <EchartsUI ref="termRef" height="340px" />
+      <div class="flex flex-col">
+        <Card title="热门需求词" extra="AI 筛选 · 按日期" class="flex-1">
+          <EchartsUI ref="termRef" height="240px" />
+          <Divider dashed style="margin: 16px 0 8px;">
+            <span class="text-muted-foreground text-xs">总量分布</span>
+          </Divider>
+          <EchartsUI ref="termPieRef" height="240px" />
         </Card>
       </div>
     </div>

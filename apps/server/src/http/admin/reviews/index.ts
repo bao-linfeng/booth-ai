@@ -10,7 +10,6 @@ function mapReadinessResponse(readiness: SchemeReadiness) {
     ...readiness,
     blockers: readiness.blockers.map(code => BLOCKER_MESSAGES[code]),
     coreBlockers: readiness.coreBlockers.map(code => BLOCKER_MESSAGES[code]),
-    unknownApplicabilityQuestionIds: readiness.unknownApplicabilityQuestionIds,
   };
 }
 

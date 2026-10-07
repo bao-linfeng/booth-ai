@@ -49,7 +49,7 @@ const catalog = {
     { id: 'c', label: 'c', lengthMm: 3000, widthMm: 6000, heightMm: 3000 },
   ],
   openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [],
-  zones: [], features: [], applicabilityQuestions: [],
+  zones: [], features: [],
 }
 function mount(component, props = {}, initial = {}) {
   const state = ref({ ...emptyRequirement(), ...initial })

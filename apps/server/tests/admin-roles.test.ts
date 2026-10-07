@@ -95,16 +95,11 @@ test('page grants and business actions are independent and enforce their real de
 test('action-only grants cannot mutate other operations, PATCH fields or other asset types', async t => {
   const actorId = '00000000-0000-4000-8000-000000000001';
   const assetId = '00000000-0000-4000-8000-000000000002';
-  let permissions: string[] = ['questions.read', 'questions.enable'];
-  let mutations = 0;
+  let permissions: string[] = ['prompts.read', 'prompts.enable', 'schemes.read'];
   let assetType = 'rendering';
   const pool = { query: async (sql: string) => {
     if (sql.includes('session_version')) return { rows: [{ enabled: true, roles: ['ROLE_TEST'], sessionVersion: 1 }] };
     if (sql.includes('unnest(permission_codes)')) return { rows: permissions.map(code => ({ code })) };
-    if (sql.includes('UPDATE applicability_questions')) {
-      mutations++;
-      return { rows: [{ id: 'test', label: 'test', helpText: '', enabled: true, sortOrder: 0, createdAt: new Date(), updatedAt: new Date() }] };
-    }
     if (sql.includes('sa.id = $2')) return { rows: [{ id: assetId, type: assetType, schemeCode: 'TEST', revision: 1,
       createdAt: new Date(), updatedAt: new Date(), versionId: assetId, versionAssetId: assetId, versionObjectKey: 'asset',
       versionOriginalFilename: 'asset.png', versionMimeType: 'image/png', versionByteSize: 10, versionChecksum: 'hash', versionCreatedAt: new Date() }] };
@@ -119,15 +114,6 @@ test('action-only grants cannot mutate other operations, PATCH fields or other a
   const app = await buildApp(config, healthy, { pool, redis, storage: { signDownload: async () => '/preview' } } as never);
   t.after(() => app.close());
   const headers = { authorization: `Bearer ${token}` };
-  const patch = (payload: object) => app.inject({ method: 'PATCH', url: '/api/v1/admin/applicability-questions/test', headers, payload });
-  assert.equal((await patch({ enabled: true })).statusCode, 200);
-  assert.equal((await patch({ enabled: false })).statusCode, 403);
-  assert.equal((await patch({ label: 'changed' })).statusCode, 403);
-  assert.equal((await patch({ enabled: true, label: 'changed' })).statusCode, 403);
-  assert.equal(mutations, 1);
-  permissions = ['questions.read', 'questions.disable'];
-  assert.equal((await patch({ enabled: 'true' })).statusCode, 403);
-  permissions = ['prompts.read', 'prompts.enable', 'schemes.read'];
   for (const payload of [{ body: 'changed', expectedRevision: 1 }, { enabled: false, expectedRevision: 1 }, { enabled: true, body: 'changed', expectedRevision: 1 }]) {
     assert.equal((await app.inject({ method: 'PATCH', url: `/api/v1/admin/prompt-templates/${assetId}`, headers, payload })).statusCode, 403);
   }

@@ -17,9 +17,6 @@ export type BlockerCode =
   | 'OPENING_COUNT_INVALID'
   | 'PRODUCT_SYSTEM_UNMAPPED'
   | 'INVALID_TAGS'
-  | 'CONDITIONS_UNCONFIRMED'
-  | 'UNKNOWN_APPLICABILITY_QUESTIONS'
-  | 'LABELS_NOT_CONFIRMED'
   | 'NO_OVERALL_REVIEW'
   | 'ASSETS_CHANGED_AFTER_REVIEW';
 
@@ -38,9 +35,6 @@ export const BLOCKER_MESSAGES: Record<BlockerCode, string> = {
   OPENING_COUNT_INVALID: '开口面数未核对',
   PRODUCT_SYSTEM_UNMAPPED: '产品体系未映射到可用字典',
   INVALID_TAGS: '方案标签含停用或失效字典项',
-  CONDITIONS_UNCONFIRMED: '适用条件未确认',
-  UNKNOWN_APPLICABILITY_QUESTIONS: '适用问题未在系统配置',
-  LABELS_NOT_CONFIRMED: '方案标签未核对',
   NO_OVERALL_REVIEW: '缺少当前修订的整体审核通过记录',
   ASSETS_CHANGED_AFTER_REVIEW: '审核后资产发生变化',
 } satisfies Record<BlockerCode, string>;
@@ -67,8 +61,6 @@ export interface SchemeReadiness {
   canPublish: boolean;
   /** 内容和审核均通过，且方案已发布，可加入候选池 */
   canSelect: boolean;
-  /** 当存在 UNKNOWN_APPLICABILITY_QUESTIONS 时，记录具体的未知问题 id */
-  unknownApplicabilityQuestionIds: string[];
 }
 
 export interface SchemeReadinessData {
@@ -83,7 +75,6 @@ export interface SchemeReadinessData {
     areaM2: string | null;
     openingCount: number | null;
     productSystemId: string | null;
-    applicableConditions: Record<string, unknown> | null;
   };
   assets: Array<{
     id: string;
@@ -101,7 +92,6 @@ export interface SchemeReadinessData {
   lastOverallReview: { decision: string; createdAt: Date | string } | null;
   productSystemExists: boolean;
   hasInvalidTags: boolean;
-  knownApplicabilityQuestionIds: Set<string>;
 }
 
 export interface SchemeRow {
@@ -116,13 +106,12 @@ export interface SchemeRow {
   areaM2: string | null;
   openingCount: number | null;
   productSystemId: string | null;
-  applicableConditions: Record<string, unknown> | null;
 }
 
 const imageMimeRe = /^image\/(png|jpeg|webp)$/;
 
 export function evaluateReadiness(data: SchemeReadinessData): SchemeReadiness {
-  const { scheme, assets, bomVerified, lastOverallReview, productSystemExists, hasInvalidTags, knownApplicabilityQuestionIds } = data;
+  const { scheme, assets, bomVerified, lastOverallReview, productSystemExists, hasInvalidTags } = data;
 
   const byType = new Map<string, number>();
   for (const asset of assets) byType.set(asset.type, (byType.get(asset.type) ?? 0) + 1);
@@ -132,7 +121,6 @@ export function evaluateReadiness(data: SchemeReadinessData): SchemeReadiness {
   const maskCount = byType.get('mask') ?? 0;
 
   const blockers: BlockerCode[] = [];
-  const unknownApplicabilityQuestionIds: string[] = [];
 
   if (scheme.verificationStatus === 'failed') blockers.push('VERIFICATION_FAILED');
   if (renderingCount !== 3) blockers.push('RENDERING_COUNT');
@@ -187,32 +175,6 @@ export function evaluateReadiness(data: SchemeReadinessData): SchemeReadiness {
   if (!productSystemExists) blockers.push('PRODUCT_SYSTEM_UNMAPPED');
   if (hasInvalidTags) blockers.push('INVALID_TAGS');
 
-  // 适用条件
-  const conditions = scheme.applicableConditions;
-  const rulesRaw = conditions?.rules;
-  const rulesValid =
-    conditions?.status === 'confirmed' &&
-    Array.isArray(rulesRaw) &&
-    (rulesRaw as unknown[]).every(
-      (rule): rule is { id: string; expectedValue: boolean } =>
-        rule !== null && typeof rule === 'object' &&
-        'id' in rule && typeof (rule as { id: unknown }).id === 'string' &&
-        'expectedValue' in rule && typeof (rule as { expectedValue: unknown }).expectedValue === 'boolean',
-    );
-
-  if (!rulesValid) {
-    blockers.push('CONDITIONS_UNCONFIRMED');
-  } else {
-    const rules = rulesRaw as { id: string; expectedValue: boolean }[];
-    const unknownRules = rules.filter(r => !knownApplicabilityQuestionIds.has(r.id));
-    if (unknownRules.length > 0) {
-      blockers.push('UNKNOWN_APPLICABILITY_QUESTIONS');
-      unknownApplicabilityQuestionIds.push(...unknownRules.map(r => r.id));
-    }
-  }
-
-  if (conditions?.labelsConfirmed !== true) blockers.push('LABELS_NOT_CONFIRMED');
-
   // 审核有效性
   if (lastOverallReview?.decision !== 'pass') {
     blockers.push('NO_OVERALL_REVIEW');
@@ -239,7 +201,6 @@ export function evaluateReadiness(data: SchemeReadinessData): SchemeReadiness {
     coreBlockers,
     canPublish: scheme.publishStatus !== 'published' && blockers.length === 0,
     canSelect: scheme.publishStatus === 'published' && blockers.length === 0,
-    unknownApplicabilityQuestionIds,
   };
 }
 
@@ -296,25 +257,6 @@ export async function loadAndEvaluate(client: DbClient, scheme: SchemeRow): Prom
     ) AS invalid`, [scheme.id]);
   const hasInvalidTags = invalidTags.rows[0]?.invalid === true;
 
-  let knownApplicabilityQuestionIds = new Set<string>();
-  const conditions = scheme.applicableConditions;
-  const rulesRaw = conditions?.rules;
-  if (
-    conditions?.status === 'confirmed' &&
-    Array.isArray(rulesRaw) &&
-    rulesRaw.length > 0 &&
-    (rulesRaw as unknown[]).every(
-      rule => rule !== null && typeof rule === 'object' &&
-        'id' in rule && typeof (rule as { id: unknown }).id === 'string' &&
-        'expectedValue' in rule && typeof (rule as { expectedValue: unknown }).expectedValue === 'boolean'
-    )
-  ) {
-    const questions = await client.query<{ id: string }>(
-      'SELECT id FROM applicability_questions WHERE enabled',
-    );
-    knownApplicabilityQuestionIds = new Set(questions.rows.map(r => r.id));
-  }
-
   return evaluateReadiness({
     scheme,
     assets: assetRows.rows,
@@ -322,7 +264,6 @@ export async function loadAndEvaluate(client: DbClient, scheme: SchemeRow): Prom
     lastOverallReview,
     productSystemExists,
     hasInvalidTags,
-    knownApplicabilityQuestionIds,
   });
 }
 
@@ -333,8 +274,7 @@ export async function getSchemeReadiness(pool: pg.Pool, code: string): Promise<S
        verification_status AS "verificationStatus",
        length_mm AS "lengthMm", width_mm AS "widthMm", height_mm AS "heightMm",
        area_sqm::text AS "areaM2", opening_count AS "openingCount",
-       product_system_id::text AS "productSystemId",
-       applicable_conditions AS "applicableConditions"
+       product_system_id::text AS "productSystemId"
      FROM schemes WHERE code = $1`,
     [code],
   );

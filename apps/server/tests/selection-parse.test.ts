@@ -10,7 +10,7 @@ const catalog: Catalog = {
   styles: [{ id: 'modern', label: '现代简约' }, { id: 'tech', label: '科技感' }],
   industries: [], budgetTiers: [],
   zones: [{ id: 'storage', label: '储藏间' }],
-  features: [], applicabilityQuestions: [],
+  features: [],
 };
 
 test('text overrides form dimensions and replaces the entire style selection while deriving area', () => {

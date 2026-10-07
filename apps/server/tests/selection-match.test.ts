@@ -10,7 +10,7 @@ const candidate: Candidate = {
     openingCount: 2, productSystemId: 'fs62', productSystemLabel: 'FS62',
   },
   images: [], styleId: null, industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
-  labelsConfirmed: true, applicabilityRules: [], description: '',
+  description: '',
 };
 
 test('complete size selection excludes differing heights and rotated footprints independently of venue height', () => {
@@ -18,11 +18,11 @@ test('complete size selection excludes differing heights and rotated footprints 
   const higher = { ...candidate, code: 'HIGH', specifications: { ...candidate.specifications, heightMm: 4500 } };
   const rotated = { ...candidate, code: 'ROTATED', specifications: { ...candidate.specifications, lengthMm: 3000, widthMm: 6000 } };
   const requirement = { ...emptyRequirement(), boothSpaceId: 'size', lengthMm: 6000, widthMm: 3000, areaM2: 18, maxHeightMm: 5000, openingCount: 2 };
-  const result = matchSchemes([candidate, higher, rotated], requirement, 'filtered', false, undefined, [], spaces);
+  const result = matchSchemes([candidate, higher, rotated], requirement, 'filtered', false, undefined, spaces);
   assert.deepEqual(result.items.map(item => item.code), ['BOOTH-1']);
   assert.equal(result.diagnostics.exclusions.dimensions, 2);
   assert.equal(result.diagnostics.exclusions.height, 0);
-  assert.equal(matchSchemes([candidate], { ...requirement, maxHeightMm: 3000 }, 'filtered', false, undefined, [], spaces).status, 'no_match');
+  assert.equal(matchSchemes([candidate], { ...requirement, maxHeightMm: 3000 }, 'filtered', false, undefined, spaces).status, 'no_match');
 });
 
 test('equal area does not hide an excessive deviation in either dimension', () => {
@@ -61,11 +61,12 @@ test('different opening counts remain a reference with a count difference', () =
   assert.ok(result.items[0]?.differences.some(difference => difference.field === 'openingCount'));
 });
 
-test('hard tag requirements never rely on unconfirmed labels', () => {
+test('required tags exclude schemes without the tag and keep schemes that have it', () => {
   const requirement = { ...emptyRequirement(), requiredZoneIds: ['storage'] };
-  const unconfirmed = { ...candidate, labelsConfirmed: false, zoneIds: ['storage'] };
-  const result = matchSchemes([unconfirmed], requirement, 'filtered', false);
-  assert.equal(result.counts.total, 0);
+  const tagged = { ...candidate, code: 'TAGGED', zoneIds: ['storage'] };
+  const result = matchSchemes([candidate, tagged], requirement, 'filtered', false);
+  assert.deepEqual(result.items.map(item => item.code), ['TAGGED']);
+  assert.equal(result.diagnostics.exclusions.tags, 1);
 });
 
 test('overlapping exclusions are counted independently and sorted by actual prevalence', () => {
@@ -97,7 +98,7 @@ test('pre-pool exclusions are retained alongside filtered candidate failures', (
   const requirement = { ...emptyRequirement(), maxHeightMm: 3000 };
   const result = matchSchemes([candidate], requirement, 'filtered', false, {
     reviewedPublished: 5, ready: 1,
-    exclusions: { unverifiedChecklist: 3, incompleteAssets: 2, invalidData: 0, productSystem: 0, height: 0, applicability: 0, tags: 0, dimensions: 0 }
+    exclusions: { unverifiedChecklist: 3, incompleteAssets: 2, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 }
   });
   assert.equal(result.diagnostics.exclusions.height, 1);
   assert.match(result.reasons[1] ?? '', /清单未核验：3 套/);
@@ -105,13 +106,12 @@ test('pre-pool exclusions are retained alongside filtered candidate failures', (
   assert.match(result.reasons[3] ?? '', /超过场馆限高：1 套/);
 });
 
-test('failed applicability and dimension checks remain visible even when another hard condition also fails', () => {
-  const requirement = { ...emptyRequirement(), maxHeightMm: 3000, lengthMm: 9000, applicabilityAnswers: { indoor: true } };
-  const conditional = { ...candidate, applicabilityRules: [{ id: 'indoor', expectedValue: false }] };
-  const result = matchSchemes([conditional], requirement, 'filtered', false);
+test('failed tag and dimension checks remain visible even when another hard condition also fails', () => {
+  const requirement = { ...emptyRequirement(), maxHeightMm: 3000, lengthMm: 9000, requiredZoneIds: ['storage'] };
+  const result = matchSchemes([candidate], requirement, 'filtered', false);
   assert.equal(result.status, 'no_match');
   assert.equal(result.diagnostics.exclusions.height, 1);
-  assert.equal(result.diagnostics.exclusions.applicability, 1);
+  assert.equal(result.diagnostics.exclusions.tags, 1);
   assert.equal(result.diagnostics.exclusions.dimensions, 1);
-  assert.ok(result.reasons.some(reason => reason.includes('适用条件不符：1 套')));
+  assert.ok(result.reasons.some(reason => reason.includes('必选或禁用功能条件不符：1 套')));
 });

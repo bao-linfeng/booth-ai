@@ -36,10 +36,10 @@ test('draft route schema excludes publication and verification writes', async ()
   try {
     const response = await app.inject({ method: 'POST', url: '/schemes', payload: { code: 'S-1', name: 'test', publishStatus: 'published' } });
     assert.equal(response.statusCode, 400);
-    const invalidConditions = await app.inject({ method: 'POST', url: '/schemes', payload: {
-      code: 'S-2', name: 'test', applicableConditions: { status: 'confirmed', rules: [], labelsConfirmed: true, publicNotes: '', arbitrary: true },
+    const removedConditions = await app.inject({ method: 'POST', url: '/schemes', payload: {
+      code: 'S-2', name: 'test', applicableConditions: { status: 'confirmed', rules: [], labelsConfirmed: true, publicNotes: '' },
     } });
-    assert.equal(invalidConditions.statusCode, 400);
+    assert.equal(removedConditions.statusCode, 400);
   } finally {
     await app.close();
   }
@@ -50,7 +50,7 @@ function publishedSchemeRow() {
     id: 'id', code: 'S-1', name: 'test', parentCode: null, lengthMm: 6000, widthMm: 3000, heightMm: 3500,
     areaM2: '18.000000', openingCount: 2, productSystemId: null, styleId: null, industryIds: [], budgetTierId: null,
     zoneIds: [], featureIds: [], description: null, keywords: null, source: null, visualTheme: null,
-    applicableConditions: { status: 'confirmed', rules: [], labelsConfirmed: true }, publishStatus: 'published',
+    publishStatus: 'published',
     verificationStatus: 'verified', notes: null, editRevision: 1, createdBy: null, updatedBy: null,
     createdAt: new Date(), updatedAt: new Date(),
   };
@@ -89,7 +89,7 @@ test('saving unchanged scheme fields keeps publication and revision without writ
   const { pool, recorded } = updatePool(current);
   const result = await updateScheme(pool, 'S-1', adminId, {
     name: 'test', lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: 18, openingCount: 2,
-    industryIds: [], keywords: [], description: '', applicableConditions: { labelsConfirmed: true, rules: [], status: 'confirmed' },
+    industryIds: [], keywords: [], description: '',
   }, 1);
   assert.equal(recorded.updateSql, '');
   assert.equal(recorded.auditValues, undefined);

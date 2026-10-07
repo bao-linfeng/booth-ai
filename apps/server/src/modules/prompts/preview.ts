@@ -17,7 +17,7 @@ export function promptDefinitions() {
   return [
     { purpose: 'filter', label: 'AI 智选 · 需求解析', defaultBody: extractionInstruction, defaultVersion: PROMPT_DEFAULT_VERSION,
       fixedInstructions: SELECTION_FIXED_INSTRUCTIONS, variables: [], scope: '仅全局通用；解析前不按行业或风格选择模板。',
-      inputs: ['text：本次用户原文，独立放入 user 消息。', 'dictionaries：服务端实时筛选字典、展位空间和适用条件问题。', '当前表单值由服务端与解析结果合并，未提及字段保留。'] },
+      inputs: ['text：本次用户原文，独立放入 user 消息。', 'dictionaries：服务端实时筛选字典与展位空间。', '当前表单值由服务端与解析结果合并，未提及字段保留。'] },
     { purpose: 'theme', label: 'AI 换主题', defaultBody: DEFAULT_THEME_BODY, defaultVersion: PROMPT_DEFAULT_VERSION,
       fixedInstructions: THEME_FIXED_INSTRUCTIONS, variables: brandVariables, scope: '行业+风格 → 行业 → 风格 → 通用 → 内置默认。',
       inputs: ['行业、风格、品牌色和补充要求总会注入，不依赖正文是否引用变量。', '原始效果图和可用蒙版由任务资产绑定，经图像接口发送。'] },

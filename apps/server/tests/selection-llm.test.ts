@@ -10,7 +10,7 @@ const catalog: Catalog = {
   boothSpaces: [],
   openingCounts: [{ id: '2', label: '两面开口' }], productSystems: [], industries: [], budgetTiers: [],
   styles: [{ id: 'modern', label: '现代简约' }], zones: [{ id: 'storage', label: '储藏间' }],
-  features: [], applicabilityQuestions: [],
+  features: [],
 };
 const models: ActiveAiModel[] = ['qwen', 'deepseek'].map((name, index) =>
   activeModel('openai', 'selection_parse', { model: name, position: index + 1, apiKey: 'test-key' }));
@@ -23,10 +23,6 @@ const fullCatalog: Catalog = {
   budgetTiers: [{ id: 'budget', label: '材料购买预算 3万至5万元' }],
   zones: [...catalog.zones, { id: 'talk', label: '洽谈区' }],
   features: [{ id: 'screen', label: 'LED屏幕' }],
-  applicabilityQuestions: [
-    { id: 'hanging', label: '场馆是否允许吊挂？', helpText: '需由场馆确认' },
-    { id: 'power', label: '是否有电源？', helpText: '展位供电情况' },
-  ],
 };
 
 test('request sends the live sidebar dictionaries and structured extraction contract', async t => {
@@ -42,7 +38,7 @@ test('request sends the live sidebar dictionaries and structured extraction cont
     for (const field of Object.keys(emptyRequirement()).filter(field => field !== 'keywords')) assert.ok(system.includes(field), field);
     const input = JSON.parse(body.messages.find(message => message.role === 'user')!.content);
     assert.equal(input.text, '测试需求');
-    for (const group of ['boothSpaces', 'openingCounts', 'productSystems', 'styles', 'industries', 'budgetTiers', 'zones', 'features', 'applicabilityQuestions'] as const) {
+    for (const group of ['boothSpaces', 'openingCounts', 'productSystems', 'styles', 'industries', 'budgetTiers', 'zones', 'features'] as const) {
       assert.deepEqual(input.dictionaries[group], fullCatalog[group]);
     }
     assert.ok(body.max_completion_tokens >= 2000);
@@ -101,7 +97,7 @@ test('negation in a previous clause does not block a separate positive preferenc
 });
 
 test('natural language produces the same requirement and matching as sidebar values', () => {
-  const text = '长六米，宽300厘米，限高四米，双面开口，采用铝型材体系，简洁现代，我们做医疗器械，材料购买预算 3万至5万元，希望有个地方和客户坐下聊，必须有LED屏幕，不要储藏间，场馆明确不允许吊挂';
+  const text = '长六米，宽300厘米，限高四米，双面开口，采用铝型材体系，简洁现代，我们做医疗器械，材料购买预算 3万至5万元，希望有个地方和客户坐下聊，必须有LED屏幕，不要储藏间';
   const result = mergeExtraction(text, emptyRequirement(), fullCatalog, {
     fields: {
       lengthMm: { value: 6000, evidence: '长六米' },
@@ -115,14 +111,12 @@ test('natural language produces the same requirement and matching as sidebar val
       zoneIds: { value: ['talk'], evidence: '希望有个地方和客户坐下聊' },
       requiredFeatureIds: { value: ['screen'], evidence: '必须有LED屏幕' },
       excludedZoneIds: { value: ['storage'], evidence: '不要储藏间' },
-      applicabilityAnswers: { value: { hanging: false }, evidence: '场馆明确不允许吊挂' },
     }, unhandledText: [],
   });
   const expected = {
     ...emptyRequirement(), lengthMm: 6000, widthMm: 3000, maxHeightMm: 4000, areaM2: 18,
     openingCount: 2, productSystemId: 'system', styleIds: ['modern'], industryIds: ['medical'],
     budgetTierId: 'budget', zoneIds: ['talk'], requiredFeatureIds: ['screen'], excludedZoneIds: ['storage'],
-    applicabilityAnswers: { hanging: false },
   };
   assert.equal(result.status, 'ready');
   assert.deepEqual(result.requirement, expected);
@@ -131,7 +125,7 @@ test('natural language produces the same requirement and matching as sidebar val
   const candidate = {
     code: 'matching', specifications: { lengthMm: 6000, widthMm: 3000, heightMm: 4000, areaM2: 18, openingCount: 2, productSystemId: 'system', productSystemLabel: '铝型材体系' },
     images: [], styleId: 'modern', industryIds: ['medical'], budgetTierId: 'budget', zoneIds: ['talk'], featureIds: ['screen'],
-    keywords: [], labelsConfirmed: true, applicabilityRules: [{ id: 'hanging', expectedValue: false }], description: '',
+    keywords: [], description: '',
   };
   const pool = [candidate, { ...candidate, code: 'excluded', zoneIds: ['talk', 'storage'] }];
   const match = matchSchemes(pool, result.requirement, 'filtered', true);
@@ -154,21 +148,11 @@ test('model completes partial dictionary matches and ignores multi-select orderi
   assert.equal(result.status, 'ready');
 });
 
-test('applicability answers accept false, preserve unanswered form values, and validate IDs and types', () => {
+test('fields outside the sidebar requirement are rejected', () => {
   const text = '场馆不允许吊挂';
-  const form = { ...emptyRequirement(), applicabilityAnswers: { hanging: true, power: true } };
-  const result = mergeExtraction(text, form, fullCatalog, {
+  assert.throws(() => mergeExtraction(text, emptyRequirement(), fullCatalog, {
     fields: { applicabilityAnswers: { value: { hanging: false }, evidence: text } }, unhandledText: [],
-  });
-  assert.equal(result.status, 'ready');
-  assert.deepEqual(result.requirement.applicabilityAnswers, { hanging: false, power: true });
-  assert.deepEqual(form.applicabilityAnswers, { hanging: true, power: true });
-  assert.ok(result.overrides.some(item => item.field === 'applicabilityAnswers'));
-  for (const value of [{ unknown: false }, { hanging: 'false' }, {}, []]) {
-    assert.throws(() => mergeExtraction(text, form, fullCatalog, {
-      fields: { applicabilityAnswers: { value, evidence: text } }, unhandledText: [],
-    }));
-  }
+  }), /Invalid extraction/);
 });
 
 test('ambiguous dimensions do not discard reliable model fields or get silently assigned', () => {

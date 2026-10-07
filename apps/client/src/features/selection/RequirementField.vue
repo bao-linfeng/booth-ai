@@ -32,7 +32,6 @@ const labels = computed((): Record<keyof Requirement, string> => ({
   requiredFeatureIds: t('requirementForm.fieldRequiredFeatureIds'),
   excludedFeatureIds: t('requirementForm.fieldExcludedFeatureIds'),
   keywords: t('requirementForm.fieldKeywords'),
-  applicabilityAnswers: t('requirementForm.fieldApplicabilityAnswers'),
 }))
 const options = computed(() => {
   switch (props.field) {
@@ -79,12 +78,6 @@ function updateNumber(value: string | number) {
 function toggle(id: string) {
   const values = props.modelValue[props.field] as string[]
   update(values.includes(id) ? values.filter(value => value !== id) : [...values, id])
-}
-function answer(id: string, value: string | null) {
-  const answers = { ...props.modelValue.applicabilityAnswers }
-  if (value === null) delete answers[id]
-  else answers[id] = value === 'true'
-  update(answers)
 }
 </script>
 

@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../infra/storage.js';
-import { rulesVersion, type ApplicabilityQuestionSummary, type BoothSpace, type Candidate, type CandidateImage, type Catalog, type MatchDiagnostics, type MatchItem, type Option, type PublicImage } from './domain.js';
+import { rulesVersion, type BoothSpace, type Candidate, type CandidateImage, type Catalog, type MatchDiagnostics, type MatchItem, type Option, type PublicImage } from './domain.js';
 import { localizedLabel, type DictionaryAlias } from './dictionary-language.js';
 
 interface CandidateRow {
@@ -20,7 +20,6 @@ interface CandidateRow {
   featureIds: string[] | null;
   keywords: string[] | null;
   description: string | null;
-  conditions: Record<string, unknown> | null;
   bomVerified: boolean;
 }
 
@@ -61,10 +60,7 @@ export async function loadCatalog(pool: pg.Pool | pg.PoolClient, locale = 'zh-CN
     widthMm: row.widthMm,
     heightMm: row.heightMm,
   }));
-  const questionsResult = await pool.query<ApplicabilityQuestionSummary>(
-    `SELECT id, label, help_text AS "helpText" FROM applicability_questions WHERE enabled ORDER BY sort_order, id`
-  );
-  
+
   return {
     boothSpaces,
     openingCounts: byType('opening_count', true),
@@ -74,9 +70,8 @@ export async function loadCatalog(pool: pg.Pool | pg.PoolClient, locale = 'zh-CN
     budgetTiers: byType('budget_tier'),
     zones: byType('functional_zone'),
     features: byType('key_feature'),
-    applicabilityQuestions: questionsResult.rows,
     rulesVersion,
-    dictionaryVersion: createHash('sha256').update(JSON.stringify([result.rows, spaces.rows, questionsResult.rows])).digest('hex').slice(0, 16),
+    dictionaryVersion: createHash('sha256').update(JSON.stringify([result.rows, spaces.rows])).digest('hex').slice(0, 16),
   };
 }
 
@@ -86,7 +81,7 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
       s.height_mm AS "heightMm", s.area_sqm::float8 AS "areaM2", s.opening_count AS "openingCount",
       s.product_system_id::text AS "productSystemId", s.style_id::text AS "styleId",
       s.industry_ids::text[] AS "industryIds", s.budget_tier_id::text AS "budgetTierId", s.zone_ids::text[] AS "zoneIds",
-      s.feature_ids::text[] AS "featureIds", s.keywords, s.description, s.applicable_conditions AS conditions,
+      s.feature_ids::text[] AS "featureIds", s.keywords, s.description,
       EXISTS (SELECT 1 FROM scheme_boms b WHERE b.scheme_id = s.id AND b.status = 'verified') AS "bomVerified"
     FROM schemes s
     WHERE s.publish_status = 'published'
@@ -102,7 +97,7 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
     
   const diagnostics: MatchDiagnostics = {
     reviewedPublished: result.rows.length, ready: 0,
-    exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, applicability: 0, tags: 0, dimensions: 0 }
+    exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 }
   };
   if (!result.rows.length) return { candidates: [], diagnostics };
 
@@ -121,7 +116,6 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
     else assetsByScheme.set(asset.schemeId, [asset]);
   }
   const productSystems = new Map(catalog.productSystems.map(option => [option.id, option]));
-  const questionIds = new Set(catalog.applicabilityQuestions.map(question => question.id));
   const candidates: Candidate[] = [];
 
   for (const row of result.rows) {
@@ -129,19 +123,16 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
     const bound = assetsByScheme.get(row.id) ?? [];
     const images = bound.filter(asset => asset.type === 'rendering');
     const masks = bound.filter(asset => asset.type === 'mask');
-    const rules = row.conditions?.rules;
-    const validRules = Array.isArray(rules) && rules.every((rule: unknown) => !!rule && typeof rule === 'object' && 'id' in rule && typeof rule.id === 'string' && 'expectedValue' in rule && typeof rule.expectedValue === 'boolean' && questionIds.has(rule.id));
     const invalidData = ![row.lengthMm, row.widthMm, row.heightMm].every(value => Number.isSafeInteger(value) && value > 0)
       || row.areaM2 !== row.lengthMm * row.widthMm / 1_000_000
-      || !Number.isInteger(row.openingCount) || row.openingCount < 1 || row.openingCount > 4 || !product
-      || row.conditions?.status !== 'confirmed' || row.conditions?.labelsConfirmed !== true || !validRules;
+      || !Number.isInteger(row.openingCount) || row.openingCount < 1 || row.openingCount > 4 || !product;
     const incompleteAssets = !['model', 'checklist', 'rendering', 'mask', 'drawing', 'artwork'].every(type => bound.some(asset => asset.type === type))
       || images.length !== 3 || masks.length !== 3 || new Set(images.map(image => image.objectKey)).size !== 3 || new Set(images.map(image => image.order)).size !== 3
       || images.some(image => !image.width || !image.height || image.width * 9 !== image.height * 16 || !/^image\/(png|jpeg|webp)$/.test(image.mime) || masks.filter(mask => mask.relatedAssetId === image.id && mask.order === image.order && mask.width === image.width && mask.height === image.height && /^image\/(png|jpeg|webp)$/.test(mask.mime)).length !== 1);
     if (!row.bomVerified) diagnostics.exclusions.unverifiedChecklist++;
     if (incompleteAssets) diagnostics.exclusions.incompleteAssets++;
     if (invalidData) diagnostics.exclusions.invalidData++;
-    if (!row.bomVerified || incompleteAssets || invalidData || !product || !row.conditions || !Array.isArray(rules)) continue;
+    if (!row.bomVerified || incompleteAssets || invalidData || !product) continue;
 
     diagnostics.ready++;
     candidates.push({
@@ -158,8 +149,6 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
       zoneIds: row.zoneIds ?? [],
       featureIds: row.featureIds ?? [],
       keywords: row.keywords ?? [],
-      labelsConfirmed: row.conditions.labelsConfirmed === true,
-      applicabilityRules: rules as { id: string; expectedValue: boolean }[],
       description: row.description ?? '',
     });
   }

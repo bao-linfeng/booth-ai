@@ -14,7 +14,6 @@ export const previewCatalog: Catalog = {
   budgetTiers: [{ id: 'low', label: 'low' }, { id: 'medium', label: 'medium' }, { id: 'high', label: 'high' }],
   zones: [{ id: 'reception', label: 'reception' }, { id: 'meeting', label: 'meeting' }, { id: 'storage', label: 'storage' }],
   features: [{ id: 'lightbox', label: 'lightbox' }, { id: 'screen', label: 'screen' }],
-  applicabilityQuestions: [{ id: 'freestanding', label: 'freestanding', helpText: 'freestandingHelp' }],
 }
 
 export const previewStates: { id: string; labelKey: string }[] = [

@@ -11,7 +11,7 @@ const catalog: Catalog = { boothSpaces: [
   { id: 'size', label: '6 × 3 × 4.5 m', lengthMm: 6000, widthMm: 3000, heightMm: 4500 },
 ], openingCounts: [], productSystems: [], styles: [modern], industries: [], budgetTiers: [],
 zones: [{ id: 'meeting', label: '洽谈区', labels: { en: 'Meeting area', ja: '商談スペース' } },
-  { id: 'storage', label: '储藏间', labels: { en: 'Storage room', ja: '収納室' } }], features: [], applicabilityQuestions: [] };
+  { id: 'storage', label: '储藏间', labels: { en: 'Storage room', ja: '収納室' } }], features: [] };
 
 test('default, translations, codes and normalized aliases resolve to one identity', () => {
   for (const term of ['现代简约', 'Modern minimalist', 'モダン・ミニマル', 'ＭＯＤＥＲＮ', '  modern minimalism  ', 'ミニマル']) {

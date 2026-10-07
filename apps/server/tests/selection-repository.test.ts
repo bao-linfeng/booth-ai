@@ -13,10 +13,9 @@ test('public pool diagnoses checklist and asset exclusions even when no candidat
   ].map(row => ({
     ...row, lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: 18, openingCount: 2,
     productSystemId: 'fs62', styleId: null, industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
-    conditions: { status: 'confirmed', labelsConfirmed: true, rules: [] }
   }));
   const pool = { query: async (sql: string) => ({ rows: sql.includes('FROM schemes s') ? rows : [] }) } as unknown as pg.Pool;
-  const catalog = { productSystems: [{ id: 'fs62', label: 'FS62' }], applicabilityQuestions: [] } as unknown as Catalog;
+  const catalog = { productSystems: [{ id: 'fs62', label: 'FS62' }] } as unknown as Catalog;
   const { candidates, diagnostics } = await loadCandidatePool(pool, catalog);
   assert.deepEqual(candidates, []);
   assert.equal(diagnostics.reviewedPublished, 3);
@@ -32,7 +31,6 @@ test('candidate pool groups assets per scheme and only returned items get signed
   const schemes = ['A', 'B', 'C', 'D', 'E'].map(code => ({
     id: `id-${code}`, code, bomVerified: true, lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: 18, openingCount: 2,
     productSystemId: 'fs62', styleId: null, industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
-    conditions: { status: 'confirmed', labelsConfirmed: true, rules: [] },
   }));
   const assets = schemes.flatMap(({ id: schemeId }) => [
     ...['model', 'checklist', 'drawing', 'artwork'].map(type => ({ id: `${schemeId}-${type}`, schemeId, type, order: 0, relatedAssetId: null, objectKey: `${schemeId}/${type}`, width: null, height: null, mime: 'application/octet-stream' })),
@@ -42,7 +40,7 @@ test('candidate pool groups assets per scheme and only returned items get signed
     ]),
   ]);
   const pool = { query: async (sql: string) => ({ rows: sql.includes('FROM schemes s') ? schemes : assets }) } as unknown as pg.Pool;
-  const catalog = { productSystems: [{ id: 'fs62', label: 'FS62' }], applicabilityQuestions: [] } as unknown as Catalog;
+  const catalog = { productSystems: [{ id: 'fs62', label: 'FS62' }] } as unknown as Catalog;
   const { candidates, diagnostics } = await loadCandidatePool(pool, catalog);
   assert.equal(diagnostics.ready, 5);
   assert.deepEqual(candidates[1]!.images.map(image => image.objectKey), ['id-B/r0', 'id-B/r1', 'id-B/r2']);

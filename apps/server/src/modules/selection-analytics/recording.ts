@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
-import type { Requirement } from '../selection/domain.js';
+import type { Catalog, Requirement } from '../selection/domain.js';
 import type { ParseRecordInput, RecordedMatchItem, SearchRecordInput, SelectionIdentity } from './types.js';
 
 const visitorPattern = /^[a-zA-Z0-9_-]{16,128}$/;
@@ -53,8 +53,20 @@ function snapshotItems(items: RecordedMatchItem[]) {
   }));
 }
 
-export function extractDemandTerms(inputText: string, requirement: Requirement): string[] {
-  const terms = [...requirement.keywords, ...inputText.toLowerCase().match(/[\p{Script=Han}]{2,12}|[a-z0-9_-]{3,}/giu) ?? []];
+export function extractDemandTerms(inputText: string, requirement: Requirement, catalog: Catalog): string[] {
+  const lookupLabel = (options: { id: string; label: string }[], id: string | null) =>
+    id ? (options.find(o => o.id === id)?.label ?? null) : null;
+
+  const labelTerms: string[] = [
+    ...requirement.styleIds.flatMap(id => lookupLabel(catalog.styles, id) ?? []),
+    ...requirement.industryIds.flatMap(id => lookupLabel(catalog.industries, id) ?? []),
+    ...requirement.featureIds.flatMap(id => lookupLabel(catalog.features, id) ?? []),
+    ...requirement.zoneIds.flatMap(id => lookupLabel(catalog.zones, id) ?? []),
+    ...(lookupLabel(catalog.productSystems, requirement.productSystemId) ? [lookupLabel(catalog.productSystems, requirement.productSystemId)!] : []),
+    ...(lookupLabel(catalog.budgetTiers, requirement.budgetTierId) ? [lookupLabel(catalog.budgetTiers, requirement.budgetTierId)!] : []),
+  ];
+
+  const terms = [...requirement.keywords, ...labelTerms, ...inputText.toLowerCase().match(/[\p{Script=Han}]{2,12}|[a-z0-9_-]{3,}/giu) ?? []];
   return [...new Set(terms.map(term => term.trim()).filter(term => term.length >= 2))].slice(0, 50);
 }
 
@@ -69,7 +81,7 @@ export async function recordSearch(pool: pg.Pool, input: SearchRecordInput): Pro
       input.attemptId, input.parseId, input.identity.visitorId, input.identity.userId, input.mode,
        input.result.status, input.inputText, input.result.requirement, input.result.counts.direct,
        input.result.counts.reference, input.result.counts.random, input.result.counts.total,
-       input.result.status === 'no_match' ? input.result.reasons : [], extractDemandTerms(input.inputText, input.result.requirement),
+       input.result.status === 'no_match' ? input.result.reasons : [], extractDemandTerms(input.inputText, input.result.requirement, input.catalog),
        JSON.stringify(snapshotItems(input.result.items)), input.result.rulesVersion, input.result.dictionaryVersion,
        input.degradedParse, Math.max(0, Math.round(input.durationMs)), JSON.stringify(input.result.diagnostics),
     ]);

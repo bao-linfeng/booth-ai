@@ -49,20 +49,17 @@ const item = {
   specifications: { lengthMm: 6000, widthMm: 3000, heightMm: 4500, areaM2: 18, openingCount: 2, productSystemId: 'system-a', productSystemLabel: '标准模块' },
   reasons: ['尺寸满足需求', '开口数量匹配', '标准资料完整', '第四条较次要理由'],
   differences: [{ field: 'openingCount', requested: '3 面', actual: '2 面', reason: '方案库中最接近的已发布方案' }],
-  pendingConfirmations: [{ type: 'applicability_question', id: 'q1', label: '是否有独立接待区？', helpText: '用于确认适用条件。', message: '请确认接待区需求' }],
+  pendingConfirmations: [{ type: 'missing_field', field: '场馆限高', message: '需补充场馆限高' }],
   preferenceMisses: ['未指定色彩偏好'],
 }
 
 function mount({ preview = true } = {}) {
-  const emitted = []
   const container = document.createElement('div')
   document.body.append(container)
-  const app = createApp({ render: () => h(SchemeCard, {
-    item, index: 0, preview, 'onAnswer-applicability': (...args) => emitted.push(args),
-  }) })
+  const app = createApp({ render: () => h(SchemeCard, { item, index: 0, preview }) })
   app.use(createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] }))
   app.mount(container)
-  return { app, container, emitted, close: () => { app.unmount(); container.remove() } }
+  return { app, container, close: () => { app.unmount(); container.remove() } }
 }
 
 test('SchemeCard prioritizes artwork, facts, and collapsed secondary reasons', async () => {
@@ -87,15 +84,10 @@ test('SchemeCard prioritizes artwork, facts, and collapsed secondary reasons', a
   } finally { mounted.close() }
 })
 
-test('SchemeCard keeps applicability answers and multi-view gallery available', async () => {
+test('SchemeCard shows pending confirmations and keeps the multi-view gallery available', async () => {
   const mounted = mount({ preview: false })
   try {
-    const answer = [...mounted.container.querySelectorAll('button')].find(button => button.textContent.trim() === '是')
-    assert.ok(answer)
-    assert.equal(answer.disabled, false)
-    answer.click()
-    await nextTick()
-    assert.deepEqual(mounted.emitted, [['q1', true]])
+    assert.match(mounted.container.textContent, /需补充场馆限高/)
     const view = [...mounted.container.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === '查看第 2 张')
     assert.ok(view)
     view.click()

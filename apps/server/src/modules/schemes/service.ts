@@ -24,7 +24,6 @@ export interface SchemeInput {
   keywords?: string[] | null;
   source?: string | null;
   visualTheme?: string | null;
-  applicableConditions?: Record<string, unknown> | null;
   notes?: string | null;
 }
 
@@ -67,7 +66,6 @@ export interface SchemeRecord {
   keywords: string[] | null;
   source: string | null;
   visualTheme: string | null;
-  applicableConditions: Record<string, unknown> | null;
   publishStatus: string;
   verificationStatus: string;
   notes: string | null;
@@ -89,7 +87,7 @@ const schemeColumns = `
   opening_count AS "openingCount", product_system_id::text AS "productSystemId",
   style_id::text AS "styleId", industry_ids::text[] AS "industryIds", budget_tier_id::text AS "budgetTierId", zone_ids::text[] AS "zoneIds",
   feature_ids::text[] AS "featureIds", description, keywords, source, visual_theme AS "visualTheme",
-  applicable_conditions AS "applicableConditions", publish_status AS "publishStatus",
+  publish_status AS "publishStatus",
   verification_status AS "verificationStatus", notes, revision AS "editRevision", created_by::text AS "createdBy",
   updated_by::text AS "updatedBy", created_at AS "createdAt", updated_at AS "updatedAt"
 `;
@@ -99,7 +97,7 @@ const columnByInput: Record<keyof SchemeInput, string> = {
   heightMm: 'height_mm', areaM2: 'area_sqm', openingCount: 'opening_count',
   productSystemId: 'product_system_id', styleId: 'style_id', industryIds: 'industry_ids', budgetTierId: 'budget_tier_id',
   zoneIds: 'zone_ids', featureIds: 'feature_ids', description: 'description', keywords: 'keywords',
-  source: 'source', visualTheme: 'visual_theme', applicableConditions: 'applicable_conditions',
+  source: 'source', visualTheme: 'visual_theme',
   notes: 'notes',
 };
 

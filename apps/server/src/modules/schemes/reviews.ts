@@ -52,8 +52,7 @@ const schemeColumns = `id::text AS id, code, revision,
   updated_at AS "updatedAt",
   length_mm AS "lengthMm", width_mm AS "widthMm", height_mm AS "heightMm",
   area_sqm::text AS "areaM2", opening_count AS "openingCount",
-  product_system_id::text AS "productSystemId",
-  applicable_conditions AS "applicableConditions"`;
+  product_system_id::text AS "productSystemId"`;
 
 const reviewColumns = `id::text AS id, scheme_id::text AS "schemeId",
   request_key AS "requestKey", scheme_revision AS "schemeRevision",

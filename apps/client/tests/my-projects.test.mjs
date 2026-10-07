@@ -63,7 +63,7 @@ const catalog = {
   dimensions: {}, boothSpaces: [], openingCounts: [],
   productSystems: [{ id: 'sys-1', label: '标准展架体系' }], styles: [{ id: 'style-1', label: '科技感' }], industries: [{ id: 'ind-1', label: '电子' }],
   budgetTiers: [{ id: 'budget-1', label: '经济型' }], zones: [{ id: 'zone-1', label: '洽谈区' }, { id: 'zone-2', label: '仓储区' }],
-  features: [{ id: 'feat-1', label: '大屏' }], applicabilityQuestions: [{ id: 'q-1', label: '需要设置二层', helpText: '' }],
+  features: [{ id: 'feat-1', label: '大屏' }],
 }
 function summary(overrides = {}) {
   return { projectId, projectNo: 'PJ-2026-0001', schemeCode: 'SC-1', sourceType: 'quote_request', status: 'following', exhibition, createdAt: '2026-10-01T08:00:00.000Z', updatedAt: '2026-10-02T08:00:00.000Z', ...overrides }
@@ -75,7 +75,7 @@ function detail(overrides = {}) {
       exhibition, contact: { name: '张三', email: 'zhang@example.com', phone: '13800000000' }, company: '示例公司',
       scopeCodes: ['materials', 'installation'], scopeNotes: '含现场搭建', notes: '', materialBudget: { currency: 'CNY', amount: '50000' },
       originalDescription: '需要科技感展台',
-      confirmedRequirements: { lengthMm: 6000, widthMm: 3000, maxHeightMm: 4500, areaM2: 18, openingCount: 2, productSystemId: 'sys-1', styleIds: ['style-1', 'missing-style'], industryIds: ['ind-1'], budgetTierId: 'budget-1', zoneIds: ['zone-1'], featureIds: [], keywords: ['LED'], requiredZoneIds: [], requiredFeatureIds: ['feat-1'], excludedZoneIds: ['zone-2'], excludedFeatureIds: [], applicabilityAnswers: { 'q-1': false } },
+      confirmedRequirements: { lengthMm: 6000, widthMm: 3000, maxHeightMm: 4500, areaM2: 18, openingCount: 2, productSystemId: 'sys-1', styleIds: ['style-1', 'missing-style'], industryIds: ['ind-1'], budgetTierId: 'budget-1', zoneIds: ['zone-1'], featureIds: [], keywords: ['LED'], requiredZoneIds: [], requiredFeatureIds: ['feat-1'], excludedZoneIds: ['zone-2'], excludedFeatureIds: [] },
       unresolvedQuestions: [], legacyIncomplete: false,
     },
     schemeSnapshot: { code: 'SC-1', name: '6×3 标准展台', revision: 2, lengthMm: 6000, widthMm: 3000, heightMm: 3500, openingCount: 2 },
@@ -145,7 +145,7 @@ test('detail shows latest progress first, readable scope and requirement tags, a
   assert.ok(card(mounted.container, '最新进展').textContent.includes('报价单已发送至您的邮箱，请查收。'))
   assert.ok(text.includes('下一步：顾问正在跟进') && text.includes('跟进中') && text.includes('PJ-2026-0001'))
   const request = card(mounted.container, '申请内容').textContent
-  for (const expected of ['中国 / 上海', '2026-11-01 至 2026-11-04', '示例公司 / 张三', 'zhang@example.com', '13800000000', 'CNY 50000', '材料采购', '搭建', '含现场搭建', '需要科技感展台', '6 m × 3 m', '18 ㎡', '2 面开口', '场馆限高 4.5 m', '标准展架体系', '科技感', '电子', '经济型', '洽谈区', '大屏', '仓储区', 'LED', '需要设置二层：否']) assert.ok(request.includes(expected), expected)
+  for (const expected of ['中国 / 上海', '2026-11-01 至 2026-11-04', '示例公司 / 张三', 'zhang@example.com', '13800000000', 'CNY 50000', '材料采购', '搭建', '含现场搭建', '需要科技感展台', '6 m × 3 m', '18 ㎡', '2 面开口', '场馆限高 4.5 m', '标准展架体系', '科技感', '电子', '经济型', '洽谈区', '大屏', '仓储区', 'LED']) assert.ok(request.includes(expected), expected)
   assert.ok(!request.includes('missing-style'))
   assert.equal(mounted.container.querySelector('pre'), null)
   assert.equal(mounted.container.querySelector('details'), null)

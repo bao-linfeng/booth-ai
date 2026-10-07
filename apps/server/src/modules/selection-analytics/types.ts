@@ -1,4 +1,4 @@
-import type { MatchDiagnostics, MatchItem, PublicImage, Requirement } from '../selection/domain.js';
+import type { Catalog, MatchDiagnostics, MatchItem, PublicImage, Requirement } from '../selection/domain.js';
 
 export type RecordedMatchItem = MatchItem<Pick<PublicImage, 'assetId' | 'order' | 'width' | 'height'>>;
 
@@ -34,6 +34,7 @@ export interface SearchRecordInput {
   identity: SelectionIdentity;
   mode: 'random' | 'filtered';
   inputText: string;
+  catalog: Catalog;
   result: {
     status: 'matched' | 'no_match' | 'needs_clarification';
     requirement: Requirement;

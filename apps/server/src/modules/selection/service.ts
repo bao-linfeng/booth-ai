@@ -71,7 +71,7 @@ export async function matchSelection(pool: pg.Pool, storage: Pick<ReturnType<typ
   const catalog = await getSelectionCatalog(pool);
   const requirement = validateRequirement(input.requirement, catalog);
   const { candidates, diagnostics } = await selectionDependency(() => loadCandidatePool(pool, catalog));
-   const result = matchSchemes(candidates, requirement, input.mode, input.inputContext.textProvided, diagnostics, catalog.applicabilityQuestions, catalog.boothSpaces, locale);
+   const result = matchSchemes(candidates, requirement, input.mode, input.inputContext.textProvided, diagnostics, catalog.boothSpaces, locale);
   // Only the returned items (at most three) need presigned image URLs.
   const items = await selectionDependency(() => signMatchItems(storage, result.items));
   const data = {
@@ -80,7 +80,7 @@ export async function matchSelection(pool: pg.Pool, storage: Pick<ReturnType<typ
   };
   const searchId = await recordSearch(pool, {
     attemptId, parseId: input.parseId ?? null, identity, mode: input.mode,
-    inputText: input.inputContext.text ?? '', result: data, degradedParse: input.inputContext.degradedParse ?? false,
+    inputText: input.inputContext.text ?? '', catalog, result: data, degradedParse: input.inputContext.degradedParse ?? false,
     durationMs: performance.now() - startedAt,
   });
   return { ...data, searchId };

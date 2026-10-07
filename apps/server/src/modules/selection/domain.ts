@@ -1,4 +1,4 @@
-export const rulesVersion = 'selection-2026-10-05';
+export const rulesVersion = 'selection-2026-10-06';
 
 export interface MatchDiagnostics {
   reviewedPublished: number;
@@ -9,7 +9,6 @@ export interface MatchDiagnostics {
     invalidData: number;
     productSystem: number;
     height: number;
-    applicability: number;
     tags: number;
     dimensions: number;
   };
@@ -33,12 +32,9 @@ export interface Requirement {
   requiredFeatureIds: string[];
   excludedZoneIds: string[];
   excludedFeatureIds: string[];
-  applicabilityAnswers: Record<string, boolean>;
 }
 
 export interface Option { id: string; label: string; value?: string; labels?: Record<string, string>; aliases?: { locale: string; text: string }[]; }
-/** 目录/匹配用到的适用条件问题摘要（管理端完整记录见 applicability-questions.ts）。 */
-export interface ApplicabilityQuestionSummary { id: string; label: string; helpText: string; }
 export interface BoothSpace { id: string; label: string; lengthMm: number; widthMm: number; heightMm: number; }
 
 export interface Catalog {
@@ -50,7 +46,6 @@ export interface Catalog {
   budgetTiers: Option[];
   zones: Option[];
   features: Option[];
-  applicabilityQuestions: ApplicabilityQuestionSummary[];
 }
 
 export interface Specifications {
@@ -91,17 +86,12 @@ export interface Candidate {
   zoneIds: string[];
   featureIds: string[];
   keywords: string[];
-  labelsConfirmed: boolean;
-  applicabilityRules: { id: string; expectedValue: boolean; }[];
   description: string;
 }
 
 export interface PendingConfirmation {
-  type: 'missing_field' | 'applicability_question';
+  type: 'missing_field';
   field?: string;
-  id?: string;
-  label?: string;
-  helpText?: string;
   message: string;
 }
 
@@ -122,13 +112,12 @@ export function emptyRequirement(): Requirement {
     lengthMm: null, widthMm: null, maxHeightMm: null, areaM2: null,
     openingCount: null, productSystemId: null,
     styleIds: [], industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
-    requiredZoneIds: [], requiredFeatureIds: [], excludedZoneIds: [], excludedFeatureIds: [],
-    applicabilityAnswers: {}
+    requiredZoneIds: [], requiredFeatureIds: [], excludedZoneIds: [], excludedFeatureIds: []
   };
 }
 
 export function isEmpty(requirement: Requirement): boolean {
-  return Object.values(requirement).every(value => value === null || (Array.isArray(value) ? value.length === 0 : typeof value === 'object' && Object.keys(value).length === 0));
+  return Object.values(requirement).every(value => value === null || (Array.isArray(value) && value.length === 0));
 }
 
 export function invalid(message: string): never {
@@ -162,10 +151,6 @@ export function validateRequirement(input: Requirement, catalog: Catalog): Requi
   
   for (const [ids, options] of groups) {
     if (ids.some(id => !options.some(option => option.id === id))) invalid('Unknown catalog option');
-  }
-  
-  for (const id of Object.keys(r.applicabilityAnswers)) {
-    if (!catalog.applicabilityQuestions.some(question => question.id === id)) invalid('Unknown applicability question');
   }
   
   if (r.requiredZoneIds.some(id => r.excludedZoneIds.includes(id)) || r.requiredFeatureIds.some(id => r.excludedFeatureIds.includes(id))) {
@@ -202,6 +187,5 @@ export const requirementSchema = {
     requiredFeatureIds: ids,
     excludedZoneIds: ids,
     excludedFeatureIds: ids,
-    applicabilityAnswers: { type: 'object', maxProperties: 50, propertyNames: { pattern: '^[a-zA-Z0-9_-]{1,100}$' }, additionalProperties: { type: 'boolean' } },
   },
 };

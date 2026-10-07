@@ -21,7 +21,6 @@ import { registerAdminProjectNotificationRoutes } from './project-notifications/
 import { registerAdminSchemeSearchesRoutes } from './scheme-searches/index.js';
 import { registerAdminCreditRoutes } from './credits/index.js';
 import { registerAdminGenerationJobRoutes } from './generation-jobs/index.js';
-import { registerAdminApplicabilityQuestionRoutes } from './applicability-questions/index.js';
 import { registerAdminAuthorization } from './authorization.js';
 import { registerAdminRoleRoutes } from './roles.controller.js';
 
@@ -47,6 +46,5 @@ export async function registerAdminModule(app: FastifyInstance, config: Config, 
     await registerAdminAiModelRoutes(admin, pool, redis, config.aiModelEncryptionKey);
     await registerAdminPromptTemplateRoutes(admin, pool, redis);
     await registerAdminGenerationJobRoutes(admin, pool, storage, redis);
-    await registerAdminApplicabilityQuestionRoutes(admin, pool);
   }, { prefix: '/api/v1/admin' });
 }

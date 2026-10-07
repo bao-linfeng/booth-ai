@@ -43,9 +43,6 @@ export function mergeExtraction(text: string, form: Requirement, catalog: Catalo
       if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 1_000_000 ||
         (field !== 'areaM2' && !Number.isInteger(value)) ||
         (field === 'openingCount' && !catalog.openingCounts.some(option => option.id === String(value)))) throw new Error('Invalid extraction');
-    } else if (field === 'applicabilityAnswers') {
-      if (!isRecord(value) || !Object.keys(value).length || Object.keys(value).length > 50 ||
-        Object.entries(value).some(([id, answer]) => typeof answer !== 'boolean' || !catalog.applicabilityQuestions.some(question => question.id === id))) throw new Error('Invalid extraction');
     } else if (Array.isArray(requirement[key])) {
       if (!Array.isArray(value) || !value.length || value.length > 50 || value.some(id => typeof id !== 'string' || !options.some(option => option.id === id)) || new Set(value).size !== value.length) throw new Error('Invalid extraction');
     } else if (typeof value !== 'string' || !options.some(option => option.id === value)) throw new Error('Invalid extraction');
@@ -74,10 +71,9 @@ export function mergeExtraction(text: string, form: Requirement, catalog: Catalo
       clarifications.push({ field, reason: 'NEEDS_CONFIRMATION', question: message(locale, 'llmNegation'), candidates: [] });
       continue;
     }
-    const nextValue = field === 'applicabilityAnswers' ? { ...requirement.applicabilityAnswers, ...value as Record<string, boolean> } : value;
     if ((field === 'lengthMm' || field === 'widthMm') && requirement[key] !== value) requirement.boothSpaceId = null;
-    if (JSON.stringify(requirement[key]) !== JSON.stringify(nextValue)) overrides.push({ field, previousValue: requirement[key], value: nextValue, evidence: entry.evidence });
-    (requirement as unknown as Record<string, unknown>)[key] = nextValue;
+    if (JSON.stringify(requirement[key]) !== JSON.stringify(value)) overrides.push({ field, previousValue: requirement[key], value, evidence: entry.evidence });
+    (requirement as unknown as Record<string, unknown>)[key] = value;
     fieldSources[field] = { source: 'text', evidence: entry.evidence };
     handled.add(entry.evidence);
   }

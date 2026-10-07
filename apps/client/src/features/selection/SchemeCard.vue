@@ -11,7 +11,6 @@ import SchemeGallery from './SchemeGallery.vue'
 import type { MatchItem, Option } from './types'
 
 const props = defineProps<{ item: MatchItem; index: number; preview?: boolean; searchId?: string; productSystems?: Option[] }>()
-const emit = defineEmits<{ 'answer-applicability': [id: string, value: boolean] }>()
 const { t } = useI18n()
 const active = defineModel<number>('active', { default: 0 })
 const reasonsExpanded = ref(false)
@@ -26,7 +25,7 @@ function productSystemLabel(id: string, fallback: string) {
   return option?.labels?.[appLocale.value] || (appLocale.value !== 'zh' ? option?.labels?.en : undefined) || option?.label || (labelKey[id] ? t(labelKey[id]) : fallback || id)
 }
 const pendingConfirmations = computed(() => props.item.pendingConfirmations.filter(pending =>
-  props.item.matchType !== 'random' || pending.type !== 'missing_field' || !!pending.field,
+  props.item.matchType !== 'random' || !!pending.field,
 ))
 const visibleReasons = computed(() => props.item.reasons.slice(0, 3))
 const remainingReasons = computed(() => props.item.reasons.slice(3))
@@ -101,17 +100,7 @@ watch(() => props.item, () => { reasonsExpanded.value = false })
           </div>
           <p v-else class="text-muted-foreground">{{ item.matchType === 'random' ? t('schemeCard.randomNote') : t('schemeCard.noDifference') }}</p>
           <p v-if="item.matchType === 'random'" class="text-muted-foreground">{{ t('selection.missingFieldsNotice') }}</p>
-          <div v-for="pending in pendingConfirmations" :key="pending.type === 'applicability_question' ? pending.id : pending.message" class="break-words">
-            <div v-if="pending.type === 'applicability_question' && pending.id" role="group" :aria-label="pending.label ?? pending.message" class="space-y-2 rounded-md bg-muted/50 p-3">
-              <p class="font-medium">{{ pending.label ?? pending.message }}</p>
-              <p v-if="pending.helpText" class="text-muted-foreground">{{ pending.helpText }}</p>
-              <div class="flex gap-2 pt-1">
-                <Button size="sm" variant="outline" class="min-h-10 min-w-14" :disabled="preview" @click="emit('answer-applicability', pending.id!, true)">{{ t('common.yes') }}</Button>
-                <Button size="sm" variant="outline" class="min-h-10 min-w-14" :disabled="preview" @click="emit('answer-applicability', pending.id!, false)">{{ t('common.no') }}</Button>
-              </div>
-            </div>
-            <p v-else class="text-muted-foreground">{{ pending.message }}</p>
-          </div>
+          <p v-for="pending in pendingConfirmations" :key="pending.message" class="break-words text-muted-foreground">{{ pending.message }}</p>
           <p v-for="miss in item.preferenceMisses" :key="miss" class="break-words text-muted-foreground">{{ t('schemeCard.preferenceHint') }}{{ miss }}</p>
         </section>
         <Button as-child class="mt-auto justify-between gap-3" :aria-label="`${t('schemeCard.viewSolution')} ${item.code}`">

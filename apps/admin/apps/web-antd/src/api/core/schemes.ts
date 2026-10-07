@@ -35,7 +35,6 @@ export interface SchemeRecord {
   keywords: string[];
   source: null | string;
   visualTheme: null | string;
-  applicableConditions: null | Record<string, unknown>;
   publishStatus: 'draft' | 'published' | 'unpublished';
   verificationStatus: 'failed' | 'unverified' | 'verified';
   notes: null | string;
@@ -92,7 +91,6 @@ export interface CreateSchemeInput {
   zoneIds?: string[];
   featureIds?: string[];
   source?: null | string;
-  applicableConditions?: null | Record<string, unknown>;
 }
 
 export interface UpdateSchemeInput

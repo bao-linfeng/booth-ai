@@ -13,10 +13,10 @@ const candidate: Candidate = {
     openingCount: 2, productSystemId: 'fs62', productSystemLabel: 'FS62',
   },
   images: [], styleId: null, industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
-  labelsConfirmed: true, applicabilityRules: [], description: '',
+  description: '',
 };
 const catalog = {
-  boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [],
+  boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [],
 } as unknown as Parameters<typeof parseRequirement>[2];
 
 test('message locale resolves from Accept-Language tags and falls back to Chinese', () => {
@@ -41,21 +41,21 @@ test('every locale carries the same placeholders as the Chinese source', () => {
 });
 
 test('random match pending note follows the requested locale', () => {
-  const random = (locale?: MessageLocale) => matchSchemes([candidate], emptyRequirement(), 'random', false, undefined, [], [], locale).items[0]!;
+  const random = (locale?: MessageLocale) => matchSchemes([candidate], emptyRequirement(), 'random', false, undefined, [], locale).items[0]!;
   assert.equal(random().pendingConfirmations[0]!.message, zh.matchRandomPending);
   assert.match(random('en').pendingConfirmations[0]!.message, /^Random recommendation/);
 });
 
 test('differences, missing fields and no-match reasons are localized', () => {
   const requirement = { ...emptyRequirement(), lengthMm: 7000, openingCount: 3 };
-  const result = matchSchemes([candidate], requirement, 'filtered', false, undefined, [], [], 'en');
+  const result = matchSchemes([candidate], requirement, 'filtered', false, undefined, [], 'en');
   const item = result.items[0]!;
   assert.equal(item.differences[0]!.requested, 'Length 7 m');
   assert.equal(item.differences.at(-1)!.requested, '3 open sides');
   assert.deepEqual(result.missingFields, ['booth width', 'venue height limit']);
   assert.equal(item.pendingConfirmations[0]!.message, 'Please provide booth width');
 
-  const none = matchSchemes([candidate], { ...emptyRequirement(), maxHeightMm: 3000 }, 'filtered', false, undefined, [], [], 'en');
+  const none = matchSchemes([candidate], { ...emptyRequirement(), maxHeightMm: 3000 }, 'filtered', false, undefined, [], 'en');
   assert.equal(none.status, 'no_match');
   assert.ok(none.reasons.includes('Exceeds venue height limit: 1 available designs'));
   assert.ok(none.suggestions.includes('You can also contact an advisor to confirm available designs'));

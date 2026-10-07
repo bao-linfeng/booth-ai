@@ -68,7 +68,7 @@ const catalog = {
   ],
   openingCounts: [{ id: '2', label: '2 面开口' }],
   productSystems: [], styles: [], industries: [{ id: 'medical', label: '医疗健康' }], budgetTiers: [],
-  zones: [{ id: 'meeting', label: '洽谈区' }], features: [], applicabilityQuestions: [],
+  zones: [{ id: 'meeting', label: '洽谈区' }], features: [],
 }
 function matchResponse(body, status) {
   const random = body.mode === 'random'
@@ -81,7 +81,7 @@ function matchResponse(body, status) {
   return {
     status, mode: body.mode, requirement: body.requirement, items,
     counts: { direct: random ? 0 : items.length, reference: 0, random: random ? items.length : 0, total: items.length },
-    diagnostics: { reviewedPublished: 1, ready: 1, exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, applicability: 0, tags: 0, dimensions: 0 } },
+    diagnostics: { reviewedPublished: 1, ready: 1, exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 } },
     reasons: status === 'no_match' ? ['暂无符合尺寸的方案'] : [], suggestions: [], missingFields: [],
     attemptId: body.attemptId, searchId: 'search-1',
   }

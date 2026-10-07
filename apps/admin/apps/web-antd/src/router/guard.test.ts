@@ -10,8 +10,8 @@ import { routes } from './routes';
 const state = vi.hoisted(() => ({
   access: {
     homePath: '/home',
-    permissions: ['home.read', 'questions.read'],
-    routeNames: ['Home', 'ApplicabilityQuestions'],
+    permissions: ['home.read', 'prompts.read'],
+    routeNames: ['Home', 'PromptTemplates'],
   },
   store: {
     accessToken: 'test-token',
@@ -51,8 +51,8 @@ vi.mock('#/router/routes', () => ({
       path: '/system',
       children: [
         {
-          name: 'ApplicabilityQuestions',
-          path: '/applicability-questions',
+          name: 'PromptTemplates',
+          path: '/prompt-templates',
           component: {},
         },
       ],
@@ -94,8 +94,8 @@ describe('admin route access guard', () => {
     vi.clearAllMocks();
     state.access = {
       homePath: '/home',
-      permissions: ['home.read', 'questions.read'],
-      routeNames: ['Home', 'ApplicabilityQuestions'],
+      permissions: ['home.read', 'prompts.read'],
+      routeNames: ['Home', 'PromptTemplates'],
     };
     state.store.accessToken = 'test-token';
     state.store.isAccessChecked = false;
@@ -106,9 +106,9 @@ describe('admin route access guard', () => {
 
   it('sends a previously opened tab to 404 after its permission is revoked', async () => {
     const router = setupRouter();
-    const tabPath = '/applicability-questions?source=tab#question';
+    const tabPath = '/prompt-templates?source=tab#template';
     await router.push(tabPath);
-    expect(router.currentRoute.value.name).toBe('ApplicabilityQuestions');
+    expect(router.currentRoute.value.name).toBe('PromptTemplates');
     await router.push('/home');
 
     state.access = {
@@ -120,7 +120,7 @@ describe('admin route access guard', () => {
 
     expect(router.currentRoute.value.name).toBe('FallbackNotFound');
     expect(router.currentRoute.value.fullPath).toBe(tabPath);
-    expect(router.hasRoute('ApplicabilityQuestions')).toBe(false);
+    expect(router.hasRoute('PromptTemplates')).toBe(false);
     expect(router.hasRoute('SystemConfig')).toBe(false);
     expect(
       router
@@ -153,9 +153,9 @@ describe('admin route access guard', () => {
       routeNames: ['Home'],
     };
     const router = setupRouter();
-    await router.push('/applicability-questions');
+    await router.push('/prompt-templates');
     expect(router.currentRoute.value.name).toBe('FallbackNotFound');
-    expect(router.currentRoute.value.path).toBe('/applicability-questions');
+    expect(router.currentRoute.value.path).toBe('/prompt-templates');
   });
 
   it('blocks a stale route record even when the permission signature is unchanged', async () => {
@@ -167,15 +167,15 @@ describe('admin route access guard', () => {
     const router = setupRouter();
     await router.push('/home');
     router.addRoute('Root', {
-      name: 'ApplicabilityQuestions',
-      path: '/applicability-questions',
+      name: 'PromptTemplates',
+      path: '/prompt-templates',
       component: {},
     });
 
-    await router.push('/applicability-questions?source=menu#question');
+    await router.push('/prompt-templates?source=menu#template');
     expect(router.currentRoute.value.name).toBe('FallbackNotFound');
     expect(router.currentRoute.value.fullPath).toBe(
-      '/applicability-questions?source=menu#question',
+      '/prompt-templates?source=menu#template',
     );
   });
 
@@ -184,23 +184,23 @@ describe('admin route access guard', () => {
     await router.push('/home');
     state.access.routeNames = ['Home'];
     state.access.permissions = ['home.read'];
-    await router.push('/applicability-questions');
+    await router.push('/prompt-templates');
     expect(router.currentRoute.value.name).toBe('FallbackNotFound');
     await router.push('/home');
 
-    state.access.routeNames = ['Home', 'ApplicabilityQuestions'];
-    state.access.permissions = ['home.read', 'questions.read'];
-    await router.push('/applicability-questions');
-    expect(router.currentRoute.value.name).toBe('ApplicabilityQuestions');
+    state.access.routeNames = ['Home', 'PromptTemplates'];
+    state.access.permissions = ['home.read', 'prompts.read'];
+    await router.push('/prompt-templates');
+    expect(router.currentRoute.value.name).toBe('PromptTemplates');
   });
 
   it('keeps login and unauthenticated navigation behavior', async () => {
     state.store.accessToken = '';
     const router = setupRouter();
-    await router.push('/applicability-questions');
+    await router.push('/prompt-templates');
     expect(router.currentRoute.value.name).toBe('Login');
     expect(router.currentRoute.value.query.redirect).toBe(
-      encodeURIComponent('/applicability-questions'),
+      encodeURIComponent('/prompt-templates'),
     );
   });
 });

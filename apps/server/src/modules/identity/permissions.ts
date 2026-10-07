@@ -26,7 +26,6 @@ export const permissionGroups = [
   { key: 'dictionaries', label: '字典管理', routes: ['DictionaryList'], actions: [['read', '查看字典与字典项'], ['create', '新建字典'], ['update', '编辑字典'], ['delete', '删除字典'], ['item-create', '新增字典项'], ['item-update', '编辑字典项'], ['item-delete', '删除字典项']] },
   { key: 'ai-models', label: 'AI 模型配置', routes: ['AiModels'], actions: [['read', '查看供应商、模型与用途'], ['provider-create', '新建供应商'], ['provider-update', '编辑供应商'], ['provider-delete', '删除供应商'], ['discover', '测试连接 / 刷新模型目录'], ['model-create', '添加模型'], ['model-update', '编辑模型'], ['model-delete', '删除模型'], ['assign', '配置用途、主备顺序与积分']] },
   { key: 'prompts', label: '提示词模板', routes: ['PromptTemplates'], actions: [['read', '查看模板'], ['create', '新建模板'], ['update', '编辑模板'], ['enable', '启用模板'], ['disable', '停用模板'], ['preview', '渲染预览']] },
-  { key: 'questions', label: '适用条件问题', routes: ['ApplicabilityQuestions'], actions: [['read', '查看问题'], ['create', '新建问题'], ['update', '编辑问题'], ['enable', '启用问题'], ['disable', '停用问题'], ['delete', '删除问题']] },
   { key: 'audit', label: '审计日志', routes: [], actions: [['read', '查看审计日志']] },
 ] as const;
 

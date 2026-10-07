@@ -13,17 +13,6 @@ const nullableNumber = { type: ['number', 'null'] };
 const nullableStringArray = { type: ['array', 'null'], items: { type: 'string' } };
 const dictionaryId = { type: ['string', 'null'], format: 'uuid' };
 const dictionaryIds = { type: 'array', uniqueItems: true, items: { type: 'string', format: 'uuid' } };
-const applicabilityConditions = {
-  type: ['object', 'null'], additionalProperties: false,
-  required: ['status', 'rules', 'labelsConfirmed', 'publicNotes'],
-  properties: {
-    status: { type: 'string', enum: ['pending', 'confirmed'] },
-    rules: { type: 'array', maxItems: 20, items: { type: 'object', additionalProperties: false,
-      required: ['id', 'expectedValue'], properties: { id: { type: 'string', minLength: 1, maxLength: 100 }, expectedValue: { type: 'boolean' } } } },
-    labelsConfirmed: { type: 'boolean' },
-    publicNotes: { type: 'string', maxLength: 2000 },
-  },
-};
 const schemeProperties = {
   code: { type: 'string', minLength: 1, maxLength: 200 },
   name: { type: 'string', minLength: 1, maxLength: 500 },
@@ -43,7 +32,6 @@ const schemeProperties = {
   keywords: nullableStringArray,
   source: nullableString,
   visualTheme: nullableString,
-  applicableConditions: applicabilityConditions,
   notes: nullableString,
 };
 
@@ -65,7 +53,6 @@ const updateProperties = {
   keywords: nullableStringArray,
   source: nullableString,
   visualTheme: nullableString,
-  applicableConditions: applicabilityConditions,
   notes: nullableString,
   editRevision: { type: 'integer', minimum: 1 },
 };

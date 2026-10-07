@@ -28,8 +28,8 @@ test('asset scope migration and all baseline consumers isolate generated assets 
   for (const [index, id] of [user, other].entries()) await pool.query('INSERT INTO users(id,external_user_id,username) VALUES($1,$2,$3)', [id, index + 1, id]);
   await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,1,'test',ARRAY['ROLE_ADMIN'])", [admin]);
   const product = (await pool.query<{ id: string }>("SELECT i.id FROM dictionary_items i JOIN dictionaries d ON d.id=i.dictionary_id WHERE d.code='product_system' AND d.enabled AND i.enabled LIMIT 1")).rows[0]!.id;
-  await pool.query(`INSERT INTO schemes(id,code,name,length_mm,width_mm,height_mm,area_sqm,opening_count,product_system_id,industry_ids,zone_ids,feature_ids,applicable_conditions)
-    VALUES($1,$2,$2,6000,6000,3000,36,2,$3,'{}','{}','{}','{"status":"confirmed","labelsConfirmed":true,"rules":[]}')`, [scheme, code, product]);
+  await pool.query(`INSERT INTO schemes(id,code,name,length_mm,width_mm,height_mm,area_sqm,opening_count,product_system_id,industry_ids,zone_ids,feature_ids)
+    VALUES($1,$2,$2,6000,6000,3000,36,2,$3,'{}','{}','{}')`, [scheme, code, product]);
   async function asset(type: string, metadata: Record<string, unknown> = {}, order = 0, related: string | null = null, active = true) {
     const id = randomUUID();
     await pool.query('INSERT INTO scheme_assets(id,scheme_id,type,name,metadata,sort_order,related_asset_id,is_active) VALUES($1,$2,$3,$3,$4,$5,$6,$7)', [id, scheme, type, metadata, order, related, active]);

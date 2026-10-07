@@ -10,7 +10,7 @@
 | `apps/server/src/modules/identity` | 账户同步、认证、账户查询 |
 | `apps/server/src/modules/schemes` | 方案维护、导入、审核发布、BOM |
 | `apps/server/src/modules/assets` | 资产与版本、公开资料可用性及下载 |
-| `apps/server/src/modules/selection` | 字典、适用条件、需求解析与方案匹配编排 |
+| `apps/server/src/modules/selection` | 字典、需求解析与方案匹配编排 |
 | `apps/server/src/modules/selection-analytics` | 选型尝试、解析、检索流水与统计 |
 | `apps/server/src/modules/generation` | 主题与画稿任务、生成快照、执行与结算、任务查询 |
 | `apps/server/src/modules/prompts` | 提示词匹配、维护、渲染与预览 |

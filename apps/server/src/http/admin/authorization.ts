@@ -63,15 +63,12 @@ export function adminRoutePermissions(method: string, url: string): string[] | n
   if (path === '/prompt-templates/preview') return ['prompts.preview'];
   if (path === '/prompt-templates' && method === 'POST') return ['prompts.create'];
   if (path === '/prompt-templates/:id' && method === 'PATCH') return ['prompts.update', 'prompts.enable', 'prompts.disable'];
-  if (path === '/applicability-questions' && method === 'POST') return ['questions.create'];
-  if (path === '/applicability-questions/:id' && method === 'DELETE') return ['questions.delete'];
-  if (path === '/applicability-questions/:id' && method === 'PATCH') return ['questions.update', 'questions.enable', 'questions.disable'];
   const modules: Record<string, string> = {
     users: 'users', admins: 'admins', roles: 'roles', permissions: 'roles', credits: 'credits',
     'scheme-searches': 'searches', projects: 'projects', 'project-assignees': 'projects',
     'generation-jobs': 'generation', dictionaries: 'dictionaries',
     'ai-protocols': 'ai-models', 'ai-providers': 'ai-models', 'ai-models': 'ai-models', 'ai-model-assignments': 'ai-models',
-    'prompt-templates': 'prompts', 'applicability-questions': 'questions', 'audit-logs': 'audit',
+    'prompt-templates': 'prompts', 'audit-logs': 'audit',
   };
   const root = path.split('/')[1] ?? '';
   if (root === 'project-notifications') return ['notifications.read'];
@@ -92,11 +89,10 @@ export function registerAdminAuthorization(app: FastifyInstance): void {
   app.addHook('preHandler', async request => {
     if (request.routeOptions.config.authentication === 'public') return;
     const path = request.routeOptions.url?.replace(/^\/api\/v1\/admin(?=\/)/, '');
-    if (request.method !== 'PATCH' || !['/prompt-templates/:id', '/applicability-questions/:id'].includes(path ?? '')) return;
+    if (request.method !== 'PATCH' || path !== '/prompt-templates/:id') return;
     const body = request.body as Record<string, unknown> | undefined;
     if (!body || typeof body !== 'object') return;
-    const group = path === '/prompt-templates/:id' ? 'prompts' : 'questions';
-    if (Object.keys(body).some(key => key !== 'enabled' && key !== 'expectedRevision')) requireAdminPermission(request, `${group}.update`);
-    if (body.enabled !== undefined) requireAdminPermission(request, `${group}.${body.enabled === true ? 'enable' : 'disable'}`);
+    if (Object.keys(body).some(key => key !== 'enabled' && key !== 'expectedRevision')) requireAdminPermission(request, 'prompts.update');
+    if (body.enabled !== undefined) requireAdminPermission(request, `prompts.${body.enabled === true ? 'enable' : 'disable'}`);
   });
 }

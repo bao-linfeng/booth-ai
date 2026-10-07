@@ -1,11 +1,8 @@
 export type SelectionState = 'idle' | 'parsing' | 'matching' | 'needs_clarification' | 'results' | 'empty' | 'error'
 
 export interface PendingConfirmation {
-  type: 'missing_field' | 'applicability_question'
+  type: 'missing_field'
   field?: string
-  id?: string
-  label?: string
-  helpText?: string
   message: string
 }
 
@@ -27,7 +24,6 @@ export interface Requirement {
   requiredFeatureIds: string[]
   excludedZoneIds: string[]
   excludedFeatureIds: string[]
-  applicabilityAnswers: Record<string, boolean>
 }
 
 export interface Option { id: string; label: string; value?: string; labels?: Record<string, string>; aliases?: { locale: string; text: string }[] }
@@ -41,7 +37,6 @@ export interface Catalog {
   budgetTiers: Option[]
   zones: Option[]
   features: Option[]
-  applicabilityQuestions: { id: string; label: string; helpText: string }[]
   rulesVersion?: string
   dictionaryVersion?: string
 }
@@ -70,7 +65,7 @@ export interface MatchResponse {
   counts: { direct: number; reference: number; random: number; total: number }
   diagnostics: {
     reviewedPublished: number; ready: number
-    exclusions: { unverifiedChecklist: number; incompleteAssets: number; invalidData: number; productSystem: number; height: number; applicability: number; tags: number; dimensions: number }
+    exclusions: { unverifiedChecklist: number; incompleteAssets: number; invalidData: number; productSystem: number; height: number; tags: number; dimensions: number }
   }
   reasons: string[]
   suggestions: string[]
@@ -109,5 +104,5 @@ export const emptyRequirement = (): Requirement => ({
   lengthMm: null, widthMm: null, maxHeightMm: null, areaM2: null,
   openingCount: null, productSystemId: null,
   styleIds: [], industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
-  requiredZoneIds: [], requiredFeatureIds: [], excludedZoneIds: [], excludedFeatureIds: [], applicabilityAnswers: {},
+  requiredZoneIds: [], requiredFeatureIds: [], excludedZoneIds: [], excludedFeatureIds: [],
 })

@@ -100,9 +100,9 @@ let imageRefreshTimer: ReturnType<typeof setInterval> | undefined
 let imageRefreshPending = false
 
 const selectionSessionKey = 'booth-ai:ai-selection'
-const selectionSessionVersion = 3
+const selectionSessionVersion = 4
 type PersistedSelection = {
-  version: 3
+  version: 4
   requirement: Requirement
   text: string
   state: SelectionState
@@ -137,8 +137,7 @@ function isRequirement(value: unknown): value is Requirement {
   const nullableStrings = ['boothSpaceId', 'productSystemId', 'budgetTierId']
   return nullableNumbers.every(field => isNullableNumber(value[field])) &&
     nullableStrings.every(field => value[field] === null || typeof value[field] === 'string') &&
-    ['styleIds', 'industryIds', 'zoneIds', 'featureIds', 'keywords', 'requiredZoneIds', 'requiredFeatureIds', 'excludedZoneIds', 'excludedFeatureIds'].every(field => isStringArray(value[field])) &&
-    isRecord(value.applicabilityAnswers) && Object.values(value.applicabilityAnswers).every(answer => typeof answer === 'boolean')
+    ['styleIds', 'industryIds', 'zoneIds', 'featureIds', 'keywords', 'requiredZoneIds', 'requiredFeatureIds', 'excludedZoneIds', 'excludedFeatureIds'].every(field => isStringArray(value[field]))
 }
 
 function isParseResponse(value: unknown): value is ParseResponse {
@@ -170,13 +169,13 @@ function isMatchResponse(value: unknown): value is MatchResponse {
       const specifications = item.specifications
       return isRecord(specifications) && ['lengthMm', 'widthMm', 'heightMm', 'areaM2', 'openingCount'].every(field => typeof specifications[field] === 'number') &&
         typeof specifications.productSystemId === 'string' && typeof specifications.productSystemLabel === 'string' &&
-        isStringArray(item.reasons) && Array.isArray(item.pendingConfirmations) && item.pendingConfirmations.every((p: unknown) => isRecord(p) && typeof (p as Record<string,unknown>).message === 'string' && ((p as Record<string,unknown>).type === 'missing_field' || (p as Record<string,unknown>).type === 'applicability_question')) && isStringArray(item.preferenceMisses) &&
+        isStringArray(item.reasons) && Array.isArray(item.pendingConfirmations) && item.pendingConfirmations.every((p: unknown) => isRecord(p) && typeof p.message === 'string' && p.type === 'missing_field') && isStringArray(item.preferenceMisses) &&
         Array.isArray(item.differences) && item.differences.every(difference => isRecord(difference) &&
           ['field', 'requested', 'actual', 'reason'].every(field => typeof difference[field] === 'string'))
     }) &&
     isRecord(counts) && ['direct', 'reference', 'random', 'total'].every(field => typeof counts[field] === 'number') &&
     isRecord(diagnostics) && typeof diagnostics.reviewedPublished === 'number' && typeof diagnostics.ready === 'number' &&
-    isRecord(exclusions) && ['unverifiedChecklist', 'incompleteAssets', 'invalidData', 'productSystem', 'height', 'applicability', 'tags', 'dimensions'].every(field => typeof exclusions[field] === 'number') &&
+    isRecord(exclusions) && ['unverifiedChecklist', 'incompleteAssets', 'invalidData', 'productSystem', 'height', 'tags', 'dimensions'].every(field => typeof exclusions[field] === 'number') &&
     isStringArray(value.reasons) && isStringArray(value.suggestions) && isStringArray(value.missingFields)
 }
 
@@ -343,7 +342,7 @@ async function refreshExpiredImages() {
   }
 }
 
-const emptyCatalog: Catalog = { boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [], applicabilityQuestions: [] }
+const emptyCatalog: Catalog = { boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [] }
 const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value ?? emptyCatalog))
 const textChangedSinceParse = computed(() => parsedText.value !== null && parsedText.value !== text.value)
 const unresolvedClarifications = computed(() => liveClarifications.value.filter((item, index) => {
@@ -459,7 +458,7 @@ const fieldLabels: Record<keyof Requirement, string> = {
   styleIds: 'requirementForm.fieldStyleIds', industryIds: 'requirementForm.fieldIndustryIds', budgetTierId: 'requirementForm.fieldBudgetTierId',
   zoneIds: 'requirementForm.fieldZoneIds', featureIds: 'requirementForm.fieldFeatureIds', keywords: 'requirementForm.fieldKeywords',
   requiredZoneIds: 'requirementForm.fieldRequiredZoneIds', requiredFeatureIds: 'requirementForm.fieldRequiredFeatureIds',
-  excludedZoneIds: 'requirementForm.fieldExcludedZoneIds', excludedFeatureIds: 'requirementForm.fieldExcludedFeatureIds', applicabilityAnswers: 'requirementForm.fieldApplicabilityAnswers'
+  excludedZoneIds: 'requirementForm.fieldExcludedZoneIds', excludedFeatureIds: 'requirementForm.fieldExcludedFeatureIds'
 }
 function fieldLabel(field: string) {
   const key = fieldLabels[field as keyof Requirement]
@@ -471,7 +470,6 @@ function displayValue(field: string, value: unknown): string {
   const options = [...catalog.value.boothSpaces, ...catalog.value.productSystems, ...catalog.value.styles, ...catalog.value.industries, ...catalog.value.budgetTiers, ...catalog.value.zones, ...catalog.value.features]
   const label = (id: string) => options.find(option => option.id === id)?.label ?? id
   if (Array.isArray(value)) return value.map(id => label(String(id))).join('、')
-  if (typeof value === 'object') return Object.entries(value).map(([id, answer]) => `${catalog.value.applicabilityQuestions.find(question => question.id === id)?.label ?? id}：${answer ? t('common.yes') : t('common.no')}`).join('、') || t('selection.fieldNotFilled')
   return label(String(value))
 }
 
@@ -569,15 +567,6 @@ async function doMatch(mode: 'random' | 'filtered', textProvided: boolean, seque
     console.error('Match failed', error)
     state.value = 'error'
   }
-}
-
-function answerApplicability(id: string, value: boolean) {
-  if (!canSearch.value || isPreview.value) return
-  requirement.value = {
-    ...requirement.value,
-    applicabilityAnswers: { ...requirement.value.applicabilityAnswers, [id]: value },
-  }
-  if (state.value === 'results') void submit()
 }
 
 async function submit() {
@@ -757,7 +746,7 @@ onMounted(() => {
           </div>
           
           <Card v-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? t('selection.loadingParsing') : t('selection.loadingMatching') }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? t('selection.loadingParsingHint') : t('selection.loadingMatchingHint') }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>
-              <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? t('selection.resultsHeadingInspiration') : t('selection.resultsHeadingMatched') }}</h2><Badge variant="secondary">{{ inspirationResults ? t('selection.resultsTagInspiration') : (isPreview ? t('selection.resultsDirect1') : t('selection.resultsDirectN', { direct: liveMatchData?.counts.direct ?? 0, reference: liveMatchData?.counts.reference ?? 0 })) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :product-systems="isPreview ? undefined : catalog.productSystems" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" @answer-applicability="answerApplicability" /><p class="text-xs leading-relaxed text-muted-foreground">{{ t('selection.resultsDirectNote') }}</p></section>
+              <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? t('selection.resultsHeadingInspiration') : t('selection.resultsHeadingMatched') }}</h2><Badge variant="secondary">{{ inspirationResults ? t('selection.resultsTagInspiration') : (isPreview ? t('selection.resultsDirect1') : t('selection.resultsDirectN', { direct: liveMatchData?.counts.direct ?? 0, reference: liveMatchData?.counts.reference ?? 0 })) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :product-systems="isPreview ? undefined : catalog.productSystems" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" /><p class="text-xs leading-relaxed text-muted-foreground">{{ t('selection.resultsDirectNote') }}</p></section>
           <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? t('selection.emptyTitle') : t('selection.emptyTitleError') }}</h2><div v-if="state === 'empty'" class="max-w-md space-y-1 text-sm leading-relaxed text-muted-foreground"><p v-for="reason in liveMatchData?.reasons ?? [t('selection.emptyHint')]" :key="reason">{{ reason }}</p></div><p v-else class="max-w-md text-sm leading-relaxed text-muted-foreground">{{ t('selection.emptyErrorHint') }}</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="editRequirement">{{ t('selection.editConditions') }}</Button><Button v-else :disabled="!canSearch" @click="submit">{{ t('common.retry') }}</Button><Button variant="outline" @click="manualOpen = true">{{ t('selection.transferToAdvisor') }}</Button></div></CardContent></Card>
           <div class="flex flex-wrap items-center justify-between gap-4 border-t pt-5"><div class="flex items-center gap-3"><MessageCircle class="size-5 shrink-0 text-muted-foreground" /><p class="text-sm text-muted-foreground">{{ t('selection.advisorCta') }}</p></div><Button variant="ghost" @click="manualOpen = true">{{ t('selection.advisorCtaLink') }}<ArrowUpRight class="ms-2 size-4 rtl:-scale-x-100" /></Button></div>
       </div>

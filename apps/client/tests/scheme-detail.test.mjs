@@ -69,7 +69,6 @@ const detail = {
   code: 'SC-6030',
   images: [{ assetId: 'front', url: 'https://assets.example/front.jpg', thumbnailUrl: 'https://assets.example/front-thumb.jpg', order: 0, width: 1600, height: 1200 }],
   specifications: { lengthMm: 6000, widthMm: 3000, heightMm: 4500, areaM2: 18, openingCount: 2, productSystemId: 'system-a', productSystemLabel: '标准模块' },
-  applicabilityNotes: '确认场馆限高后使用。',
   resources: { model: true, bom: true, renderings: true, masks: true, drawings: true, artworks: true },
   actions: { theme: 'available', quote: 'available', bom: 'available', drawings: 'available', artworks: 'available', modelDownload: 'available' },
 }

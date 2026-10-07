@@ -1,9 +1,9 @@
 import { randomInt } from 'node:crypto';
 import { DEFAULT_MESSAGE_LOCALE, message, type MessageKey, type MessageLocale } from './messages/index.js';
-import { isEmpty, invalid, rulesVersion, type ApplicabilityQuestionSummary, type BoothSpace, type Candidate, type MatchDiagnostics, type MatchItem, type PendingConfirmation, type Requirement } from './domain.js';
+import { isEmpty, invalid, rulesVersion, type BoothSpace, type Candidate, type MatchDiagnostics, type MatchItem, type Requirement } from './domain.js';
 
 type ExclusionKey = keyof MatchDiagnostics['exclusions'];
-type FilterExclusionKey = 'productSystem' | 'height' | 'applicability' | 'tags' | 'dimensions';
+type FilterExclusionKey = 'productSystem' | 'height' | 'tags' | 'dimensions';
 type Evaluation = { misses: Record<FilterExclusionKey, boolean>; deviation: number };
 type RankedItem = { item: MatchItem; deviation: number; preference: number };
 type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
@@ -13,14 +13,14 @@ const MAX_DIMENSION_DEVIATION = 0.3;
 
 const EXCLUSION_LABELS: Record<ExclusionKey, MessageKey> = {
   unverifiedChecklist: 'excUnverifiedChecklist', incompleteAssets: 'excIncompleteAssets', invalidData: 'excInvalidData',
-  productSystem: 'excProductSystem', height: 'excHeight', applicability: 'excApplicability',
+  productSystem: 'excProductSystem', height: 'excHeight',
   tags: 'excTags', dimensions: 'excDimensions'
 };
 const POOL_EXCLUSIONS: ExclusionKey[] = ['unverifiedChecklist', 'incompleteAssets', 'invalidData'];
 
 const intersects = (left: string[], right: string[]) => left.some(value => right.includes(value));
 
-export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean, poolDiagnostics?: MatchDiagnostics, applicabilityQuestions: ApplicabilityQuestionSummary[] = [], boothSpaces: BoothSpace[] = [], locale: MessageLocale = DEFAULT_MESSAGE_LOCALE) {
+export function matchSchemes(candidates: Candidate[], requirement: Requirement, mode: 'random' | 'filtered', textProvided: boolean, poolDiagnostics?: MatchDiagnostics, boothSpaces: BoothSpace[] = [], locale: MessageLocale = DEFAULT_MESSAGE_LOCALE) {
   const selectedSize = requirement.boothSpaceId ? boothSpaces.find(space => space.id === requirement.boothSpaceId) : undefined;
   if (requirement.boothSpaceId && !selectedSize) invalid('Unknown booth size');
   if (mode === 'random' && (textProvided || !isEmpty(requirement))) invalid('Random requires empty input');
@@ -36,7 +36,7 @@ export function matchSchemes(candidates: Candidate[], requirement: Requirement, 
 
   const items = mode === 'random'
     ? pickRandomItems(candidates, text)
-    : rankCandidates(candidates, requirement, missingFields, applicabilityQuestions, diagnostics, text, selectedSize);
+    : rankCandidates(candidates, requirement, missingFields, diagnostics, text, selectedSize);
 
   const counts = {
     direct: items.filter(item => item.matchType === 'direct').length,
@@ -64,7 +64,7 @@ function createDiagnostics(candidates: Candidate[], poolDiagnostics?: MatchDiagn
   if (poolDiagnostics) return structuredClone(poolDiagnostics);
   return {
     reviewedPublished: candidates.length, ready: candidates.length,
-    exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, applicability: 0, tags: 0, dimensions: 0 }
+    exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 }
   };
 }
 
@@ -106,7 +106,7 @@ function pickRandomItems(candidates: Candidate[], text: Translate): MatchItem[] 
 
 // ---------- filtered ----------
 
-function rankCandidates(candidates: Candidate[], requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[], diagnostics: MatchDiagnostics, text: Translate, selectedSize?: BoothSpace): MatchItem[] {
+function rankCandidates(candidates: Candidate[], requirement: Requirement, missingFields: string[], diagnostics: MatchDiagnostics, text: Translate, selectedSize?: BoothSpace): MatchItem[] {
   const ranked: RankedItem[] = [];
 
   for (const candidate of candidates) {
@@ -115,7 +115,7 @@ function rankCandidates(candidates: Candidate[], requirement: Requirement, missi
     for (const key of missed) diagnostics.exclusions[key]++;
     if (missed.length) continue;
 
-    const item = buildMatchItem(candidate, requirement, missingFields, questions, text);
+    const item = buildMatchItem(candidate, requirement, missingFields, text);
     const { score, misses: preferenceMisses } = scorePreferences(candidate, requirement, text);
     item.preferenceMisses = preferenceMisses;
     ranked.push({ item, deviation, preference: score });
@@ -133,7 +133,6 @@ function evaluateCandidate(candidate: Candidate, requirement: Requirement, selec
     misses: {
       productSystem: !!requirement.productSystemId && requirement.productSystemId !== s.productSystemId,
       height: !!requirement.maxHeightMm && s.heightMm > requirement.maxHeightMm,
-      applicability: candidate.applicabilityRules.some(rule => requirement.applicabilityAnswers[rule.id] !== undefined && requirement.applicabilityAnswers[rule.id] !== rule.expectedValue),
       tags: hasTagMiss(candidate, requirement),
       dimensions: selectedSize ? s.lengthMm !== selectedSize.lengthMm || s.widthMm !== selectedSize.widthMm || s.heightMm !== selectedSize.heightMm
         : deviation > MAX_DIMENSION_DEVIATION + Number.EPSILON
@@ -142,10 +141,7 @@ function evaluateCandidate(candidate: Candidate, requirement: Requirement, selec
 }
 
 function hasTagMiss(candidate: Candidate, requirement: Requirement): boolean {
-  const hasTagRequirement = requirement.requiredZoneIds.length > 0 || requirement.requiredFeatureIds.length > 0
-    || requirement.excludedZoneIds.length > 0 || requirement.excludedFeatureIds.length > 0;
-  return (hasTagRequirement && !candidate.labelsConfirmed)
-    || requirement.requiredZoneIds.some(id => !candidate.zoneIds.includes(id))
+  return requirement.requiredZoneIds.some(id => !candidate.zoneIds.includes(id))
     || requirement.requiredFeatureIds.some(id => !candidate.featureIds.includes(id))
     || intersects(requirement.excludedZoneIds, candidate.zoneIds)
     || intersects(requirement.excludedFeatureIds, candidate.featureIds);
@@ -162,32 +158,16 @@ function dimensionDeviation(candidate: Candidate, requirement: Requirement): num
 }
 
 /** 通过硬条件的候选：生成差异、待确认项，并在无差异无待确认时升级为 direct。 */
-function buildMatchItem(candidate: Candidate, requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[], text: Translate): MatchItem {
+function buildMatchItem(candidate: Candidate, requirement: Requirement, missingFields: string[], text: Translate): MatchItem {
   const item = toItem(candidate, 'reference');
-  item.pendingConfirmations = buildPendingConfirmations(candidate, requirement, missingFields, questions, text);
+  item.pendingConfirmations = missingFields.map(field => ({ type: 'missing_field' as const, field, message: text('pendingMissing', { field }) }));
   item.differences = buildDifferences(candidate, requirement, text);
 
   if (!item.differences.length && !item.pendingConfirmations.length) {
     item.matchType = 'direct';
-    item.reasons = [text('reasonSize'), text('reasonHeight'), text('reasonApplicability')];
+    item.reasons = [text('reasonSize'), text('reasonHeight')];
   }
   return item;
-}
-
-function buildPendingConfirmations(candidate: Candidate, requirement: Requirement, missingFields: string[], questions: ApplicabilityQuestionSummary[], text: Translate): PendingConfirmation[] {
-  const pending: PendingConfirmation[] = missingFields.map(field => ({ type: 'missing_field' as const, field, message: text('pendingMissing', { field }) }));
-  for (const rule of candidate.applicabilityRules) {
-    if (requirement.applicabilityAnswers[rule.id] !== undefined) continue;
-    const question = questions.find(q => q.id === rule.id);
-    pending.push({
-      type: 'applicability_question',
-      id: rule.id,
-      label: question?.label,
-      helpText: question?.helpText,
-      message: question ? text('pendingQuestion', { label: question.label }) : text('pendingRule', { id: rule.id }),
-    });
-  }
-  return pending;
 }
 
 function buildDifferences(candidate: Candidate, requirement: Requirement, text: Translate): MatchItem['differences'] {

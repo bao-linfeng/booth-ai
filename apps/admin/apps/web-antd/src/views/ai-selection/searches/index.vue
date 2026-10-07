@@ -37,7 +37,6 @@ const diagnosticLabels: Record<string, string> = {
   invalidData: '基础数据或审核信息不完整',
   productSystem: '体系不符',
   height: '超过限高',
-  applicability: '适用条件不符',
   tags: '功能条件不符',
   dimensions: '尺寸超出参考范围',
 };
@@ -301,7 +300,6 @@ const requirementLabels: Record<string, string> = {
   requiredFeatureIds: '必选特征',
   excludedZoneIds: '排除区域',
   excludedFeatureIds: '排除特征',
-  applicabilityAnswers: '适用性条件',
 };
 
 function requirementValue(value: unknown): string {
@@ -417,11 +415,13 @@ function requirementOptionLabel(value: unknown): string {
               {{ detail.matchDiagnostics.reviewedPublished }} 套；可用
               {{ detail.matchDiagnostics.ready }} 套
             </div>
-            <div
-              v-for="(count, key) in detail.matchDiagnostics.exclusions"
-              :key="key"
-            >
-              {{ diagnosticLabels[key] }}：{{ count }} 套
+            <div v-for="(label, key) in diagnosticLabels" :key="key">
+              {{ label }}：{{
+                detail.matchDiagnostics.exclusions[
+                  key as keyof typeof detail.matchDiagnostics.exclusions
+                ] ?? 0
+              }}
+              套
             </div>
             <div class="text-gray-500">
               各原因独立计数，可能重叠；条件筛选仅统计可用方案。

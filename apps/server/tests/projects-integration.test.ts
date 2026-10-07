@@ -33,8 +33,8 @@ test('quote transaction: concurrent retries, immutable snapshots, revision confl
   await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,$2,$3,ARRAY['ROLE_ADMIN'])",[admin,Math.floor(Math.random()*1e12),code]);
   for (const uid of [user,other]) await pool.query('INSERT INTO users(id,external_user_id,username) VALUES($1,$2,$3)',[uid,Math.floor(Math.random()*1e12),uid]);
   const productSystem = (await pool.query<{ id: string }>("SELECT i.id FROM dictionary_items i JOIN dictionaries d ON d.id=i.dictionary_id WHERE d.code='product_system' AND d.enabled AND i.enabled LIMIT 1")).rows[0]!.id;
-  await pool.query(`INSERT INTO schemes(id,code,name,publish_status,applicable_conditions,length_mm,width_mm,height_mm,area_sqm,opening_count,product_system_id,industry_ids,zone_ids,feature_ids)
-    VALUES($1,$2,$2,'published','{"labelsConfirmed":true,"status":"confirmed","rules":[]}',6000,6000,3000,36,2,$3,'{}','{}','{}')`,[id,code,productSystem]);
+  await pool.query(`INSERT INTO schemes(id,code,name,publish_status,length_mm,width_mm,height_mm,area_sqm,opening_count,product_system_id,industry_ids,zone_ids,feature_ids)
+    VALUES($1,$2,$2,'published',6000,6000,3000,36,2,$3,'{}','{}','{}')`,[id,code,productSystem]);
   const sourceChecklist = randomUUID();
   for (const type of ['model','checklist','drawing','artwork']) {
     const asset = type === 'checklist' ? sourceChecklist : randomUUID();

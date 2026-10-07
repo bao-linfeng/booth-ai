@@ -65,10 +65,5 @@ export function summarizeRequirement(raw: unknown, catalog: Catalog | null, t: C
   add(t('projects.requirementRequired'), [...names(catalog?.zones, idsOf(source.requiredZoneIds)), ...names(catalog?.features, idsOf(source.requiredFeatureIds))])
   add(t('projects.requirementExcluded'), [...names(catalog?.zones, idsOf(source.excludedZoneIds)), ...names(catalog?.features, idsOf(source.excludedFeatureIds))])
   add(t('projects.requirementKeywords'), idsOf(source.keywords))
-  const answers = source.applicabilityAnswers && typeof source.applicabilityAnswers === 'object' ? Object.entries(source.applicabilityAnswers as Record<string, unknown>) : []
-  add(t('projects.requirementApplicability'), answers.flatMap(([id, answer]) => {
-    const label = catalog?.applicabilityQuestions.find(question => question.id === id)?.label
-    return label && typeof answer === 'boolean' ? `${label}：${answer ? t('common.yes') : t('common.no')}` : []
-  }))
   return { specs, groups }
 }

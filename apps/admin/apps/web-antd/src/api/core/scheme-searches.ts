@@ -51,7 +51,6 @@ export interface SchemeSearchDetail extends SchemeSearchRecord {
     reviewedPublished: number;
     ready: number;
     exclusions: Record<
-      | 'applicability'
       | 'dimensions'
       | 'height'
       | 'incompleteAssets'
