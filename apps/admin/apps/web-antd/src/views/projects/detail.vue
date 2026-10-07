@@ -112,8 +112,8 @@ async function download(version: string) {
 onMounted(load);
 </script>
 <template>
-  <Page title="项目工作区">
-    <Button class="mb-4" @click="router.push('/projects')">
+  <Page title="项目工作区" content-class="flex flex-col gap-5">
+    <Button class="self-start" @click="router.push('/projects')">
       返回项目列表
     </Button>
     <p v-if="loading">正在加载项目…</p>
@@ -124,7 +124,6 @@ onMounted(load);
     <template v-if="project">
       <Alert
         v-if="project.assigneeStatus !== 'active'"
-        class="mb-4"
         type="warning"
         show-icon
         :message="`承接人${assigneeStatusLabels[project.assigneeStatus]} · ${project.assigneeName}`"
@@ -295,7 +294,7 @@ onMounted(load);
         </div>
       </Card>
       <QuotationEditor :project="project" @reload="load" />
-      <Card title="项目时间线" class="mt-5">
+      <Card title="项目时间线">
         <Timeline>
           <TimelineItem
             v-for="item in timeline"
