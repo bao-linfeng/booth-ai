@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
+import { assertNoNode, assertSameNode } from './dom-assert.mjs'
 import { fileURLToPath } from 'node:url'
 import { statSync, readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
@@ -200,13 +201,12 @@ test('real Selects, keywords, native color input and source image are sent to of
     button(mounted.container, '添加品牌色').click()
     await nextTick()
     input(mounted.container.querySelector('input[type="color"]'), '#1a6b52')
-    mounted.container.querySelector('[aria-label="选择视角 2"]').click()
+    mounted.container.querySelector('[aria-label="查看第 2 张"]').click()
     await debounce()
     const expected = { ...initialParameters, sourceAssetId: 'side', input: { industryId: 'industry-energy', styleId: 'style-natural', brandColors: ['#1a6b52'], brandKeywords: '绿色环保' } }
     assert.deepEqual(callsTo(mounted, endpoints.offer).at(-1).body, expected)
-    assert.equal(mounted.container.querySelector('[aria-label="选择视角 2"]').getAttribute('aria-pressed'), 'true')
-    assert.match(mounted.container.querySelector('[aria-label="选择视角 2"]').textContent, /当前原图/)
-    assert.doesNotMatch(mounted.container.querySelector('[aria-label="选择视角 1"]').textContent, /当前原图/)
+    assert.equal(mounted.container.querySelector('[aria-label="查看第 2 张"]').getAttribute('aria-pressed'), 'true')
+    assert.equal(mounted.container.querySelector('[aria-label="查看第 1 张"]').getAttribute('aria-pressed'), 'false')
     const colorText = mounted.container.querySelector('[aria-label="品牌色 1 色值"]')
     input(colorText, '#12zz00')
     await nextTick()
@@ -214,7 +214,7 @@ test('real Selects, keywords, native color input and source image are sent to of
     const colorError = mounted.container.querySelector('#theme-color-0-error')
     assert.match(colorError.textContent, /品牌色 1.*六位色值/)
     assert.equal(colorText.getAttribute('aria-describedby'), colorError.id)
-    assert.equal(colorText.parentElement.parentElement, colorError.parentElement)
+    assertSameNode(colorText.parentElement.parentElement, colorError.parentElement, "colorText.parentElement.parentElement vs colorError.parentElement")
     assert.equal(colorText.value, '#12zz00')
     assert.doesNotMatch(costRegion(mounted).textContent, /最高锁定积分/)
     const count = callsTo(mounted, endpoints.offer).length
@@ -224,13 +224,13 @@ test('real Selects, keywords, native color input and source image are sent to of
     assert.equal(primary.disabled, true)
     primary.click()
     await settle()
-    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
     const remove = mounted.container.querySelector('[aria-label="删除品牌色 1"]')
     assert.equal(remove.tagName, 'BUTTON')
     remove.click()
     await debounce()
-    assert.equal(mounted.container.querySelector('#theme-color-0-error'), null)
-    assert.equal(document.activeElement, mounted.container.querySelector('#theme-add-color'))
+    assertNoNode(mounted.container.querySelector('#theme-color-0-error'), "mounted.container.querySelector('#theme-color-0-error')")
+    assertSameNode(document.activeElement, mounted.container.querySelector('#theme-add-color'), "document.activeElement vs mounted.container.querySelector('#theme-add-color')")
     assert.deepEqual(callsTo(mounted, endpoints.offer).at(-1).body, { ...expected, input: { ...expected.input, brandColors: [] } })
   } finally { await mounted.close() }
 })
@@ -249,13 +249,13 @@ test('a refreshed keyword limit reports the error beside the field without disca
     assert.match(error.textContent, /关键词超过字数限制/)
     assert.equal(keywords.getAttribute('aria-invalid'), 'true')
     assert.equal(keywords.getAttribute('aria-describedby'), error.id)
-    assert.equal(keywords.parentElement, error.parentElement)
+    assertSameNode(keywords.parentElement, error.parentElement, "keywords.parentElement vs error.parentElement")
     assert.equal(keywords.value, '绿色环保品牌')
     assert.equal(button(mounted.container, '确认积分并生成').disabled, true)
     assert.equal(callsTo(mounted, endpoints.job).length, 0)
     input(keywords, '环保')
     await debounce()
-    assert.equal(mounted.container.querySelector('#theme-keywords-error'), null)
+    assertNoNode(mounted.container.querySelector('#theme-keywords-error'), "mounted.container.querySelector('#theme-keywords-error')")
     assert.equal(keywords.getAttribute('aria-invalid'), 'false')
     assert.equal(button(mounted.container, '确认积分并生成').disabled, false)
     assert.equal(callsTo(mounted, endpoints.offer).at(-1).body.input.brandKeywords, '环保')
@@ -272,7 +272,7 @@ test('primary action waits for a new offer before opening confirmation and uses 
     primary.click()
     await settle()
     assert.equal(attempts, 2)
-    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
     assert.equal(primary.disabled, true)
     fresh.resolve(offer('fresh-confirmation', 1, 29))
     await settle()
@@ -289,7 +289,7 @@ test('refresh failure cannot confirm or create with the old offer and allows an 
   try {
     button(mounted.container, '确认积分并生成').click()
     await settle()
-    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
     assert.match(costRegion(mounted).textContent, /积分费用获取失败/)
     assert.doesNotMatch(costRegion(mounted).textContent, /最高锁定积分/)
     assert.equal(callsTo(mounted, endpoints.job).length, 0)
@@ -314,7 +314,7 @@ test('editing while confirmation refresh is pending invalidates that response wi
     await nextTick()
     pending.resolve(offer('stale-confirmation', 1, 900))
     await settle()
-    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
     assert.doesNotMatch(costRegion(mounted).textContent, /900/)
     await debounce()
     assert.equal(attempts, 3)
@@ -371,7 +371,7 @@ for (const [reason, message] of [
       assert.equal(mounted.container.querySelector('#theme-keywords').value, '保留关键词')
       button(mounted.container, '确认积分并生成').click()
       await settle()
-      assert.equal(document.querySelector('[role="dialog"]'), null)
+      assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
       assert.equal(callsTo(mounted, endpoints.job).length, 0)
     } finally { await mounted.close() }
   })
@@ -386,8 +386,8 @@ test('Escape closes confirmation, restores the primary action focus, and reopeni
     const count = callsTo(mounted, endpoints.offer).length
     dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await settle()
-    assert.equal(document.querySelector('[role="dialog"]'), null)
-    assert.equal(document.activeElement, primary)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
+    assertSameNode(document.activeElement, primary, "document.activeElement vs primary")
     await openConfirmation(mounted)
     assert.equal(callsTo(mounted, endpoints.offer).length, count + 1)
     assert.equal(callsTo(mounted, endpoints.job).length, 0)
@@ -420,7 +420,7 @@ test('confirmation count and credits match submission exactly, keeps searchId, p
     created.resolve({ jobId: 'job-created', status: 'queued', pollAfterMs: 1000 })
     await settle()
     assert.equal(mounted.router.currentRoute.value.path, '/theme-jobs/job-created')
-    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
   } finally { created.resolve({ jobId: 'job-created' }); await mounted.close() }
 })
 
@@ -438,7 +438,7 @@ test('network failure has feedback and retries the identical payload/requestKey,
     assert.deepEqual(callsTo(mounted, endpoints.job)[1], callsTo(mounted, endpoints.job)[0])
     button(dialog, '返回调整').click()
     await settle()
-    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
     assert.match(mounted.container.querySelector('[role="alert"]').textContent, /暂未确认任务是否创建成功/)
     const offerCount = callsTo(mounted, endpoints.offer).length
     button(mounted.container, '继续确认本次生成').click()
@@ -486,7 +486,7 @@ for (const reason of ['OFFER_EXPIRED', 'OFFER_STALE']) {
 test('unauthenticated login preserves the complete redirect and makes no offer/model/credits/job requests', async () => {
   const mounted = await mount({ loggedIn: false, waitForOffer: false })
   try {
-    assert.equal(mounted.container.querySelector('[role="combobox"]'), null)
+    assertNoNode(mounted.container.querySelector('[role="combobox"]'), "mounted.container.querySelector('[role=\"combobox\"]')")
     button(mounted.container, '登录以继续').click()
     await settle()
     assert.equal(mounted.router.currentRoute.value.path, '/auth/sign-in')
@@ -507,7 +507,7 @@ test('static preview uses real disabled controls but makes no network or submiss
     primary.click()
     button(mounted.container, '添加品牌色').click()
     await debounce()
-    assert.equal(document.querySelector('[role="dialog"]'), null)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
     assert.deepEqual(mounted.calls, [])
   } finally { await mounted.close() }
 })
@@ -525,7 +525,7 @@ for (const [failedEndpoint, retry, errorText] of [
       button(mounted.container, retry).click()
       await debounce()
       assert.equal(attempts, 2)
-      assert.equal(mounted.container.querySelector('[role="alert"]'), null)
+      assertNoNode(mounted.container.querySelector('[role="alert"]'), "mounted.container.querySelector('[role=\"alert\"]')")
       assert.deepEqual(callsTo(mounted, endpoints.offer)[0].body, initialParameters)
       assert.match(costRegion(mounted).textContent, /单张 17 积分/)
     } finally { await mounted.close() }

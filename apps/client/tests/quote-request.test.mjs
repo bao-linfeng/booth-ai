@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
+import { assertNoNode, assertSameNode } from './dom-assert.mjs'
 import { fileURLToPath } from 'node:url'
 import { statSync, readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
@@ -49,14 +50,17 @@ const server = await createServer({
 after(async () => { delete globalThis.__quoteRequest; await server.close(); await window.happyDOM.close() })
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: QuoteRequest } = await server.ssrLoadModule('/src/pages/QuoteRequest.vue')
+const { emptyRequirement } = await server.ssrLoadModule('/src/features/selection/types.ts')
+const { selectionSnapshot, writeSelectionSession } = await server.ssrLoadModule('/src/features/selection/session.ts')
 const user = { id: 'test-user', username: '测试用户', nickname: '测试用户', city: '上海', email: '', mobile: '', company: '' }
 const validForm = { exhibitionName: '上海测试展', countryCode: 'CN', city: '上海', startDate: '2026-11-01', endDate: '2026-11-04', scopeCodes: ['materials'], scopeNotes: '保留范围说明', currency: 'CNY', amount: '30000', customerType: 'individual', company: '', contactName: '王测试', email: 'test@example.com', phone: '', notes: '不能丢失的补充说明' }
 const draftKey = manual => manual ? 'booth:manual-draft' : 'booth:quote-draft:SC-6030:standard:pending'
 async function settle() { for (let i = 0; i < 4; i++) { await nextTick(); await new Promise(resolve => setTimeout(resolve, 5)) } }
-async function mount({ manual = false, form = {}, description = '需要科技感展台', restore = false } = {}) {
+async function mount({ manual = false, form = {}, description = '需要科技感展台', restore = false, selection, query = '' } = {}) {
   if (!restore) {
     sessionStorage.clear()
     sessionStorage.setItem(draftKey(manual), JSON.stringify({ owner: user.id, form: { ...validForm, ...form }, pending: null, pendingManual: null, originalDescription: description }))
+    if (selection) writeSelectionSession(selection)
   }
   const calls = []
   globalThis.__quoteRequest = {
@@ -77,7 +81,7 @@ async function mount({ manual = false, form = {}, description = '需要科技感
     { path: '/schemes/:code/quote', name: 'QuoteRequest', component: { render: () => null } },
     { path: '/:pathMatch(.*)*', component: { render: () => null } },
   ] })
-  await router.push(manual ? '/manual-request' : '/schemes/SC-6030/quote'); await router.isReady()
+  await router.push(manual ? '/manual-request' : `/schemes/SC-6030/quote${query}`); await router.isReady()
   const app = createApp({ render: () => h(QuoteRequest) }); app.use(router); app.mount(container); await settle()
   return { container, calls, close: async () => { app.unmount(); container.remove(); await settle() } }
 }
@@ -113,6 +117,48 @@ async function selectDate(container, selector, value) {
   await settle()
   assert.notEqual(trigger.getAttribute('data-state'), 'open')
 }
+const selectionRequirement = { ...emptyRequirement(), lengthMm: 6000, widthMm: 3000, areaM2: 18, styleIds: ['modern-minimal'] }
+const selectionText = '6x3 现代简约展台，需要洽谈区'
+const selectionDifference = { field: 'maxHeightMm', requested: '4 m', actual: '4.5 m', reason: '高度略高于需求' }
+function selectionSession({ code = 'SC-6030', mode = 'filtered', searchId = 'search-1', stale = false } = {}) {
+  const item = { code, matchType: mode === 'random' ? 'random' : 'reference', images: [],
+    specifications: { lengthMm: 6000, widthMm: 3000, heightMm: 4500, areaM2: 18, openingCount: 2, productSystemId: 'standard', productSystemLabel: '标准模块' },
+    reasons: [], differences: mode === 'random' ? [] : [selectionDifference], pendingConfirmations: [], preferenceMisses: [] }
+  return { requirement: selectionRequirement, text: selectionText, state: 'results',
+    snapshot: selectionSnapshot(stale ? { ...selectionRequirement, lengthMm: 9000 } : selectionRequirement, selectionText),
+    parseResult: null, parsedText: null, parsedRequirement: null,
+    liveMatchData: { status: 'matched', mode, requirement: selectionRequirement, items: [item],
+      counts: { direct: 0, reference: mode === 'random' ? 0 : 1, random: mode === 'random' ? 1 : 0, total: 1 },
+      diagnostics: { reviewedPublished: 1, ready: 1, exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 } },
+      reasons: [], suggestions: [], missingFields: [] },
+    attemptId: 'attempt-1', parseId: null, searchId, imagesExpiresAt: 0, activeImageByCode: {} }
+}
+test('quote: AI selection context is shown and submitted with the original description and confirmed requirements', async () => {
+  const mounted = await mount({ selection: selectionSession(), query: '?entryPoint=scheme_detail&searchId=search-1' })
+  try {
+    assert.match(mounted.container.textContent, /4 m → 4\.5 m：高度略高于需求/)
+    await submit(mounted); assert.equal(posts(mounted).length, 1)
+    assert.deepEqual(posts(mounted)[0].body.requirementContext, { originalDescription: selectionText, confirmedRequirements: selectionRequirement })
+    assert.match(mounted.container.textContent, /申请已受理/)
+  } finally { await mounted.close() }
+})
+for (const scenario of [
+  { name: 'stale requirements', selection: { stale: true }, query: '?searchId=search-1' },
+  { name: 'another search', selection: {}, query: '?searchId=search-old' },
+  { name: 'scheme outside the results', selection: { code: 'SC-9999' }, query: '?searchId=search-1' },
+  { name: 'inspiration results', selection: { mode: 'random' }, query: '?searchId=search-1' },
+  { name: 'no AI selection session', query: '' },
+]) {
+  test(`quote: ${scenario.name} is not attached and the quote still submits`, async () => {
+    const mounted = await mount({ selection: scenario.selection && selectionSession(scenario.selection), query: scenario.query })
+    try {
+      assert.doesNotMatch(mounted.container.textContent, /高度略高于需求/)
+      await submit(mounted); assert.equal(posts(mounted).length, 1)
+      assert.equal('requirementContext' in posts(mounted)[0].body, false)
+      assert.match(mounted.container.textContent, /申请已受理/)
+    } finally { await mounted.close() }
+  })
+}
 for (const manual of [false, true]) {
   const label = manual ? 'manual' : 'quote'
   for (const scenario of [
@@ -130,7 +176,7 @@ for (const manual of [false, true]) {
         assert.equal(trigger.tagName, 'BUTTON'); assert.equal(trigger.getAttribute('aria-required'), 'true')
         assert.equal(mounted.container.querySelectorAll(`#request-${scenario.first}-date`).length, 1)
         assert.equal(trigger.parentElement.querySelector(`[for="request-${scenario.first}-date"]`).tagName, 'LABEL')
-        assert.equal(document.activeElement, trigger)
+        assertSameNode(document.activeElement, trigger, "document.activeElement vs trigger")
         assert.equal(mounted.container.querySelector(`#request-${scenario.first}-date-error`).textContent, scenario.message)
         assert.equal(posts(mounted).length, 0); assertPreserved(mounted, manual)
         const draft = JSON.parse(sessionStorage.getItem(draftKey(manual)))
@@ -140,7 +186,7 @@ for (const manual of [false, true]) {
           if (mounted.container.querySelector(`${selector}-error`)) await selectDate(mounted.container, selector, validForm[`${field}Date`])
         }
         for (const field of ['start', 'end']) {
-          assert.equal(mounted.container.querySelector(`#request-${field}-date-error`), null)
+          assertNoNode(mounted.container.querySelector(`#request-${field}-date-error`), "mounted.container.querySelector(`#request-${field}-date-error`)")
           assert.notEqual(mounted.container.querySelector(`#request-${field}-date`).getAttribute('aria-invalid'), 'true')
         }
         assertPreserved(mounted, manual)
@@ -158,10 +204,10 @@ for (const manual of [false, true]) {
     try {
       input(mounted.container, '#notes', '不能丢失的补充说明'); await settle(); await submit(mounted)
       const field = error(mounted.container, '#request-scopes button', 'request-scopes-error')
-      assert.equal(document.activeElement, field); assert.equal(posts(mounted).length, 0)
+      assertSameNode(document.activeElement, field, "document.activeElement vs field"); assert.equal(posts(mounted).length, 0)
       assertPreserved(mounted, manual)
       field.click(); await settle()
-      assert.equal(mounted.container.querySelector('#request-scopes-error'), null)
+      assertNoNode(mounted.container.querySelector('#request-scopes-error'), "mounted.container.querySelector('#request-scopes-error')")
       assert.notEqual(field.getAttribute('aria-invalid'), 'true')
       await submit(mounted); assert.equal(posts(mounted).length, 1)
       assert.deepEqual(posts(mounted)[0].body.scopeCodes, ['materials'])
@@ -173,9 +219,9 @@ for (const manual of [false, true]) {
       input(mounted.container, '#notes', validForm.notes); await settle(); await submit(mounted)
       const email = error(mounted.container, '#email', 'request-contact-error')
       error(mounted.container, '#phone', 'request-contact-error')
-      assert.equal(document.activeElement, email); assert.equal(posts(mounted).length, 0); assertPreserved(mounted, manual)
+      assertSameNode(document.activeElement, email, "document.activeElement vs email"); assert.equal(posts(mounted).length, 0); assertPreserved(mounted, manual)
       input(mounted.container, '#phone', '+86 13800000000'); await settle()
-      assert.equal(mounted.container.querySelector('#request-contact-error'), null)
+      assertNoNode(mounted.container.querySelector('#request-contact-error'), "mounted.container.querySelector('#request-contact-error')")
       assert.notEqual(email.getAttribute('aria-invalid'), 'true')
       await submit(mounted); assert.equal(posts(mounted).length, 1)
       assert.deepEqual(posts(mounted)[0].body.contact, { name: validForm.contactName, phone: '+86 13800000000' })
@@ -186,10 +232,10 @@ for (const manual of [false, true]) {
     try {
       input(mounted.container, '#notes', validForm.notes); await settle(); await submit(mounted)
       const field = error(mounted.container, '#scope', 'request-scope-notes-error')
-      assert.equal(document.activeElement, field); assert.equal(field.value, '   ')
+      assertSameNode(document.activeElement, field, "document.activeElement vs field"); assert.equal(field.value, '   ')
       assert.equal(posts(mounted).length, 0); assertPreserved(mounted, manual)
       input(mounted.container, '#scope', '需要现场电力配置'); await settle()
-      assert.equal(mounted.container.querySelector('#request-scope-notes-error'), null)
+      assertNoNode(mounted.container.querySelector('#request-scope-notes-error'), "mounted.container.querySelector('#request-scope-notes-error')")
       await submit(mounted); assert.equal(posts(mounted).length, 1)
       assert.equal(posts(mounted)[0].body.scopeNotes, '需要现场电力配置')
     } finally { await mounted.close() }
@@ -215,19 +261,19 @@ test('manual: first-error focus follows description > dates > scope > contact; r
   try {
     input(mounted.container, '#notes', validForm.notes); await settle(); await submit(mounted)
     const description = error(mounted.container, '#request-description', 'request-description-error')
-    assert.equal(document.activeElement, description); assert.equal(description.value, '   ')
+    assertSameNode(document.activeElement, description, "document.activeElement vs description"); assert.equal(description.value, '   ')
     assert.equal(posts(mounted).length, 0); assertPreserved(mounted, true)
     input(mounted.container, '#request-description', '需要科技感展台'); await settle()
-    assert.equal(mounted.container.querySelector('#request-description-error'), null)
+    assertNoNode(mounted.container.querySelector('#request-description-error'), "mounted.container.querySelector('#request-description-error')")
     await submit(mounted)
-    assert.equal(document.activeElement, error(mounted.container, '#request-start-date', 'request-start-date-error'))
+    assertSameNode(document.activeElement, error(mounted.container, '#request-start-date', 'request-start-date-error'), "document.activeElement vs error(mounted.container, '#request-start-date', 'request-start-date-error')")
     await selectDate(mounted.container, '#request-start-date', validForm.startDate); await submit(mounted)
-    assert.equal(document.activeElement, error(mounted.container, '#request-end-date', 'request-end-date-error'))
+    assertSameNode(document.activeElement, error(mounted.container, '#request-end-date', 'request-end-date-error'), "document.activeElement vs error(mounted.container, '#request-end-date', 'request-end-date-error')")
     await selectDate(mounted.container, '#request-end-date', validForm.endDate); await submit(mounted)
     const scope = error(mounted.container, '#request-scopes button', 'request-scopes-error')
-    assert.equal(document.activeElement, scope)
+    assertSameNode(document.activeElement, scope, "document.activeElement vs scope")
     scope.click(); await settle(); await submit(mounted)
-    assert.equal(document.activeElement, error(mounted.container, '#email', 'request-contact-error'))
+    assertSameNode(document.activeElement, error(mounted.container, '#email', 'request-contact-error'), "document.activeElement vs error(mounted.container, '#email', 'request-contact-error')")
     assert.equal(posts(mounted).length, 0); assertPreserved(mounted, true)
     input(mounted.container, '#email', validForm.email); await settle(); await submit(mounted)
     assert.equal(posts(mounted).length, 1); assert.equal(posts(mounted)[0].body.originalDescription, '需要科技感展台')

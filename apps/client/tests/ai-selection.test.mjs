@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
+import { assertNoNode, assertSameNode } from './dom-assert.mjs'
 import { fileURLToPath } from 'node:url'
 import { statSync, readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
@@ -57,6 +58,7 @@ after(async () => {
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: AISelection } = await server.ssrLoadModule('/src/pages/AISelection.vue')
 const { emptyRequirement } = await server.ssrLoadModule('/src/features/selection/types.ts')
+const { readSelectionQuoteHandoff } = await server.ssrLoadModule('/src/features/selection/session.ts')
 const sessionKey = 'booth-ai:ai-selection'
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function settle() { for (let i = 0; i < 4; i++) { await nextTick(); await sleep(5) } }
@@ -148,13 +150,13 @@ function assertEditor(container, visible) {
   assert.equal(!!container.querySelector('[aria-label="当前需求摘要"]'), !visible)
 }
 
-test('fresh entry shows the lightweight editor with no automatic search and height hidden in more conditions', async () => {
+test('fresh entry shows the lightweight editor with no automatic search and height beside size in the primary row', async () => {
   const mounted = await mount()
   try {
     assertEditor(mounted.container, true)
     assert.equal(mounted.container.querySelector('#requirement-text').value, '')
     assert.ok(mounted.container.querySelector('[aria-label="方案尺寸"]'))
-    assert.equal(mounted.container.querySelector('#requirement-maxHeightMm'), null)
+    assert.equal(mounted.container.querySelector('#requirement-maxHeightMm').value, '')
     assert.equal(button(mounted.container, '更多条件').getAttribute('aria-expanded'), 'false')
     assert.equal(button(mounted.container, '匹配方案').disabled, false)
     assert.equal(posts(mounted).length, 0)
@@ -254,6 +256,34 @@ test('text submit parses once, matches filtered and displays the submitted descr
   } finally { await mounted.close() }
 })
 
+test('quote handoff reads the persisted filtered result, binds it to the search and scheme, and drops it once stale', async () => {
+  const mounted = await mount()
+  try {
+    await input(mounted.container, '#requirement-text', '科技展台，希望有洽谈区')
+    await click(mounted.container, '匹配方案')
+    const handoff = readSelectionQuoteHandoff('SC-6030', 'search-1')
+    assert.ok(handoff, 'Matched filtered session must hand off to quote')
+    assert.equal(handoff.requirementContext.originalDescription, '科技展台，希望有洽谈区')
+    assert.deepEqual(handoff.requirementContext.confirmedRequirements, saved().requirement)
+    assert.deepEqual(handoff.matchingSummary, { matchType: 'direct', differences: [], pendingConfirmations: [] })
+    assert.ok(readSelectionQuoteHandoff('SC-6030'), 'Entry without searchId still uses the current result')
+    assert.equal(readSelectionQuoteHandoff('SC-6030', 'search-old'), null)
+    assert.equal(readSelectionQuoteHandoff('SC-9999', 'search-1'), null)
+    await click(mounted.container, '修改需求')
+    await input(mounted.container, '#requirement-text', '改成医疗展台')
+    assert.equal(readSelectionQuoteHandoff('SC-6030', 'search-1'), null)
+  } finally { await mounted.close() }
+})
+
+test('quote handoff ignores inspiration results that were not filtered by requirements', async () => {
+  const mounted = await mount()
+  try {
+    await click(mounted.container, '先看展台灵感')
+    assert.equal(saved().state, 'results')
+    assert.equal(readSelectionQuoteHandoff('SC-6030', 'search-1'), null)
+  } finally { await mounted.close() }
+})
+
 for (const status of ['matched', 'no_match']) {
   test(`${status}: editing an outcome and choosing an example only fills a stale draft; reload shows the editor`, async () => {
     let mounted = await mount({ status })
@@ -263,7 +293,7 @@ for (const status of ['matched', 'no_match']) {
       assertEditor(mounted.container, false)
       await click(mounted.container, '修改需求')
       assertEditor(mounted.container, true)
-      assert.equal(document.activeElement, mounted.container.querySelector('#requirement-text'))
+      assertSameNode(document.activeElement, mounted.container.querySelector('#requirement-text'), "document.activeElement vs mounted.container.querySelector('#requirement-text')")
       const postCount = posts(mounted).length
       const snapshot = saved().snapshot
       await click(mounted.container, '医疗 · 带储藏间')
@@ -310,7 +340,7 @@ test('page reset clears the draft and previous outcome, returning to idle even a
     await click(mounted.container, '匹配方案')
     await click(mounted.container, '修改需求')
     const reset = button(mounted.container, '重置需求')
-    assert.equal(reset.closest('fieldset'), null)
+    assertNoNode(reset.closest('fieldset'), "reset.closest('fieldset')")
     reset.click()
     await settle()
     assertEditor(mounted.container, true)
@@ -326,26 +356,19 @@ test('page reset clears the draft and previous outcome, returning to idle even a
   } finally { await mounted.close() }
 })
 
-test('height is editable only under more conditions, counted, validated and sent in millimetres', async () => {
+test('height is a primary field: validated, not counted as a more condition, and sent in millimetres', async () => {
   const mounted = await mount()
   try {
-    assert.equal(mounted.container.querySelector('#requirement-maxHeightMm'), null)
-    await click(mounted.container, '更多条件')
     const more = button(mounted.container, '更多条件')
-    assert.equal(more.getAttribute('aria-expanded'), 'true')
+    assert.equal(more.getAttribute('aria-expanded'), 'false')
     assert.equal(mounted.container.querySelector('#requirement-maxHeightMm').value, '')
     await input(mounted.container, '#requirement-maxHeightMm', '4.2501')
     assert.equal(mounted.container.querySelector('#requirement-maxHeightMm').getAttribute('aria-invalid'), 'true')
     assert.equal(button(mounted.container, '匹配方案').disabled, true)
     await input(mounted.container, '#requirement-maxHeightMm', '4.25')
     assert.equal(mounted.container.querySelector('#requirement-maxHeightMm').getAttribute('aria-invalid'), 'false')
-    assert.match(more.textContent, /已填 1 类/)
+    assert.equal(more.textContent.includes('已填'), false)
     assert.equal(saved().requirement.maxHeightMm, 4250)
-    await click(mounted.container, '更多条件')
-    assert.equal(more.getAttribute('aria-expanded'), 'false')
-    assert.equal(saved().requirement.maxHeightMm, 4250)
-    await click(mounted.container, '更多条件')
-    assert.equal(mounted.container.querySelector('#requirement-maxHeightMm').value, '4.25')
     await click(mounted.container, '匹配方案')
     assert.equal(posts(mounted).length, 1)
     assert.equal(posts(mounted)[0].options.body.mode, 'filtered')

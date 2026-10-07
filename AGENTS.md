@@ -58,7 +58,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml down                   
 - **路由前缀**：参展商接口 `/api/v1/client/*`、管理端接口 `/api/v1/admin/*`，SU 接口在 `apps/server/src/http/su/`。
 - **开发代理**：client 与 admin 的 Vite 都把 `/api` 代理到 `http://localhost:3000`；后端 dev 栈 `CORS_ORIGINS` 默认放行 `5173`/`5174`。
 - **响应包装**：业务接口成功返回 `{ code: 0, data }`（admin `requestClient` 依赖此格式拦截）；错误统一为 `{ error: { code, message, requestId } }`，code 只有 `VALIDATION_ERROR` / `REQUEST_ERROR` / `INTERNAL_ERROR`。
-- **认证**：对接灵通企业已有用户系统（外部 SSO），本地只维护 `users`（参展商/SU）与 `admins`（管理端）两张同步表；登录后前端以 `Authorization: Bearer <token>` 访问。细节见 `docs/server-authentication.md`。
+- **认证**：对接灵通企业已有用户系统（外部 SSO），本地只维护 `users`（参展商/SU）与 `admins`（管理端）两张同步表；登录后前端以 `Authorization: Bearer <token>` 访问。实现入口见 `apps/server/AGENTS.md` 的“关键架构入口”。
 - **文件访问**：前端拿到的只能是基于 `S3_PUBLIC_ENDPOINT` 的 presigned URL，**禁止把容器内部 hostname 暴露给前端**。
 - **接口文档**：以运行中的 Swagger（`/docs`、`/openapi.json`）为准，一期需求与 API 拆分在 `docs/一期功能拆分/`。
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
+import { assertNoNode } from './dom-assert.mjs'
 import { fileURLToPath } from 'node:url'
 import { statSync, readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
@@ -115,7 +116,7 @@ test('collapsed record shows requirement summary, time, thumbnails and generatio
   assert.equal(record.querySelectorAll('img').length, 4)
   assert.equal(record.querySelector('time').getAttribute('datetime'), '2026-10-01T08:00:00.000Z')
   for (const hidden of ['AI 换主题', '四面视图', '未换主题', '尚未生成', '本次检索尚未换主题']) assert.ok(!recordText.includes(hidden), hidden)
-  assert.equal(record.querySelector('ul'), null)
+  assertNoNode(record.querySelector('ul'), "record.querySelector('ul')")
   assert.equal(button(record, '查看 6 套方案的成果').getAttribute('aria-expanded'), 'false')
   assert.ok(hrefs(record).includes('/schemes/SC-1?searchId=search-1'))
   await mounted.close()
@@ -140,13 +141,13 @@ test('expanding reveals task links, compact empty states and only the existing f
   assert.deepEqual([...first.querySelectorAll('button[aria-label^="放大 SC-1 "]')].map(item => item.getAttribute('aria-label')), ['放大 SC-1 原始方案', '放大 SC-1 AI 换主题效果', '放大 SC-1 正面视图', '放大 SC-1 左侧视图'])
   assert.ok(first.textContent.includes('正面') && !first.textContent.includes('背面'))
   assert.ok(rows[1].textContent.includes('生成中') && rows[1].textContent.includes('未生成四面素材'))
-  assert.equal(rows[1].querySelector('button[aria-label*="换主题效果"]'), null)
+  assertNoNode(rows[1].querySelector('button[aria-label*="换主题效果"]'), "rows[1].querySelector('button[aria-label*=\"换主题效果\"]')")
   assert.ok(rows[2].textContent.includes('未换主题') && rows[2].textContent.includes('未生成四面素材'))
-  assert.equal(rows[2].querySelector('a[href^="/theme-jobs"], a[href^="/artwork-jobs"]'), null)
+  assertNoNode(rows[2].querySelector('a[href^="/theme-jobs"], a[href^="/artwork-jobs"]'), "rows[2].querySelector('a[href^=\"/theme-jobs\"], a[href^=\"/artwork-jobs\"]')")
   assert.ok(rows[4].textContent.includes('参考方案'))
   toggle.click()
   await settle()
-  assert.equal(mounted.container.querySelector('ul'), null)
+  assertNoNode(mounted.container.querySelector('ul'), "mounted.container.querySelector('ul')")
   await mounted.close()
 })
 
@@ -169,12 +170,12 @@ test('expansion is per record and enlarging a result opens the dialog', async ()
 test('records without generated content use one compact summary line', async () => {
   const mounted = await mount({ get: () => ({ items: [record({ items: [scheme('SC-1')], inputText: '' })], total: 1, page: 1, pageSize: 20 }) })
   assert.ok(mounted.container.textContent.includes('尚未生成主题或四面素材'))
-  assert.equal(mounted.container.querySelector('blockquote'), null)
+  assertNoNode(mounted.container.querySelector('blockquote'), "mounted.container.querySelector('blockquote')")
   assert.ok(!mounted.container.textContent.includes('“'))
   await mounted.close()
 })
 
-test('load failure keeps a retry action and unauthenticated users are sent to login with return path', async () => {
+test('load failure keeps a retry action and guests load their own browser history without a login gate', async () => {
   let fail = true
   const mounted = await mount({ get: () => { if (fail) throw new Error('boom'); return { items: [], total: 0, page: 1, pageSize: 20 } } })
   assert.ok(mounted.container.querySelector('[role="alert"]').textContent.includes('加载失败，请重试。'))
@@ -184,10 +185,9 @@ test('load failure keeps a retry action and unauthenticated users are sent to lo
   assert.ok(mounted.container.textContent.includes('暂无检索记录'))
   await mounted.close()
   const guest = await mount({ loggedIn: false })
-  assert.equal(guest.calls.length, 0)
-  button(guest.container, '去登录').click()
-  await settle()
-  assert.equal(guest.router.currentRoute.value.path, '/auth/sign-in')
-  assert.equal(guest.router.currentRoute.value.query.redirect, '/my-searches')
+  assert.equal(guest.calls.length, 1)
+  assert.ok(guest.container.textContent.includes('科技展台，需要大屏和洽谈区'))
+  assert.equal([...guest.container.querySelectorAll('button')].some(element => element.textContent.includes('去登录')), false)
+  assert.equal(guest.router.currentRoute.value.path, '/my-searches')
   await guest.close()
 })

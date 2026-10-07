@@ -2,16 +2,16 @@
 
 跨项目信息（环境初始化、端口、前后端契约、全局约定）见根目录 [`AGENTS.md`](../../AGENTS.md)。本文件只记录该包独有的高信号事实。
 
-## 关键架构文档
+## 关键架构入口
 
-深入修改前先读对应文档：
+深入修改前先读对应代码：
 
-- [`docs/server-module-boundaries.md`](../../docs/server-module-boundaries.md) — 模块职责与依赖规则（`tests/module-boundaries.test.ts` 用 AST 静态检查强制执行，反向依赖会导致测试失败）
-- [`docs/server-authentication.md`](../../docs/server-authentication.md) — 认证体系：`http/authentication.ts` 统一建立请求级 principal，`modules/identity/principal.ts` 校验账户与 Session 版本
-- [`docs/credit-invariants.md`](../../docs/credit-invariants.md) — 积分账本不变量（预占、结算、对账）
-- [`docs/theme-outbox-recovery.md`](../../docs/theme-outbox-recovery.md) — 生成任务 Outbox 恢复机制
-- [`docs/asset-scope.md`](../../docs/asset-scope.md) — 方案基线资产与用户生成素材的作用域隔离
-- [`docs/worker-observability.md`](../../docs/worker-observability.md) — Worker 调度隔离、健康状态、指标、链路追踪与项目通知投递
+- 模块依赖规则：`tests/module-boundaries.test.ts` 用 AST 静态检查强制执行，反向依赖会导致测试失败（规则摘要见下文“模块开发规范”）
+- 认证体系：`src/http/authentication.ts` 统一建立请求级 principal，`src/modules/identity/principal.ts` 校验账户与 Session 版本
+- 积分账本（预占、结算、释放、对账）：`src/modules/credits/`，对账见 `reconciliation.ts`
+- 生成任务 Outbox 与恢复：`src/workers/theme-outbox.ts`、`artwork-outbox.ts`、`generation-recovery.ts`
+- 方案基线资产与用户生成素材的作用域隔离：`migrations/050_asset_scope.sql`（`scheme_baseline_assets` 视图）
+- Worker 调度隔离、健康状态、指标与项目通知投递：`src/worker.ts`、`src/workers/scheduler.ts`、`metrics.ts`、`project-notifications.ts`
 - [`docs/一期功能拆分/AI模型接入与配置.md`](../../docs/一期功能拆分/AI模型接入与配置.md) — AI 供应商/模型/用途分配三层配置、协议注册表与适配器约定（业务代码不写供应商分支）
 
 ---
@@ -180,7 +180,7 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 | `S3_REGION` | 默认 `us-east-1` |
 | `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Bucket 与凭据 |
 
-可选：`NODE_ENV`（默认 `development`）、`HOST`（默认 `0.0.0.0`）、`PORT`（默认 `3000`）、`LOG_LEVEL`（默认 `info`）、`PROJECT_NOTIFICATION_WEBHOOK_URL` / `PROJECT_NOTIFICATION_WEBHOOK_SECRET`（见 `docs/worker-observability.md`）。
+可选：`NODE_ENV`（默认 `development`）、`HOST`（默认 `0.0.0.0`）、`PORT`（默认 `3000`）、`LOG_LEVEL`（默认 `info`）、`PROJECT_NOTIFICATION_WEBHOOK_URL` / `PROJECT_NOTIFICATION_WEBHOOK_SECRET`（未配置时项目通知停留在 `project_notification_outbox`，见 `src/worker.ts`）。
 
 日志：Fastify 已关闭请求日志（`disableRequestLogging: true`），headers 中 `authorization`/`cookie` 已脱敏。
 
@@ -202,6 +202,6 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - Controller 保持薄：只做解析和响应，业务逻辑放 service 层
 - 共享业务放 `src/modules/` 领域模块，禁止导入 HTTP 门户、Fastify 或 Worker 调度实现；`infra/` 禁止反向导入业务模块
 - `src/modules/{admin,client,su}/` 只剩重构遗留的空目录，不要往里放代码；按业务领域放入对应模块
-- `tests/module-boundaries.test.ts` 检查依赖边界，详见 [`docs/server-module-boundaries.md`](../../docs/server-module-boundaries.md)
+- `tests/module-boundaries.test.ts` 检查上述依赖边界
 - 新 Job 类型：在 `src/infra/queue.ts` 追加 `TASK_NAME` 常量，Worker 在 `src/worker.ts` 注册处理器
 - 智选匹配/解析返回给用户的提示文案（理由、差异、澄清问题等）集中在 `src/modules/selection/messages/`（12 种语言，以 `zh.ts` 的 key 为准，缺 key 会编译失败），按 `Accept-Language` 输出；新增文案不要在 match/parse/llm 里写死中文。

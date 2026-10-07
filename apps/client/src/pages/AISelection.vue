@@ -19,6 +19,7 @@ import RequirementField from '@/features/selection/RequirementField.vue'
 import SchemeCard from '@/features/selection/SchemeCard.vue'
 import { emptyRequirement, type SelectionState, type Catalog, type MatchItem, type MatchResponse, type ParseResponse, type Requirement } from '@/features/selection/types'
 import { previewCatalog, previewItems, previewStates } from '@/features/selection/preview'
+import { clearSelectionSession, readSelectionSession, selectionSnapshot, writeSelectionSession, type PersistedSelection, type SelectionSessionInput } from '@/features/selection/session'
 import { apiFetch } from '@/lib/api-client'
 
 const { t } = useI18n()
@@ -39,7 +40,7 @@ const manualName = ref('')
 const manualContact = ref('')
 const manualDescription = ref('')
 const snapshot = ref('')
-const stale = computed(() => !!snapshot.value && snapshot.value !== JSON.stringify({ requirement: requirement.value, text: text.value }))
+const stale = computed(() => !!snapshot.value && snapshot.value !== selectionSnapshot(requirement.value, text.value))
 const busy = computed(() => state.value === 'parsing' || state.value === 'matching')
 const requirementError = computed(() => {
   const r = requirement.value
@@ -99,138 +100,14 @@ let selectionCleared = false
 let imageRefreshTimer: ReturnType<typeof setInterval> | undefined
 let imageRefreshPending = false
 
-const selectionSessionKey = 'booth-ai:ai-selection'
-const selectionSessionVersion = 4
-type PersistedSelection = {
-  version: 4
-  requirement: Requirement
-  text: string
-  state: SelectionState
-  snapshot: string
-  parseResult: ParseResponse | null
-  parsedText: string | null
-  parsedRequirement: Requirement | null
-  liveMatchData: MatchResponse | null
-  attemptId: string
-  parseId: string | null
-  searchId: string | null
-  imagesExpiresAt: number
-  activeImageByCode: Record<string, number>
-  confirmedClarifications?: Record<number, string>
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(item => typeof item === 'string')
-}
-
-function isNullableNumber(value: unknown): value is number | null {
-  return value === null || (typeof value === 'number' && Number.isFinite(value))
-}
-
-function isRequirement(value: unknown): value is Requirement {
-  if (!isRecord(value)) return false
-  const nullableNumbers = ['lengthMm', 'widthMm', 'maxHeightMm', 'areaM2', 'openingCount']
-  const nullableStrings = ['boothSpaceId', 'productSystemId', 'budgetTierId']
-  return nullableNumbers.every(field => isNullableNumber(value[field])) &&
-    nullableStrings.every(field => value[field] === null || typeof value[field] === 'string') &&
-    ['styleIds', 'industryIds', 'zoneIds', 'featureIds', 'keywords', 'requiredZoneIds', 'requiredFeatureIds', 'excludedZoneIds', 'excludedFeatureIds'].every(field => isStringArray(value[field]))
-}
-
-function isParseResponse(value: unknown): value is ParseResponse {
-  if (!isRecord(value) || !isRequirement(value.requirement)) return false
-  const fieldSources = value.fieldSources
-  const overrides = value.overrides
-  const clarifications = value.clarifications
-  const warnings = value.warnings
-  return (value.status === 'ready' || value.status === 'needs_clarification') &&
-    (value.parser === 'llm' || value.parser === 'rules' || value.parser === 'none') &&
-    typeof value.degraded === 'boolean' &&
-    isRecord(fieldSources) && Object.values(fieldSources).every(source => isRecord(source) && ['form', 'text', 'derived'].includes(String(source.source)) && (source.evidence === undefined || typeof source.evidence === 'string')) &&
-    Array.isArray(overrides) && overrides.every(item => isRecord(item) && typeof item.field === 'string' && typeof item.evidence === 'string') &&
-    Array.isArray(clarifications) && clarifications.every(item => isRecord(item) && typeof item.field === 'string' && typeof item.reason === 'string' && typeof item.question === 'string' && isStringArray(item.candidates)) &&
-    isStringArray(value.unhandledText) &&
-    Array.isArray(warnings) && warnings.every(item => isRecord(item) && typeof item.code === 'string' && typeof item.message === 'string')
-}
-
-function isMatchResponse(value: unknown): value is MatchResponse {
-  if (!isRecord(value) || !isRequirement(value.requirement) || !Array.isArray(value.items)) return false
-  const counts = value.counts
-  const diagnostics = value.diagnostics
-  const exclusions = isRecord(diagnostics) ? diagnostics.exclusions : null
-  return (value.status === 'matched' || value.status === 'no_match' || value.status === 'needs_clarification') &&
-    (value.mode === 'filtered' || value.mode === 'random') &&
-    value.items.every(item => {
-      if (!isRecord(item) || typeof item.code !== 'string' || !['direct', 'reference', 'random'].includes(String(item.matchType))) return false
-      if (!Array.isArray(item.images) || !item.images.every(image => isRecord(image) && typeof image.assetId === 'string' && typeof image.url === 'string' && typeof image.thumbnailUrl === 'string' && typeof image.order === 'number' && typeof image.width === 'number' && typeof image.height === 'number')) return false
-      const specifications = item.specifications
-      return isRecord(specifications) && ['lengthMm', 'widthMm', 'heightMm', 'areaM2', 'openingCount'].every(field => typeof specifications[field] === 'number') &&
-        typeof specifications.productSystemId === 'string' && typeof specifications.productSystemLabel === 'string' &&
-        isStringArray(item.reasons) && Array.isArray(item.pendingConfirmations) && item.pendingConfirmations.every((p: unknown) => isRecord(p) && typeof p.message === 'string' && p.type === 'missing_field') && isStringArray(item.preferenceMisses) &&
-        Array.isArray(item.differences) && item.differences.every(difference => isRecord(difference) &&
-          ['field', 'requested', 'actual', 'reason'].every(field => typeof difference[field] === 'string'))
-    }) &&
-    isRecord(counts) && ['direct', 'reference', 'random', 'total'].every(field => typeof counts[field] === 'number') &&
-    isRecord(diagnostics) && typeof diagnostics.reviewedPublished === 'number' && typeof diagnostics.ready === 'number' &&
-    isRecord(exclusions) && ['unverifiedChecklist', 'incompleteAssets', 'invalidData', 'productSystem', 'height', 'tags', 'dimensions'].every(field => typeof exclusions[field] === 'number') &&
-    isStringArray(value.reasons) && isStringArray(value.suggestions) && isStringArray(value.missingFields)
-}
-
-function isSelectionState(value: unknown): value is SelectionState {
-  return ['idle', 'parsing', 'matching', 'needs_clarification', 'results', 'empty', 'error'].includes(String(value))
-}
-
-function isPersistedSelection(value: unknown): value is PersistedSelection {
-  if (!isRecord(value) || value.version !== selectionSessionVersion || !isRequirement(value.requirement) || !isSelectionState(value.state)) return false
-  if (typeof value.text !== 'string' || typeof value.snapshot !== 'string' || typeof value.attemptId !== 'string') return false
-  if (value.parseResult !== null && !isParseResponse(value.parseResult)) return false
-  if (value.parsedText !== null && typeof value.parsedText !== 'string') return false
-  if (value.parsedRequirement !== null && !isRequirement(value.parsedRequirement)) return false
-  if (value.liveMatchData !== null && !isMatchResponse(value.liveMatchData)) return false
-  if (value.state === 'results' && (value.liveMatchData === null || value.liveMatchData.status !== 'matched')) return false
-  if (value.state === 'empty' && (value.liveMatchData === null || value.liveMatchData.status !== 'no_match')) return false
-  if (value.parseId !== null && typeof value.parseId !== 'string') return false
-  if (value.searchId !== null && typeof value.searchId !== 'string') return false
-  if (typeof value.imagesExpiresAt !== 'number' || !Number.isFinite(value.imagesExpiresAt)) return false
-  if (value.confirmedClarifications !== undefined && (!isRecord(value.confirmedClarifications) || !Object.values(value.confirmedClarifications).every(item => typeof item === 'string'))) return false
-  return isRecord(value.activeImageByCode) && Object.values(value.activeImageByCode).every(index => typeof index === 'number' && Number.isInteger(index) && index >= 0)
-}
-
-function safeReadSelection(): PersistedSelection | null {
-  try {
-    const raw = sessionStorage.getItem(selectionSessionKey)
-    if (!raw) return null
-    const value: unknown = JSON.parse(raw)
-    if (!isPersistedSelection(value)) {
-      sessionStorage.removeItem(selectionSessionKey)
-      return null
-    }
-    return value
-  } catch {
-    try { sessionStorage.removeItem(selectionSessionKey) } catch { return null }
-    return null
-  }
-}
 watch(appLocale, () => { void loadCatalog() })
-
-function safeWriteSelection(value: PersistedSelection) {
-  try { sessionStorage.setItem(selectionSessionKey, JSON.stringify(value)) } catch { return }
-}
-
-function safeRemoveSelection() {
-  try { sessionStorage.removeItem(selectionSessionKey) } catch { return }
-}
 
 function restoredState(value: SelectionState): SelectionState {
   return value === 'parsing' || value === 'matching' ? 'idle' : value
 }
 
-function buildSelectionSession(): PersistedSelection {
+function buildSelectionSession(): SelectionSessionInput {
   return {
-    version: selectionSessionVersion,
     requirement: requirement.value,
     text: text.value,
     state: state.value,
@@ -276,7 +153,7 @@ function startPersistence() {
   if (isPreview.value) return
   stopPersistence = watch(buildSelectionSession, value => {
     selectionCleared = false
-    safeWriteSelection(value)
+    writeSelectionSession(value)
   }, { deep: true, flush: 'post' })
 }
 
@@ -307,7 +184,7 @@ function reset() {
   clearSelectionMemory()
   if (!isPreview.value) {
     selectionCleared = true
-    safeRemoveSelection()
+    clearSelectionSession()
   }
   startPersistence()
 }
@@ -492,7 +369,7 @@ async function parseText(sequence: number) {
     liveClarifications.value = res.data.clarifications
     if (res.data.status === 'needs_clarification') {
       state.value = 'needs_clarification'
-      snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
+      snapshot.value = selectionSnapshot(requirement.value, text.value)
       return false
     }
     return true
@@ -519,7 +396,7 @@ function choosePreview(value: string) {
     text.value = t('selection.conditionPlaceholder')
   } else if (value === 'random' || value === 'idle') clearSelectionMemory()
   state.value = value === 'random' ? 'results' : value as SelectionState
-  snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
+  snapshot.value = selectionSnapshot(requirement.value, text.value)
 }
 
 async function loadCatalog() {
@@ -558,7 +435,7 @@ async function doMatch(mode: 'random' | 'filtered', textProvided: boolean, seque
       attemptId.value = res.data.attemptId ?? attemptId.value
       searchId.value = res.data.searchId
       state.value = res.data.status === 'matched' ? 'results' : res.data.status === 'no_match' ? 'empty' : 'needs_clarification'
-      snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
+      snapshot.value = selectionSnapshot(requirement.value, text.value)
     } else {
       state.value = 'error'
     }
@@ -575,7 +452,7 @@ async function submit() {
     editing.value = false
     previewMode.value = conditionRows.value.length || text.value.trim() ? 'results' : 'random'
     state.value = 'results'
-    snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
+    snapshot.value = selectionSnapshot(requirement.value, text.value)
     return
   }
   const sequence = ++requestSequence
@@ -601,7 +478,7 @@ function confirm() {
   if (isPreview.value) {
     editing.value = false
     state.value = 'results'
-    snapshot.value = JSON.stringify({ requirement: requirement.value, text: text.value })
+    snapshot.value = selectionSnapshot(requirement.value, text.value)
   } else {
     if (busy.value || !canConfirm.value) return
     void doMatch('filtered', !!text.value.trim(), ++requestSequence)
@@ -609,7 +486,7 @@ function confirm() {
 }
 
 if (!isPreview.value) {
-  const saved = safeReadSelection()
+  const saved = readSelectionSession()
   if (saved) {
     restoreSelection(saved)
     void refreshExpiredImages()
@@ -620,11 +497,11 @@ if (!isPreview.value) {
 
 watch(isPreview, (newVal) => {
   catalogSequence++
-  if (newVal && !selectionCleared) safeWriteSelection(buildSelectionSession())
+  if (newVal && !selectionCleared) writeSelectionSession(buildSelectionSession())
   stopPersistence?.()
   clearSelectionMemory()
   if (!newVal) {
-    const saved = safeReadSelection()
+    const saved = readSelectionSession()
     if (saved) {
       restoreSelection(saved)
       void refreshExpiredImages()
@@ -650,7 +527,7 @@ function refreshImagesWhenVisible() {
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', refreshImagesWhenVisible)
   if (imageRefreshTimer) clearInterval(imageRefreshTimer)
-  if (!isPreview.value && !selectionCleared) safeWriteSelection(buildSelectionSession())
+  if (!isPreview.value && !selectionCleared) writeSelectionSession(buildSelectionSession())
   requestSequence++
   catalogSequence++
 })

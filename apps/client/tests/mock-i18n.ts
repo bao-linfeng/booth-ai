@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { defineComponent, h, ref } from 'vue'
 import zh from '../src/plugins/i18n/zh.json'
 
 const currentLocale = ref('zh')
@@ -22,10 +22,24 @@ export function useI18n() {
   return { t, locale: currentLocale }
 }
 
+// 对应 vue-i18n 的 <i18n-t>：按 keypath 取文案，把 {name} 占位替换为同名插槽
+export const Translation = defineComponent({
+  name: 'I18nT',
+  props: { keypath: { type: String, required: true }, tag: { type: String, default: 'span' }, scope: String },
+  setup(props, { slots }) {
+    return () => h(props.tag, String(getNested(zh, props.keypath) ?? props.keypath).split(/(\{\w+\})/).filter(Boolean).map(part => {
+      const name = /^\{(\w+)\}$/.exec(part)?.[1]
+      const slot = name ? slots[name] : undefined
+      return slot ? slot() : part
+    }))
+  },
+})
+
 export function createI18n() {
   return {
     install(app: any) {
       app.config.globalProperties.$t = t
+      app.component('i18n-t', Translation)
     },
     global: { t, locale: currentLocale, availableLocales: ['zh', 'en'], setLocaleMessage() {} },
   }

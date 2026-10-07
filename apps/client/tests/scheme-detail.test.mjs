@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
+import { assertNoNode, assertSameNode, assertNotSameNode } from './dom-assert.mjs'
 import { fileURLToPath } from 'node:url'
 import { statSync, readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
@@ -133,7 +134,7 @@ function quoteQueries(mounted) {
   })
 }
 
-test('detail presents facts and quote before optional theme; quote links track lazy BOM and theme keeps searchId', async () => {
+test('detail presents facts and quote before optional theme; quote links track lazy BOM; quote and theme keep searchId', async () => {
   const mounted = await mount()
   try {
     assert.equal(mounted.container.querySelector('h1').textContent, '6 × 3 m · 标准模块展台')
@@ -142,7 +143,7 @@ test('detail presents facts and quote before optional theme; quote links track l
     const aside = mounted.container.querySelector('aside')
     const actions = [...aside.querySelectorAll('a')]
     assert.deepEqual(actions.map(el => el.textContent.trim()), ['申请报价', 'AI 换主题'])
-    assert.deepEqual(quoteQueries(mounted), [{ entryPoint: 'scheme_detail' }, { entryPoint: 'scheme_detail' }])
+    assert.deepEqual(quoteQueries(mounted), [{ entryPoint: 'scheme_detail', searchId: 'search-42' }, { entryPoint: 'scheme_detail', searchId: 'search-42' }])
     for (const link of [...mounted.container.querySelectorAll('a')].filter(el => el.textContent.trim() === 'AI 换主题')) {
       const url = new URL(link.href)
       assert.equal(url.pathname, '/schemes/SC-6030/theme')
@@ -157,9 +158,9 @@ test('detail presents facts and quote before optional theme; quote links track l
     const region = mounted.container.querySelector('[role="region"][aria-label="物料明细，可横向滚动"]')
     assert.equal(region.getAttribute('tabindex'), '0')
     assert.ok(region.querySelector('table caption'))
-    assert.deepEqual(quoteQueries(mounted), Array(2).fill({ entryPoint: 'bill_of_materials', bomRevision: '7' }))
+    assert.deepEqual(quoteQueries(mounted), Array(2).fill({ entryPoint: 'bill_of_materials', bomRevision: '7', searchId: 'search-42' }))
     await selectTab(mounted.container, '方案说明')
-    assert.deepEqual(quoteQueries(mounted), Array(2).fill({ entryPoint: 'scheme_detail', bomRevision: '7' }))
+    assert.deepEqual(quoteQueries(mounted), Array(2).fill({ entryPoint: 'scheme_detail', bomRevision: '7', searchId: 'search-42' }))
     await selectTab(mounted.container, '物料清单')
     assert.equal(mounted.calls.filter(call => call.name === 'getClientBomApi').length, 1)
   } finally { await mounted.close() }
@@ -188,8 +189,8 @@ test('resource filenames, real Dialog preview, Escape/close, and trigger focus r
       if (closeBy === 'escape') dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       else button(dialog, 'Close').click()
       await settle()
-      assert.equal(document.querySelector('[role="dialog"]'), null)
-      assert.equal(document.activeElement, trigger)
+      assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
+      assertSameNode(document.activeElement, trigger, "document.activeElement vs trigger")
     }
     article.querySelector('[aria-label="下载 SC-6030 正视图.png"]').click()
     await settle()
@@ -211,7 +212,7 @@ test('PDF preview uses a safe new-tab link without an iframe; Escape restores th
     const trigger = mounted.container.querySelector('[aria-label="预览 SC-6030 三视图.pdf"]')
     trigger.focus(); trigger.click(); await settle()
     const dialog = document.querySelector('[role="dialog"]')
-    assert.ok(dialog); assert.equal(dialog.querySelector('iframe, embed, object'), null)
+    assert.ok(dialog); assertNoNode(dialog.querySelector('iframe, embed, object'), "dialog.querySelector('iframe, embed, object')")
     assert.match(dialog.textContent, /PDF 原件将在新标签页中打开/)
     const anchor = dialog.querySelector('a')
     assert.equal(anchor.href, link.downloadUrl)
@@ -222,8 +223,8 @@ test('PDF preview uses a safe new-tab link without an iframe; Escape restores th
     anchor.focus()
     anchor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await settle()
-    assert.equal(document.querySelector('[role="dialog"]'), null)
-    assert.equal(document.activeElement, trigger)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
+    assertSameNode(document.activeElement, trigger, "document.activeElement vs trigger")
     assert.deepEqual(downloads, [])
   } finally { await mounted.close() }
 })
@@ -244,7 +245,7 @@ test('archive revision invalidation refreshes files and requires another user do
     assert.equal(listing, 2)
     assert.match(mounted.container.querySelector('[role="alert"]').textContent, /资料已更新，请确认刷新后的列表，再重新下载/)
     assert.match(mounted.container.querySelector('article').textContent, /SC-6030 正视图修订版\.png/)
-    assert.equal(mounted.container.querySelector('[aria-label="预览 SC-6030 正视图.png"]'), null)
+    assertNoNode(mounted.container.querySelector('[aria-label="预览 SC-6030 正视图.png"]'), "mounted.container.querySelector('[aria-label=\"预览 SC-6030 正视图.png\"]')")
     assert.equal(downloads.length, 0)
     assert.deepEqual(mounted.calls.filter(call => call.name === 'downloadSchemeArchive').map(call => call.args), [['SC-6030', 'drawings', 'assets-r1']])
     button(mounted.container, '下载全部').click()
@@ -279,10 +280,10 @@ test('a pending resource preview cannot open a Dialog after leaving the resource
     if (dialog) {
       dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       await settle()
-      assert.notEqual(document.activeElement, trigger, 'Focus must not return to an unmounted resource button')
+      assertNotSameNode(document.activeElement, trigger, 'Focus must not return to an unmounted resource button')
     }
     assert.equal(dialog, null, 'A late preview response must not open a Dialog outside the resources tab')
-    assert.equal(document.activeElement, activeBeforeResponse)
+    assertSameNode(document.activeElement, activeBeforeResponse, "document.activeElement vs activeBeforeResponse")
   } finally { await mounted.close() }
 })
 
@@ -290,7 +291,7 @@ test('preview permits theme exploration but neither quotes nor BOM/resource down
   const mounted = await mount({ path: '/ai-selection/preview/schemes/DEMO_63_001?searchId=ignored' })
   try {
     assert.match(mounted.container.textContent, /静态示例 · 非已发布方案/)
-    assert.equal(mounted.container.querySelector('a[href*="/quote"]'), null)
+    assertNoNode(mounted.container.querySelector('a[href*="/quote"]'), "mounted.container.querySelector('a[href*=\"/quote\"]')")
     assert.equal(button(mounted.container, '示例方案不可申请报价').disabled, true)
     assert.equal(button(mounted.container, '示例不可报价').disabled, true)
     for (const link of [...mounted.container.querySelectorAll('a')].filter(el => el.textContent.trim() === 'AI 换主题')) assert.equal(link.getAttribute('href'), '/ai-selection/preview/schemes/DEMO_63_001/theme')
@@ -315,7 +316,7 @@ test('unavailable BOM (409) shows empty state without a download or revision in 
     await selectTab(mounted.container, '物料清单')
     assert.match(mounted.container.textContent, /当前方案暂无可用清单/)
     assert.equal([...mounted.container.querySelectorAll('button')].some(el => el.textContent.includes('下载 XLSX')), false)
-    assert.deepEqual(quoteQueries(mounted), Array(2).fill({ entryPoint: 'bill_of_materials' }))
+    assert.deepEqual(quoteQueries(mounted), Array(2).fill({ entryPoint: 'bill_of_materials', searchId: 'search-42' }))
   } finally { await mounted.close() }
 })
 
@@ -342,6 +343,6 @@ test('BOM load errors retry; stale XLSX displays refresh status and quote revisi
     await settle()
     assert.equal(attempts, 3)
     assert.match(mounted.container.textContent, /修订\s*8/)
-    assert.deepEqual(quoteQueries(mounted), Array(2).fill({ entryPoint: 'bill_of_materials', bomRevision: '8' }))
+    assert.deepEqual(quoteQueries(mounted), Array(2).fill({ entryPoint: 'bill_of_materials', bomRevision: '8', searchId: 'search-42' }))
   } finally { await mounted.close() }
 })

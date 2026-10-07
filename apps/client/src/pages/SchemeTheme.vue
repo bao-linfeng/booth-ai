@@ -275,7 +275,7 @@ function setDialogOpen(open: boolean) {
           </div>
           <Badge v-if="isPreview" variant="secondary">{{ t('schemeTheme.previewLabel') }}</Badge>
           <Button v-else as-child variant="outline" class="shrink-0">
-            <RouterLink :to="{ path: `/schemes/${encodeURIComponent(schemeCode)}/quote`, query: { entryPoint: 'scheme_detail' } }">{{ t('schemeTheme.quoteBtn') }}<ArrowUpRight class="ml-2 size-4" /></RouterLink>
+            <RouterLink :to="{ path: `/schemes/${encodeURIComponent(schemeCode)}/quote`, query: { entryPoint: 'scheme_detail', ...(searchId ? { searchId } : {}) } }">{{ t('schemeTheme.quoteBtn') }}<ArrowUpRight class="ml-2 size-4" /></RouterLink>
           </Button>
         </div>
       </header>

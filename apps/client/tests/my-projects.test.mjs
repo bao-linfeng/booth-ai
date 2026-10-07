@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
+import { assertNoNode } from './dom-assert.mjs'
 import { fileURLToPath } from 'node:url'
 import { statSync, readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
@@ -147,9 +148,9 @@ test('detail shows latest progress first, readable scope and requirement tags, a
   const request = card(mounted.container, '申请内容').textContent
   for (const expected of ['中国 / 上海', '2026-11-01 至 2026-11-04', '示例公司 / 张三', 'zhang@example.com', '13800000000', 'CNY 50000', '材料采购', '搭建', '含现场搭建', '需要科技感展台', '6 m × 3 m', '18 ㎡', '2 面开口', '场馆限高 4.5 m', '标准展架体系', '科技感', '电子', '经济型', '洽谈区', '大屏', '仓储区', 'LED']) assert.ok(request.includes(expected), expected)
   assert.ok(!request.includes('missing-style'))
-  assert.equal(mounted.container.querySelector('pre'), null)
-  assert.equal(mounted.container.querySelector('details'), null)
-  assert.equal(mounted.container.querySelector('ol, [class*="timeline"]'), null)
+  assertNoNode(mounted.container.querySelector('pre'), "mounted.container.querySelector('pre')")
+  assertNoNode(mounted.container.querySelector('details'), "mounted.container.querySelector('details')")
+  assertNoNode(mounted.container.querySelector('ol, [class*="timeline"]'), "mounted.container.querySelector('ol, [class*=\"timeline\"]')")
   assert.ok(!text.includes('固定修订') && card(mounted.container, '方案与资料').textContent.includes('方案修订 2'))
   await mounted.close()
 })
@@ -159,7 +160,7 @@ test('catalog failure still renders numeric specs and never exposes raw option I
   const request = card(mounted.container, '申请内容').textContent
   assert.ok(request.includes('6 m × 3 m') && request.includes('LED'))
   for (const raw of ['sys-1', 'style-1', 'ind-1', 'budget-1', 'zone-1', 'feat-1', 'q-1', '标准展架体系']) assert.ok(!request.includes(raw), raw)
-  assert.equal(mounted.container.querySelector('[role="alert"]'), null)
+  assertNoNode(mounted.container.querySelector('[role="alert"]'), "mounted.container.querySelector('[role=\"alert\"]')")
   await mounted.close()
 })
 
@@ -204,7 +205,7 @@ test('refresh progress reloads the project and failures keep a retry action', as
   missing = false
   button(failed.container, '重新加载').click()
   await settle()
-  assert.equal(failed.container.querySelector('[role="alert"]'), null)
+  assertNoNode(failed.container.querySelector('[role="alert"]'), "failed.container.querySelector('[role=\"alert\"]')")
   assert.ok(failed.container.textContent.includes('最新进展'))
   await failed.close()
 })

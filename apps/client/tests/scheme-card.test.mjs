@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
+import { assertNoNode, assertSameNode } from './dom-assert.mjs'
 import { fileURLToPath } from 'node:url'
 import { statSync, readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
@@ -39,6 +40,7 @@ const server = await createServer({
 after(async () => { await server.close(); await window.happyDOM.close() })
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: SchemeCard } = await server.ssrLoadModule('/src/features/selection/SchemeCard.vue')
+const { Translation } = await server.ssrLoadModule('vue-i18n')
 
 const item = {
   code: 'SC-6030', matchType: 'direct',
@@ -57,6 +59,7 @@ function mount({ preview = true } = {}) {
   const container = document.createElement('div')
   document.body.append(container)
   const app = createApp({ render: () => h(SchemeCard, { item, index: 0, preview }) })
+  app.component('i18n-t', Translation)
   app.use(createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] }))
   app.mount(container)
   return { app, container, close: () => { app.unmount(); container.remove() } }
@@ -111,7 +114,7 @@ test('gallery preview closes with Escape and restores the originating artwork bu
     dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 50))
-    assert.equal(document.querySelector('[role="dialog"]'), null)
-    assert.equal(document.activeElement, trigger)
+    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
+    assertSameNode(document.activeElement, trigger, "document.activeElement vs trigger")
   } finally { mounted.close() }
 })

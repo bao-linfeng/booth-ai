@@ -331,6 +331,7 @@ const quoteLocation = computed(() => ({
   query: {
     entryPoint: showBom.value ? 'bill_of_materials' : 'scheme_detail',
     ...(bomData.value ? { bomRevision: String(bomData.value.revision) } : {}),
+    ...(typeof route.query.searchId === 'string' ? { searchId: route.query.searchId } : {}),
   },
 }));
 const themeLocation = computed(() => ({

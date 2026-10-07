@@ -18,7 +18,8 @@ import { getQuoteContext, submitQuote, type QuoteContext, type QuoteRequest, typ
 import { submitManualRequest, type ManualRequest } from '@/services/api/manual-requests'
 import { getThemeJob } from '@/services/api/theme-jobs'
 import { getArtworkJob } from '@/services/api/artwork-jobs'
-import type { MatchItem, Requirement } from '@/features/selection/types'
+import type { Requirement } from '@/features/selection/types'
+import { readSelectionQuoteHandoff } from '@/features/selection/session'
 import { apiFetch, lingtongPublicFetch } from '@/lib/api-client'
 import type { SchemeDetail } from '@/features/selection/types'
 import { emptyRequirement } from '@/features/selection/types'
@@ -54,18 +55,9 @@ try {
     originalDescription.value = data.originalDescription; confirmedRequirements.value = data.confirmedRequirements; unresolvedQuestions.value = data.unresolvedQuestions
   }
 } catch { sessionStorage.removeItem('booth:manual-context') }
-const requirementContext = ref<QuoteRequest['requirementContext']>()
-const matchingSummary = ref<Pick<MatchItem, 'matchType' | 'differences' | 'pendingConfirmations'> | null>(null)
-try {
-  const stored = sessionStorage.getItem('booth-ai:ai-selection')
-  if (stored) {
-    const selection = JSON.parse(stored) as { version: number; requirement: Requirement; text: string; snapshot: string; liveMatchData?: { items: MatchItem[] } }
-    if (selection.version === 2 && selection.snapshot === JSON.stringify({ requirement: selection.requirement, text: selection.text })) {
-      const match = selection.liveMatchData?.items.find(item => item.code === code)
-      if (match) { requirementContext.value = { originalDescription: selection.text, confirmedRequirements: selection.requirement }; matchingSummary.value = match }
-    }
-  }
-} catch { requirementContext.value = undefined }
+const selectionHandoff = manual ? null : readSelectionQuoteHandoff(code, typeof route.query.searchId === 'string' ? route.query.searchId : undefined)
+const requirementContext = selectionHandoff?.requirementContext
+const matchingSummary = selectionHandoff?.matchingSummary ?? null
 const user = auth.currentUser
 const draftOwner = ref(user?.id ?? null)
 const form = reactive({ exhibitionName: '', countryCode: 'CN', city: user?.city ?? '', startDate: '', endDate: '', scopeCodes: ['materials'], scopeNotes: '',
@@ -209,7 +201,7 @@ async function submit() {
       exhibition: { name: form.exhibitionName, countryCode: form.countryCode.toUpperCase(), city: form.city, startDate: form.startDate, endDate: form.endDate },
       scopeCodes: [...form.scopeCodes], scopeNotes: form.scopeNotes, materialBudget: { currency: form.currency, amount: form.amount }, customerType: form.customerType, company: form.company,
       contact: { name: form.contactName, ...(form.email.trim() ? { email: form.email.trim() } : {}), ...(form.phone.trim() ? { phone: form.phone.trim() } : {}) }, notes: form.notes }
-    if (requirementContext.value) pending.value.requirementContext = requirementContext.value
+    if (requirementContext) pending.value.requirementContext = requirementContext
     persist()
   }
   busy.value = true

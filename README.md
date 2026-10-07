@@ -264,14 +264,8 @@ docker compose --env-file .env -f infra/compose.dev.yaml down
 | 文档 | 内容 |
 | --- | --- |
 | [一期功能拆分索引](docs/一期功能拆分/README.md) | 智选、主题、素材、清单、报价与管理模块设计 |
-| [请求认证与会话策略](docs/server-authentication.md) | SSO、账户同步、会话撤销、本地权限与限流 |
-| [服务端模块边界](docs/server-module-boundaries.md) | 模块职责与依赖规则 |
 | [AI 模型接入与配置](docs/一期功能拆分/AI模型接入与配置.md) | 供应商 / 模型 / 用途配置与协议适配 |
 | [提示词模板业务接入](docs/一期功能拆分/提示词模板业务接入说明.md) | 模板选择、变量与业务调用 |
-| [积分账本不变量](docs/credit-invariants.md) | 预占、结算、释放与对账 |
-| [资产作用域](docs/asset-scope.md) | 方案基线与用户素材隔离 |
-| [主题 Outbox 恢复](docs/theme-outbox-recovery.md) | 生成任务恢复机制 |
-| [Worker 可观测性](docs/worker-observability.md) | 调度隔离、健康、指标、追踪与通知投递 |
 | [资料批量下载](docs/一期功能拆分/资料批量下载实现说明.md) | 报馆图与平面素材 ZIP 交付 |
 | [四面素材交付](docs/一期功能拆分/AIGC四面素材交付实现说明.md) | 四方向生成、下载与项目关联 |
 

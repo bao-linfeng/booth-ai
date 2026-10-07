@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
+import { assertNoNode } from './dom-assert.mjs'
 import { fileURLToPath } from 'node:url'
 import { statSync, readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
@@ -204,7 +205,7 @@ test('save failure preserves preview, requires refresh and recognizes a save tha
     await settle()
     assert.match(mounted.container.querySelector('[role="alert"]').textContent, /保存选定效果失败.*无法确认是否保存成功/)
     assert.match(aside(mounted).textContent, /选定状态待确认/)
-    assert.equal(aside(mounted).querySelector('img'), null)
+    assertNoNode(aside(mounted).querySelector('img'), "aside(mounted).querySelector('img')")
     assert.equal(button(mounted.container, quoteLabel).disabled, true)
     assert.equal(button(mounted.container, '选用此效果').disabled, true)
     assert.match(mounted.container.querySelector('#preview-heading').textContent, /正在预览第 2 张/)
@@ -268,7 +269,7 @@ test('conflict that changes task status still explains why selection is unavaila
     button(mounted.container, '选用此效果').click()
     await settle()
     assert.match(mounted.container.querySelector('[role="status"]').textContent, /任务当前不可选用效果/)
-    assert.equal(mounted.container.querySelector('aside'), null)
+    assertNoNode(mounted.container.querySelector('aside'), "mounted.container.querySelector('aside')")
   } finally { await mounted.close() }
 })
 
@@ -283,7 +284,7 @@ test('initial load failure can retry successfully and shows explicit loading fee
     assert.match(mounted.container.querySelector('[role="status"]').textContent, /正在加载任务/)
     retry.resolve(job())
     await settle()
-    assert.equal(mounted.container.querySelector('[role="alert"]'), null)
+    assertNoNode(mounted.container.querySelector('[role="alert"]'), "mounted.container.querySelector('[role=\"alert\"]')")
     assert.match(mounted.container.textContent, /正在预览第 1 张/)
   } finally { retry.resolve(job()); await mounted.close() }
 })
