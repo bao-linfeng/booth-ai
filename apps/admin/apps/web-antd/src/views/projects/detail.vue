@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ProjectDetail } from '#/api/core/projects';
+import type { MatchingSummary, ProjectDetail } from '#/api/core/projects';
 
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -15,18 +15,24 @@ import {
   DescriptionsItem,
   Pagination,
   Tag,
+  Timeline,
+  TimelineItem,
 } from 'ant-design-vue';
 
 import {
   assetDownloadApi,
   assigneeStatusLabels,
   getProjectApi,
-  projectEventLabels,
   projectEventsApi,
   statusLabels,
 } from '#/api/core/projects';
 
 import OperationModal from './OperationModal.vue';
+import {
+  eventSummary,
+  matchTypeLabels,
+  requirementSummary,
+} from './presentation';
 import QuotationEditor from './QuotationEditor.vue';
 const route = useRoute();
 const router = useRouter();
@@ -47,6 +53,40 @@ const assets = computed(() => [
   ...(project.value?.materials.drawings?.assets ?? []),
   ...(project.value?.materials.artworks?.assets ?? []),
 ]);
+const matchTypeColors: Record<MatchingSummary['matchType'], string> = {
+  direct: 'green',
+  reference: 'orange',
+  random: 'blue',
+  unmatched: 'red',
+};
+const eventColors: Record<string, string> = {
+  accepted: 'green',
+  assignment: 'orange',
+  quotation: 'blue',
+  scheme: 'blue',
+};
+const requirementItems = computed(() =>
+  project.value
+    ? requirementSummary(
+        project.value.request.confirmedRequirements ??
+          project.value.request.requirementContext?.confirmedRequirements,
+        project.value.requirementOptionLabels,
+      )
+    : [],
+);
+const pendingItems = computed(() => [
+  ...(project.value?.request.matchingSummary?.pendingConfirmations.map(
+    (item) => item.message,
+  ) ?? []),
+  ...(project.value?.request.unresolvedQuestions ?? []),
+]);
+const timeline = computed(
+  () =>
+    project.value?.events.items.map((event) => ({
+      ...event,
+      ...eventSummary(event),
+    })) ?? [],
+);
 async function load() {
   loading.value = true;
   error.value = '';
@@ -102,8 +142,9 @@ onMounted(load);
               @click="operation?.open(project, 'assignment')"
               v-access:code="['projects.assign']"
             >
-              改派 </Button
-            ><Button
+              改派
+            </Button>
+            <Button
               v-access:code="['projects.follow-up']"
               @click="operation?.open(project, 'follow-up')"
             >
@@ -117,10 +158,12 @@ onMounted(load);
               @click="operation?.open(project, 'scheme')"
               v-access:code="['projects.link-scheme']"
             >
-              确认关联方案 </Button
-            ><Button @click="load">刷新项目</Button>
-          </div> </template
-        ><Descriptions bordered :column="2" size="small">
+              确认关联方案
+            </Button>
+            <Button @click="load">刷新项目</Button>
+          </div>
+        </template>
+        <Descriptions bordered :column="2" size="small">
           <DescriptionsItem label="来源">
             {{
               project.sourceType === 'quote_request' ? '报价申请' : '人工需求'
@@ -128,10 +171,12 @@ onMounted(load);
             / {{ project.request.entryPoint }}
           </DescriptionsItem>
           <DescriptionsItem label="项目修订">
-            {{ project.revision }} </DescriptionsItem
-          ><DescriptionsItem label="承接人">
-            {{ project.assigneeName }} </DescriptionsItem
-          ><DescriptionsItem label="渠道归属">
+            {{ project.revision }}
+          </DescriptionsItem>
+          <DescriptionsItem label="承接人">
+            {{ project.assigneeName }}
+          </DescriptionsItem>
+          <DescriptionsItem label="渠道归属">
             {{ project.attribution }}
           </DescriptionsItem>
           <DescriptionsItem label="客户 / 联系人">
@@ -147,24 +192,25 @@ onMounted(load);
             {{ project.request.contact.legacyDetail }}
           </DescriptionsItem>
           <DescriptionsItem label="展会">
-            {{
-              project.request.exhibition?.name ?? '历史资料待补'
-            }} </DescriptionsItem
-          ><DescriptionsItem label="国家 / 城市">
+            {{ project.request.exhibition?.name ?? '历史资料待补' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="国家 / 城市">
             {{ project.request.exhibition?.countryCode }}
             {{ project.request.exhibition?.city }}
           </DescriptionsItem>
           <DescriptionsItem label="展会日期">
             {{ project.request.exhibition?.startDate }} 至
-            {{ project.request.exhibition?.endDate }} </DescriptionsItem
-          ><DescriptionsItem label="材料预算">
+            {{ project.request.exhibition?.endDate }}
+          </DescriptionsItem>
+          <DescriptionsItem label="材料预算">
             {{ project.request.materialBudget?.currency }}
             {{ project.request.materialBudget?.amount }}
           </DescriptionsItem>
           <DescriptionsItem label="需求范围">
             {{ project.request.scopeCodes?.join('、') }}
-            {{ project.request.scopeNotes }} </DescriptionsItem
-          ><DescriptionsItem label="已关联方案">
+            {{ project.request.scopeNotes }}
+          </DescriptionsItem>
+          <DescriptionsItem label="已关联方案">
             {{ project.schemeCode ?? '未关联' }} /
             {{ project.schemeSnapshot?.name }}
           </DescriptionsItem>
@@ -176,26 +222,53 @@ onMounted(load);
             }}</span>
           </DescriptionsItem>
           <DescriptionsItem label="确认条件" :span="2">
-            <pre class="whitespace-pre-wrap text-xs">{{
-              JSON.stringify(
-                project.request.confirmedRequirements ??
-                  project.request.requirementContext?.confirmedRequirements ??
-                  {},
-                null,
-                2,
-              )
-            }}</pre>
+            <div v-if="requirementItems.length" class="flex flex-wrap gap-2">
+              <Tag v-for="item in requirementItems" :key="item.label">
+                {{ item.label }}：{{ item.value }}
+              </Tag>
+            </div>
+            <span v-else class="text-muted-foreground">未提供筛选条件</span>
           </DescriptionsItem>
           <DescriptionsItem label="参考差异 / 待确认" :span="2">
-            <pre class="whitespace-pre-wrap text-xs">{{
-              JSON.stringify(
-                project.request.matchingSummary ??
-                  project.request.unresolvedQuestions ??
-                  [],
-                null,
-                2,
-              )
-            }}</pre>
+            <template v-if="project.request.matchingSummary">
+              <Tag
+                :color="
+                  matchTypeColors[project.request.matchingSummary.matchType]
+                "
+              >
+                {{ matchTypeLabels[project.request.matchingSummary.matchType] }}
+              </Tag>
+              <ul
+                v-if="project.request.matchingSummary.differences.length"
+                class="mt-2 list-disc pl-5"
+              >
+                <li
+                  v-for="item in project.request.matchingSummary.differences"
+                  :key="item.field"
+                >
+                  客户要求 {{ item.requested }}，方案为 {{ item.actual }}
+                  <span class="text-muted-foreground">
+                    （{{ item.reason }}）
+                  </span>
+                </li>
+              </ul>
+            </template>
+            <ul v-if="pendingItems.length" class="mt-2 list-disc pl-5">
+              <li v-for="item in pendingItems" :key="item">
+                待确认：{{ item }}
+              </li>
+            </ul>
+            <span
+              v-if="
+                !pendingItems.length &&
+                !project.request.matchingSummary?.differences.length
+              "
+              class="text-muted-foreground"
+            >
+              {{
+                project.request.matchingSummary ? '与确认条件一致，' : ''
+              }}无待确认事项
+            </span>
           </DescriptionsItem>
           <DescriptionsItem label="补充说明" :span="2">
             {{ project.request.notes ?? '—' }}
@@ -222,30 +295,41 @@ onMounted(load);
         </div>
       </Card>
       <QuotationEditor :project="project" @reload="load" />
-      <Card title="追加式时间线" class="mt-5">
-        <div
-          v-for="item in project.events.items"
-          :key="item.id"
-          class="mb-4 border-b pb-4"
-        >
-          <div class="mb-2 flex gap-3">
-            <Tag>{{ projectEventLabels[item.kind] ?? item.kind }}</Tag
-            ><span>{{ item.actorName ?? '系统' }}</span
-            ><span class="text-sm text-muted-foreground">{{
-              formatDateTime(item.createdAt)
-            }}</span>
-          </div>
-          <pre class="whitespace-pre-wrap break-words text-xs">{{
-            JSON.stringify(item.payload, null, 2)
-          }}</pre>
-        </div>
+      <Card title="项目时间线" class="mt-5">
+        <Timeline>
+          <TimelineItem
+            v-for="item in timeline"
+            :key="item.id"
+            :color="eventColors[item.kind] ?? 'gray'"
+          >
+            <div class="flex flex-wrap items-baseline gap-x-3">
+              <span class="font-medium">{{ item.title }}</span>
+              <span class="text-xs text-muted-foreground">
+                {{ item.actorName ?? '系统' }} ·
+                {{ formatDateTime(item.createdAt) }}
+              </span>
+            </div>
+            <dl
+              v-if="item.lines.length"
+              class="mt-1 grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm"
+            >
+              <template v-for="line in item.lines" :key="line.label">
+                <dt class="text-muted-foreground">{{ line.label }}</dt>
+                <dd class="whitespace-pre-wrap break-words">
+                  {{ line.value }}
+                </dd>
+              </template>
+            </dl>
+          </TimelineItem>
+        </Timeline>
         <Pagination
           :current="eventsPage"
           :total="project.events.total"
           :page-size="20"
           @change="events"
         />
-      </Card> </template
-    ><OperationModal ref="operation" @reload="load" />
+      </Card>
+    </template>
+    <OperationModal ref="operation" @reload="load" />
   </Page>
 </template>

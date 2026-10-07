@@ -2,6 +2,7 @@ import type pg from 'pg';
 import { projectError, type ProjectStatus } from './domain.js';
 import type { MaterialsSnapshot, SchemeSnapshot } from './snapshot.js';
 import { assigneeStatusSql, type AssigneeStatus } from './assignment.js';
+import { dictionaryItemLabels } from '../selection/dictionaries.js';
 
 export interface RequestSnapshot {
   exhibition?: { name: string; countryCode: string; city: string; startDate: string; endDate: string };
@@ -57,8 +58,18 @@ export async function listProjects(db: pg.Pool,query: ProjectQuery,userId?: stri
   return {items:rows.rows,total:Number(count.rows[0]?.total ?? 0),page,pageSize};
 }
 export async function projectEvents(db: pg.Pool,id: string,page=1,pageSize=20) {
-  const rows=await db.query(`SELECT e.id,e.kind,e.actor_admin_id AS "actorAdminId",coalesce(a.nickname,a.username) AS "actorName",e.payload,e.created_at AS "createdAt"
-    FROM project_events e LEFT JOIN admins a ON a.id=e.actor_admin_id WHERE project_id=$1 ORDER BY e.created_at DESC,e.id DESC LIMIT $2 OFFSET $3`,[id,pageSize,(page-1)*pageSize]);
+  const rows=await db.query(`SELECT e.id,e.kind,e.actor_admin_id AS "actorAdminId",coalesce(a.nickname,a.username) AS "actorName",
+    coalesce(t.nickname,t.username) AS "assigneeName",coalesce(f.nickname,f.username) AS "fromAssigneeName",e.payload,e.created_at AS "createdAt"
+    FROM project_events e LEFT JOIN admins a ON a.id=e.actor_admin_id
+    LEFT JOIN admins t ON t.id::text=e.payload->>'assigneeAdminId' LEFT JOIN admins f ON f.id::text=e.payload->>'fromAdminId'
+    WHERE project_id=$1 ORDER BY e.created_at DESC,e.id DESC LIMIT $2 OFFSET $3`,[id,pageSize,(page-1)*pageSize]);
   const count=await db.query<{total:string}>('SELECT count(*)::text AS total FROM project_events WHERE project_id=$1',[id]);
   return {items:rows.rows,total:Number(count.rows[0]?.total ?? 0),page,pageSize};
+}
+/** 确认条件中字典项 ID 对应的名称；关键词为自由文本，不参与查询。 */
+export async function requirementOptionLabels(db: pg.Pool,request: RequestSnapshot) {
+  const requirement=request.confirmedRequirements ?? request.requirementContext?.confirmedRequirements ?? {};
+  const ids=Object.entries(requirement).filter(([key])=>key!=='keywords')
+    .flatMap(([,value])=>Array.isArray(value)?value:[value]).filter((value):value is string=>typeof value==='string');
+  return dictionaryItemLabels(db,[...new Set(ids)]);
 }

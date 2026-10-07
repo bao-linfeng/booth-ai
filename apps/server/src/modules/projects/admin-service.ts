@@ -76,6 +76,8 @@ export async function assignProject(pool:pg.Pool,id:string,adminId:string,input:
   });
 }
 const transitions:Record<ProjectStatus,ProjectStatus[]>={pending:['following','closed'],following:['quoted','won','lost','closed'],quoted:['following','won','lost','closed'],won:[],lost:[],closed:[]};
+/** 当前状态可追加跟进到的目标状态；终态只能填写重开原因回到跟进中。 */
+export function statusTransitions(status:ProjectStatus):ProjectStatus[] {return terminalStatuses.includes(status)?['following']:transitions[status];}
 export async function followUpProject(pool:pg.Pool,id:string,adminId:string,input:FollowUpInput) {
   return change(pool,id,adminId,'follow-up',input,async(client,project)=>{
     const now=Date.now();const contacted=Date.parse(input.contactedAt);

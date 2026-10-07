@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router';
 import { Page, useVbenModal } from '@vben/common-ui';
 import { formatDateTime } from '@vben/utils';
 
-import { Button, Tag, message } from 'ant-design-vue';
+import { Button, message, Tag } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';

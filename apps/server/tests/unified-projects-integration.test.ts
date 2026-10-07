@@ -70,6 +70,10 @@ test('unified projects: manual acceptance, assignment, immutable quotation, stat
   assert.equal((await app.inject({url:`/admin/projects/${id}`,headers})).statusCode,401);
   active='admin';const download=await app.inject({url:`/admin/projects/${id}/quotation/download?revision=1`,headers});assert.equal(download.statusCode,200);assert.ok(download.rawPayload.length>100);
   assert.equal((await app.inject({url:`/admin/projects/${id}/quotation/download?revision=2`,headers})).statusCode,409);
+  const adminDetail=(await app.inject({url:`/admin/projects/${id}`,headers})).json().data;
+  assert.deepEqual(adminDetail.statusTransitions,['quoted','won','lost','closed']);assert.deepEqual(adminDetail.requirementOptionLabels,{});
+  const assigned=adminDetail.events.items.find((event:{kind:string})=>event.kind==='assignment');
+  assert.equal(assigned.assigneeName,secondAdmin);assert.equal(assigned.fromAssigneeName,admin);
   await pool.query('UPDATE admins SET enabled=false WHERE id=$1',[admin]);assert.equal((await app.inject({url:`/admin/projects/${id}`,headers})).statusCode,403);
   active='client';assert.equal((await app.inject({method:'POST',url:'/manual-requests',headers,payload:{...input,schemeCode:'forbidden'}})).statusCode,400);
   project=await getProject(pool,id);assert.equal(project.status,'following');assert.equal(project.revision,8);

@@ -52,8 +52,18 @@ export interface ProjectRequest {
     confirmedRequirements: Record<string, unknown>;
   };
   unresolvedQuestions?: string[];
-  matchingSummary?: Record<string, unknown>;
+  matchingSummary?: MatchingSummary;
   legacyIncomplete?: boolean;
+}
+export interface MatchingSummary {
+  matchType: 'direct' | 'random' | 'reference' | 'unmatched';
+  differences: {
+    actual: string;
+    field: string;
+    reason: string;
+    requested: string;
+  }[];
+  pendingConfirmations: { field?: string; message: string; type: string }[];
 }
 export interface Asset {
   versionId: string;
@@ -128,6 +138,9 @@ export interface ProjectEvent {
   id: string;
   kind: string;
   actorName: null | string;
+  /** 分配类事件中的承接人与原承接人名称 */
+  assigneeName: null | string;
+  fromAssigneeName: null | string;
   payload: Record<string, unknown>;
   createdAt: string;
 }
@@ -174,6 +187,10 @@ export interface Quotation {
 export interface ProjectDetail extends Project {
   events: PageResult<ProjectEvent>;
   quotation: null | Quotation;
+  /** 追加跟进可选的目标状态；终态只含重开后的 following */
+  statusTransitions: ProjectStatus[];
+  /** 确认条件中字典项 ID → 名称 */
+  requirementOptionLabels: Record<string, string>;
 }
 export interface Change {
   requestKey: string;

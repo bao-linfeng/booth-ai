@@ -310,3 +310,11 @@ export async function ensureDictionaryItems(client: pg.Pool | pg.PoolClient, dic
   }
   return created;
 }
+
+/** 按字典项 ID 取名称（含已停用项），用于回显历史快照中保存的条件。 */
+export async function dictionaryItemLabels(db: pg.Pool | pg.PoolClient, ids: string[]): Promise<Record<string, string>> {
+  if (!ids.length) return {};
+  const result = await db.query<{ id: string; label: string }>(
+    'SELECT id::text AS id, item_label AS label FROM dictionary_items WHERE id::text = ANY($1::text[])', [ids]);
+  return Object.fromEntries(result.rows.map(row => [row.id, row.label]));
+}

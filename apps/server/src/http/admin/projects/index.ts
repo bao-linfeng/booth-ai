@@ -3,8 +3,8 @@ import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import type { createStorage } from '../../../infra/storage.js';
 import { adminUserId } from '../../authentication.js';
-import { assignProject,followUpProject,linkProjectScheme,quotationRevision,saveQuotation,saveAssignmentConfig,type AssignmentInput,type FollowUpInput,type SchemeLinkInput,type AssignmentConfigInput } from '../../../modules/projects/admin-service.js';
-import { getProject,listProjects,projectEvents,type ProjectQuery } from '../../../modules/projects/repository.js';
+import { assignProject,followUpProject,linkProjectScheme,quotationRevision,saveQuotation,saveAssignmentConfig,statusTransitions,type AssignmentInput,type FollowUpInput,type SchemeLinkInput,type AssignmentConfigInput } from '../../../modules/projects/admin-service.js';
+import { getProject,listProjects,projectEvents,requirementOptionLabels,type ProjectQuery } from '../../../modules/projects/repository.js';
 import { quotationWorkbook } from '../../../modules/projects/quotation-workbook.js';
 import { projectError } from '../../../modules/projects/domain.js';
 import type { QuotationInput } from '../../../modules/projects/quotation.js';
@@ -22,7 +22,9 @@ export async function registerAdminProjectRoutes(app:FastifyInstance,pool:pg.Poo
     routes.get<{Querystring:ProjectQuery}>('/projects',{schema:{querystring:{type:'object',additionalProperties:false,properties:{...queryProperties,city:{type:'string',maxLength:100},customerName:{type:'string',maxLength:200},customerUserId:uuid,assigneeAdminId:uuid,
       exhibitionStartFrom:{type:'string',format:'date'},exhibitionStartTo:{type:'string',format:'date'}}}}},async request=>({code:0,data:await listProjects(pool,request.query)}));
     routes.get<{Params:{projectId:string}}>('/projects/:projectId',{schema:{params:projectParams}},async request=>{
-      const project=await getProject(pool,request.params.projectId);return {code:0,data:{...project,events:await projectEvents(pool,project.projectId),quotation:await quotationRevision(pool,project.projectId)}};
+      const project=await getProject(pool,request.params.projectId);
+      return {code:0,data:{...project,statusTransitions:statusTransitions(project.status),requirementOptionLabels:await requirementOptionLabels(pool,project.request),
+        events:await projectEvents(pool,project.projectId),quotation:await quotationRevision(pool,project.projectId)}};
     });
     routes.get<{Params:{projectId:string};Querystring:{page:number;pageSize:number}}>('/projects/:projectId/events',{schema:{params:projectParams,querystring:{type:'object',additionalProperties:false,properties:{page:queryProperties.page,pageSize:queryProperties.pageSize}}}},async request=>{
       await getProject(pool,request.params.projectId);return {code:0,data:await projectEvents(pool,request.params.projectId,request.query.page,request.query.pageSize)};

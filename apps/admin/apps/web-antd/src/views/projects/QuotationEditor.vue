@@ -303,18 +303,19 @@ const columns = [
 <template>
   <Card title="人工报价 / 不可变修订" class="mt-5">
     <div class="mb-5 flex flex-wrap items-center gap-3">
-      <Tag>{{ viewingHistory ? '历史报价' : '当前编辑' }}</Tag
-      ><span v-if="displayed"
-        >{{ displayed.quotationNo }} · 修订 {{ displayed.revision }} ·
-        {{ formatDateTime(displayed.createdAt) }}</span
-      >
+      <Tag>{{ viewingHistory ? '历史报价' : '当前编辑' }}</Tag>
+      <span v-if="displayed">
+        {{ displayed.quotationNo }} · 修订 {{ displayed.revision }} ·
+        {{ formatDateTime(displayed.createdAt) }}
+      </span>
       <InputNumber
         v-model:value="history"
         :min="1"
         :precision="0"
         placeholder="历史修订"
-      /><Button @click="loadHistory">读取历史</Button
-      ><Button @click="reset">放弃草稿 / 回到当前</Button>
+      />
+      <Button @click="loadHistory">读取历史</Button>
+      <Button @click="reset">放弃草稿 / 回到当前</Button>
       <Button
         v-access:code="['projects.quotation-download']"
         :disabled="!displayed || displayed.completeness !== 'ready'"
@@ -331,8 +332,9 @@ const columns = [
           :disabled="terminal || viewingHistory"
           @click="copyBom"
         >
-          从项目清单快照复制材料 </Button
-        ><Button
+          从项目清单快照复制材料
+        </Button>
+        <Button
           v-access:code="['projects.quotation']"
           :disabled="terminal || viewingHistory"
           @click="add"

@@ -20,4 +20,18 @@ export const REASON_MESSAGES: Record<string, string> = {
   PROVIDER_IN_USE: '供应商下仍有模型，请先删除模型',
   PURPOSE_UNSUPPORTED: '所选模型不能用于该用途',
   REVISION_CONFLICT: '配置已被他人修改，请刷新后重试',
+  // 项目跟进与报价
+  ASSIGNMENT_CONFIG_CHANGED: '默认承接人配置已被他人修改，请刷新后重试',
+  INVALID_ASSIGNEE: '所选人员不能承接项目：账号已停用或缺少项目查看/跟进权限',
+  INVALID_STATUS_TRANSITION:
+    '当前项目状态不允许该操作或目标状态，项目可能已被他人更新，请刷新后重新选择',
+  OUTCOME_REQUIRED: '变更为已成交、未成交或已关闭时需填写结果或原因',
+  PROJECT_REVISION_CHANGED: '项目已被他人更新，请刷新项目后重新提交',
+  QUOTATION_REVISION_CHANGED: '报价已有更新的修订，请刷新比较后再保存',
+  QUOTE_EVIDENCE_INVALID:
+    '该平台报价修订不能作为发送依据：需为完整修订，发送时间不早于修订创建时间且在报价有效期内',
+  QUOTE_EVIDENCE_REQUIRED:
+    '变更为已报价需填写发送依据：发送时间、发送渠道，外部报价还需填写编号或说明',
+  SCHEME_ALREADY_LINKED: '项目已关联方案，无需重复确认',
+  SCHEME_UNAVAILABLE: '方案不存在或尚未就绪（需已发布、清单已核验且资产齐全）',
 };

@@ -1,27 +1,42 @@
 <script setup lang="ts">
-import type {
-  FollowUp,
-  ProjectDetail,
-  ProjectStatus,
-} from '#/api/core/projects';
+import type { VbenFormSchema } from '#/adapter/form';
+import type { ProjectDetail, ProjectStatus } from '#/api/core/projects';
 
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
+import { formatDateTime } from '@vben/utils';
 
-import { message } from 'ant-design-vue';
+import { Alert, Button, message } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import {
   assignProjectApi,
   followUpApi,
   getAssigneesApi,
+  getProjectApi,
   linkSchemeApi,
   statusLabels,
 } from '#/api/core/projects';
+
+import { buildFollowUp } from './follow-up';
+import {
+  contactMethodLabels,
+  failureReason,
+  operationFailureMessage,
+  outcomeLabels,
+  terminalStatuses,
+} from './presentation';
+
 const emit = defineEmits<{ reload: [] }>();
 const project = ref<ProjectDetail>();
 const mode = ref<'assignment' | 'follow-up' | 'scheme'>('follow-up');
+const failure = ref('');
+const conflict = ref(false);
+const refreshing = ref(false);
+const terminal = computed(
+  () => !!project.value && terminalStatuses.includes(project.value.status),
+);
 let key = '';
 let fingerprint = '';
 const [Form, formApi] = useVbenForm({
@@ -36,6 +51,8 @@ const [Form, formApi] = useVbenForm({
       key = crypto.randomUUID();
       fingerprint = payload;
     }
+    failure.value = '';
+    conflict.value = false;
     modalApi.setState({ confirmLoading: true });
     try {
       const change = { requestKey: key, expectedRevision: record.revision };
@@ -51,51 +68,20 @@ const [Form, formApi] = useVbenForm({
           schemeCode: String(values.schemeCode),
           confirmationNote: String(values.confirmationNote),
         });
-      else {
-        const input: FollowUp = {
-          ...change,
-          contactMethod: String(values.contactMethod),
-          contactedAt: new Date(String(values.contactedAt)).toISOString(),
-          content: String(values.content),
-        };
-        if (values.targetStatus)
-          input.targetStatus = values.targetStatus as ProjectStatus;
-        if (values.nextFollowUpAt)
-          input.nextFollowUpAt = new Date(
-            String(values.nextFollowUpAt),
-          ).toISOString();
-        if (values.outcome) input.outcome = String(values.outcome);
-        if (values.reopenReason)
-          input.reopenReason = String(values.reopenReason);
-        if (values.publicResult !== undefined && values.publicResult !== null)
-          input.publicResult = String(values.publicResult);
-        if (input.targetStatus === 'quoted') {
-          const sentAt = new Date(String(values.sentAt)).toISOString();
-          const channel = String(values.channel);
-          input.quoteEvidence =
-            values.evidenceType === 'platform'
-              ? {
-                  type: 'platform',
-                  quotationRevision: Number(values.quotationRevision),
-                  sentAt,
-                  channel,
-                }
-              : {
-                  type: 'external_manual',
-                  reference: String(values.reference ?? ''),
-                  sentAt,
-                  channel,
-                };
-        }
-        await followUpApi(record.projectId, input);
-      }
+      else
+        await followUpApi(
+          record.projectId,
+          buildFollowUp(record, values, change),
+        );
       message.success('项目记录已保存');
       modalApi.close();
       emit('reload');
-    } catch {
-      message.error(
-        '保存未确认。草稿已保留；如项目已更新，请刷新比较后重新操作。',
-      );
+    } catch (error) {
+      const reason = failureReason(error);
+      failure.value = operationFailureMessage(error);
+      conflict.value =
+        reason === 'PROJECT_REVISION_CHANGED' ||
+        reason === 'INVALID_STATUS_TRANSITION';
     } finally {
       modalApi.setState({ confirmLoading: false });
     }
@@ -109,11 +95,196 @@ const [Modal, modalApi] = useVbenModal({
     modalApi.close();
   },
 });
+
+function statusOptions(record: ProjectDetail) {
+  const reopening = terminalStatuses.includes(record.status);
+  return record.statusTransitions.map((status) => ({
+    value: status,
+    label: reopening
+      ? `重开为「${statusLabels[status]}」`
+      : statusLabels[status],
+  }));
+}
+
+function quotationHelp(record: ProjectDetail) {
+  const quotation = record.quotation;
+  if (!quotation) return '项目还没有平台报价修订，只能登记外部人工报价。';
+  return quotation.completeness === 'ready'
+    ? `最新修订 r${quotation.revision}，有效期至 ${quotation.validUntil}。`
+    : `最新修订 r${quotation.revision} 未填写完整，不能作为发送依据；请选择更早的完整修订或先补全报价。`;
+}
+
+function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
+  const target = (values: Record<string, unknown>) =>
+    values.targetStatus as ProjectStatus | undefined;
+  const quoted = (values: Record<string, unknown>) =>
+    target(values) === 'quoted';
+  return [
+    {
+      component: 'Select',
+      fieldName: 'contactMethod',
+      label: '联系类型',
+      rules: 'selectRequired',
+      componentProps: {
+        options: Object.entries(contactMethodLabels).map(([value, label]) => ({
+          value,
+          label,
+        })),
+      },
+    },
+    {
+      component: 'DatePicker',
+      fieldName: 'contactedAt',
+      label: '联系时间',
+      rules: 'required',
+      componentProps: { showTime: true, valueFormat: 'YYYY-MM-DDTHH:mm:ssZ' },
+    },
+    {
+      component: 'Textarea',
+      fieldName: 'content',
+      label: '内部跟进内容',
+      rules: 'required',
+      componentProps: { rows: 4, maxlength: 5000 },
+    },
+    {
+      component: 'DatePicker',
+      fieldName: 'nextFollowUpAt',
+      label: '下次跟进',
+      componentProps: { showTime: true, valueFormat: 'YYYY-MM-DDTHH:mm:ssZ' },
+    },
+    {
+      component: 'Select',
+      fieldName: 'targetStatus',
+      label: terminalStatuses.includes(record.status) ? '重开项目' : '变更状态',
+      help: terminalStatuses.includes(record.status)
+        ? '项目已结束：不选择即仅追加说明；需要继续跟进时重开并填写原因。'
+        : undefined,
+      componentProps: {
+        allowClear: true,
+        placeholder: `保持「${statusLabels[record.status]}」`,
+        options: statusOptions(record),
+      },
+    },
+    {
+      component: 'Textarea',
+      fieldName: 'outcome',
+      label: '结果 / 原因',
+      componentProps: { rows: 2, maxlength: 5000 },
+      dependencies: {
+        triggerFields: ['targetStatus'],
+        resolve: ({ values }) => {
+          const status = target(values);
+          const label = status && outcomeLabels[status];
+          return {
+            show: !!label,
+            rules: 'required',
+            componentProps: label ? { placeholder: `填写${label}` } : {},
+          };
+        },
+      },
+    },
+    {
+      component: 'Textarea',
+      fieldName: 'reopenReason',
+      label: '重开原因',
+      componentProps: { rows: 2, maxlength: 2000 },
+      dependencies: {
+        triggerFields: ['targetStatus'],
+        resolve: ({ values }) => ({
+          show:
+            terminalStatuses.includes(record.status) &&
+            target(values) === 'following',
+          rules: 'required',
+        }),
+      },
+    },
+    {
+      component: 'RadioGroup',
+      fieldName: 'evidenceType',
+      label: '报价依据',
+      componentProps: {
+        optionType: 'button',
+        options: [
+          {
+            value: 'platform',
+            label: '平台报价修订',
+            disabled: !record.quotation,
+          },
+          { value: 'external_manual', label: '外部人工报价' },
+        ],
+      },
+      dependencies: {
+        triggerFields: ['targetStatus'],
+        resolve: ({ values }) => ({
+          show: quoted(values),
+          rules: 'selectRequired',
+        }),
+      },
+    },
+    {
+      component: 'InputNumber',
+      fieldName: 'quotationRevision',
+      label: '已发送的报价修订',
+      help: quotationHelp(record),
+      componentProps: { min: 1, precision: 0, addonBefore: 'r' },
+      dependencies: {
+        triggerFields: ['targetStatus', 'evidenceType'],
+        resolve: ({ values }) => ({
+          show: quoted(values) && values.evidenceType === 'platform',
+          rules: 'required',
+        }),
+      },
+    },
+    {
+      component: 'Input',
+      fieldName: 'reference',
+      label: '外部报价编号 / 说明',
+      componentProps: { maxlength: 500 },
+      dependencies: {
+        triggerFields: ['targetStatus', 'evidenceType'],
+        resolve: ({ values }) => ({
+          show: quoted(values) && values.evidenceType === 'external_manual',
+          rules: 'required',
+        }),
+      },
+    },
+    {
+      component: 'DatePicker',
+      fieldName: 'sentAt',
+      label: '报价发送时间',
+      componentProps: { showTime: true, valueFormat: 'YYYY-MM-DDTHH:mm:ssZ' },
+      dependencies: {
+        triggerFields: ['targetStatus'],
+        resolve: ({ values }) => ({ show: quoted(values), rules: 'required' }),
+      },
+    },
+    {
+      component: 'Input',
+      fieldName: 'channel',
+      label: '报价发送渠道',
+      componentProps: { maxlength: 100, placeholder: '如：邮件、微信' },
+      dependencies: {
+        triggerFields: ['targetStatus'],
+        resolve: ({ values }) => ({ show: quoted(values), rules: 'required' }),
+      },
+    },
+    {
+      component: 'Textarea',
+      fieldName: 'publicResult',
+      label: '客户可见结果',
+      help: '修改后提交即对客户公开；不修改则保持当前公开内容。',
+      componentProps: { rows: 2, maxlength: 5000 },
+    },
+  ];
+}
+
 async function open(record: ProjectDetail, operation: typeof mode.value) {
   project.value = record;
   mode.value = operation;
   key = '';
   fingerprint = '';
+  failure.value = '';
+  conflict.value = false;
   modalApi.setState({
     title: {
       assignment: '改派承接人',
@@ -132,7 +303,7 @@ async function open(record: ProjectDetail, operation: typeof mode.value) {
           component: 'Select',
           fieldName: 'assigneeAdminId',
           label: '承接管理员',
-          rules: 'required',
+          rules: 'selectRequired',
           componentProps: {
             options: admins.map((admin) => ({
               value: admin.id,
@@ -169,134 +340,73 @@ async function open(record: ProjectDetail, operation: typeof mode.value) {
       ],
     });
   } else {
-    formApi.setState({
-      schema: [
-        {
-          component: 'Select',
-          fieldName: 'contactMethod',
-          label: '联系类型',
-          rules: 'required',
-          componentProps: {
-            options: [
-              { value: 'phone', label: '电话' },
-              { value: 'email', label: '邮件' },
-              { value: 'customer_service', label: '客服' },
-              { value: 'meeting', label: '会议' },
-              { value: 'other', label: '其他' },
-            ],
-          },
-        },
-        {
-          component: 'DatePicker',
-          fieldName: 'contactedAt',
-          label: '联系时间',
-          rules: 'required',
-          componentProps: {
-            showTime: true,
-            valueFormat: 'YYYY-MM-DDTHH:mm:ssZ',
-          },
-        },
-        {
-          component: 'Textarea',
-          fieldName: 'content',
-          label: '内部跟进内容',
-          rules: 'required',
-          componentProps: { rows: 4, maxlength: 5000 },
-        },
-        {
-          component: 'DatePicker',
-          fieldName: 'nextFollowUpAt',
-          label: '下次跟进',
-          componentProps: {
-            showTime: true,
-            valueFormat: 'YYYY-MM-DDTHH:mm:ssZ',
-          },
-        },
-        {
-          component: 'Select',
-          fieldName: 'targetStatus',
-          label: '目标状态（选填）',
-          componentProps: {
-            allowClear: true,
-            options: Object.entries(statusLabels).map(([value, label]) => ({
-              value,
-              label,
-            })),
-          },
-        },
-        {
-          component: 'Textarea',
-          fieldName: 'outcome',
-          label: '成交结果 / 未成交或关闭原因',
-          componentProps: { rows: 2, maxlength: 5000 },
-        },
-        {
-          component: 'Textarea',
-          fieldName: 'reopenReason',
-          label: '终态重开原因',
-          componentProps: { maxlength: 2000 },
-        },
-        {
-          component: 'Textarea',
-          fieldName: 'publicResult',
-          label: '客户可见结果（明确发布）',
-          componentProps: { rows: 2, maxlength: 5000 },
-        },
-        {
-          component: 'Select',
-          fieldName: 'evidenceType',
-          label: '已发送报价依据',
-          componentProps: {
-            options: [
-              { value: 'platform', label: '平台报价修订' },
-              { value: 'external_manual', label: '外部人工报价' },
-            ],
-          },
-        },
-        {
-          component: 'InputNumber',
-          fieldName: 'quotationRevision',
-          label: '已发送平台修订',
-          componentProps: { min: 1, precision: 0 },
-        },
-        {
-          component: 'Input',
-          fieldName: 'reference',
-          label: '外部报价编号 / 说明',
-        },
-        {
-          component: 'DatePicker',
-          fieldName: 'sentAt',
-          label: '报价发送时间',
-          componentProps: {
-            showTime: true,
-            valueFormat: 'YYYY-MM-DDTHH:mm:ssZ',
-          },
-        },
-        { component: 'Input', fieldName: 'channel', label: '报价发送渠道' },
-      ],
-    });
+    formApi.setState({ schema: followUpSchema(record) });
     await formApi.setValues({
       contactMethod: 'phone',
       contactedAt: new Date().toISOString(),
       publicResult: record.publicResult ?? '',
-      evidenceType: 'platform',
+      evidenceType:
+        record.quotation?.completeness === 'ready'
+          ? 'platform'
+          : 'external_manual',
       quotationRevision: record.quotation?.revision,
       sentAt: new Date().toISOString(),
-      channel: 'email',
+      channel: '邮件',
     });
+  }
+}
+
+/** 版本冲突后载入最新修订：保留已填内容，只更新与状态相关的选项。 */
+async function loadLatest() {
+  if (!project.value) return;
+  refreshing.value = true;
+  try {
+    const latest = await getProjectApi(project.value.projectId);
+    project.value = latest;
+    key = '';
+    fingerprint = '';
+    failure.value = '';
+    conflict.value = false;
+    if (mode.value === 'follow-up') {
+      const values = await formApi.getValues();
+      formApi.setState({ schema: followUpSchema(latest) });
+      if (
+        values.targetStatus &&
+        !latest.statusTransitions.includes(values.targetStatus as ProjectStatus)
+      )
+        await formApi.setFieldValue('targetStatus', undefined);
+    }
+    emit('reload');
+  } finally {
+    refreshing.value = false;
   }
 }
 defineExpose({ open });
 </script>
 <template>
   <Modal class="w-[720px]">
-    <p class="mb-4 text-sm text-muted-foreground">
-      项目修订
-      {{
-        project?.revision
-      }}。终态仅可追加说明或填写原因重开；已报价需填写发送依据。
+    <p v-if="project" class="mb-4 text-sm text-muted-foreground">
+      当前状态「{{ statusLabels[project.status] }}」 · 修订 r{{
+        project.revision
+      }}
+      · 更新于 {{ formatDateTime(project.updatedAt) }}
+      <template v-if="mode === 'follow-up' && terminal">
+        · 项目已结束，可追加说明或重开
+      </template>
     </p>
+    <Alert
+      v-if="failure"
+      class="mb-4"
+      type="error"
+      show-icon
+      :message="failure"
+    >
+      <template v-if="conflict" #action>
+        <Button size="small" :loading="refreshing" @click="loadLatest">
+          载入最新修订
+        </Button>
+      </template>
+    </Alert>
     <Form />
   </Modal>
 </template>

@@ -5,6 +5,7 @@ import { digest, normalizeQuote, type QuoteInput } from '../src/modules/projects
 import { resolvePrincipal } from '../src/modules/identity/principal.js';
 import { registerQuoteRequestRoutes } from '../src/http/client/quote-requests/index.js';
 import { configuredAssignee } from '../src/modules/projects/assignment.js';
+import { statusTransitions } from '../src/modules/projects/admin-service.js';
 import Fastify from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
@@ -56,4 +57,9 @@ test('quote route requires a claim email and own theme results from visitors, an
 });
 test('missing default assignee blocks acceptance rather than returning a phantom project', async () => {
   await assert.rejects(configuredAssignee({ query: async () => ({ rows: [] }) } as unknown as pg.PoolClient),{ statusCode: 503, reason: 'ASSIGNMENT_UNAVAILABLE' });
+});
+test('status transitions follow the follow-up rules and only allow reopening from terminal states', () => {
+  assert.deepEqual(statusTransitions('pending'),['following','closed']);
+  assert.deepEqual(statusTransitions('quoted'),['following','won','lost','closed']);
+  for (const status of ['won','lost','closed'] as const) assert.deepEqual(statusTransitions(status),['following']);
 });
