@@ -1,1 +1,2 @@
-// A6 客服会话上下文 — /api/v1/client/customer-service
+// 需求：A6 客服会话上下文 — /api/v1/client/customer-service；审查项：docs/项目三端业务流程与优化审查.md B-02。
+// 状态：未实现、未注册路由；客服供应商与接入参数待确认，尚未接入携带授权方案/项目上下文的会话入口。

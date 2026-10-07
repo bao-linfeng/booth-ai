@@ -1,1 +1,2 @@
-// B4 复核 SU 导出资料 — /api/v1/admin/su-exports
+// 需求：B4 后台复核 SU 导出资料 — /api/v1/admin/su-exports；审查项：docs/项目三端业务流程与优化审查.md §4.2。
+// 状态：未实现、未注册路由；依赖 S2 SU 导出提交与回传契约确认。

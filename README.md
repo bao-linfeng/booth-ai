@@ -13,7 +13,7 @@ AI 驱动的展台方案选型与询价交接平台，面向参展商提供公�
 | 功能 | 当前能力 | 页面入口 |
 | --- | --- | --- |
 | AI 智选 | 自然语言解析需求、确认结构化条件、匹配已审核公开方案；模型解析失败时规则降级 | `/`、`/ai-selection` |
-| 方案详情 | 查看规格、效果图、资料状态及适用条件 | `/schemes/:code` |
+| 方案详情 | 查看规格、效果图及资料状态 | `/schemes/:code` |
 | 品牌主题调整 | 选择模型、确认积分费用、提交生成任务、查看进度与结果、选定主题结果 | `/schemes/:code/theme`、`/theme-jobs/:jobId` |
 | 四面素材生成 | 基于选定主题生成四个方向的素材，查看任务与交付状态、单图及 ZIP 下载 | `/schemes/:code/artwork`、`/artwork-jobs/:jobId` |
 | 方案资料 | 查看已核验简化清单、导出 Excel；查看和下载报馆图、平面素材及模型文件 | 方案详情页 |
@@ -29,7 +29,7 @@ AI 驱动的展台方案选型与询价交接平台，面向参展商提供公�
 
 | 模块 | 当前能力 |
 | --- | --- |
-| 方案管理 | 列表、创建与编辑、批量导入预览及确认、适用条件、审核就绪检查、审核、发布与下架；仅修改内部备注（notes）不触发下架与版本重置 |
+| 方案管理 | 列表、创建与编辑、批量导入预览及确认、审核就绪检查、审核、发布与下架；仅修改内部备注（notes）不触发下架与版本重置 |
 | 资源管理 | 效果图、蒙版、报馆图、平面素材；上传、元数据维护、版本替换、预览与下载 |
 | 清单管理 | Excel 导入、预览与确认、条目维护、版本校验、核验与下载 |
 | AI 智选运营 | 检索记录、访客信息、趋势与统计 |
@@ -38,7 +38,7 @@ AI 驱动的展台方案选型与询价交接平台，面向参展商提供公�
 | 消息通知 | 项目通知收件箱、详情、单条及全部标记已读 |
 | 用户与积分 | 本地同步用户和管理员查询、积分流水、充值与余额查询 |
 | 角色授权 | 同步灵通角色 ID / 名称，在本系统配置页面与操作权限，控制菜单、路由、按钮及服务端接口 |
-| 系统配置 | 字典、适用条件问题、提示词模板与预览、AI 供应商 / 模型 / 用途分配 |
+| 系统配置 | 字典、提示词模板与预览、AI 供应商 / 模型 / 用途分配 |
 
 ## 技术栈与仓库结构
 
@@ -190,7 +190,7 @@ pnpm dev:antd
 | 通知 | `GET /project-notifications`、`GET /project-notifications/:id`；`POST /project-notifications/:id/read`、`POST /project-notifications/read-all` | 收件箱、详情与已读管理 |
 | AI 配置 | `GET /ai-protocols`；供应商 `/ai-providers`、模型 `/ai-models` 的维护接口；`GET /ai-model-assignments`、`PUT /ai-model-assignments/:purpose` | 协议能力、供应商与模型、用途主备及积分配置 |
 | 提示词 | `GET /prompt-templates/definitions`、`POST /prompt-templates/preview`；`GET /prompt-templates`、`POST /prompt-templates`、`GET /prompt-templates/:id`、`PATCH /prompt-templates/:id` | 变量定义、预览、模板维护与启停 |
-| 系统数据 | `/dictionaries` 及条目维护接口、`/applicability-questions` 维护接口；`GET /audit-logs` | 字典、适用条件问题与审计查询 |
+| 系统数据 | `/dictionaries` 及条目维护接口；`GET /audit-logs` | 字典与审计查询 |
 
 当前 `src/app.ts` 注册 client 和 admin 门户；`src/http/su/` 目录尚未注册为可用 API。
 

@@ -68,7 +68,7 @@ apps/web-antd/src/
 ├── adapter/      # 适配 vben 框架的 form、vxe-table 配置
 ├── router/       # 路由：routes/modules/ 下按业务拆分，access.ts 控制权限路由
 ├── store/        # 应用级 Pinia store（auth.ts 管登录态）
-├── views/        # 页面组件（_core/ 为框架核心页，dashboard/、demos/ 为业务页）
+├── views/        # 页面组件（_core/ 为框架核心页，其余按业务模块组织）
 ├── layouts/      # 布局覆写
 ├── locales/      # 应用级 i18n
 └── preferences.ts # 应用偏好覆写（覆盖 @vben/preferences 默认值）

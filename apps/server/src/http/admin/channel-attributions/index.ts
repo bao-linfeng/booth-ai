@@ -1,1 +1,2 @@
-// B6 渠道归属 — /api/v1/admin/channel-attributions
+// 需求：B6 渠道归属 — /api/v1/admin/channel-attributions；审查项：docs/项目三端业务流程与优化审查.md §4.3。
+// 状态：未实现、未注册路由；需求书 §2.2 排除一期复杂渠道归属，SU 来源接入范围待确认，当前项目默认公开入口。
