@@ -10,7 +10,12 @@ import { assertProjectAdmin } from '../src/modules/projects/admin-service.js';
 import { configuredAssignee } from '../src/modules/projects/assignment.js';
 import { projectTestPool } from './project-fixtures.js';
 
-test('060 seeds the original grants and 061 migrates them to page actions without changing the role ID',
+// 061 只授予编写时已有的权限；之后新增的权限码由追加迁移补授给 ROLE_ADMIN（如 072）。
+// 新增权限码时必须追加补授迁移，否则下方“执行全部迁移后 ROLE_ADMIN 拥有全部权限”的断言会失败。
+const introducedAfter061 = ['credits.sign_in_config'];
+const grantedBy061 = allPermissionCodes.filter(code => !introducedAfter061.includes(code));
+
+test('060 seeds the original grants, 061 migrates them to page actions and 072 grants later permissions without changing the role ID',
   { skip: !process.env.PROJECT_TEST_DATABASE_URL }, async t => {
     for (const existingId of [undefined, 5, 42]) {
       await t.test(existingId === undefined ? 'first installation' : `existing role ${existingId}`, async t => {
@@ -33,10 +38,18 @@ test('060 seeds the original grants and 061 migrates them to page actions withou
         await pool.query(await readFile(new URL('../migrations/061_page_action_permissions.sql', import.meta.url), 'utf8'));
         const migrated = await getAdminRole(pool, existingId ?? 5);
         const historicalQuestionPermissions = ['create', 'delete', 'disable', 'enable', 'read', 'update'].map(action => `questions.${action}`);
-        assert.deepEqual([...migrated.permissionCodes].sort(), [...allPermissionCodes, ...historicalQuestionPermissions].sort());
+        assert.deepEqual([...migrated.permissionCodes].sort(), [...grantedBy061, ...historicalQuestionPermissions].sort());
         assert.equal(migrated.revision, role.revision + 1);
         assert.equal((await pool.query('SELECT count(*)::int AS count FROM admin_roles')).rows[0].count, 1);
-        assert.deepEqual((await resolveAdminPermissions(pool, ['ROLE_ADMIN'])).sort(), [...allPermissionCodes].sort());
+        assert.deepEqual((await resolveAdminPermissions(pool, ['ROLE_ADMIN'])).sort(), [...grantedBy061].sort());
+
+        const grant = await readFile(new URL('../migrations/072_grant_sign_in_config_to_admin.sql', import.meta.url), 'utf8');
+        await pool.query(grant);
+        const granted = await getAdminRole(pool, existingId ?? 5);
+        assert.deepEqual([...granted.permissionCodes].sort(), [...allPermissionCodes, ...historicalQuestionPermissions].sort());
+        assert.equal(granted.revision, migrated.revision + 1);
+        await pool.query(grant);
+        assert.equal((await getAdminRole(pool, existingId ?? 5)).revision, granted.revision);
       });
     }
   });

@@ -20,6 +20,7 @@
     "build:analyze": "pnpm vite build --mode analyze",
     "dev": "pnpm vite --mode development",
     "preview": "vite preview",
+    "test": "vitest run --dom --root ../.. apps/web-antd/src",
     "typecheck": "vue-tsc --noEmit --skipLibCheck"
   },
   "imports": {

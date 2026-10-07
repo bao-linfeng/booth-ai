@@ -13,7 +13,6 @@ import {
   Card,
   Descriptions,
   DescriptionsItem,
-  Pagination,
   Tag,
   Timeline,
   TimelineItem,
@@ -23,7 +22,6 @@ import {
   assetDownloadApi,
   assigneeStatusLabels,
   getProjectApi,
-  projectEventsApi,
   statusLabels,
 } from '#/api/core/projects';
 
@@ -39,7 +37,6 @@ const router = useRouter();
 const project = ref<ProjectDetail>();
 const loading = ref(false);
 const error = ref('');
-const eventsPage = ref(1);
 const operation = ref<InstanceType<typeof OperationModal>>();
 const terminal = computed(
   () =>
@@ -82,7 +79,7 @@ const pendingItems = computed(() => [
 ]);
 const timeline = computed(
   () =>
-    project.value?.events.items.map((event) => ({
+    project.value?.events.map((event) => ({
       ...event,
       ...eventSummary(event),
     })) ?? [],
@@ -92,17 +89,11 @@ async function load() {
   error.value = '';
   try {
     project.value = await getProjectApi(String(route.params.projectId));
-    eventsPage.value = 1;
   } catch {
     error.value = '项目读取失败，请重试。';
   } finally {
     loading.value = false;
   }
-}
-async function events(page: number) {
-  if (!project.value) return;
-  project.value.events = await projectEventsApi(project.value.projectId, page);
-  eventsPage.value = page;
 }
 async function download(version: string) {
   if (!project.value) return;
@@ -112,8 +103,8 @@ async function download(version: string) {
 onMounted(load);
 </script>
 <template>
-  <Page title="项目工作区">
-    <Button class="mb-4" @click="router.push('/projects')">
+  <Page title="项目工作区" content-class="flex flex-col gap-5">
+    <Button class="self-start" @click="router.push('/projects')">
       返回项目列表
     </Button>
     <p v-if="loading">正在加载项目…</p>
@@ -124,7 +115,6 @@ onMounted(load);
     <template v-if="project">
       <Alert
         v-if="project.assigneeStatus !== 'active'"
-        class="mb-4"
         type="warning"
         show-icon
         :message="`承接人${assigneeStatusLabels[project.assigneeStatus]} · ${project.assigneeName}`"
@@ -295,7 +285,7 @@ onMounted(load);
         </div>
       </Card>
       <QuotationEditor :project="project" @reload="load" />
-      <Card title="项目时间线" class="mt-5">
+      <Card title="项目时间线">
         <Timeline>
           <TimelineItem
             v-for="item in timeline"
@@ -322,12 +312,6 @@ onMounted(load);
             </dl>
           </TimelineItem>
         </Timeline>
-        <Pagination
-          :current="eventsPage"
-          :total="project.events.total"
-          :page-size="20"
-          @change="events"
-        />
       </Card>
     </template>
     <OperationModal ref="operation" @reload="load" />

@@ -301,7 +301,7 @@ const columns = [
 ];
 </script>
 <template>
-  <Card title="人工报价 / 不可变修订" class="mt-5">
+  <Card title="人工报价 / 不可变修订">
     <div class="mb-5 flex flex-wrap items-center gap-3">
       <Tag>{{ viewingHistory ? '历史报价' : '当前编辑' }}</Tag>
       <span v-if="displayed">
@@ -324,7 +324,10 @@ const columns = [
         导出已存修订 {{ displayed?.revision }}
       </Button>
     </div>
-    <fieldset :disabled="!canEdit || saving || terminal || viewingHistory">
+    <fieldset
+      class="min-w-0"
+      :disabled="!canEdit || saving || terminal || viewingHistory"
+    >
       <Form />
       <div class="my-4 flex gap-3">
         <Button

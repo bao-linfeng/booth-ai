@@ -45,8 +45,9 @@ pnpm check:type            # turbo run typecheck（全部包）
 pnpm check                 # check:circular → check:dep → check:type → check:cspell
 
 # 测试
-pnpm test:unit             # vitest run --dom（happy-dom 环境）
-pnpm vitest run <path/to/test.ts>  # 单文件
+pnpm test:antd             # 只跑 web-antd 业务测试（apps/web-antd/src 下的 *.test.ts）
+pnpm test:unit             # vitest run --dom（全部包，含框架层）
+pnpm vitest run --dom <path/to/test.ts>  # 单文件
 
 # 格式化 / 代码质量
 pnpm lint                  # vsh lint（eslint + oxlint）
@@ -191,6 +192,12 @@ views/<module>/list/
 
 参考：`views/scheme/list/index.vue`、`views/scheme/list/options.ts` 以及该目录下的 `components/SchemeFormModal.vue`、`SchemeDetailModal.vue`、`SchemeImportModal.vue`。
 
+### 业务测试
+
+- **检查流程**：改动 `apps/web-antd/src` 后依次跑 `pnpm -F @vben/web-antd run typecheck`、`pnpm test:antd`，两者都通过才算完成。
+- 组件测试与被测组件同目录放在 `__tests__/`。Vben 表单/弹窗与 ant-design-vue 用替身隔离，业务逻辑（请求幂等键、`expectedRevision`、Schema `dependencies`、只读/权限守卫）保持真实；项目模块的替身见 `views/projects/__tests__/fake-vben.ts`。
+- 组件新增 `useAccess`、store 等依赖时须同步更新其测试的 mock，否则测试会因缺少 Pinia 等运行环境直接失败。
+
 ### 环境变量（web-antd）
 
 - `.env`：`VITE_APP_TITLE`、`VITE_APP_NAMESPACE`、`VITE_APP_STORE_SECURE_KEY`（**必须替换默认值**）
@@ -209,8 +216,11 @@ views/<module>/list/
 
 ### 提交规范
 
-- pre-commit hooks（lefthook）顺序执行：oxlint → oxfmt → eslint → stylelint → check:type（**串行，低配机会慢**）
-- commit message 必须符合 conventional commits，由 commitlint 校验
+- Git hooks 统一配置在仓库根目录 `lefthook.yml`（lefthook 只读取根目录配置，本目录不要再放 `lefthook.yml`）；`pnpm install` 的 prepare 脚本负责安装。admin 相关：
+  - pre-commit（串行）：暂存文件 oxlint → oxfmt → eslint → stylelint 自动修复并回填暂存区，再跑 `check:type`（约 20 秒）
+  - pre-push：`typecheck` + `pnpm test:antd`
+  - post-merge：`pnpm-lock.yaml` 有变化时自动 `pnpm install`
+- commit message 由 commit-msg 钩子按仓库根目录 `commitlint.config.mjs` 校验（Conventional Commits，scope 不限取值）。本目录的 `.commitlintrc.js`（vben 原配置，scope 限定为 vben 包名）只供 `pnpm commit`（czg）交互提示使用，不作为校验依据
 
 ---
 
