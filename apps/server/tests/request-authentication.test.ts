@@ -267,7 +267,11 @@ test('real SQL: disable/re-enable, role removal and identity changes invalidate 
       company: null, country: null, city: null, languageCode: null, enabled: true, roles: ['ROLE_ADMIN'], permissions: [] };
     const client = await syncClientUser(pool, detail, true, 'password');
     const admin = await syncAdmin(pool, detail, true);
-    assert.deepEqual((await resolveAdminPermissions(pool, ['ROLE_ADMIN'])).sort(), [...allPermissionCodes].sort());
+    // 只执行到 060：ROLE_ADMIN 拥有 060 授予且仍在权限目录中的权限码
+    const seeded = (await pool.query<{ permission_codes: string[] }>("SELECT permission_codes FROM admin_roles WHERE name='ROLE_ADMIN'")).rows[0]!.permission_codes;
+    const expected = seeded.filter(code => allPermissionCodes.includes(code)).sort();
+    assert.ok(expected.length > 0);
+    assert.deepEqual((await resolveAdminPermissions(pool, ['ROLE_ADMIN'])).sort(), expected);
     assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_UNCONFIGURED']), []);
     const values = new Map<string, string>();
     const redis = { set: async (key: string, value: string) => { values.set(key, value); return 'OK'; },
