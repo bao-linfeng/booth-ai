@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { getJobCreditLedger } from '../credits/management-service.js';
 import { artworkFiles } from './artwork/queries.js';
 import { DIRECTIONS, type ArtworkSnapshot } from './artwork/types.js';
 
@@ -91,7 +92,7 @@ export async function getGenerationJob(
   if (!job) return getArtworkGenerationJob(pool, jobId, storage);
 
   const input = job.input as { industryId?: string; styleId?: string };
-  const [resultRows, labelRows, sourceRows] = await Promise.all([
+  const [resultRows, labelRows, sourceRows, credits] = await Promise.all([
     pool.query<{ id: string; ordinal: number; assetId: string; objectKey: string; width: number | null; height: number | null; createdAt: Date }>(
       `SELECT r.id,r.ordinal,r.asset_id AS "assetId",v.object_key AS "objectKey",r.width,r.height,
        r.created_at AS "createdAt" FROM theme_job_results r
@@ -110,6 +111,7 @@ export async function getGenerationJob(
         LIMIT 1
       ) v ON true
       WHERE a.id = $1 AND a.is_active = true`, [job.sourceAssetId]),
+    getJobCreditLedger(pool, { kind: 'theme', id: jobId }),
   ]);
   const industryLabel = labelRows.rows.find(label => label.id === input.industryId)?.label ?? null;
   const styleLabel = labelRows.rows.find(label => label.id === input.styleId)?.label ?? null;
@@ -130,7 +132,7 @@ export async function getGenerationJob(
     return { ...result, previewUrl };
   }));
   return { ...jobMetrics(job), results, isSelected: job.selectedResultId !== null,
-    industryLabel, styleLabel, sourcePreviewUrl };
+    industryLabel, styleLabel, sourcePreviewUrl, credits };
 }
 
 async function getArtworkGenerationJob(pool: pg.Pool, jobId: string, storage?: { signDownload: (key: string, expiresIn: number) => Promise<string> } | null) {
@@ -140,14 +142,14 @@ async function getArtworkGenerationJob(pool: pg.Pool, jobId: string, storage?: {
       j.delivery_status AS "deliveryStatus",j.theme_job_id AS "themeJobId",j.theme_result_id AS "themeResultId",j.theme_selection_revision AS "themeSelectionRevision"
       FROM (SELECT a.*,false AS cache_hit FROM artwork_jobs a) j LEFT JOIN users u ON u.id=j.user_id WHERE j.id=$1`, [jobId])).rows[0];
   if (!job) throw Object.assign(new Error('Generation job not found'), { statusCode: 404, code: 'NOT_FOUND' });
-  const files = await artworkFiles(pool, jobId);
+  const [files, credits] = await Promise.all([artworkFiles(pool, jobId), getJobCreditLedger(pool, { kind: 'artwork', id: jobId })]);
   const directions = (await pool.query<{ direction: string; status: string; reason: string | null }>('SELECT direction,status,reason FROM artwork_job_directions WHERE job_id=$1 ORDER BY direction', [jobId])).rows;
   const { snapshot, ...publicJob } = job;
   return { ...jobMetrics({ ...publicJob, jobType: 'artwork' }), isSelected: false, industryLabel: null, styleLabel: null,
     sourcePreviewUrl: storage && snapshot ? await storage.signDownload(snapshot.source.objectKey, 300) : null,
     generationSnapshot: snapshot ? { model: snapshot.model, template: snapshot.template, prompt: snapshot.prompt, directionPrompts: snapshot.directionPrompts, quality: snapshot.quality, pipelineRevision: snapshot.pipelineRevision } : null,
     themeSelection: { themeJobId: job.themeJobId, resultId: job.themeResultId, selectionRevision: job.themeSelectionRevision },
-    directions, missingDirections: DIRECTIONS.filter(d => !files.some(f => f.direction === d)), mappingStatus: 'unresolved',
+    credits, directions, missingDirections: DIRECTIONS.filter(d => !files.some(f => f.direction === d)), mappingStatus: 'unresolved',
     results: await Promise.all(files.map(async (file, index) => ({ id: file.assetId, ordinal: index + 1, direction: file.direction, assetId: file.assetId,
       width: file.width, height: file.height, previewUrl: storage ? await storage.signDownload(file.objectKey, 300) : null, createdAt: job.updatedAt }))) };
 }

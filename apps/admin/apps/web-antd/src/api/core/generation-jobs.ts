@@ -47,7 +47,21 @@ export interface GenerationJob {
   durationMs: number;
 }
 
+export type CreditReservationStatus = 'released' | 'reserved' | 'settled';
+
+/** 任务的积分预占与扣费流水。 */
+export interface GenerationJobCredits {
+  reservation: null | {
+    amount: number;
+    createdAt: string;
+    status: CreditReservationStatus;
+    updatedAt: string;
+  };
+  charge: null | { amount: number; createdAt: string; id: string };
+}
+
 export interface GenerationJobDetail extends GenerationJob {
+  credits: GenerationJobCredits;
   deliveryStatus?: string;
   mappingStatus?: string;
   themeSelection?: {

@@ -15,6 +15,10 @@ export interface CreditTransaction {
   amount: number;
   note: null | string;
   operatorId: null | string;
+  operatorName: null | string;
+  /** 消费流水关联的生成任务；签到、充值为 null。 */
+  jobType: 'artwork' | 'theme' | null;
+  jobId: null | string;
   createdAt: string;
 }
 
@@ -23,6 +27,7 @@ export interface CreditListParams {
   pageSize: number;
   userId?: string;
   kind?: CreditKind;
+  jobId?: string;
 }
 
 export interface CreditListResult {

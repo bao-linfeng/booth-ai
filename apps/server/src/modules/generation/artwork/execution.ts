@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { ImageGenerationError } from '../../../infra/ai/image.js';
 import { transaction } from '../../../infra/database.js';
 import { artworkFiles, completeArtworkFiles } from './queries.js';
-import { lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../../credits/service.js';
+import { CreditInvariantError, lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../../credits/service.js';
 import { claimGeneration, publishGeneration, refreshGeneration } from '../execution.js';
 import { logger } from '../../../infra/logger.js';
 import { generateDirections } from './directions.js';
@@ -50,7 +50,7 @@ export async function settleArtworkJob(database: pg.Pool, jobId: string, lease?:
     if (lease ? job.leaseToken !== lease : job.leaseUntil && new Date(job.leaseUntil).getTime() > Date.now()) throw new ImageGenerationError('GENERATION_LEASE_BUSY', true);
     const files = await artworkFiles(client, jobId);
     const usable = files.length;
-    if (usable && job.unitCredits === null) throw new Error('Artwork price missing');
+    if (usable && job.unitCredits === null) throw new CreditInvariantError('CREDIT_JOB_PRICE_MISSING', 'Artwork price missing', { kind: 'artwork', id: jobId });
     if (usable) await settleJobCredits(client, { kind: 'artwork', id: jobId }, usable * job.unitCredits!);
     await client.query("UPDATE artwork_job_directions SET status='failed',reason=COALESCE(reason,'PROCESSING_FAILED'),generated_url=NULL WHERE job_id=$1 AND status<>'succeeded'", [jobId]);
     const status = usable === 4 ? 'succeeded' : usable ? 'partially_succeeded' : 'failed';

@@ -77,6 +77,10 @@ test('admin credit service validates recharge and filters transactions', async (
   assert.equal(list.total, 1);
   assert.deepEqual(queries[0]?.args, ['user-id', 'recharge', 5, 5]);
   assert.deepEqual(queries[1]?.args, ['user-id', 'recharge']);
+  queries.length = 0;
+  await listCreditTransactions(pool, { page: 1, pageSize: 5, jobId: 'job-id' });
+  assert.match(queries[0]?.sql ?? '', /\(ct\.theme_job_id=\$1 OR ct\.artwork_job_id=\$1\)/);
+  assert.deepEqual(queries[0]?.args, ['job-id', 5, 0]);
   assert.equal(await getUserCreditBalance(pool, 'user-id'), 0);
   for (const amount of [0, -1, 1.5, 2147483648]) {
     await assert.rejects(rechargeCredits(pool, { userId: 'user-id', amount, operatorId: 'admin-id', requestKey: 'request' }), { statusCode: 400, reason: 'INVALID_AMOUNT' });

@@ -9,7 +9,7 @@ import pg from 'pg';
 import sharp from 'sharp';
 import { transaction } from '../src/infra/database.js';
 import type { createStorage } from '../src/infra/storage.js';
-import { rechargeCredits } from '../src/modules/credits/management-service.js';
+import { getJobCreditLedger, listCreditTransactions, rechargeCredits } from '../src/modules/credits/management-service.js';
 import { registerAdminCreditRoutes } from '../src/http/admin/credits/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';
 import { reconcileJobCredits } from '../src/modules/credits/reconciliation.js';
@@ -17,6 +17,7 @@ import { lockCreditUser, reserveJobCredits, releaseJobCredits, type CreditJob } 
 import { settleThemeJob, processThemeJob } from '../src/modules/generation/theme/execution.js';
 import { settleArtworkJob } from '../src/modules/generation/artwork/execution.js';
 import { recoverGenerationJobs } from '../src/workers/generation-recovery.js';
+import { getGenerationJob } from '../src/modules/generation/queries.js';
 
 test('credit invariants against PostgreSQL: rollback, concurrency, terminal recovery and recharge replay', {
   skip: !process.env.CREDIT_TEST_DATABASE_URL, timeout: 120_000,
@@ -107,9 +108,10 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
 
   await t.test('release rejects retryable tasks and settlement rejects prematurely released holds', async () => {
     const task = await job(await user()); await generated(task);
-    await assert.rejects(transaction(pool, client => releaseJobCredits(client, task)), /Only failed jobs/);
+    await assert.rejects(transaction(pool, client => releaseJobCredits(client, task)),
+      { name: 'CreditInvariantError', code: 'CREDIT_RELEASE_NOT_FAILED', message: new RegExp(`theme_job ${task.id}`) });
     await pool.query("UPDATE credit_reservations SET status='released' WHERE theme_job_id=$1", [task.id]);
-    await assert.rejects(run(task), /Active credit reservation required/);
+    await assert.rejects(run(task), { code: 'CREDIT_RESERVATION_INACTIVE', message: /Active credit reservation required/ });
     assert.equal((await state(task)).charges.length, 0);
     await reconcile();
     assert.equal((await state(task)).reservation, 'reserved');
@@ -301,6 +303,49 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
         assert.ok((await pool.query(`SELECT credit_checked_at FROM ${kind}_jobs WHERE id=$1`, [task.id])).rows[0].credit_checked_at);
       }
     }
+  });
+
+  await t.test('reconciliation failures keep the underlying error code and clear once the job can be repaired', async () => {
+    const task = await job(await user());
+    await pool.query("UPDATE theme_jobs SET status='failed' WHERE id=$1", [task.id]);
+    await pool.query(`CREATE FUNCTION reject_reservation_update() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'injected reservation failure' USING ERRCODE = 'check_violation'; END $$;
+      CREATE TRIGGER reject_reservation_update BEFORE UPDATE ON credit_reservations
+      FOR EACH ROW WHEN (NEW.theme_job_id = '${task.id}') EXECUTE FUNCTION reject_reservation_update()`);
+    try {
+      const report = await reconcile();
+      assert.ok(report.issues.some(issue => issue.id === task.id && issue.reason === 'RECONCILIATION_FAILED' && issue.error === '23514'));
+      assert.equal((await pool.query('SELECT credit_issue FROM theme_jobs WHERE id=$1', [task.id])).rows[0].credit_issue, 'RECONCILIATION_FAILED');
+    } finally {
+      await pool.query('DROP TRIGGER reject_reservation_update ON credit_reservations; DROP FUNCTION reject_reservation_update()');
+    }
+    await reconcile();
+    assert.equal((await state(task)).reservation, 'released');
+    assert.equal((await pool.query('SELECT credit_issue FROM theme_jobs WHERE id=$1', [task.id])).rows[0].credit_issue, null);
+  });
+
+  await t.test('job ledger links reservations and charges to the admin transaction list and job detail', async () => {
+    const owner = await user(30);
+    const task = await job(owner); await generated(task); await run(task);
+    const ledger = await getJobCreditLedger(pool, task);
+    assert.equal(ledger.reservation?.status, 'settled');
+    assert.equal(ledger.reservation?.amount, 10);
+    assert.equal(ledger.charge?.amount, -10);
+    const linked = await listCreditTransactions(pool, { page: 1, pageSize: 10, jobId: task.id });
+    assert.equal(linked.total, 1);
+    assert.deepEqual(linked.data.map(row => [row.id, row.kind, row.jobType, row.jobId, row.userId]),
+      [[ledger.charge?.id, 'theme_consume', 'theme', task.id, owner]]);
+    const recharge = (await listCreditTransactions(pool, { page: 1, pageSize: 10, userId: owner, kind: 'recharge' })).data[0];
+    assert.equal(recharge?.operatorName, 'credits-test');
+    assert.equal(recharge?.jobId, null);
+    assert.deepEqual((await getGenerationJob(pool, task.id)).credits, ledger);
+    const pending = await job(owner, 'artwork');
+    const pendingLedger = await getJobCreditLedger(pool, pending);
+    assert.equal(pendingLedger.reservation?.status, 'reserved');
+    assert.equal(pendingLedger.reservation?.amount, 10);
+    assert.equal(pendingLedger.charge, null);
+    assert.equal((await listCreditTransactions(pool, { page: 1, pageSize: 10, jobId: pending.id })).total, 0);
+    assert.deepEqual((await getGenerationJob(pool, pending.id)).credits, pendingLedger);
   });
 
   await t.test('concurrent recharge and lost-response retries return one immutable transaction; changed payload conflicts', async () => {

@@ -10,6 +10,7 @@ interface CreditListQuery {
   pageSize?: number;
   userId?: string;
   kind?: CreditKind;
+  jobId?: string;
 }
 
 interface RechargeBody {
@@ -27,11 +28,13 @@ export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.P
     querystring: { type: 'object', additionalProperties: false, properties: {
       page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
       userId: userIdSchema, kind: { type: 'string', enum: ['sign_in', 'recharge', 'theme_consume', 'artwork_consume'] },
+      jobId: { type: 'string', format: 'uuid' },
     } },
   } }, async request => ({ code: 0, data: await listCreditTransactions(pool, {
     page: request.query.page ?? 1, pageSize: request.query.pageSize ?? 20,
     ...(request.query.userId ? { userId: request.query.userId } : {}),
     ...(request.query.kind ? { kind: request.query.kind } : {}),
+    ...(request.query.jobId ? { jobId: request.query.jobId } : {}),
   }) }));
 
   app.post<{ Body: RechargeBody }>('/credits/recharge', { schema: {

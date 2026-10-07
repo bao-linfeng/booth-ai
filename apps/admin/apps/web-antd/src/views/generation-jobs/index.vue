@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type {
+  CreditReservationStatus,
   GenerationJob,
   GenerationJobDetail,
   GenerationJobStatus,
   JobType,
 } from '#/api/core/generation-jobs';
 
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { formatDateTime } from '@vben/utils';
@@ -71,6 +73,25 @@ const creditIssueLabels: Record<string, string> = {
 
 function creditIssueLabel(code: string) {
   return creditIssueLabels[code] ?? code;
+}
+
+const reservationLabels: Record<CreditReservationStatus, string> = {
+  reserved: '预占中',
+  settled: '已结算',
+  released: '已释放',
+};
+
+const reservationColors: Record<CreditReservationStatus, string> = {
+  reserved: 'processing',
+  settled: 'success',
+  released: 'default',
+};
+
+const route = useRoute();
+const router = useRouter();
+
+function openCreditTransactions(jobId: string) {
+  router.push({ path: '/credits/list', query: { jobId } });
 }
 
 const jobTypes = [
@@ -233,6 +254,11 @@ async function openDetail(id: string) {
     detailLoading.value = false;
   }
 }
+
+// 从积分流水跳转过来时带 ?jobId=，直接打开该任务详情。
+onMounted(() => {
+  if (typeof route.query.jobId === 'string') openDetail(route.query.jobId);
+});
 </script>
 
 <template>
@@ -299,9 +325,9 @@ async function openDetail(id: string) {
           v-if="detail.creditIssue"
           type="error"
           :message="`积分对账异常：${creditIssueLabel(detail.creditIssue)}`"
-          :description="`自 ${formatDateTime(detail.creditIssueAt ?? undefined)} 起自动对账无法修复，请核对该用户的积分流水与预占记录（代码 ${detail.creditIssue}）。修复后下次对账会自动清除此标记。`"
+          :description="`自 ${formatDateTime(detail.creditIssueAt ?? undefined)} 起自动对账无法修复，请核对下方积分账本与该用户的积分流水（代码 ${detail.creditIssue}）。修复后下次对账会自动清除此标记。`"
           show-icon
-          class="mb-4"
+          style="margin-bottom: 16px"
         />
         <Alert
           v-if="
@@ -316,8 +342,19 @@ async function openDetail(id: string) {
           class="mb-4"
         />
 
-        <Descriptions bordered :column="2" size="small">
-          <DescriptionsItem label="任务ID" :span="2">
+        <Descriptions
+          style="margin-top: 16px"
+          :column="2"
+          size="small"
+          :label-style="{ paddingBottom: '12px', color: '#6b7280', paddingTop: '0' }"
+          :content-style="{ paddingBottom: '12px', paddingTop: '0' }"
+        >
+          <DescriptionsItem
+            label="任务ID"
+            :span="2"
+            :label-style="{ paddingBottom: '12px', color: '#6b7280', paddingTop: '0' }"
+            :content-style="{ paddingBottom: '12px', paddingTop: '0' }"
+          >
             {{ detail.id }}
           </DescriptionsItem>
           <DescriptionsItem label="类型">
@@ -357,7 +394,9 @@ async function openDetail(id: string) {
             {{ detail.unitCredits ?? '—' }}
           </DescriptionsItem>
           <DescriptionsItem label="消耗积分">
-            {{ detail.totalCreditsConsumed ?? '—' }}
+            <span class="text-orange-500 font-medium">
+              {{ detail.totalCreditsConsumed ?? '—' }}
+            </span>
           </DescriptionsItem>
 
           <DescriptionsItem label="耗时">
@@ -386,8 +425,68 @@ async function openDetail(id: string) {
           </DescriptionsItem>
         </Descriptions>
 
+        <div class="mt-4">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-sm font-medium text-gray-500">积分账本</span>
+            <Button
+              v-access:code="['credits.read']"
+              type="link"
+              size="small"
+              @click="openCreditTransactions(detail.id)"
+            >
+              在积分流水中查看
+            </Button>
+          </div>
+          <Descriptions
+            :column="2"
+            size="small"
+            :label-style="{ paddingBottom: '12px', color: '#6b7280' }"
+            :content-style="{ paddingBottom: '12px' }"
+          >
+            <DescriptionsItem label="积分预占">
+              <template v-if="detail.credits.reservation">
+                <Tag
+                  :color="reservationColors[detail.credits.reservation.status]"
+                >
+                  {{ reservationLabels[detail.credits.reservation.status] }}
+                </Tag>
+                {{ detail.credits.reservation.amount }}
+              </template>
+              <span v-else>无预占记录</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="预占更新">
+              {{
+                detail.credits.reservation
+                  ? formatDateTime(detail.credits.reservation.updatedAt)
+                  : '—'
+              }}
+            </DescriptionsItem>
+            <DescriptionsItem label="扣费流水">
+              <span
+                v-if="detail.credits.charge"
+                class="text-red-500 font-medium"
+              >
+                {{ detail.credits.charge.amount }}
+              </span>
+              <span v-else>未扣费</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="扣费时间">
+              {{
+                detail.credits.charge
+                  ? formatDateTime(detail.credits.charge.createdAt)
+                  : '—'
+              }}
+            </DescriptionsItem>
+          </Descriptions>
+        </div>
+
         <div v-if="detail.jobType === 'artwork'" class="mt-4">
-          <Descriptions bordered :column="1" size="small">
+          <Descriptions
+            :column="1"
+            size="small"
+            :label-style="{ paddingBottom: '12px', color: '#6b7280' }"
+            :content-style="{ paddingBottom: '12px' }"
+          >
             <DescriptionsItem label="交付状态">
               {{
                 detail.deliveryStatus === 'ready' ? '四方向齐全' : '尚不完整'

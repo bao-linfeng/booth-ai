@@ -8,7 +8,7 @@
 
 - 模块依赖规则：`tests/module-boundaries.test.ts` 用 AST 静态检查强制执行，反向依赖会导致测试失败（规则摘要见下文“模块开发规范”）
 - 认证体系：`src/http/authentication.ts` 统一建立请求级 principal，`src/modules/identity/principal.ts` 校验账户与 Session 版本
-- 积分账本（预占、结算、释放、对账）：`src/modules/credits/`，对账见 `reconciliation.ts`
+- 积分账本（预占、结算、释放、对账）：`src/modules/credits/`，对账见 `reconciliation.ts`；违反账本不变量抛 `CreditInvariantError`（稳定 `code`，日志按 code 定位，不要改回普通 `Error`）
 - 生成任务 Outbox 与恢复：`src/workers/generation-outbox.ts`（主题/画稿共用分发）、`generation-recovery.ts`（恢复矩阵 `decideRecovery`）
 - 方案基线资产与用户生成素材的作用域隔离：`migrations/050_asset_scope.sql`（`scheme_baseline_assets` 视图）
 - Worker 调度隔离、健康状态、指标与项目通知投递：`src/worker.ts`、`src/workers/scheduler.ts`、`metrics.ts`、`project-notifications.ts`
@@ -195,6 +195,7 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - `tests/app.test.ts`：`fastify.inject()` 路由测试，无需外部服务
 - `npm run smoke`：需要 Postgres 17、Redis 7.4、Silo S3 全部运行
 - `*-integration.test.ts` 及部分 DB 测试在环境变量缺失时会 `skip`（`npm test` 与 Docker `check` 默认都不设置），**测试通过不代表它们跑过**。按需设置 `PROJECT_` / `THEME_` / `CREDIT_` / `ARTWORK_` / `ASSET_` / `BOM_` / `PROMPT_TEMPLATE_` / `AI_MODEL_` / `ADMIN_ROLE_` + `TEST_DATABASE_URL`，以及 `THEME_TEST_REDIS_URL`
+- 测试库用独立数据库（如 `booth_test`），不要指向开发库 `booth`。积分、生成任务、角色迁移等测试会自建临时 schema 并逐个执行迁移；BOM、通知收件箱等测试直接使用 `public`，需要先对测试库运行 `migrate`
 - 修改核心逻辑后必须确保 `npm run check && npm test` 通过
 
 ---

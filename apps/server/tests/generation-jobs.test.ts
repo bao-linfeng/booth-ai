@@ -74,6 +74,8 @@ test('admin generation job detail loads results, labels and signed original prev
     ] };
     if (sql.includes('FROM dictionary_items')) return { rows: [{ id: userId, label: '行业' }, { id: resultId, label: '风格' }] };
     if (sql.includes('FROM scheme_assets')) return { rows: [{ objectKey: 'original/key' }] };
+    if (sql.includes('FROM credit_reservations WHERE theme_job_id')) return { rows: [{ status: 'settled', amount: 20, createdAt: row.createdAt, updatedAt: row.updatedAt }] };
+    if (sql.includes('FROM credit_transactions WHERE theme_job_id')) return { rows: [{ id: 'charge-id', amount: -20, createdAt: row.updatedAt }] };
     throw new Error(`Unexpected query: ${sql}`);
   } } as unknown as pg.Pool;
   const signed: unknown[][] = [];
@@ -92,7 +94,11 @@ test('admin generation job detail loads results, labels and signed original prev
   assert.equal(detail.results[0]?.previewUrl, 'https://example.test/original');
   assert.match(queries[1]?.sql ?? '', /ORDER BY r\.ordinal ASC,r\.id ASC/);
   assert.match(queries[3]?.sql ?? '', /ORDER BY created_at DESC, id DESC/);
-  assert.deepEqual(queries.map(query => query.args), [[jobId], [jobId], [[userId, resultId]], [jobId]]);
+  assert.deepEqual(queries.map(query => query.args), [[jobId], [jobId], [[userId, resultId]], [jobId], [jobId], [jobId]]);
+  assert.deepEqual(detail.credits, {
+    reservation: { status: 'settled', amount: 20, createdAt: row.createdAt, updatedAt: row.updatedAt },
+    charge: { id: 'charge-id', amount: -20, createdAt: row.updatedAt },
+  });
 });
 
 test('admin cache-hit metrics report zero credits consumed', async () => {
@@ -111,6 +117,7 @@ test('admin generation job detail tolerates missing labels, missing asset and si
     return { rows: [] };
   } } as unknown as pg.Pool;
   const missing = await getGenerationJob(pool, jobId);
+  assert.deepEqual(missing.credits, { reservation: null, charge: null });
   assert.equal(missing.industryLabel, null);
   assert.equal(missing.styleLabel, null);
   assert.equal(missing.sourcePreviewUrl, null);
