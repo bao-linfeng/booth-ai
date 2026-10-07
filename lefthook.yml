@@ -1,42 +1,68 @@
-# EXAMPLE USAGE:
+# 仓库级 Git hooks（lefthook 只读取仓库根目录的这份配置）。
+# 安装 / 更新：在 apps/admin 执行 pnpm install（prepare 脚本会运行 lefthook install），
+#   或直接执行 apps/admin/node_modules/.bin/lefthook install。
+# 临时跳过：LEFTHOOK=0 git commit / git push；只跳过某一组：LEFTHOOK_EXCLUDE=server git push。
 #
-#   Refer for explanation to following link:
-#   https://lefthook.dev/configuration/
-#
-# pre-push:
-#   jobs:
-#     - name: packages audit
-#       tags:
-#         - frontend
-#         - security
-#       run: yarn audit
-#
-#     - name: gems audit
-#       tags:
-#         - backend
-#         - security
-#       run: bundle audit
-#
-# pre-commit:
-#   parallel: true
-#   jobs:
-#     - run: yarn eslint {staged_files}
-#       glob: "*.{js,ts,jsx,tsx}"
-#
-#     - name: rubocop
-#       glob: "*.rb"
-#       exclude:
-#         - config/application.rb
-#         - config/routes.rb
-#       run: bundle exec rubocop --force-exclusion -- {all_files}
-#
-#     - name: govet
-#       files: git ls-files -m
-#       glob: "*.go"
-#       run: go vet -- {files}
-#
-#     - script: "hello.js"
-#       runner: node
-#
-#     - script: "hello.go"
-#       runner: go run
+# 所有钩子都不设 parallel：串行执行，避免 vue-tsc、测试与 Docker 构建同时运行导致内存峰值叠加。
+
+# 提交前：admin 暂存文件 lint 并自动修复回填，再做类型检查（约 20 秒）。
+# 设置 root 后命令在 apps/admin 下执行，{staged_files} 只包含该目录内的文件且路径相对 apps/admin。
+pre-commit:
+  jobs:
+    - name: admin-oxlint
+      root: apps/admin/
+      glob: '*.{js,jsx,ts,tsx,vue,cjs,mjs,cts,mts}'
+      run: pnpm exec oxlint --fix --type-aware --threads=4 --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+    - name: admin-oxfmt
+      root: apps/admin/
+      glob: '*.{js,jsx,ts,tsx,vue,cjs,mjs,cts,mts,json,jsonc}'
+      run: pnpm exec oxfmt --threads=4 --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+    - name: admin-eslint
+      root: apps/admin/
+      glob: '*.{js,jsx,ts,tsx,vue,cjs,mjs,cts,mts}'
+      run: pnpm exec eslint --fix {staged_files}
+      stage_fixed: true
+    - name: admin-stylelint
+      root: apps/admin/
+      glob: '*.{vue,css,less,scss}'
+      run: pnpm exec stylelint --fix {staged_files}
+      stage_fixed: true
+    - name: admin-typecheck
+      root: apps/admin/
+      glob: '*.{ts,tsx,vue,mts,cts}'
+      run: pnpm check:type
+
+# 提交信息：仓库根目录 commitlint.config.mjs（Conventional Commits）。
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: apps/admin/node_modules/.bin/commitlint --edit {1}
+
+# 推送前按改动范围执行各子项目的标准检查，与各自 AGENTS.md 中的“检查流程”一致。
+pre-push:
+  jobs:
+    - name: client
+      root: apps/client/
+      glob: 'apps/client/**'
+      run: pnpm build && pnpm test
+
+    - name: admin
+      root: apps/admin/
+      glob: 'apps/admin/**'
+      run: pnpm -F @vben/web-antd run typecheck && pnpm test:antd
+
+    # 需要 Docker 与根目录 .env；check 会重建独立的 booth_test 库并执行全部集成测试
+    - name: server
+      glob: ['apps/server/**', 'infra/**']
+      run: docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --rm check
+
+# 拉取或合并后 admin 锁文件有变化时重新安装依赖（原 apps/admin/lefthook.yml 的 post-merge）。
+post-merge:
+  jobs:
+    - name: admin-install
+      root: apps/admin/
+      files: git diff --name-only HEAD@{1} HEAD
+      glob: 'pnpm-lock.yaml'
+      run: pnpm install

@@ -216,8 +216,11 @@ views/<module>/list/
 
 ### 提交规范
 
-- pre-commit hooks（lefthook）顺序执行：oxlint → oxfmt → eslint → stylelint → check:type（**串行，低配机会慢**）
-- commit message 必须符合 conventional commits，由 commitlint 校验
+- Git hooks 统一配置在仓库根目录 `lefthook.yml`（lefthook 只读取根目录配置，本目录不要再放 `lefthook.yml`）；`pnpm install` 的 prepare 脚本负责安装。admin 相关：
+  - pre-commit（串行）：暂存文件 oxlint → oxfmt → eslint → stylelint 自动修复并回填暂存区，再跑 `check:type`（约 20 秒）
+  - pre-push：`typecheck` + `pnpm test:antd`
+  - post-merge：`pnpm-lock.yaml` 有变化时自动 `pnpm install`
+- commit message 由 commit-msg 钩子按仓库根目录 `commitlint.config.mjs` 校验（Conventional Commits，scope 不限取值）。本目录的 `.commitlintrc.js`（vben 原配置，scope 限定为 vben 包名）只供 `pnpm commit`（czg）交互提示使用，不作为校验依据
 
 ---
 

@@ -18,7 +18,7 @@ AI 驱动的展台方案选型与成交平台，核心链路：描述需求 → 
 
 `apps/shadcn-vue-admin-main` 是外部模板，不属于业务链路，无需关注。
 
-其他目录：`infra/`（Docker Compose：Postgres 17、Redis 7.4、Silo S3）、`scripts/setup.ps1`（一键初始化）、`docs/`（PRD、架构说明、一期 API 文档）、`lefthook.yml`（Git hooks）。
+其他目录：`infra/`（Docker Compose：Postgres 17、Redis 7.4、Silo S3）、`scripts/setup.ps1`（一键初始化）、`docs/`（PRD、架构说明、一期 API 文档）、`lefthook.yml` + `commitlint.config.mjs`（Git hooks：提交前 lint、提交信息校验、推送前按改动范围执行各子项目检查）。
 
 每个 `apps/*` 是独立包，**命令必须在对应子目录执行，不要在根目录混用**。
 
@@ -31,7 +31,7 @@ AI 驱动的展台方案选型与成交平台，核心链路：描述需求 → 
 ./scripts/setup.ps1 -SkipStart  # 只生成 .env
 
 docker compose --env-file .env -f infra/compose.dev.yaml up -d --build                 # 重建并启动 dev 栈
-docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --rm check  # 容器内类型检查 + 测试 + 构建
+docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --rm check  # 容器内类型检查 + 重建 booth_test 跑全部测试（含集成测试）+ 构建
 docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --rm smoke  # 端到端冒烟
 docker compose --env-file .env -f infra/compose.dev.yaml run --rm migrate               # 手动跑迁移
 docker compose --env-file .env -f infra/compose.dev.yaml run --rm storage-init          # S3 初始化
@@ -68,7 +68,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml down                   
 
 - 提交信息遵循 Conventional Commits。
 - **不写向后兼容 shim**：废弃接口直接删除（数据库 schema 变更除外，需迁移）。
-- 修改核心逻辑必须同步更新或新增测试；非平凡改动后必须跑对应子项目的类型检查（命令见子项目文档）。
+- 修改核心逻辑必须同步更新或新增测试；非平凡改动后必须跑对应子项目的类型检查和测试（client：`pnpm build` + `pnpm test`；admin：`typecheck` + `pnpm test:antd`；server：`check` 服务，命令见子项目文档）。Git hooks 统一在根目录 `lefthook.yml`：提交前对 admin 暂存文件做 lint 与类型检查，commit-msg 按根目录 `commitlint.config.mjs` 校验提交信息，推送前按改动范围执行上述检查；`LEFTHOOK=0` 可临时跳过，但跳过时需说明原因。
 - 安全：禁止在日志或错误响应中输出凭据或 secret。
 
 ### PowerShell
