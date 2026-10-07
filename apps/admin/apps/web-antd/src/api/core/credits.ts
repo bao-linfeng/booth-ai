@@ -58,3 +58,17 @@ export async function getUserCreditBalanceApi(
 ): Promise<CreditBalanceResult> {
   return requestClient.get(`/v1/admin/credits/users/${userId}/balance`);
 }
+
+export interface SignInConfig {
+  enabled: boolean;
+  dailyAmount: number;
+  timezone: string;
+}
+
+export async function getSignInConfigApi(): Promise<SignInConfig> {
+  return requestClient.get('/v1/admin/credits/sign-in-config');
+}
+
+export async function updateSignInConfigApi(body: SignInConfig): Promise<SignInConfig> {
+  return requestClient.put('/v1/admin/credits/sign-in-config', body);
+}

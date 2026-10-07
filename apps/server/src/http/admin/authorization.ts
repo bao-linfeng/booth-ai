@@ -47,6 +47,7 @@ export function adminRoutePermissions(method: string, url: string): string[] | n
   if (path === '/project-assignees') return ['projects.assign'];
   if (path === '/project-assignment-config') return [read ? 'projects.read' : 'projects.assign'];
   if (path === '/credits/recharge') return ['credits.recharge'];
+  if (path === '/credits/sign-in-config' && method === 'PUT') return ['credits.sign_in_config'];
   if (path === '/scheme-searches/statistics') return ['search-analytics.read'];
   if (path === '/scheme-searches/:id') return ['searches.detail'];
   if (path === '/users/:id') return ['users.detail'];

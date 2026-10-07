@@ -18,8 +18,10 @@ import { getCreditTransactionsApi } from '#/api/core/credits';
 import { getUserListApi } from '#/api/core/user-manage';
 
 import RechargeModal from './components/RechargeModal.vue';
+import SignInConfigModal from './components/SignInConfigModal.vue';
 
 const rechargeModalRef = ref<InstanceType<typeof RechargeModal>>();
+const signInConfigModalRef = ref<InstanceType<typeof SignInConfigModal>>();
 
 const kindLabels: Record<CreditKind, string> = {
   sign_in: '签到',
@@ -153,6 +155,10 @@ function handleRecharge() {
   rechargeModalRef.value?.open();
 }
 
+function handleSignInConfig() {
+  signInConfigModalRef.value?.open();
+}
+
 function handleReload() {
   gridApi.reload();
 }
@@ -167,8 +173,15 @@ function handleReload() {
             v-access:code="['credits.recharge']"
             type="primary"
             @click="handleRecharge"
-            >充值积分</Button
           >
+            充值积分
+          </Button>
+          <Button
+            v-access:code="['credits.sign_in_config']"
+            @click="handleSignInConfig"
+          >
+            签到配置
+          </Button>
         </div>
       </template>
 
@@ -204,5 +217,6 @@ function handleReload() {
     </Grid>
 
     <RechargeModal ref="rechargeModalRef" @reload="handleReload" />
+    <SignInConfigModal ref="signInConfigModalRef" />
   </Page>
 </template>

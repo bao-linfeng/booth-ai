@@ -3,24 +3,63 @@ import test from 'node:test';
 import type pg from 'pg';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { getCreditBalance, signInForCredits } from '../src/modules/credits/account-service.js';
+import { getCreditBalance, getSignInConfig, signInForCredits } from '../src/modules/credits/account-service.js';
 import { getUserCreditBalance, listCreditTransactions, rechargeCredits } from '../src/modules/credits/management-service.js';
 
 test('sign-in awards ten credits once, relying on the unique sign-in record', async () => {
   let balance = 0;
   const pool = { query: async (sql: string, args: unknown[]) => {
-    assert.deepEqual(args, ['user-id']);
+    if (sql.includes('FROM sign_in_config')) return { rows: [] };
     if (sql.includes('INSERT INTO sign_in_records')) {
+      assert.deepEqual(args, ['user-id', 'Asia/Shanghai', 10]);
+      assert.match(sql, /\(CURRENT_TIMESTAMP AT TIME ZONE \$2\)::date/);
+      assert.match(sql, /SELECT user_id, 'sign_in', \$3 FROM signed/);
       assert.match(sql, /ON CONFLICT \(user_id, sign_date\) DO NOTHING/);
       if (balance) return { rows: [] };
       balance = 10;
       return { rows: [{ amount: 10 }] };
     }
+    assert.deepEqual(args, ['user-id']);
     return { rows: balance ? [{ balance }] : [] };
   } } as unknown as pg.Pool;
   assert.equal(await getCreditBalance(pool, 'user-id'), 0);
   assert.deepEqual(await signInForCredits(pool, 'user-id'), { amount: 10, balance: 10 });
   await assert.rejects(signInForCredits(pool, 'user-id'), { statusCode: 409, reason: 'ALREADY_SIGNED_IN' });
+});
+
+test('sign-in configuration maps database fields and defaults when the singleton row is missing', async () => {
+  const pool = { query: async (sql: string) => {
+    assert.equal(sql, 'SELECT enabled, daily_amount, timezone FROM sign_in_config WHERE id = TRUE');
+    return { rows: [{ enabled: false, daily_amount: 25, timezone: 'UTC' }] };
+  } } as unknown as pg.Pool;
+  assert.deepEqual(await getSignInConfig(pool), { enabled: false, dailyAmount: 25, timezone: 'UTC' });
+  const emptyPool = { query: async () => ({ rows: [] }) } as unknown as pg.Pool;
+  assert.deepEqual(await getSignInConfig(emptyPool), { enabled: true, dailyAmount: 10, timezone: 'Asia/Shanghai' });
+});
+
+test('disabled sign-in rewards do not write sign-in records or credits', async () => {
+  const pool = { query: async (sql: string) => {
+    assert.match(sql, /FROM sign_in_config/);
+    return { rows: [{ enabled: false, daily_amount: 25, timezone: 'UTC' }] };
+  } } as unknown as pg.Pool;
+  await assert.rejects(signInForCredits(pool, 'user-id'), { statusCode: 403, reason: 'SIGN_IN_DISABLED' });
+});
+
+test('sign-in uses the configured timezone and daily credit amount', async () => {
+  const pool = { query: async (sql: string, args: unknown[]) => {
+    if (sql.includes('FROM sign_in_config')) {
+      return { rows: [{ enabled: true, daily_amount: 25, timezone: 'America/New_York' }] };
+    }
+    if (sql.includes('INSERT INTO sign_in_records')) {
+      assert.deepEqual(args, ['user-id', 'America/New_York', 25]);
+      assert.match(sql, /\(CURRENT_TIMESTAMP AT TIME ZONE \$2\)::date/);
+      assert.match(sql, /SELECT user_id, 'sign_in', \$3 FROM signed/);
+      return { rows: [{ amount: 25 }] };
+    }
+    assert.deepEqual(args, ['user-id']);
+    return { rows: [{ balance: 100 }] };
+  } } as unknown as pg.Pool;
+  assert.deepEqual(await signInForCredits(pool, 'user-id'), { amount: 25, balance: 100 });
 });
 
 test('admin credit service validates recharge and filters transactions', async () => {
@@ -63,9 +102,11 @@ test('credit routes require a session; client and admin sessions cannot be excha
     ['GET', '/api/v1/client/credits/balance'], ['POST', '/api/v1/client/credits/sign-in'],
     ['GET', '/api/v1/admin/credits'], ['POST', '/api/v1/admin/credits/recharge'],
     ['GET', '/api/v1/admin/credits/users/00000000-0000-0000-0000-000000000001/balance'],
+    ['GET', '/api/v1/admin/credits/sign-in-config'], ['PUT', '/api/v1/admin/credits/sign-in-config'],
   ] as const) {
     const response = await app.inject({ method, url, headers: { authorization: 'Bearer invalid' },
-      ...(url.endsWith('/recharge') ? { payload: { userId: '00000000-0000-0000-0000-000000000001', amount: 10, requestKey: 'request' } } : {}) });
+      ...(url.endsWith('/recharge') ? { payload: { userId: '00000000-0000-0000-0000-000000000001', amount: 10, requestKey: 'request' } } : {}),
+      ...(method === 'PUT' ? { payload: { enabled: true, dailyAmount: 10, timezone: 'Asia/Shanghai' } } : {}) });
     assert.equal(response.statusCode, 401, `${method} ${url}: ${response.body}`);
   }
 });

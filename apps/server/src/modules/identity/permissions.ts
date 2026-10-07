@@ -9,7 +9,7 @@ export const permissionGroups = [
   { key: 'users', label: '用户列表', routes: ['UserList'], actions: [['read', '查看用户列表'], ['detail', '查看用户详情']] },
   { key: 'admins', label: '管理员列表', routes: ['AdminList'], actions: [['read', '查看管理员列表']] },
   { key: 'roles', label: '用户角色', routes: ['UserRoles'], actions: [['read', '查看角色与权限'], ['write', '配置权限']] },
-  { key: 'credits', label: '积分流水', routes: ['CreditList'], actions: [['read', '查看流水与余额'], ['recharge', '充值积分']] },
+  { key: 'credits', label: '积分流水', routes: ['CreditList'], actions: [['read', '查看流水与余额'], ['recharge', '充值积分'], ['sign_in_config', '配置签到奖励']] },
   { key: 'searches', label: '检索记录', routes: ['AiSelectionSearches'], actions: [['read', '查看检索记录'], ['detail', '查看检索详情']] },
   { key: 'search-analytics', label: '趋势与统计', routes: ['AiSelectionAnalytics'], actions: [['read', '查看趋势与统计']] },
   { key: 'schemes', label: '方案管理', routes: ['SchemeList', 'SchemeDetail'], actions: [['read', '查看方案与详情'], ['readiness', '检查发布条件'], ['create', '新建方案'], ['update', '编辑方案'], ['delete', '删除方案'], ['import', '批量导入方案'], ['review', '提交审核'], ['publish', '发布方案'], ['unpublish', '下架方案']] },

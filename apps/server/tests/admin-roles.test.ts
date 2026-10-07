@@ -65,10 +65,15 @@ test('page grants and business actions are independent and enforce their real de
   assert.equal(accessSummary(['workspace.read']).homePath, '/dashboard/workspace');
   assert.throws(() => validatePermissionCodes(['assets-masks.read', 'assets-masks.preview', 'schemes.read']), { statusCode: 400 });
   assert.throws(() => validatePermissionCodes(['prompts.read', 'prompts.update', 'schemes.read']), { statusCode: 400 });
+  assert.throws(() => validatePermissionCodes(['credits.sign_in_config']), { statusCode: 400 });
+  assert.deepEqual(validatePermissionCodes(['credits.sign_in_config', 'credits.read', 'users.read']), ['credits.read', 'credits.sign_in_config', 'users.read']);
   assert.equal(new Set(allPermissionCodes).size, allPermissionCodes.length);
   validatePermissionCodes(allPermissionCodes);
   for (const [method, route, expected] of [
     ['POST', '/credits/recharge', 'credits.recharge'],
+    ['PUT', '/credits/sign-in-config', 'credits.sign_in_config'],
+    ['GET', '/credits/sign-in-config', 'credits.read'],
+    ['HEAD', '/credits/sign-in-config', 'credits.read'],
     ['GET', '/scheme-searches/:id', 'searches.detail'],
     ['GET', '/scheme-searches/statistics', 'search-analytics.read'],
     ['POST', '/schemes/:code/unpublish', 'schemes.unpublish'],
@@ -248,6 +253,52 @@ test('all role saves, including ROLE_ADMIN, enforce revisions and audit persiste
   assert.deepEqual(audits.at(-1), { before: allPermissionCodes, after: ['roles.read'] });
   await updateRolePermissions(pool, 5, [], 4, 'actor');
   assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), []);
+});
+
+test('role permission API saves current sign-in grants and rejects obsolete codes without mutation', async t => {
+  let permissions = ['credits.read', 'credits.sign_in_config', 'roles.read', 'roles.write', 'users.read'];
+  let revision = 8;
+  let auditCount = 0;
+  let transactions = 0;
+  const client = { query: async (sql: string, params?: unknown[]) => {
+    if (sql.includes('FOR UPDATE')) return { rows: [{ name: 'ROLE_ADMIN', revision, permissionCodes: permissions }] };
+    if (sql.startsWith('UPDATE admin_roles')) {
+      permissions = params?.[1] as string[];
+      revision++;
+    }
+    if (sql.includes('INSERT INTO admin_audit_logs')) auditCount++;
+    return { rows: [] };
+  }, release() {} };
+  const pool = { query: async (sql: string) => {
+    if (sql.includes('session_version')) return { rows: [{ enabled: true, roles: ['ROLE_ADMIN'], sessionVersion: 1 }] };
+    if (sql.includes('unnest(permission_codes)')) return { rows: permissions.map(code => ({ code })) };
+    throw new Error('Unexpected query');
+  }, connect: async () => { transactions++; return client; } } as unknown as pg.Pool;
+  const values = new Map<string, string>();
+  const redis = { get: async (key: string) => values.get(key) ?? null,
+    set: async (key: string, value: string) => { values.set(key, value); return 'OK'; },
+    del: async (key: string) => Number(values.delete(key)) } as unknown as Redis;
+  const token = await createSession(redis, { site: 'admin', localId: '00000000-0000-4000-8000-000000000001',
+    externalUserId: 1, username: 'test', sessionVersion: 1, externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret),
+    loginSource: 'password' }, 3600, Math.floor(Date.now() / 1000) + 3600);
+  const app = await buildApp(config, healthy, { pool, redis, storage: {} } as never);
+  t.after(() => app.close());
+  const headers = { authorization: `Bearer ${token}` };
+  const url = '/api/v1/admin/roles/5/permissions';
+  const obsolete = await app.inject({ method: 'PUT', url, headers,
+    payload: { permissionCodes: [...permissions, 'credits.sign-in-config'], expectedRevision: revision } });
+  assert.equal(obsolete.statusCode, 400, obsolete.body);
+  assert.equal(obsolete.json().error.code, 'VALIDATION_ERROR');
+  assert.equal(transactions, 0);
+  const saved = await app.inject({ method: 'PUT', url, headers,
+    payload: { permissionCodes: [...permissions], expectedRevision: revision } });
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.deepEqual(saved.json().data, { id: 5, name: 'ROLE_ADMIN', permissionCodes: permissions, revision: 9 });
+  assert.equal(auditCount, 1);
+  const stale = await app.inject({ method: 'PUT', url, headers,
+    payload: { permissionCodes: [...permissions], expectedRevision: 8 } });
+  assert.equal(stale.statusCode, 409, stale.body);
+  assert.equal(auditCount, 1);
 });
 
 test('unconfigured roles, including ROLE_ADMIN, have no permissions and cannot inherit external grants', async () => {

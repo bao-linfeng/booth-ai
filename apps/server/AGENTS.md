@@ -194,7 +194,7 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - Runner：Node 原生 `node:test`，**不是 Jest/Vitest**
 - `tests/app.test.ts`：`fastify.inject()` 路由测试，无需外部服务
 - `npm run smoke`：需要 Postgres 17、Redis 7.4、Silo S3 全部运行
-- `*-integration.test.ts` 及部分 DB 测试在环境变量缺失时会 `skip`（`npm test` 与 Docker `check` 默认都不设置），**测试通过不代表它们跑过**。按需设置 `PROJECT_` / `THEME_` / `CREDIT_` / `ARTWORK_` / `ASSET_` / `BOM_` / `PROMPT_TEMPLATE_` / `AI_MODEL_` + `TEST_DATABASE_URL`，以及 `THEME_TEST_REDIS_URL`
+- `*-integration.test.ts` 及部分 DB 测试在环境变量缺失时会 `skip`（`npm test` 与 Docker `check` 默认都不设置），**测试通过不代表它们跑过**。按需设置 `PROJECT_` / `THEME_` / `CREDIT_` / `ARTWORK_` / `ASSET_` / `BOM_` / `PROMPT_TEMPLATE_` / `AI_MODEL_` / `ADMIN_ROLE_` + `TEST_DATABASE_URL`，以及 `THEME_TEST_REDIS_URL`
 - 修改核心逻辑后必须确保 `npm run check && npm test` 通过
 
 ---
