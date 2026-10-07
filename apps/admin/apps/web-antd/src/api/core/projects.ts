@@ -15,6 +15,14 @@ export const statusLabels: Record<ProjectStatus, string> = {
   lost: '未成交',
   closed: '已关闭',
 };
+export const projectEventLabels: Record<string, string> = {
+  accepted: '受理',
+  assignment: '分配',
+  scheme: '确认关联方案',
+  'follow-up': '联系跟进',
+  quotation: '报价修订',
+  legacy_import: '历史迁入',
+};
 export interface ProjectRequest {
   exhibition?: {
     name: string;

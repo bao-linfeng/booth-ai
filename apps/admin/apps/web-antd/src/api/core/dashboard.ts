@@ -2,29 +2,50 @@ import type { ProjectStatus } from './projects';
 
 import { requestClient } from '#/api/request';
 
-export interface DashboardSummary {
+export type WorkspaceTaskReason = 'overdue' | 'pending' | 'today';
+
+/** 工作台个人数据：项目与消息仅统计当前登录管理员本人，未授权分组为 null。 */
+export interface DashboardWorkspace {
   generatedAt: string;
   timeZone: string;
-  projects: null | {
+  projects: {
+    /** 本人负责的未结束项目（待跟进 / 跟进中 / 已报价） */
+    active: number;
     pending: number;
     todayFollowUps: number;
     overdueFollowUps: number;
-    recentInquiries: {
+    /** 需处理事项总数，tasks 最多返回 10 条 */
+    taskTotal: number;
+    tasks: {
       projectId: string;
       projectNo: string;
       company: null | string;
       contactName: null | string;
+      exhibitionName: null | string;
       status: ProjectStatus;
+      reason: WorkspaceTaskReason;
+      nextFollowUpAt: null | string;
       createdAt: string;
     }[];
-  };
-  schemes: null | { unverified: number };
-  generation: null | { failed: number };
-  notifications: null | { failed: number };
+    activities: {
+      id: string;
+      kind: string;
+      projectId: string;
+      projectNo: string;
+      actorName: null | string;
+      byMe: boolean;
+      fromStatus: null | ProjectStatus;
+      toStatus: null | ProjectStatus;
+      schemeCode: null | string;
+      quotationRevision: null | number;
+      createdAt: string;
+    }[];
+  } | null;
+  notifications: null | { unread: number };
 }
 
-export const getDashboardSummaryApi = () =>
-  requestClient.get<DashboardSummary>('/v1/admin/dashboard/summary');
+export const getDashboardWorkspaceApi = () =>
+  requestClient.get<DashboardWorkspace>('/v1/admin/dashboard/workspace');
 
 export type AnalyticsRangeDays = 7 | 30 | 90;
 export type AnalyticsMetricKey =

@@ -14,7 +14,7 @@ export function requireAdminPermission(request: Parameters<typeof requirePrincip
 export function adminRoutePermissions(method: string, url: string): string[] | null {
   const path = url.replace(/^\/api\/v1\/admin(?=\/)/, '');
   if (['/me', '/access'].includes(path)) return [];
-  if (path === '/dashboard/summary' && (method === 'GET' || method === 'HEAD')) return ['dashboard.read', 'workspace.read'];
+  if (path === '/dashboard/workspace' && (method === 'GET' || method === 'HEAD')) return ['workspace.read'];
   if (path === '/dashboard/analytics' && (method === 'GET' || method === 'HEAD')) return ['dashboard.read'];
   const read = method === 'GET' || method === 'HEAD';
   if (/^\/schemes\/:code\/assets(?:\/|$)/.test(path) || path === '/assets') {

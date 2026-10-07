@@ -1,266 +1,425 @@
 <script lang="ts" setup>
 import type {
-  WorkbenchProjectItem,
-  WorkbenchQuickNavItem,
-  WorkbenchTodoItem,
-  WorkbenchTrendItem,
-} from '@vben/common-ui';
+  DashboardWorkspace,
+  WorkspaceTaskReason,
+} from '#/api/core/dashboard';
 
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onMounted, ref } from 'vue';
+import { RouterLink, useRouter } from 'vue-router';
 
-import {
-  AnalysisChartCard,
-  WorkbenchHeader,
-  WorkbenchProject,
-  WorkbenchQuickNav,
-  WorkbenchTodo,
-  WorkbenchTrends,
-} from '@vben/common-ui';
+import { useAccess } from '@vben/access';
+import { Page, WorkbenchHeader } from '@vben/common-ui';
+import { IconifyIcon } from '@vben/icons';
 import { preferences } from '@vben/preferences';
 import { useUserStore } from '@vben/stores';
-import { openWindow } from '@vben/utils';
+import { formatDateTime } from '@vben/utils';
 
-import AnalyticsVisitsSource from '../analytics/analytics-visits-source.vue';
+import { Alert, Button, Card, Empty, Skeleton, Tag } from 'ant-design-vue';
 
-const userStore = useUserStore();
+import { getDashboardWorkspaceApi } from '#/api/core/dashboard';
+import { projectEventLabels, statusLabels } from '#/api/core/projects';
 
-// 这是一个示例数据，实际项目中需要根据实际情况进行调整
-// url 也可以是内部路由，在 navTo 方法中识别处理，进行内部跳转
-// 例如：url: /dashboard/workspace
-const projectItems: WorkbenchProjectItem[] = [
-  {
-    color: '',
-    content: '不要等待机会，而要创造机会。',
-    date: '2021-04-01',
-    group: '开源组',
-    icon: 'carbon:logo-github',
-    title: 'Github',
-    url: 'https://github.com',
-  },
-  {
-    color: '#3fb27f',
-    content: '现在的你决定将来的你。',
-    date: '2021-04-01',
-    group: '算法组',
-    icon: 'ion:logo-vue',
-    title: 'Vue',
-    url: 'https://vuejs.org',
-  },
-  {
-    color: '#e18525',
-    content: '没有什么才能比努力更重要。',
-    date: '2021-04-01',
-    group: '上班摸鱼',
-    icon: 'ion:logo-html5',
-    title: 'Html5',
-    url: 'https://developer.mozilla.org/zh-CN/docs/Web/HTML',
-  },
-  {
-    color: '#bf0c2c',
-    content: '热情和欲望可以突破一切难关。',
-    date: '2021-04-01',
-    group: 'UI',
-    icon: 'ion:logo-angular',
-    title: 'Angular',
-    url: 'https://angular.io',
-  },
-  {
-    color: '#00d8ff',
-    content: '健康的身体是实现目标的基石。',
-    date: '2021-04-01',
-    group: '技术牛',
-    icon: 'bx:bxl-react',
-    title: 'React',
-    url: 'https://reactjs.org',
-  },
-  {
-    color: '#EBD94E',
-    content: '路是走出来的，而不是空想出来的。',
-    date: '2021-04-01',
-    group: '架构组',
-    icon: 'ion:logo-javascript',
-    title: 'Js',
-    url: 'https://developer.mozilla.org/zh-CN/docs/Web/JavaScript',
-  },
-];
+type Workspace = NonNullable<DashboardWorkspace['projects']>;
+type Activity = Workspace['activities'][number];
 
-// 同样，这里的 url 也可以使用以 http 开头的外部链接
-const quickNavItems: WorkbenchQuickNavItem[] = [
+const timeZone = 'Asia/Shanghai';
+const reasonMeta: Record<
+  WorkspaceTaskReason,
+  { color: string; label: string }
+> = {
+  overdue: { color: 'error', label: '逾期跟进' },
+  today: { color: 'warning', label: '今日跟进' },
+  pending: { color: 'processing', label: '待受理' },
+};
+const navItems = [
   {
-    color: '#1fdaca',
-    icon: 'ion:home-outline',
-    title: '首页',
-    url: '/',
+    name: 'ProjectList',
+    label: '项目承接',
+    icon: 'lucide:clipboard',
+    permission: 'projects.read',
   },
   {
-    color: '#bf0c2c',
-    icon: 'ion:grid-outline',
-    title: '仪表盘',
-    url: '/dashboard',
+    name: 'ProjectNotifications',
+    label: '消息通知',
+    icon: 'lucide:bell',
+    permission: 'notifications.read',
   },
   {
-    color: '#e18525',
-    icon: 'ion:layers-outline',
-    title: '组件',
-    url: '/demos/features/icons',
+    name: 'SchemeList',
+    label: '方案列表',
+    icon: 'lucide:layout-template',
+    permission: 'schemes.read',
   },
   {
-    color: '#3fb27f',
-    icon: 'ion:settings-outline',
-    title: '系统管理',
-    url: '/demos/features/login-expired', // 这里的 URL 是示例，实际项目中需要根据实际情况进行调整
+    name: 'BillOfMaterialsManagement',
+    label: '清单管理',
+    icon: 'lucide:list-checks',
+    permission: 'bom.read',
   },
   {
-    color: '#4daf1bc9',
-    icon: 'ion:key-outline',
-    title: '权限管理',
-    url: '/demos/access/page-control',
+    name: 'GenerationJobs',
+    label: '生成任务',
+    icon: 'lucide:cpu',
+    permission: 'generation.read',
   },
   {
-    color: '#00d8ff',
-    icon: 'ion:bar-chart-outline',
-    title: '图表',
-    url: '/analytics',
-  },
-];
-
-const todoItems = ref<WorkbenchTodoItem[]>([
-  {
-    completed: false,
-    content: `审查最近提交到Git仓库的前端代码，确保代码质量和规范。`,
-    date: '2024-07-30 11:00:00',
-    title: '审查前端代码提交',
+    name: 'AiSelectionSearches',
+    label: '检索记录',
+    icon: 'lucide:search',
+    permission: 'searches.read',
   },
   {
-    completed: true,
-    content: `检查并优化系统性能，降低CPU使用率。`,
-    date: '2024-07-30 11:00:00',
-    title: '系统性能优化',
+    name: 'AiSelectionAnalytics',
+    label: '智选统计',
+    icon: 'lucide:chart-line',
+    permission: 'search-analytics.read',
   },
   {
-    completed: false,
-    content: `进行系统安全检查，确保没有安全漏洞或未授权的访问。 `,
-    date: '2024-07-30 11:00:00',
-    title: '安全检查',
+    name: 'UserList',
+    label: '用户列表',
+    icon: 'lucide:users',
+    permission: 'users.read',
   },
   {
-    completed: false,
-    content: `更新项目中的所有npm依赖包，确保使用最新版本。`,
-    date: '2024-07-30 11:00:00',
-    title: '更新项目依赖',
-  },
-  {
-    completed: false,
-    content: `修复用户报告的页面UI显示问题，确保在不同浏览器中显示一致。 `,
-    date: '2024-07-30 11:00:00',
-    title: '修复UI显示问题',
-  },
-]);
-const trendItems: WorkbenchTrendItem[] = [
-  {
-    avatar: 'svg:avatar-1',
-    content: `在 <a>开源组</a> 创建了项目 <a>Vue</a>`,
-    date: '刚刚',
-    title: '威廉',
-  },
-  {
-    avatar: 'svg:avatar-2',
-    content: `关注了 <a>威廉</a> `,
-    date: '1个小时前',
-    title: '艾文',
-  },
-  {
-    avatar: 'svg:avatar-3',
-    content: `发布了 <a>个人动态</a> `,
-    date: '1天前',
-    title: '克里斯',
-  },
-  {
-    avatar: 'svg:avatar-4',
-    content: `发表文章 <a>如何编写一个Vite插件</a> `,
-    date: '2天前',
-    title: 'Vben',
-  },
-  {
-    avatar: 'svg:avatar-1',
-    content: `回复了 <a>杰克</a> 的问题 <a>如何进行项目优化？</a>`,
-    date: '3天前',
-    title: '皮特',
-  },
-  {
-    avatar: 'svg:avatar-2',
-    content: `关闭了问题 <a>如何运行项目</a> `,
-    date: '1周前',
-    title: '杰克',
-  },
-  {
-    avatar: 'svg:avatar-3',
-    content: `发布了 <a>个人动态</a> `,
-    date: '1周前',
-    title: '威廉',
-  },
-  {
-    avatar: 'svg:avatar-4',
-    content: `推送了代码到 <a>Github</a>`,
-    date: '2021-04-01 20:00',
-    title: '威廉',
-  },
-  {
-    avatar: 'svg:avatar-4',
-    content: `发表文章 <a>如何编写使用 Admin Vben</a> `,
-    date: '2021-03-01 20:00',
-    title: 'Vben',
+    name: 'Analytics',
+    label: '分析页',
+    icon: 'lucide:area-chart',
+    permission: 'dashboard.read',
   },
 ];
 
 const router = useRouter();
+const userStore = useUserStore();
+const { hasAccessByCodes } = useAccess();
+const workspace = ref<DashboardWorkspace>();
+const loading = ref(false);
+const failed = ref(false);
 
-// 这是一个示例方法，实际项目中需要根据实际情况进行调整
-// This is a sample method, adjust according to the actual project requirements
-function navTo(nav: WorkbenchProjectItem | WorkbenchQuickNavItem) {
-  if (nav.url?.startsWith('http')) {
-    openWindow(nav.url);
-    return;
-  }
-  if (nav.url?.startsWith('/')) {
-    router.push(nav.url).catch((error) => {
-      console.error('Navigation failed:', error);
-    });
-  } else {
-    console.warn(`Unknown URL for navigation item: ${nav.title} -> ${nav.url}`);
+const quickLinks = computed(() =>
+  navItems.filter(
+    (item) => hasAccessByCodes([item.permission]) && router.hasRoute(item.name),
+  ),
+);
+const canViewProjectDetail = computed(() => router.hasRoute('ProjectDetail'));
+const greeting = computed(() => {
+  const hour = Number(
+    new Intl.DateTimeFormat('zh-CN', {
+      hour: 'numeric',
+      hourCycle: 'h23',
+      timeZone,
+    }).format(new Date()),
+  );
+  if (hour < 5) return '夜深了';
+  if (hour < 11) return '早上好';
+  if (hour < 13) return '中午好';
+  if (hour < 18) return '下午好';
+  return '晚上好';
+});
+const today = new Intl.DateTimeFormat('zh-CN', {
+  dateStyle: 'full',
+  timeZone,
+}).format(new Date());
+const summaryText = computed(() => {
+  const projects = workspace.value?.projects;
+  if (!projects) return '从快捷入口开始今天的工作。';
+  if (!projects.taskTotal)
+    return '您负责的项目暂无逾期、今日到期或待受理事项。';
+  const parts = [
+    projects.overdueFollowUps && `${projects.overdueFollowUps} 项逾期跟进`,
+    projects.todayFollowUps && `${projects.todayFollowUps} 项今日跟进`,
+    projects.pending && `${projects.pending} 项待受理`,
+  ].filter(Boolean);
+  return `您负责的项目中有 ${parts.join('、')}，请及时处理。`;
+});
+const headerStats = computed(() => {
+  const data = workspace.value;
+  if (!data) return [];
+  return [
+    ...(data.projects
+      ? [
+          { label: '需处理', value: data.projects.taskTotal },
+          { label: '我负责的进行中项目', value: data.projects.active },
+        ]
+      : []),
+    ...(data.notifications
+      ? [{ label: '未读消息', value: data.notifications.unread }]
+      : []),
+  ];
+});
+const myMetrics = computed(() => {
+  const projects = workspace.value?.projects;
+  if (!projects) return [];
+  return [
+    { label: '待受理', value: projects.pending },
+    { label: '今日计划跟进', value: projects.todayFollowUps },
+    { label: '逾期跟进', value: projects.overdueFollowUps },
+  ];
+});
+
+function actorLabel(activity: Activity) {
+  if (activity.byMe) return '我';
+  if (activity.actorName) return activity.actorName;
+  return activity.kind === 'accepted' ? '客户' : '系统';
+}
+function activityText(activity: Activity) {
+  switch (activity.kind) {
+    case 'accepted': {
+      return '提交了项目申请';
+    }
+    case 'assignment': {
+      return '调整了承接人';
+    }
+    case 'follow-up': {
+      return activity.fromStatus &&
+        activity.toStatus &&
+        activity.fromStatus !== activity.toStatus
+        ? `记录跟进，状态由“${statusLabels[activity.fromStatus]}”变为“${statusLabels[activity.toStatus]}”`
+        : '记录了联系跟进';
+    }
+    case 'quotation': {
+      return activity.quotationRevision
+        ? `保存了第 ${activity.quotationRevision} 版报价`
+        : '保存了报价修订';
+    }
+    case 'scheme': {
+      return activity.schemeCode
+        ? `确认关联方案 ${activity.schemeCode}`
+        : '确认关联方案';
+    }
+    default: {
+      return projectEventLabels[activity.kind] ?? activity.kind;
+    }
   }
 }
+function taskCustomer(task: Workspace['tasks'][number]) {
+  return task.company || task.contactName || '未填写客户';
+}
+
+async function load() {
+  if (loading.value) return;
+  loading.value = true;
+  failed.value = false;
+  workspace.value = undefined;
+  try {
+    workspace.value = await getDashboardWorkspaceApi();
+  } catch {
+    failed.value = true;
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(load);
 </script>
 
 <template>
-  <div class="p-5">
+  <Page>
     <WorkbenchHeader
       :avatar="userStore.userInfo?.avatar || preferences.app.defaultAvatar"
     >
       <template #title>
-        早安, {{ userStore.userInfo?.realName }}, 开始您一天的工作吧！
+        {{ greeting }}，{{ userStore.userInfo?.realName }}
       </template>
-      <template #description> 今日晴，20℃ - 32℃！ </template>
+      <template #description>
+        {{ today }} · {{ loading ? '正在加载今日待办…' : summaryText }}
+      </template>
+      <template #actions>
+        <dl class="mb-0 flex gap-10 md:mr-6">
+          <div
+            v-for="item in headerStats"
+            :key="item.label"
+            class="flex flex-col justify-center text-right"
+          >
+            <dt class="text-foreground/80">{{ item.label }}</dt>
+            <dd class="mb-0 text-2xl tabular-nums">
+              {{ item.value.toLocaleString() }}
+            </dd>
+          </div>
+        </dl>
+      </template>
     </WorkbenchHeader>
 
-    <div class="flex flex-col lg:flex-row">
-      <div class="mr-4 w-full lg:w-3/5">
-        <WorkbenchProject :items="projectItems" title="项目" @click="navTo" />
-        <WorkbenchTrends :items="trendItems" class="mt-5" title="最新动态" />
+    <Alert
+      v-if="failed"
+      type="error"
+      show-icon
+      class="mt-4"
+      message="工作台数据加载失败"
+      description="未能取得您的待办与动态，请重试。"
+    >
+      <template #action>
+        <Button size="small" @click="load">重新加载</Button>
+      </template>
+    </Alert>
+
+    <div class="mt-4 flex flex-col gap-4 lg:flex-row">
+      <div class="flex w-full flex-col gap-4 lg:w-3/5">
+        <Card
+          v-if="loading || workspace?.projects"
+          title="我的待办"
+          :body-style="{ paddingTop: '8px' }"
+        >
+          <template #extra>
+            <Button size="small" :loading="loading" @click="load">
+              刷新我的待办
+            </Button>
+          </template>
+          <Skeleton v-if="loading" active />
+          <template v-else-if="workspace?.projects">
+            <ul
+              v-if="workspace.projects.tasks.length"
+              class="mb-0 divide-y divide-border pl-0"
+            >
+              <li
+                v-for="task in workspace.projects.tasks"
+                :key="task.projectId"
+                class="flex flex-wrap items-center gap-x-3 gap-y-1 py-3"
+              >
+                <Tag :color="reasonMeta[task.reason].color" class="mr-0">
+                  {{ reasonMeta[task.reason].label }}
+                </Tag>
+                <RouterLink
+                  v-if="canViewProjectDetail"
+                  :to="{
+                    name: 'ProjectDetail',
+                    params: { projectId: task.projectId },
+                  }"
+                  class="text-primary font-medium underline underline-offset-4"
+                >
+                  {{ task.projectNo }}
+                </RouterLink>
+                <span v-else class="font-medium">{{ task.projectNo }}</span>
+                <span>{{ taskCustomer(task) }}</span>
+                <span
+                  v-if="task.exhibitionName"
+                  class="text-muted-foreground text-sm"
+                >
+                  {{ task.exhibitionName }}
+                </span>
+                <span class="text-muted-foreground ml-auto text-sm">
+                  {{ statusLabels[task.status] }} ·
+                  {{
+                    task.nextFollowUpAt
+                      ? `计划跟进 ${formatDateTime(task.nextFollowUpAt)}`
+                      : `受理于 ${formatDateTime(task.createdAt)}`
+                  }}
+                </span>
+              </li>
+            </ul>
+            <Empty
+              v-else
+              description="暂无逾期、今日到期或待受理的项目"
+              class="my-6"
+            />
+            <p class="text-muted-foreground mb-0 mt-3 text-sm">
+              <template
+                v-if="
+                  workspace.projects.taskTotal > workspace.projects.tasks.length
+                "
+              >
+                共 {{ workspace.projects.taskTotal }} 项，仅显示最紧急的
+                {{ workspace.projects.tasks.length }} 项。
+              </template>
+              按逾期、今日跟进、待受理排序；跟进时间取项目最新跟进记录的约定时间。
+            </p>
+          </template>
+        </Card>
+
+        <Card v-if="workspace?.projects" title="我负责项目的最新动态">
+          <ol
+            v-if="workspace.projects.activities.length"
+            class="mb-0 flex flex-col gap-4 pl-0"
+          >
+            <li
+              v-for="activity in workspace.projects.activities"
+              :key="activity.id"
+              class="flex flex-wrap items-baseline gap-x-2"
+            >
+              <span class="font-medium">{{ actorLabel(activity) }}</span>
+              <span>{{ activityText(activity) }}</span>
+              <RouterLink
+                v-if="canViewProjectDetail"
+                :to="{
+                  name: 'ProjectDetail',
+                  params: { projectId: activity.projectId },
+                }"
+                class="text-primary underline underline-offset-4"
+              >
+                {{ activity.projectNo }}
+              </RouterLink>
+              <span v-else>{{ activity.projectNo }}</span>
+              <time
+                :datetime="activity.createdAt"
+                class="text-muted-foreground ml-auto text-sm"
+              >
+                {{ formatDateTime(activity.createdAt) }}
+              </time>
+            </li>
+          </ol>
+          <Empty v-else description="暂无项目动态" class="my-6" />
+        </Card>
       </div>
-      <div class="w-full lg:w-2/5">
-        <WorkbenchQuickNav
-          :items="quickNavItems"
-          class="lg:mt-0"
-          title="快捷导航"
-          @click="navTo"
-        />
-        <WorkbenchTodo :items="todoItems" class="mt-5" title="待办事项" />
-        <AnalysisChartCard class="mt-5" title="访问来源">
-          <AnalyticsVisitsSource />
-        </AnalysisChartCard>
+
+      <div class="flex w-full flex-col gap-4 lg:w-2/5">
+        <Card title="快捷入口">
+          <nav
+            v-if="quickLinks.length"
+            aria-label="业务快捷入口"
+            class="grid grid-cols-3 gap-2"
+          >
+            <RouterLink
+              v-for="item in quickLinks"
+              :key="item.name"
+              :to="{ name: item.name }"
+              class="hover:bg-accent flex flex-col items-center gap-2 rounded-md py-4 text-foreground"
+            >
+              <IconifyIcon :icon="item.icon" class="text-primary size-6" />
+              <span class="text-sm">{{ item.label }}</span>
+            </RouterLink>
+          </nav>
+          <p v-else class="text-muted-foreground mb-0">
+            当前账号暂无业务页面权限，请联系管理员配置。
+          </p>
+        </Card>
+
+        <Card v-if="workspace?.projects" title="我负责的项目">
+          <dl class="mb-0 grid grid-cols-3 gap-4">
+            <div v-for="item in myMetrics" :key="item.label">
+              <dt class="text-muted-foreground text-sm">{{ item.label }}</dt>
+              <dd class="mb-0 mt-2 text-2xl font-semibold tabular-nums">
+                {{ item.value.toLocaleString() }}
+              </dd>
+            </div>
+          </dl>
+          <p class="text-muted-foreground mb-0 mt-4 text-sm">
+            统计您作为承接人的未结束项目；今日按上海时区，今日计划与逾期可能重叠。
+          </p>
+        </Card>
+
+        <Card v-if="workspace?.notifications" title="消息通知">
+          <p class="mb-0">
+            您有
+            <strong class="tabular-nums">
+              {{ workspace.notifications.unread.toLocaleString() }}
+            </strong>
+            条未读项目消息。
+            <RouterLink
+              v-if="router.hasRoute('ProjectNotifications')"
+              :to="{ name: 'ProjectNotifications' }"
+              class="text-primary underline underline-offset-4"
+            >
+              前往查看
+            </RouterLink>
+          </p>
+        </Card>
       </div>
     </div>
-  </div>
+
+    <p
+      v-if="workspace"
+      class="text-muted-foreground mb-0 mt-3 text-right text-sm"
+    >
+      数据更新于 {{ formatDateTime(workspace.generatedAt) }}
+    </p>
+  </Page>
 </template>

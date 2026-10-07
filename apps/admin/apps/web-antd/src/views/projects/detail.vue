@@ -21,6 +21,7 @@ import {
   assetDownloadApi,
   assigneeStatusLabels,
   getProjectApi,
+  projectEventLabels,
   projectEventsApi,
   statusLabels,
 } from '#/api/core/projects';
@@ -68,14 +69,6 @@ async function download(version: string) {
   const result = await assetDownloadApi(project.value.projectId, version);
   openWindow(result.downloadUrl);
 }
-const eventLabels: Record<string, string> = {
-  accepted: '受理',
-  assignment: '分配',
-  scheme: '确认关联方案',
-  'follow-up': '联系跟进',
-  quotation: '报价修订',
-  legacy_import: '历史迁入',
-};
 onMounted(load);
 </script>
 <template>
@@ -233,7 +226,7 @@ onMounted(load);
           class="mb-4 border-b pb-4"
         >
           <div class="mb-2 flex gap-3">
-            <Tag>{{ eventLabels[item.kind] ?? item.kind }}</Tag
+            <Tag>{{ projectEventLabels[item.kind] ?? item.kind }}</Tag
             ><span>{{ item.actorName ?? '系统' }}</span
             ><span class="text-sm text-muted-foreground">{{
               formatDateTime(item.createdAt)

@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { analyticsRangeDays, getDashboardAnalytics, type AnalyticsRangeDays } from '../../../modules/dashboard/analytics.js';
-import { getDashboardSummary } from '../../../modules/dashboard/service.js';
-import { requirePrincipal } from '../../authentication.js';
+import { getDashboardWorkspace } from '../../../modules/dashboard/workspace.js';
+import { adminUserId, requirePrincipal } from '../../authentication.js';
 
 export async function registerAdminDashboardRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
-  app.get('/dashboard/summary', { schema: { tags: ['admin-dashboard'] } }, async request => ({
-    code: 0, data: await getDashboardSummary(pool, requirePrincipal(request, 'admin').permissions),
+  app.get('/dashboard/workspace', { schema: { tags: ['admin-dashboard'] } }, async request => ({
+    code: 0, data: await getDashboardWorkspace(pool, adminUserId(request), requirePrincipal(request, 'admin').permissions),
   }));
 
   app.get('/dashboard/analytics', { schema: { tags: ['admin-dashboard'], querystring: {

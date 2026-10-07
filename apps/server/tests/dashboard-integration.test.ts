@@ -2,82 +2,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { getDashboardAnalytics } from '../src/modules/dashboard/analytics.js';
-import { getDashboardSummary } from '../src/modules/dashboard/service.js';
+import { getDashboardWorkspace } from '../src/modules/dashboard/workspace.js';
 import { projectTestPool } from './project-fixtures.js';
-
-test('dashboard counts persisted states, latest follow-up schedules and recent quote requests', {
-  skip: !process.env.PROJECT_TEST_DATABASE_URL,
-}, async t => {
-  const pool = await projectTestPool(t);
-  const permissions = ['projects.read', 'schemes.read', 'generation.read', 'notifications.read'];
-  const empty = await getDashboardSummary(pool, permissions);
-  assert.deepEqual(empty.projects, { pending: 0, todayFollowUps: 0, overdueFollowUps: 0, recentInquiries: [] });
-  assert.deepEqual(empty.schemes, { unverified: 0 });
-  assert.deepEqual(empty.generation, { failed: 0 });
-  assert.deepEqual(empty.notifications, { failed: 0 });
-  const adminId = randomUUID();
-  const userId = randomUUID();
-  await pool.query("INSERT INTO admins(id,external_user_id,username) VALUES($1,101,'dashboard-admin')", [adminId]);
-  await pool.query("INSERT INTO users(id,external_user_id,username) VALUES($1,102,'dashboard-user')", [userId]);
-  const bounds = (await pool.query<{ today: string; yesterday: string; tomorrow: string }>(`SELECT
-    ((date_trunc('day',now() AT TIME ZONE 'Asia/Shanghai') + interval '12 hours') AT TIME ZONE 'Asia/Shanghai') AS today,
-    (now() - interval '2 days') AS yesterday,(now() + interval '2 days') AS tomorrow`)).rows[0]!;
-  async function project(status: string, sourceType = 'manual_request', createdAt = '2026-01-01T00:00:00Z') {
-    const id = randomUUID();
-    await pool.query(`INSERT INTO projects(id,request_no,source_type,assignee_admin_id,status,request_snapshot,created_at)
-      VALUES($1,$2,$3,$4,$5,'{"company":"真实客户","contact":{"name":"联系人"}}',$6)`,
-    [id, randomUUID(), sourceType, adminId, status, createdAt]);
-    return id;
-  }
-  async function followUp(projectId: string, nextFollowUpAt?: string, createdAt = '2026-01-01T00:00:00Z') {
-    await pool.query(`INSERT INTO project_events(project_id,kind,payload,created_at) VALUES($1,'follow-up',$2,$3)`,
-      [projectId, JSON.stringify({ nextFollowUpAt }), createdAt]);
-  }
-  await project('pending');
-  const today = await project('following');
-  await followUp(today, bounds.today);
-  const overdue = await project('quoted');
-  await followUp(overdue, bounds.yesterday);
-  const rescheduled = await project('following');
-  await followUp(rescheduled, bounds.yesterday);
-  await followUp(rescheduled, bounds.tomorrow, '2026-01-02T00:00:00Z');
-  const cleared = await project('following');
-  await followUp(cleared, bounds.yesterday);
-  await followUp(cleared, undefined, '2026-01-02T00:00:00Z');
-  for (const status of ['won', 'lost', 'closed']) {
-    await followUp(await project(status), bounds.yesterday);
-  }
-  const inquiryIds: string[] = [];
-  for (let i = 0; i < 6; i++) inquiryIds.push(await project(i === 5 ? 'won' : 'quoted', 'quote_request', `2026-09-0${i + 1}T00:00:00Z`));
-  await project('following', 'manual_request', '2026-09-07T00:00:00Z');
-  for (const verification of ['unverified', 'verified', 'failed']) {
-    await pool.query('INSERT INTO schemes(code,name,verification_status) VALUES($1,$1,$2)', [randomUUID(), verification]);
-  }
-  for (const status of ['failed', 'succeeded', 'partially_succeeded']) {
-    await pool.query(`INSERT INTO theme_jobs(user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,status)
-      VALUES($1,'test',$2,'test',$3,'{}',1,$4)`, [userId, randomUUID(), randomUUID(), status]);
-  }
-  await pool.query(`INSERT INTO artwork_jobs(user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,status)
-    VALUES($1,'test',$2,'test',$3,'{}',1,'failed')`, [userId, randomUUID(), randomUUID()]);
-  for (const delivery of ['failed', 'delivered', 'pending', 'recovered']) {
-    const eventId = randomUUID();
-    await pool.query("INSERT INTO project_events(id,project_id,kind,payload) VALUES($1,$2,'accepted','{}')", [eventId, overdue]);
-    await pool.query(`INSERT INTO project_notification_outbox(project_id,event_id,failed_at,delivered_at)
-      VALUES($1,$2,$3,$4)`, [overdue, eventId, ['failed', 'recovered'].includes(delivery) ? new Date() : null,
-      ['delivered', 'recovered'].includes(delivery) ? new Date() : null]);
-  }
-  const result = await getDashboardSummary(pool, permissions);
-  assert.equal(result.projects?.pending, 1);
-  assert.equal(result.projects?.todayFollowUps, 1);
-  const now = Date.now();
-  assert.equal(result.projects?.overdueFollowUps, 1 + (new Date(bounds.today).getTime() < now ? 1 : 0));
-  assert.deepEqual(result.projects?.recentInquiries.map(item => item.projectId), inquiryIds.slice(1).reverse());
-  assert.equal(result.projects?.recentInquiries[0]?.status, 'won');
-  assert.equal(result.projects?.recentInquiries[0]?.company, '真实客户');
-  assert.deepEqual(result.schemes, { unverified: 1 });
-  assert.deepEqual(result.generation, { failed: 2 });
-  assert.deepEqual(result.notifications, { failed: 1 });
-});
 
 test('dashboard analytics aggregates the window by Shanghai day and fills empty buckets', {
   skip: !process.env.PROJECT_TEST_DATABASE_URL,
@@ -149,4 +75,74 @@ test('dashboard analytics aggregates the window by Shanghai day and fills empty 
   assert.deepEqual(limited.overview.map(item => item.key), ['projects']);
   assert.deepEqual(limited.funnel.map(stage => stage.key), ['inquiryCustomers', 'wonCustomers']);
   assert.equal(limited.generationStatuses, null);
+});
+
+test('workspace lists only the signed-in admin actionable projects, activity and unread notifications', {
+  skip: !process.env.PROJECT_TEST_DATABASE_URL,
+}, async t => {
+  const pool = await projectTestPool(t);
+  const [me, colleague] = [randomUUID(), randomUUID()];
+  await pool.query(`INSERT INTO admins(id,external_user_id,username,nickname) VALUES
+    ($1,301,'workspace-me','我'),($2,302,'workspace-colleague','同事')`, [me, colleague]);
+  const permissions = ['projects.read', 'notifications.read'];
+  const empty = await getDashboardWorkspace(pool, me, permissions);
+  assert.deepEqual(empty.projects, { active: 0, pending: 0, todayFollowUps: 0, overdueFollowUps: 0, taskTotal: 0, tasks: [], activities: [] });
+  assert.deepEqual(empty.notifications, { unread: 0 });
+
+  const bounds = (await pool.query<{ todayLater: Date; past: Date; future: Date }>(`SELECT
+    ((date_trunc('day',now() AT TIME ZONE 'Asia/Shanghai') + interval '1 day' - interval '1 minute') AT TIME ZONE 'Asia/Shanghai') AS "todayLater",
+    (now() - interval '2 days') AS past,(now() + interval '3 days') AS future`)).rows[0]!;
+  async function project(status: string, assignee = me, createdAt = '2026-01-01T00:00:00Z') {
+    const id = randomUUID();
+    await pool.query(`INSERT INTO projects(id,request_no,source_type,assignee_admin_id,status,request_snapshot,created_at)
+      VALUES($1,$2,'manual_request',$3,$4,'{"company":"","contact":{"name":"联系人"},"exhibition":{"name":"上海展"}}',$5)`,
+    [id, randomUUID(), assignee, status, createdAt]);
+    return id;
+  }
+  async function event(projectId: string, kind: string, payload: object, actor: string | null, createdAt: string) {
+    const id = randomUUID();
+    await pool.query('INSERT INTO project_events(id,project_id,kind,actor_admin_id,payload,created_at) VALUES($1,$2,$3,$4,$5,$6)',
+      [id, projectId, kind, actor, JSON.stringify(payload), createdAt]);
+    return id;
+  }
+  const pendingOld = await project('pending', me, '2026-01-01T00:00:00Z');
+  const pendingNew = await project('pending', me, '2026-01-02T00:00:00Z');
+  const today = await project('following');
+  await event(today, 'follow-up', { nextFollowUpAt: bounds.todayLater, fromStatus: 'pending', status: 'following' }, me, '2026-01-03T00:00:00Z');
+  const overdue = await project('quoted');
+  await event(overdue, 'follow-up', { nextFollowUpAt: bounds.past, fromStatus: 'following', status: 'quoted' }, colleague, '2026-01-04T00:00:00Z');
+  const scheduled = await project('following');
+  await event(scheduled, 'follow-up', { nextFollowUpAt: bounds.future, status: 'following' }, me, '2026-01-05T00:00:00Z');
+  const won = await project('won');
+  await event(won, 'follow-up', { nextFollowUpAt: bounds.past, status: 'won' }, me, '2026-01-06T00:00:00Z');
+  const others = await project('pending', colleague);
+  await event(pendingNew, 'quotation', { quotationRevision: 2 }, me, '2026-01-08T00:00:00Z');
+  const acceptedId = await event(pendingOld, 'accepted', {}, null, '2026-01-09T00:00:00Z');
+
+  const otherEventId = await event(others, 'accepted', {}, null, '2026-01-07T00:00:00Z');
+  for (const [projectId, eventId] of [[pendingOld, acceptedId], [others, otherEventId]]) {
+    await pool.query('INSERT INTO project_notification_outbox(project_id,event_id) VALUES($1,$2)', [projectId, eventId]);
+  }
+  await pool.query(`INSERT INTO project_notification_reads(notification_id,admin_id)
+    SELECT id,$1 FROM project_notification_outbox WHERE project_id=$2`, [me, pendingOld]);
+
+  const result = await getDashboardWorkspace(pool, me, permissions);
+  const projects = result.projects!;
+  assert.deepEqual([projects.active, projects.pending, projects.todayFollowUps, projects.overdueFollowUps, projects.taskTotal], [5, 2, 1, 1, 4]);
+  assert.deepEqual(projects.tasks.map(task => [task.projectId, task.reason]),
+    [[overdue, 'overdue'], [today, 'today'], [pendingOld, 'pending'], [pendingNew, 'pending']]);
+  assert.equal(projects.tasks[0]?.company, null);
+  assert.equal(projects.tasks[0]?.exhibitionName, '上海展');
+  assert.equal(projects.tasks[0]?.nextFollowUpAt, bounds.past.toISOString());
+  assert.deepEqual(projects.activities.map(activity => activity.projectId), [pendingOld, pendingNew, won, scheduled, overdue, today]);
+  assert.deepEqual(projects.activities[0], {
+    id: acceptedId, kind: 'accepted', projectId: pendingOld, projectNo: projects.activities[0]!.projectNo, actorName: null, byMe: false,
+    fromStatus: null, toStatus: null, schemeCode: null, quotationRevision: null, createdAt: '2026-01-09T00:00:00.000Z',
+  });
+  assert.equal(projects.activities[1]?.quotationRevision, 2);
+  assert.deepEqual([projects.activities[4]?.actorName, projects.activities[4]?.byMe, projects.activities[4]?.fromStatus, projects.activities[4]?.toStatus],
+    ['同事', false, 'following', 'quoted']);
+  assert.equal(projects.activities[5]?.byMe, true);
+  assert.deepEqual(result.notifications, { unread: 1 });
+  assert.deepEqual(await getDashboardWorkspace(pool, colleague, ['projects.read']).then(data => data.projects?.tasks.map(task => task.projectId)), [others]);
 });
