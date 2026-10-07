@@ -10,9 +10,18 @@ pnpm dev          # 开发服务器（http://localhost:5173）
 pnpm build        # vue-tsc 类型检查 + 生产构建
 pnpm build:prod   # 同上，显式 --mode production
 pnpm preview      # 预览构建产物
+pnpm test         # node:test 跑 tests/*.test.mjs（逐个文件串行）
+node --test tests/<file>.test.mjs  # 单文件
 ```
 
-- **无独立 lint / test 脚本**；类型验证唯一入口是 `pnpm build`（内含 `vue-tsc --noEmit`），非平凡改动后必须跑。
+- 无独立 lint 脚本；类型验证入口是 `pnpm build`（内含 `vue-tsc --noEmit`）。
+- **检查流程**：非平凡改动后依次跑 `pnpm build`、`pnpm test`，两者都通过才算完成；不要并行跑，测试文件也保持 `--test-concurrency=1`（单文件峰值约 1 GB）。
+
+## 测试约定（`tests/`）
+
+- 每个文件自建 Vite SSR server + happy-dom，加载真实 `.vue` 页面；只在 `resolveId`/`load` 里替换网络层（`lib/api-client`）、登录态（`stores/auth`）、布局壳等外部依赖，业务模块与 sessionStorage 读写保持真实。`vue-i18n` 统一换成 `tests/mock-i18n.ts`（直接读 `zh.json`）。
+- **DOM 节点禁止直接传给 `assert.*`**：断言失败时报告器会深度展开 happy-dom 节点，曾单进程占用 14 GB。节点比较用 `tests/dom-assert.mjs` 的 `assertNoNode` / `assertSameNode` / `assertNotSameNode`。
+- 跨页面交接（sessionStorage 草稿、智选会话、路由 query）必须有经过真实页面写入 → 真实页面读取的测试，不能只在读取端手工构造数据；参考 `selection-quote-flow.test.mjs`（智选 → 方案详情 → 报价）。改动 `features/selection/session.ts`、`handoff.ts` 或这几页的跳转参数时必须跑它。
 
 ## 后端对接
 

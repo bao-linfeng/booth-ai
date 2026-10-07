@@ -31,12 +31,14 @@ const server = await createServer({
       if (path.endsWith('/features/selection/SelectionShell.vue')) return '\0test-shell'
       if (path.endsWith('/lib/api-client')) return '\0test-api'
       if (path.endsWith('/stores/auth')) return '\0test-auth'
+      if (path.endsWith('/composables/useCredits')) return '\0test-credits'
     },
     load(id) {
       if (id === '\0test-vue') return "export { createApp, h, nextTick } from 'vue'; export { createRouter, createMemoryHistory } from 'vue-router'"
       if (id === '\0test-shell') return "import { h } from 'vue'; export default { setup(_, { slots }) { return () => h('div', slots.default?.()) } }"
       if (id === '\0test-api') return "export const API_BASE_URL = ''; export const apiFetch = (...args) => globalThis.__myProjects.apiFetch(...args)"
       if (id === '\0test-auth') return 'export const useAuthStore = () => globalThis.__myProjects.auth'
+      if (id === '\0test-credits') return "import { ref } from 'vue'; export const useCredits = () => ({ balance: ref(null), loading: ref(false), signedInToday: ref(false), fetchBalance: async () => {}, signIn: async () => ({ success: true, amount: 1 }) })"
     },
     async transform(source, id) {
       if (!id.endsWith('.vue')) return
