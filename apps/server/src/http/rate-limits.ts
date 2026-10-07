@@ -7,11 +7,16 @@ export const rateLimitPolicies = {
   generation: { max: 10, windowSeconds: 60, identity: 'user' },
   quote: { max: 10, windowSeconds: 60, identity: 'user' },
   manual: { max: 10, windowSeconds: 60, identity: 'user' },
+  anonymousProject: { max: 5, windowSeconds: 600, identity: 'ip' },
   selection: { max: 60, windowSeconds: 60, identity: 'ip' },
 } as const;
 
-export function rateLimit(redis: Redis, name: keyof typeof rateLimitPolicies) {
+type PolicyName = keyof typeof rateLimitPolicies;
+
+// anonymous：允许访客调用的接口，未登录请求改用该策略计数
+export function rateLimit(redis: Redis, policyName: PolicyName, anonymous?: PolicyName) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const name = anonymous && !request.principal ? anonymous : policyName;
     const policy = rateLimitPolicies[name];
     const identity = policy.identity === 'user' ? request.principal?.localId : request.ip;
     if (!identity) throw Object.assign(new Error('Authentication required'), { statusCode: 401, reason: 'AUTH_REQUIRED' });

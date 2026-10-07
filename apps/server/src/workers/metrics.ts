@@ -36,9 +36,13 @@ export async function collectWorkerMetrics(database: Pick<pg.Pool, 'query'>, que
      UNION ALL SELECT 'theme', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8 FROM theme_job_outbox WHERE picked_at IS NULL
      UNION ALL SELECT 'artwork', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8 FROM artwork_job_outbox WHERE picked_at IS NULL
      UNION ALL SELECT 'project_notification', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8
-       FROM project_notification_outbox WHERE delivered_at IS NULL AND failed_at IS NULL`);
+       FROM project_notification_outbox WHERE delivered_at IS NULL AND failed_at IS NULL
+     UNION ALL SELECT 'receipt_email', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8
+       FROM project_receipt_emails WHERE delivered_at IS NULL AND failed_at IS NULL`);
   const notificationsFailed = (await database.query<{ count: number }>(
     'SELECT count(*)::int AS count FROM project_notification_outbox WHERE failed_at IS NOT NULL AND delivered_at IS NULL')).rows[0]?.count ?? 0;
+  const receiptEmailsFailed = (await database.query<{ count: number }>(
+    'SELECT count(*)::int AS count FROM project_receipt_emails WHERE failed_at IS NOT NULL AND delivered_at IS NULL')).rows[0]?.count ?? 0;
   // Reservations still held after the job's execution deadline or terminal state indicate a settlement gap.
   const overdueReservations = (await database.query<{ count: number }>(
     `SELECT count(*)::int AS count FROM credit_reservations r
@@ -54,6 +58,7 @@ export async function collectWorkerMetrics(database: Pick<pg.Pool, 'query'>, que
     queues: Object.fromEntries(queueEntries),
     outbox: Object.fromEntries(outbox.rows.map(row => [row.name, { pending: row.pending, oldestSeconds: row.oldestSeconds === null ? null : Math.round(row.oldestSeconds) }])),
     projectNotificationsFailed: notificationsFailed,
+    receiptEmailsFailed,
     overdueCreditReservations: overdueReservations,
     runningPhases: phases.rows.map(row => ({ kind: row.kind, phase: row.phase, jobs: row.jobs, maxPhaseSeconds: row.maxPhaseSeconds === null ? null : Math.round(row.maxPhaseSeconds) })),
   };

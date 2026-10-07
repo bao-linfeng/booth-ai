@@ -96,7 +96,12 @@ const endDateError = computed(() => {
 })
 const scopeError = computed(() => validationAttempted.value && !form.scopeCodes.length ? t('quoteRequest.validationScope') : '')
 const scopeNotesError = computed(() => validationAttempted.value && form.scopeCodes.includes('other') && !form.scopeNotes.trim() ? t('quoteRequest.validationScopeNote') : '')
-const contactError = computed(() => validationAttempted.value && !form.email.trim() && !form.phone.trim() ? t('quoteRequest.validationContact') : '')
+// 未登录提交以邮箱认领：登录后，灵通账号邮箱与此一致的申请会自动归入"我的项目"
+const contactError = computed(() => {
+  if (!validationAttempted.value) return ''
+  if (!auth.isLoggedIn && !form.email.trim()) return t('quoteRequest.validationEmailRequired')
+  return !form.email.trim() && !form.phone.trim() ? t('quoteRequest.validationContact') : ''
+})
 
 function validateFields() {
   validationAttempted.value = true
@@ -181,12 +186,11 @@ async function refreshContext() {
 onMounted(loadContext)
 onMounted(loadCountries)
 onMounted(() => { if (form.countryCode) loadCities(form.countryCode) })
-function login() { persist(); void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } }) }
+function login() { persist(); void router.push({ path: '/auth/sign-in', query: { redirect: receipt.value ? '/my-projects' : route.fullPath } }) }
 async function newRequest() { receipt.value = null; pending.value = null; pendingManual.value = null; persist(); await refreshContext() }
 async function submit() {
   if (manual) { await submitManual(); return }
   if (busy.value || (!context.value && !pending.value)) return
-  if (!auth.isLoggedIn) { login(); return }
   if (pending.value && draftOwner.value !== (auth.currentUser?.id ?? null)) { pending.value = null; error.value = t('quoteRequest.errorAccountChanged'); persist(); return }
   draftOwner.value = auth.currentUser?.id ?? null
   error.value = ''
@@ -215,14 +219,13 @@ async function submit() {
     } else if (status && status < 500 && status !== 408 && status !== 429) {
       pending.value = null
       conflict.value = status === 409
-      error.value = status === 409 ? t('quoteRequest.errorDataChanged') : status === 401 ? t('quoteRequest.errorAuthFailed') : t('quoteRequest.errorFormInvalid')
+      error.value = status === 409 ? t('quoteRequest.errorDataChanged') : status === 401 ? t('quoteRequest.errorAuthFailed') : reason === 'CLAIM_EMAIL_REQUIRED' ? t('quoteRequest.validationEmailRequired') : t('quoteRequest.errorFormInvalid')
     } else { error.value = t('quoteRequest.errorNetworkSubmit') }
     persist()
   } finally { busy.value = false }
 }
 async function submitManual() {
   if (busy.value) return
-  if (!auth.isLoggedIn) { login(); return }
   if (pendingManual.value && draftOwner.value !== (auth.currentUser?.id ?? null)) { pendingManual.value = null; error.value = t('quoteRequest.errorAccountChanged2'); persist(); return }
   draftOwner.value = auth.currentUser?.id ?? null
   error.value = ''
@@ -240,7 +243,7 @@ async function submitManual() {
     const status = (failure as { response?: { status?: number } }).response?.status
     const reason = (failure as { data?: { error?: { reason?: string } } }).data?.error?.reason
     if (status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE') { pendingManual.value = null; error.value = t('quoteRequest.errorAssignmentUnavailable') }
-    else if (status && status < 500 && status !== 408 && status !== 429) { pendingManual.value = null; error.value = t('quoteRequest.errorFormInvalid2') }
+    else if (status && status < 500 && status !== 408 && status !== 429) { pendingManual.value = null; error.value = status === 401 ? t('quoteRequest.errorAuthFailed') : reason === 'CLAIM_EMAIL_REQUIRED' ? t('quoteRequest.validationEmailRequired') : t('quoteRequest.errorFormInvalid2') }
     else error.value = t('quoteRequest.errorNetworkRetry')
     persist()
   } finally { busy.value = false }
@@ -257,7 +260,8 @@ async function submitManual() {
         <p class="text-sm leading-6 text-muted-foreground">{{ t('quoteRequest.successNote') }}</p>
         <p v-if="receipt.materialsStatus?.artworks === 'pending'" class="text-sm">{{ t('quoteRequest.successThemePending') }}</p>
         <p v-if="artworkJobId && receipt.materialsStatus?.artworks === 'available'" class="text-sm">{{ t('quoteRequest.successArtworkFixed') }}</p>
-        <Button as-child><RouterLink :to="`/my-projects/${receipt.projectId}`">{{ t('quoteRequest.viewProjects') }}</RouterLink></Button>
+        <template v-if="auth.isLoggedIn"><Button as-child><RouterLink :to="`/my-projects/${receipt.projectId}`">{{ t('quoteRequest.viewProjects') }}</RouterLink></Button></template>
+        <template v-else><p class="text-sm leading-6">{{ t('quoteRequest.successGuestNote', { email: form.email.trim() }) }}</p><Button @click="login">{{ t('quoteRequest.loginToTrack') }}</Button></template>
         <Button variant="outline" class="ml-3" @click="newRequest">{{ t('quoteRequest.submitAnother') }}</Button>
       </CardContent></Card>
     </template>
@@ -332,13 +336,14 @@ async function submitManual() {
               <div class="space-y-2"><Label for="email">{{ t('quoteRequest.emailLabel') }}</Label><Input id="email" v-model="form.email" type="email" maxlength="254" autocomplete="email" :aria-invalid="!!contactError" :aria-describedby="contactError ? 'request-contact-error' : undefined" /></div>
               <div class="space-y-2"><Label for="phone">{{ t('quoteRequest.phoneLabel') }}</Label><Input id="phone" v-model="form.phone" type="tel" maxlength="30" autocomplete="tel" :aria-invalid="!!contactError" :aria-describedby="contactError ? 'request-contact-error' : undefined" /></div>
               <p v-if="contactError" id="request-contact-error" role="alert" class="text-sm text-destructive sm:col-span-2">{{ contactError }}</p>
+              <p v-else-if="!auth.isLoggedIn" class="text-sm text-muted-foreground sm:col-span-2">{{ t('quoteRequest.guestHint') }}</p>
               <div class="space-y-2 sm:col-span-2"><Label for="notes">{{ t('quoteRequest.remarksLabel') }}</Label><Textarea id="notes" v-model="form.notes" maxlength="2000" /></div>
             </CardContent></section>
           </fieldset>
           <p v-if="error" role="alert" class="rounded-md border border-destructive/30 p-4 text-sm text-destructive">{{ error }}</p>
           <Button v-if="conflict" type="button" variant="outline" @click="refreshContext">{{ t('quoteRequest.refreshAndConfirm') }}</Button>
-          <Button v-if="!auth.isLoggedIn" type="button" @click="login">{{ t('quoteRequest.loginToSubmit') }}</Button>
-          <Button v-else :disabled="busy || loading || (!manual && !pending && (!context || conflict))" type="submit" class="w-full sm:w-auto"><Loader2 v-if="busy" class="mr-2 size-4 animate-spin" />{{ busy ? t('quoteRequest.submitting') : pending || pendingManual ? t('quoteRequest.retrySubmit') : manual ? t('quoteRequest.submitManual') : t('quoteRequest.submitQuote') }}</Button>
+          <Button :disabled="busy || loading || (!manual && !pending && (!context || conflict))" type="submit" class="w-full sm:w-auto"><Loader2 v-if="busy" class="mr-2 size-4 animate-spin" />{{ busy ? t('quoteRequest.submitting') : pending || pendingManual ? t('quoteRequest.retrySubmit') : manual ? t('quoteRequest.submitManual') : t('quoteRequest.submitQuote') }}</Button>
+          <Button v-if="!auth.isLoggedIn" type="button" variant="link" @click="login">{{ t('quoteRequest.loginFirst') }}</Button>
         </form>
         <aside class="space-y-4 lg:sticky lg:top-24"><section class="border-t"><CardHeader class="px-0"><FileText class="size-6 text-muted-foreground" /><CardTitle class="text-lg">{{ manual ? t('quoteRequest.manualSideTitle') : t('quoteRequest.schemeSideTitle') }}</CardTitle></CardHeader><CardContent class="space-y-4 px-0 text-sm">
           <p v-if="!manual" class="break-all font-mono">{{ code }}</p><p v-else>{{ t('quoteRequest.schemeSideNote') }}</p><p v-if="loading" class="text-muted-foreground">{{ t('quoteRequest.schemeLoading') }}</p>

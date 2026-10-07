@@ -137,6 +137,9 @@ onMounted(load);
           <DescriptionsItem label="客户 / 联系人">
             {{ project.request.company }} /
             {{ project.request.contact.name }}
+            <Tag v-if="!project.customerUserId" color="orange" class="ml-2">
+              未关联客户账号
+            </Tag>
           </DescriptionsItem>
           <DescriptionsItem label="联系方式">
             {{ project.request.contact.email }}

@@ -134,6 +134,37 @@ test('configuration fails closed without printing supplied secrets', () => {
   assert.throws(() => loadConfig({ ...env, PORT: '0' }), /Invalid PORT/);
   assert.throws(() => loadConfig({ ...env, CORS_ORIGINS: '*' }), /Invalid CORS_ORIGINS/);
   assert.throws(() => loadConfig({ ...env, AI_MODEL_ENCRYPTION_KEY: 'sensitive-invalid-value' }), /Invalid AI_MODEL_ENCRYPTION_KEY/);
+  assert.throws(() => loadConfig({ ...env, SMTP_HOST: 'smtp.example.test', SMTP_FROM: 'noreply@example.test', CLIENT_PUBLIC_URL: 'https://booth.example.test', SMTP_USER: 'mailer' }), /Missing environment variable: SMTP_PASSWORD/);
+  assert.throws(() => loadConfig({ ...env, SMTP_HOST: 'smtp.example.test', SMTP_FROM: 'noreply@example.test' }), /Missing environment variable: CLIENT_PUBLIC_URL/);
+  assert.throws(() => loadConfig({ ...env, SMTP_HOST: 'smtp.example.test', SMTP_FROM: 'sensitive-invalid-value', CLIENT_PUBLIC_URL: 'https://booth.example.test' }), /Invalid SMTP_FROM/);
+  for (const value of ['true', '0', '11', '10.0.0.0/8; rm']) assert.throws(() => loadConfig({ ...env, TRUST_PROXY: value }), /Invalid TRUST_PROXY/);
+});
+
+test('optional receipt email and proxy trust configuration', () => {
+  assert.equal(config.receiptEmail, undefined);
+  assert.equal(config.trustProxy, false);
+  assert.equal(loadConfig({ ...env, TRUST_PROXY: '2' }).trustProxy, 2);
+  assert.deepEqual(loadConfig({ ...env, TRUST_PROXY: 'loopback, 172.16.0.0/12,::1' }).trustProxy, ['loopback', '172.16.0.0/12', '::1']);
+  const mail = loadConfig({ ...env, SMTP_HOST: 'smtp.example.test', SMTP_USER: 'mailer', SMTP_PASSWORD: 'secret', SMTP_FROM: '灵通 AI <noreply@example.test>', CLIENT_PUBLIC_URL: 'https://booth.example.test/' });
+  assert.deepEqual(mail.receiptEmail, { clientPublicUrl: 'https://booth.example.test',
+    smtp: { host: 'smtp.example.test', port: 465, secure: true, from: '灵通 AI <noreply@example.test>', user: 'mailer', password: 'secret' } });
+  assert.deepEqual(loadConfig({ ...env, SMTP_HOST: 'relay.local', SMTP_PORT: '587', SMTP_FROM: 'noreply@example.test', CLIENT_PUBLIC_URL: 'http://localhost:5173' }).receiptEmail?.smtp,
+    { host: 'relay.local', port: 587, secure: false, from: 'noreply@example.test' });
+  assert.equal(loadConfig({ ...env, SMTP_HOST: 'smtp.example.test', SMTP_PORT: '', SMTP_SECURE: '', SMTP_USER: '', SMTP_FROM: 'noreply@example.test', CLIENT_PUBLIC_URL: 'http://localhost:5173', TRUST_PROXY: '' }).receiptEmail?.smtp.port, 465);
+  assert.equal(loadConfig({ ...env, SMTP_HOST: '', SMTP_FROM: '' }).receiptEmail, undefined);
+});
+
+test('client IP comes from forwarded headers only through trusted proxies', async t => {
+  const ipOf = async (trustProxy: string | undefined, forwardedFor: string) => {
+    const app = await buildApp(loadConfig({ ...env, ...(trustProxy ? { TRUST_PROXY: trustProxy } : {}) }), healthy);
+    t.after(() => app.close());
+    app.get('/test-ip', { config: { authentication: 'public' } }, async request => ({ ip: request.ip }));
+    return (await app.inject({ url: '/test-ip', remoteAddress: '127.0.0.1', headers: { 'x-forwarded-for': forwardedFor } })).json().ip;
+  };
+  assert.equal(await ipOf(undefined, '203.0.113.9'), '127.0.0.1');
+  assert.equal(await ipOf('loopback', '203.0.113.9'), '203.0.113.9');
+  assert.equal(await ipOf('1', '198.51.100.1, 203.0.113.9'), '203.0.113.9');
+  assert.equal(await ipOf('10.0.0.0/8', '203.0.113.9'), '127.0.0.1');
 });
 
 test('prompt template routes expose definitions, preview real builders, and isolate route errors', async t => {

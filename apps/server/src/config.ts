@@ -12,6 +12,26 @@ export interface Config {
   externalApiUrl: string;
   s3: { endpoint: string; publicEndpoint: string; region: string; bucket: string; accessKeyId: string; secretAccessKey: string };
   projectNotificationWebhook?: { url: string; secret: string };
+  // 反向代理信任范围：false 时 request.ip 为直连地址；部署在代理后必须配置，否则按 IP 的限流会共用代理地址
+  trustProxy: false | number | string[];
+  receiptEmail?: { smtp: SmtpConfig; clientPublicUrl: string };
+}
+
+export interface SmtpConfig { host: string; port: number; secure: boolean; user?: string; password?: string; from: string }
+
+const proxyKeywords = ['loopback', 'linklocal', 'uniquelocal'];
+
+function parseTrustProxy(value: string | undefined): Config['trustProxy'] {
+  const raw = value?.trim();
+  if (!raw) return false;
+  if (/^\d+$/.test(raw)) {
+    const hops = Number(raw);
+    if (hops < 1 || hops > 10) throw new Error('Invalid TRUST_PROXY');
+    return hops;
+  }
+  const entries = raw.split(',').map(entry => entry.trim()).filter(Boolean);
+  if (!entries.length || entries.some(entry => !proxyKeywords.includes(entry) && !/^[0-9a-fA-F:.]+(\/\d{1,3})?$/.test(entry))) throw new Error('Invalid TRUST_PROXY');
+  return entries;
 }
 
 // Validate names, never include supplied values (which may contain credentials).
@@ -54,6 +74,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (Buffer.byteLength(secret, 'utf8') < 32) throw new Error('Invalid PROJECT_NOTIFICATION_WEBHOOK_SECRET');
     projectNotificationWebhook = { url: url('PROJECT_NOTIFICATION_WEBHOOK_URL', nodeEnv === 'production' ? ['https:'] : ['http:', 'https:']), secret };
   }
+  // 回执邮件可选；未配置 SMTP 时邮件停留在 project_receipt_emails 待发送
+  let receiptEmail: Config['receiptEmail'];
+  if (env.SMTP_HOST?.trim()) {
+    const portValue = env.SMTP_PORT?.trim();
+    const secureValue = env.SMTP_SECURE?.trim();
+    if (secureValue && !['true', 'false'].includes(secureValue)) throw new Error('Invalid SMTP_SECURE');
+    const secure = secureValue ? secureValue === 'true' : (portValue ? Number(portValue) : 465) === 465;
+    const smtpPort = portValue ? Number(portValue) : secure ? 465 : 587;
+    if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) throw new Error('Invalid SMTP_PORT');
+    const user = env.SMTP_USER?.trim();
+    const from = required('SMTP_FROM');
+    if (!/^(?:[^<>]*<)?[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+>?$/.test(from)) throw new Error('Invalid SMTP_FROM');
+    const clientPublicUrl = url('CLIENT_PUBLIC_URL', nodeEnv === 'production' ? ['https:'] : ['http:', 'https:']).replace(/\/+$/, '');
+    receiptEmail = { clientPublicUrl, smtp: { host: env.SMTP_HOST.trim(), port: smtpPort, secure, from, ...(user ? { user, password: required('SMTP_PASSWORD') } : {}) } };
+  }
   return {
     nodeEnv: nodeEnv as Config['nodeEnv'], host: env.HOST ?? '0.0.0.0', port, logLevel,
     databaseUrl: url('DATABASE_URL', ['postgres:', 'postgresql:']),
@@ -66,5 +101,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       accessKeyId: required('S3_ACCESS_KEY'), secretAccessKey: required('S3_SECRET_KEY'),
     },
     ...(projectNotificationWebhook ? { projectNotificationWebhook } : {}),
+    trustProxy: parseTrustProxy(env.TRUST_PROXY),
+    ...(receiptEmail ? { receiptEmail } : {}),
   };
 }

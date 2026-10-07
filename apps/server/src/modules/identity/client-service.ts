@@ -4,6 +4,7 @@ import type { Config } from '../../config.js';
 import { fetchExternalUserDetail, loginExternal, type ExternalUserDetail } from '../../infra/external-auth.js';
 import { createSession, encryptJwt } from '../../infra/session.js';
 import { linkVisitorToUser } from '../selection-analytics/recording.js';
+import { claimAnonymousProjects } from '../projects/claims.js';
 import { jwtExpiresAt, toCurrentUser } from './service.js';
 
 interface LocalIdRow {
@@ -49,6 +50,7 @@ async function establishClientSession(
   if (!detail.enabled) throw errorWithStatus('Account is disabled', 403);
   const { id: localId, sessionVersion } = await syncClientUser(pool, detail, true, loginSource);
   if (visitorId) await linkVisitorToUser(pool, visitorId, localId);
+  await claimAnonymousProjects(pool, localId, detail.email);
   const expiresAt = jwtExpiresAt(externalJwt, config.sessionTtlSeconds);
   const accessToken = await createSession(redis, {
     site: 'client', localId, externalUserId: detail.externalUserId, username: detail.username,

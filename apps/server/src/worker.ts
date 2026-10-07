@@ -17,6 +17,8 @@ import { dispatchArtworkOutbox } from './workers/artwork-outbox.js';
 import { reconcileJobCredits } from './modules/credits/reconciliation.js';
 import { recoverGenerationJobs, recoverPendingGenerationJobs } from './workers/generation-recovery.js';
 import { deliverProjectNotifications } from './workers/project-notifications.js';
+import { deliverReceiptEmails } from './workers/receipt-emails.js';
+import { createSmtpSender } from './infra/mailer.js';
 import { createScheduler, type ScheduledTask } from './workers/scheduler.js';
 import { collectWorkerMetrics, createJobStats } from './workers/metrics.js';
 
@@ -117,6 +119,13 @@ async function main() {
     tasks.push({ name: 'project-notifications', intervalMs: 5000, staleAfterMs: 120_000, run: () => deliverProjectNotifications(database, send, log) });
   } else {
     log.warn('Project notification channel not configured; events stay pending in project_notification_outbox');
+  }
+  if (config.receiptEmail) {
+    const { smtp, clientPublicUrl } = config.receiptEmail;
+    const send = createSmtpSender(smtp);
+    tasks.push({ name: 'receipt-emails', intervalMs: 5000, staleAfterMs: 180_000, run: () => deliverReceiptEmails(database, send, clientPublicUrl, log) });
+  } else {
+    log.warn('SMTP not configured; receipt emails stay pending in project_receipt_emails');
   }
   // Metrics are diagnostics only and never decide worker health.
   let metrics: unknown = null;

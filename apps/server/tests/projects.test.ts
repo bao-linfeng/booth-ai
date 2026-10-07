@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { randomUUID } from 'node:crypto';
 import { digest, normalizeQuote, type QuoteInput } from '../src/modules/projects/domain.js';
 import { resolvePrincipal } from '../src/modules/identity/principal.js';
 import { registerQuoteRequestRoutes } from '../src/http/client/quote-requests/index.js';
@@ -40,11 +41,15 @@ test('quote identity rejects anonymous, disabled and wrong-site sessions', async
   const wrongSite = { get: async () => JSON.stringify({ site: 'admin', localId: 'id', sessionVersion: 1, expiresAt: Math.floor(Date.now()/1000)+1000 }), del: async () => 1 } as unknown as Redis;
   await assert.rejects(resolvePrincipal(pool,wrongSite,'token','client'),{ statusCode: 401 });
 });
-test('quote route rejects anonymous, unknown fields and invalid partial theme references', async t => {
+test('quote route requires a claim email and own theme results from visitors, and rejects unknown fields and invalid partial theme references', async t => {
   const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
-  await registerQuoteRequestRoutes(app,{ query: async () => ({ rows: [] }) } as unknown as pg.Pool,{ get: async () => null } as unknown as Redis);
+  await registerQuoteRequestRoutes(app,{ query: async () => ({ rows: [] }) } as unknown as pg.Pool,{ get: async () => null, eval: async () => 1 } as unknown as Redis);
   t.after(() => app.close());
-  assert.equal((await app.inject({method:'POST',url:'/quote-requests',payload:quoteInput})).statusCode,401);
+  const phoneOnly = await app.inject({method:'POST',url:'/quote-requests',payload:{...quoteInput,contact:{name:'访客',phone:'+86 138 0000 0000'}}});
+  assert.equal(phoneOnly.statusCode,400);
+  assert.equal(phoneOnly.json().message,'CLAIM_EMAIL_REQUIRED');
+  const themeSelection = { themeJobId: randomUUID(), resultId: randomUUID(), selectionRevision: 1 };
+  assert.equal((await app.inject({method:'POST',url:'/quote-requests',payload:{...quoteInput,entryPoint:'theme_result',themeSelection}})).statusCode,401);
   for (const payload of [{...quoteInput,userId:'someone-else'},{...quoteInput,themeSelection:{themeJobId:'partial'}},{...quoteInput,materialBudget:{currency:'CNY',amount:'-1'}}]) {
     assert.equal((await app.inject({method:'POST',url:'/quote-requests',payload})).statusCode,400);
   }

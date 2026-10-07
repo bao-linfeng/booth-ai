@@ -25,6 +25,11 @@ export interface AuthDependencies {
   storage: ReturnType<typeof createStorage>;
 }
 
+// 与 proxy-addr 的数字语义一致：信任离服务最近的 n 跳代理
+function trustHops(hops: number) {
+  return (_address: string, hop: number) => hop < hops;
+}
+
 export async function buildApp(config: Config, dependencies: HealthDependencies, authDependencies?: AuthDependencies) {
   const app = Fastify({
     logger: { level: config.logLevel, redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'] },
@@ -35,6 +40,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
     bodyLimit: 1024 * 1024,
     requestTimeout: 30000,
     ajv: { customOptions: { removeAdditional: false } },
+    trustProxy: typeof config.trustProxy === 'number' ? trustHops(config.trustProxy) : config.trustProxy,
   });
   await app.register(cors, { origin: config.corsOrigins, credentials: true });
   await app.register(helmet);

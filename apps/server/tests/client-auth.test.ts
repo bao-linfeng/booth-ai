@@ -16,7 +16,7 @@ function externalToken(username: string, exp = expiresAt) {
   return `${Buffer.from('{"alg":"HS256"}').toString('base64url')}.${Buffer.from(JSON.stringify({ sub: username, exp })).toString('base64url')}.test-signature`;
 }
 const profile = {
-  id: 123, username: 'user+demo', nickname: '演示用户', enabled: true, fkAvatarId: 7,
+  id: 123, username: 'user+demo', nickname: '演示用户', email: 'Demo@Example.test', enabled: true, fkAvatarId: 7,
   password: 'private-password-hash', roles: [{ name: 'ROLE_USER', roleEntityPermissions: [] }],
 };
 
@@ -29,6 +29,7 @@ async function setup(t: TestContext) {
       if (sql.includes('INSERT INTO users')) return { rows: [{ id: 'local-user-id', enabled: true, sessionVersion: 1 }] };
       if (sql.includes('FROM users WHERE id=')) return { rows: [{ enabled: true, roles: ['ROLE_USER'], sessionVersion: 1 }] };
       if (sql.startsWith('UPDATE selection_')) return { rows: [] };
+      if (sql.includes('UPDATE projects SET customer_user_id')) return { rows: [] };
       throw new Error('Unexpected query');
     } },
     redis: {
@@ -72,6 +73,7 @@ test('external token login wraps the profile, synchronizes the visitor and creat
   assert.equal(queries[0]?.values[0], 123);
   assert.equal(queries[0]?.values[13], true);
   assert.equal(queries.filter(query => query.sql.startsWith('UPDATE selection_')).length, 3);
+  assert.deepEqual(queries.find(query => query.sql.includes('UPDATE projects SET customer_user_id'))?.values, ['local-user-id', 'demo@example.test']);
   assert.equal(sessions.size, 1);
   const session = await getSession(dependencies.redis, result.data.accessToken, 'client');
   assert.ok(session);

@@ -25,6 +25,11 @@ export function clientUserId(request: FastifyRequest): string {
   return requirePrincipal(request, 'client').localId;
 }
 
+// 允许访客访问的接口：未登录返回 null，携带其他站点会话仍视为认证失败
+export function optionalClientUserId(request: FastifyRequest): string | null {
+  return request.principal ? clientUserId(request) : null;
+}
+
 export function adminUserId(request: FastifyRequest): string {
   return requirePrincipal(request, 'admin').localId;
 }

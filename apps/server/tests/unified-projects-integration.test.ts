@@ -7,6 +7,8 @@ import type { Redis } from 'ioredis';
 import { createManualProject } from '../src/modules/projects/service.js';
 import { assignProject,followUpProject,saveQuotation,quotationRevision } from '../src/modules/projects/admin-service.js';
 import { getProject } from '../src/modules/projects/repository.js';
+import { claimAnonymousProjects } from '../src/modules/projects/claims.js';
+import { claimReceiptEmails, completeReceiptEmail, failReceiptEmail, RECEIPT_EMAIL_DAILY_LIMIT_PER_RECIPIENT } from '../src/modules/projects/receipt-emails.js';
 import { emptyRequirement } from '../src/modules/selection/domain.js';
 import { registerClientProjectRoutes } from '../src/http/client/projects/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';
@@ -59,7 +61,7 @@ test('unified projects: manual acceptance, assignment, immutable quotation, stat
   await app.register(async adminRoutes=>{registerAuthentication(adminRoutes,pool,redis,'admin');await registerAdminProjectRoutes(adminRoutes,pool,redis,storage);},{prefix:'/admin'});
   const headers={authorization:'Bearer test-token'};
   const replay=await app.inject({method:'POST',url:'/manual-requests',headers,payload:input});assert.equal(replay.statusCode,200);assert.equal(replay.json().data.projectId,id);
-  assert.equal((await app.inject({method:'POST',url:'/manual-requests',payload:input})).statusCode,401);
+  assert.equal((await app.inject({method:'POST',url:'/manual-requests',payload:{...input,contact:{name:'访客',phone:'+86 138 0000 0000'}}})).statusCode,400);
   const detail=await app.inject({url:`/me/projects/${id}`,headers});assert.equal(detail.statusCode,200);assert.equal(detail.json().data.publicResult,'已确认项目方案');
   for(const field of ['assigneeAdminId','assigneeName','quotation','createdBy','objectKey','events','内部备注'])assert.ok(!detail.body.includes(field),`Public response leaked ${field}`);
   const list=await app.inject({url:'/me/projects',headers});assert.equal(list.json().data.total,1);assert.equal(list.json().data.items[0].projectId,id);
@@ -71,4 +73,37 @@ test('unified projects: manual acceptance, assignment, immutable quotation, stat
   await pool.query('UPDATE admins SET enabled=false WHERE id=$1',[admin]);assert.equal((await app.inject({url:`/admin/projects/${id}`,headers})).statusCode,403);
   active='client';assert.equal((await app.inject({method:'POST',url:'/manual-requests',headers,payload:{...input,schemeCode:'forbidden'}})).statusCode,400);
   project=await getProject(pool,id);assert.equal(project.status,'following');assert.equal(project.revision,8);
+});
+
+test('anonymous manual requests stay unclaimed until a user with the verified contact email logs in', {skip:!process.env.PROJECT_TEST_DATABASE_URL},async t=>{
+  const pool=await projectTestPool(t);
+  const admin=randomUUID();const owner=randomUUID();const stranger=randomUUID();
+  await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1::uuid,$2,$1::uuid::text,ARRAY['ROLE_ADMIN'])",[admin,Math.floor(Math.random()*1e12)]);
+  await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=$1',[admin]);
+  for(const id of [owner,stranger])await pool.query('INSERT INTO users(id,external_user_id,username) VALUES($1::uuid,$2,$1::uuid::text)',[id,Math.floor(Math.random()*1e12)]);
+  const input:ManualInput={requestKey:randomUUID(),entryPoint:'matching_results',originalDescription:'访客提交的特殊需求',confirmedRequirements:emptyRequirement(),
+    exhibition:{name:'访客展会',countryCode:'CN',city:'上海',startDate:'2026-11-20',endDate:'2026-11-22'},scopeCodes:['materials'],materialBudget:{currency:'CNY',amount:'20000'},customerType:'individual',contact:{name:'访客',email:'Visitor@Example.com'}};
+  const results=await Promise.all([createManualProject(pool,null,input),createManualProject(pool,null,input)]);
+  const id=String(results[0]!.receipt.projectId);assert.equal(results[1]!.receipt.projectId,id);assert.equal(results.filter(result=>!result.replayed).length,1);
+  await assert.rejects(createManualProject(pool,null,{...input,notes:'改动后重放'}),{reason:'IDEMPOTENCY_CONFLICT'});
+  await assert.rejects(createManualProject(pool,null,{...input,requestKey:randomUUID(),contact:{name:'访客',phone:'+86 138 0000 0000'}}),{reason:'CLAIM_EMAIL_REQUIRED'});
+  assert.equal((await getProject(pool,id)).customerUserId,null);
+  const sameKey=await createManualProject(pool,owner,input);assert.notEqual(sameKey.receipt.projectId,id);assert.equal(sameKey.replayed,false);
+  assert.deepEqual(await claimAnonymousProjects(pool,stranger,'other@example.com'),[]);
+  assert.deepEqual(await claimAnonymousProjects(pool,stranger,null),[]);
+  assert.deepEqual(await claimAnonymousProjects(pool,owner,' visitor@example.COM '),[id]);
+  assert.equal((await getProject(pool,id,owner)).projectId,id);
+  assert.deepEqual(await claimAnonymousProjects(pool,stranger,'visitor@example.com'),[]);
+  const events=(await pool.query<{kind:string;payload:{customerUserId:string}}>('SELECT kind,payload FROM project_events WHERE project_id=$1 ORDER BY created_at',[id])).rows;
+  assert.deepEqual(events.map(event=>event.kind),['accepted','claimed']);assert.equal(events[1]!.payload.customerUserId,owner);
+  const receipts=(await pool.query<{projectId:string;recipient:string;locale:string;accountBound:boolean}>('SELECT project_id AS "projectId",recipient,locale,account_bound AS "accountBound" FROM project_receipt_emails ORDER BY created_at')).rows;
+  assert.deepEqual(receipts,[{projectId:id,recipient:'Visitor@Example.com',locale:'zh',accountBound:false},{projectId:sameKey.receipt.projectId,recipient:'Visitor@Example.com',locale:'zh',accountBound:true}]);
+  for(let n=0;n<4;n++)await createManualProject(pool,null,{...input,requestKey:randomUUID(),contact:{name:'访客',email:'VISITOR@example.com'}},'en');
+  assert.equal((await pool.query('SELECT count(*)::int AS count FROM project_receipt_emails')).rows[0].count,RECEIPT_EMAIL_DAILY_LIMIT_PER_RECIPIENT);
+  const claimed=await claimReceiptEmails(pool,2);assert.equal(claimed.length,2);assert.equal(claimed[0]!.projectNo,(await getProject(pool,id)).projectNo);assert.equal(claimed[0]!.contactName,'访客');assert.equal(claimed[0]!.exhibition?.name,'访客展会');
+  assert.equal((await claimReceiptEmails(pool,10)).length,RECEIPT_EMAIL_DAILY_LIMIT_PER_RECIPIENT-2,'leased emails must not be claimed twice');
+  await completeReceiptEmail(pool,claimed[0]!.id);
+  assert.equal(await failReceiptEmail(pool,claimed[1]!,'SMTP_EENVELOPE',true),true);
+  const states=(await pool.query<{id:string;delivered:boolean;failed:boolean}>('SELECT id,delivered_at IS NOT NULL AS delivered,failed_at IS NOT NULL AS failed FROM project_receipt_emails WHERE id=ANY($1)',[[claimed[0]!.id,claimed[1]!.id]])).rows;
+  assert.deepEqual(Object.fromEntries(states.map(row=>[row.id,[row.delivered,row.failed]])),{[claimed[0]!.id]:[true,false],[claimed[1]!.id]:[false,true]});
 });

@@ -22,6 +22,7 @@ export const projectEventLabels: Record<string, string> = {
   'follow-up': '联系跟进',
   quotation: '报价修订',
   legacy_import: '历史迁入',
+  claimed: '客户登录认领',
 };
 export interface ProjectRequest {
   exhibition?: {
