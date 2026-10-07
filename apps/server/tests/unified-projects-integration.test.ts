@@ -72,8 +72,19 @@ test('unified projects: manual acceptance, assignment, immutable quotation, stat
   assert.equal((await app.inject({url:`/admin/projects/${id}/quotation/download?revision=2`,headers})).statusCode,409);
   const adminDetail=(await app.inject({url:`/admin/projects/${id}`,headers})).json().data;
   assert.deepEqual(adminDetail.statusTransitions,['quoted','won','lost','closed']);assert.deepEqual(adminDetail.requirementOptionLabels,{});
-  const assigned=adminDetail.events.items.find((event:{kind:string})=>event.kind==='assignment');
+  const assigned=adminDetail.events.find((event:{kind:string})=>event.kind==='assignment');
   assert.equal(assigned.assigneeName,secondAdmin);assert.equal(assigned.fromAssigneeName,admin);
+  const timelineIds=Array.from({length:25},(_,n)=>`00000000-0000-4000-8000-${String(n+1).padStart(12,'0')}`);
+  for(let n=0;n<timelineIds.length;n++)await pool.query(
+    "INSERT INTO project_events(id,project_id,kind,payload,created_at) VALUES($1,$2,'follow-up',$3,'2099-01-01'::timestamptz+$4*interval '1 second')",
+    [timelineIds[n],id,{content:`时间线记录 ${n+1}`},Math.floor(n/2)]);
+  const fullDetail=await app.inject({url:`/admin/projects/${id}`,headers});assert.equal(fullDetail.statusCode,200);
+  const fullEvents=fullDetail.json().data.events;
+  assert.equal(fullEvents.length,adminDetail.events.length+25);
+  assert.deepEqual(fullEvents.slice(0,25).map((event:{id:string})=>event.id),timelineIds.toReversed());
+  const eventsResponse=await app.inject({url:`/admin/projects/${id}/events`,headers});assert.equal(eventsResponse.statusCode,200);
+  assert.deepEqual(eventsResponse.json().data,fullEvents);
+  assert.equal((await app.inject({url:`/admin/projects/${id}/events?page=2&pageSize=20`,headers})).statusCode,400);
   await pool.query('UPDATE admins SET enabled=false WHERE id=$1',[admin]);assert.equal((await app.inject({url:`/admin/projects/${id}`,headers})).statusCode,403);
   active='client';assert.equal((await app.inject({method:'POST',url:'/manual-requests',headers,payload:{...input,schemeCode:'forbidden'}})).statusCode,400);
   project=await getProject(pool,id);assert.equal(project.status,'following');assert.equal(project.revision,8);

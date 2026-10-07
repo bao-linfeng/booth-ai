@@ -57,14 +57,13 @@ export async function listProjects(db: pg.Pool,query: ProjectQuery,userId?: stri
   const count=await db.query<{total:string}>(`SELECT count(*)::text AS total FROM projects p ${where}`,args);
   return {items:rows.rows,total:Number(count.rows[0]?.total ?? 0),page,pageSize};
 }
-export async function projectEvents(db: pg.Pool,id: string,page=1,pageSize=20) {
+export async function projectEvents(db: pg.Pool,id: string) {
   const rows=await db.query(`SELECT e.id,e.kind,e.actor_admin_id AS "actorAdminId",coalesce(a.nickname,a.username) AS "actorName",
     coalesce(t.nickname,t.username) AS "assigneeName",coalesce(f.nickname,f.username) AS "fromAssigneeName",e.payload,e.created_at AS "createdAt"
     FROM project_events e LEFT JOIN admins a ON a.id=e.actor_admin_id
     LEFT JOIN admins t ON t.id::text=e.payload->>'assigneeAdminId' LEFT JOIN admins f ON f.id::text=e.payload->>'fromAdminId'
-    WHERE project_id=$1 ORDER BY e.created_at DESC,e.id DESC LIMIT $2 OFFSET $3`,[id,pageSize,(page-1)*pageSize]);
-  const count=await db.query<{total:string}>('SELECT count(*)::text AS total FROM project_events WHERE project_id=$1',[id]);
-  return {items:rows.rows,total:Number(count.rows[0]?.total ?? 0),page,pageSize};
+    WHERE project_id=$1 ORDER BY e.created_at DESC,e.id DESC`,[id]);
+  return rows.rows;
 }
 /** 确认条件中字典项 ID 对应的名称；关键词为自由文本，不参与查询。 */
 export async function requirementOptionLabels(db: pg.Pool,request: RequestSnapshot) {

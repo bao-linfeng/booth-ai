@@ -185,7 +185,7 @@ export interface Quotation {
   createdAt: string;
 }
 export interface ProjectDetail extends Project {
-  events: PageResult<ProjectEvent>;
+  events: ProjectEvent[];
   quotation: null | Quotation;
   /** 追加跟进可选的目标状态；终态只含重开后的 following */
   statusTransitions: ProjectStatus[];
@@ -282,9 +282,4 @@ export const quotationDownloadApi = (id: string, revision: number) =>
 export const assetDownloadApi = (id: string, version: string) =>
   requestClient.get<{ downloadUrl: string; filename: string }>(
     `/v1/admin/projects/${id}/assets/${version}/download`,
-  );
-export const projectEventsApi = (id: string, page: number) =>
-  requestClient.get<PageResult<ProjectEvent>>(
-    `/v1/admin/projects/${id}/events`,
-    { params: { page, pageSize: 20 } },
   );

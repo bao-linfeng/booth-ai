@@ -151,7 +151,12 @@ export async function fakeAntd() {
             slots.default?.(),
           ),
     }),
-    Card: passthrough,
+    Card: define({
+      setup:
+        (_, { slots }) =>
+        () =>
+          render('div', [slots.default?.(), slots.extra?.()]),
+    }),
     Input: passthrough,
     InputNumber: define({
       props: { value: { type: Number, default: undefined } },

@@ -26,8 +26,8 @@ export async function registerAdminProjectRoutes(app:FastifyInstance,pool:pg.Poo
       return {code:0,data:{...project,statusTransitions:statusTransitions(project.status),requirementOptionLabels:await requirementOptionLabels(pool,project.request),
         events:await projectEvents(pool,project.projectId),quotation:await quotationRevision(pool,project.projectId)}};
     });
-    routes.get<{Params:{projectId:string};Querystring:{page:number;pageSize:number}}>('/projects/:projectId/events',{schema:{params:projectParams,querystring:{type:'object',additionalProperties:false,properties:{page:queryProperties.page,pageSize:queryProperties.pageSize}}}},async request=>{
-      await getProject(pool,request.params.projectId);return {code:0,data:await projectEvents(pool,request.params.projectId,request.query.page,request.query.pageSize)};
+    routes.get<{Params:{projectId:string}}>('/projects/:projectId/events',{schema:{params:projectParams,querystring:{type:'object',additionalProperties:false,properties:{}}}},async request=>{
+      await getProject(pool,request.params.projectId);return {code:0,data:await projectEvents(pool,request.params.projectId)};
     });
     routes.put<{Params:{projectId:string};Body:AssignmentInput}>('/projects/:projectId/assignee',{schema:{params:projectParams,body:assignmentSchema}},async request=>({code:0,data:await assignProject(pool,request.params.projectId,adminUserId(request),request.body)}));
     routes.post<{Params:{projectId:string};Body:FollowUpInput}>('/projects/:projectId/follow-ups',{schema:{params:projectParams,body:followUpSchema}},async request=>({code:0,data:await followUpProject(pool,request.params.projectId,adminUserId(request),request.body)}));
