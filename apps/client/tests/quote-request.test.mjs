@@ -52,6 +52,7 @@ const { createApp, h, nextTick, createRouter, createMemoryHistory } = await serv
 const { default: QuoteRequest } = await server.ssrLoadModule('/src/pages/QuoteRequest.vue')
 const { emptyRequirement } = await server.ssrLoadModule('/src/features/selection/types.ts')
 const { selectionSnapshot, writeSelectionSession } = await server.ssrLoadModule('/src/features/selection/session.ts')
+const { writeManualHandoff } = await server.ssrLoadModule('/src/features/selection/handoff.ts')
 const user = { id: 'test-user', username: '测试用户', nickname: '测试用户', city: '上海', email: '', mobile: '', company: '' }
 const validForm = { exhibitionName: '上海测试展', countryCode: 'CN', city: '上海', startDate: '2026-11-01', endDate: '2026-11-04', scopeCodes: ['materials'], scopeNotes: '保留范围说明', currency: 'CNY', amount: '30000', customerType: 'individual', company: '', contactName: '王测试', email: 'test@example.com', phone: '', notes: '不能丢失的补充说明' }
 const draftKey = manual => manual ? 'booth:manual-draft' : 'booth:quote-draft:SC-6030:standard:pending'
@@ -133,6 +134,17 @@ function selectionSession({ code = 'SC-6030', mode = 'filtered', searchId = 'sea
       reasons: [], suggestions: [], missingFields: [] },
     attemptId: 'attempt-1', parseId: null, searchId, imagesExpiresAt: 0, activeImageByCode: {} }
 }
+test('manual: AI selection handoff pre-fills the description, pending questions and contact', async () => {
+  sessionStorage.clear()
+  writeManualHandoff({ originalDescription: selectionText, confirmedRequirements: selectionRequirement, unresolvedQuestions: ['开口数待确认'] }, { owner: user.id, name: '王测试', contact: '13800000000' })
+  const mounted = await mount({ manual: true, restore: true })
+  try {
+    assert.equal(mounted.container.querySelector('#request-description').value, selectionText)
+    assert.match(mounted.container.textContent, /开口数待确认/)
+    assert.equal(mounted.container.querySelector('#contact').value, '王测试')
+    assert.equal(mounted.container.querySelector('#phone').value, '13800000000')
+  } finally { await mounted.close() }
+})
 test('quote: AI selection context is shown and submitted with the original description and confirmed requirements', async () => {
   const mounted = await mount({ selection: selectionSession(), query: '?entryPoint=scheme_detail&searchId=search-1' })
   try {

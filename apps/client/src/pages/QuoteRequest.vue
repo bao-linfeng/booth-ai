@@ -19,7 +19,7 @@ import { submitManualRequest, type ManualRequest } from '@/services/api/manual-r
 import { getThemeJob } from '@/services/api/theme-jobs'
 import { getArtworkJob } from '@/services/api/artwork-jobs'
 import type { Requirement } from '@/features/selection/types'
-import { readSelectionQuoteHandoff } from '@/features/selection/session'
+import { manualDraftKey, readManualHandoff, readSelectionQuoteHandoff } from '@/features/selection/handoff'
 import { apiFetch, lingtongPublicFetch } from '@/lib/api-client'
 import type { SchemeDetail } from '@/features/selection/types'
 import { emptyRequirement } from '@/features/selection/types'
@@ -32,7 +32,7 @@ const scopes = computed(() => getScopeOptions(t))
 const auth = useAuthStore()
 const code = String(route.params.code)
 const manual = route.name === 'ManualRequest'
-const draftKey = manual ? 'booth:manual-draft' : `booth:quote-draft:${code}:${String(route.query.themeJobId ?? 'standard')}:${String(route.query.artworkJobId ?? 'pending')}`
+const draftKey = manual ? manualDraftKey : `booth:quote-draft:${code}:${String(route.query.themeJobId ?? 'standard')}:${String(route.query.artworkJobId ?? 'pending')}`
 const context = ref<QuoteContext | null>(null)
 const theme = ref<QuoteRequest['themeSelection']>()
 const themePreview = ref('')
@@ -45,16 +45,10 @@ const conflict = ref(false)
 const receipt = ref<ProjectReceipt | null>(null)
 const pending = ref<QuoteRequest | null>(null)
 const pendingManual = ref<ManualRequest | null>(null)
-const originalDescription = ref('')
-const confirmedRequirements = ref(emptyRequirement())
-const unresolvedQuestions = ref<string[]>([])
-try {
-  const stored = sessionStorage.getItem('booth:manual-context')
-  if (manual && stored) {
-    const data = JSON.parse(stored) as { originalDescription: string; confirmedRequirements: Requirement; unresolvedQuestions: string[] }
-    originalDescription.value = data.originalDescription; confirmedRequirements.value = data.confirmedRequirements; unresolvedQuestions.value = data.unresolvedQuestions
-  }
-} catch { sessionStorage.removeItem('booth:manual-context') }
+const manualHandoff = manual ? readManualHandoff() : null
+const originalDescription = ref(manualHandoff?.originalDescription ?? '')
+const confirmedRequirements = ref(manualHandoff?.confirmedRequirements ?? emptyRequirement())
+const unresolvedQuestions = ref(manualHandoff?.unresolvedQuestions ?? [])
 const selectionHandoff = manual ? null : readSelectionQuoteHandoff(code, typeof route.query.searchId === 'string' ? route.query.searchId : undefined)
 const requirementContext = selectionHandoff?.requirementContext
 const matchingSummary = selectionHandoff?.matchingSummary ?? null

@@ -58,7 +58,7 @@ after(async () => {
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: AISelection } = await server.ssrLoadModule('/src/pages/AISelection.vue')
 const { emptyRequirement } = await server.ssrLoadModule('/src/features/selection/types.ts')
-const { readSelectionQuoteHandoff } = await server.ssrLoadModule('/src/features/selection/session.ts')
+const { readManualHandoff, readSelectionQuoteHandoff, writeManualHandoff } = await server.ssrLoadModule('/src/features/selection/handoff.ts')
 const sessionKey = 'booth-ai:ai-selection'
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function settle() { for (let i = 0; i < 4; i++) { await nextTick(); await sleep(5) } }
@@ -88,7 +88,7 @@ function matchResponse(body, status) {
     attemptId: body.attemptId, searchId: 'search-1',
   }
 }
-async function mount({ restore = false, status = 'matched' } = {}) {
+async function mount({ restore = false, status = 'matched', schemeImages } = {}) {
   if (!restore) sessionStorage.clear()
   const calls = []
   globalThis.__aiSelection = {
@@ -103,6 +103,7 @@ async function mount({ restore = false, status = 'matched' } = {}) {
         attemptId: call.options.body.attemptId, parseId: 'parse-1',
       } }
       if (path === '/api/v1/client/scheme-matches') return { code: 0, data: matchResponse(call.options.body, status) }
+      if (path.startsWith('/api/v1/client/schemes/') && schemeImages) return { code: 0, data: { images: structuredClone(schemeImages) } }
       assert.fail(`Unexpected API: ${path}`)
     },
   }
@@ -283,6 +284,50 @@ test('quote handoff ignores inspiration results that were not filtered by requir
     assert.equal(readSelectionQuoteHandoff('SC-6030', 'search-1'), null)
   } finally { await mounted.close() }
 })
+
+test('manual handoff carries the requirement context and only seeds the contact when no submission is in flight', () => {
+  sessionStorage.clear()
+  const context = { originalDescription: '科技展台', confirmedRequirements: { ...emptyRequirement(), lengthMm: 6000 }, unresolvedQuestions: ['开口数？'] }
+  writeManualHandoff(context, { owner: 'user-1', name: '王测试', contact: 'test@example.com' })
+  assert.deepEqual(readManualHandoff(), context)
+  assert.deepEqual(JSON.parse(sessionStorage.getItem('booth:manual-draft')), { owner: 'user-1', pending: null, pendingManual: null, form: { contactName: '王测试', email: 'test@example.com' } })
+  const inFlight = { owner: 'user-1', form: { contactName: '旧联系人' }, pending: null, pendingManual: { requestKey: 'request-1' } }
+  sessionStorage.setItem('booth:manual-draft', JSON.stringify(inFlight))
+  writeManualHandoff({ ...context, originalDescription: '医疗展台' }, { owner: 'user-1', name: '李测试', contact: '13800000000' })
+  assert.equal(readManualHandoff().originalDescription, '医疗展台')
+  assert.deepEqual(JSON.parse(sessionStorage.getItem('booth:manual-draft')), inFlight)
+})
+
+test('manual handoff drops malformed or unparsable context', () => {
+  sessionStorage.clear()
+  for (const raw of [JSON.stringify({ originalDescription: '科技展台', confirmedRequirements: { lengthMm: '6' }, unresolvedQuestions: [] }), '{']) {
+    sessionStorage.setItem('booth:manual-context', raw)
+    assert.equal(readManualHandoff(), null)
+    assert.equal(sessionStorage.getItem('booth:manual-context'), null)
+  }
+})
+
+const freshFront = { assetId: 'front', url: '/front-fresh.jpg', thumbnailUrl: '/front-fresh-thumb.jpg', order: 0, width: 1600, height: 1200 }
+for (const scenario of [
+  { name: 'refreshes them by assetId and extends the deadline', images: [freshFront], url: '/front-fresh.jpg', extended: true },
+  { name: 'keeps old links and the expired deadline when an asset is missing', images: [], url: '/front.jpg', extended: false },
+]) {
+  test(`restoring expired image links ${scenario.name}`, async () => {
+    let mounted = await mount()
+    try {
+      await selectSize(mounted.container, '6x3')
+      await click(mounted.container, '匹配方案')
+      await mounted.close()
+      sessionStorage.setItem(sessionKey, JSON.stringify({ ...saved(), imagesExpiresAt: 0, activeImageByCode: { 'SC-6030': 0 } }))
+      mounted = await mount({ restore: true, schemeImages: scenario.images })
+      assert.equal(mounted.calls.filter(call => call.path === '/api/v1/client/schemes/SC-6030').length, 1)
+      assert.equal(posts(mounted).length, 0)
+      assert.equal(saved().liveMatchData.items[0].images[0].url, scenario.url)
+      assert.equal(saved().imagesExpiresAt > Date.now() + 200_000, scenario.extended)
+      assert.deepEqual(saved().activeImageByCode, { 'SC-6030': 0 })
+    } finally { await mounted.close() }
+  })
+}
 
 for (const status of ['matched', 'no_match']) {
   test(`${status}: editing an outcome and choosing an example only fills a stale draft; reload shows the editor`, async () => {

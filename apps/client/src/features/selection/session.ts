@@ -1,6 +1,6 @@
-import type { MatchItem, MatchResponse, ParseResponse, Requirement, SelectionState } from './types'
+import type { MatchResponse, ParseResponse, Requirement, SelectionState } from './types'
 
-// 智选会话（sessionStorage）的唯一读写入口：AISelection 负责保存/恢复，报价页通过 readSelectionQuoteHandoff 取交接数据。
+// 智选会话（sessionStorage）的唯一读写入口：AISelection 经 useSelectionSession 保存/恢复，报价页经 handoff.ts 取交接数据。
 // 结构变更时只需在此处升级版本号，读写双方自动保持一致。
 const selectionSessionKey = 'booth-ai:ai-selection'
 const selectionSessionVersion = 4
@@ -25,20 +25,15 @@ export type PersistedSelection = {
 
 export type SelectionSessionInput = Omit<PersistedSelection, 'version'>
 
-export interface SelectionQuoteHandoff {
-  requirementContext: { originalDescription: string; confirmedRequirements: Requirement }
-  matchingSummary: Pick<MatchItem, 'matchType' | 'differences' | 'pendingConfirmations'>
-}
-
 export function selectionSnapshot(requirement: Requirement, text: string) {
   return JSON.stringify({ requirement, text })
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isStringArray(value: unknown): value is string[] {
+export function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(item => typeof item === 'string')
 }
 
@@ -46,7 +41,7 @@ function isNullableNumber(value: unknown): value is number | null {
   return value === null || (typeof value === 'number' && Number.isFinite(value))
 }
 
-function isRequirement(value: unknown): value is Requirement {
+export function isRequirement(value: unknown): value is Requirement {
   if (!isRecord(value)) return false
   const nullableNumbers = ['lengthMm', 'widthMm', 'maxHeightMm', 'areaM2', 'openingCount']
   const nullableStrings = ['boothSpaceId', 'productSystemId', 'budgetTierId']
@@ -137,22 +132,4 @@ export function writeSelectionSession(value: SelectionSessionInput) {
 
 export function clearSelectionSession() {
   try { sessionStorage.removeItem(selectionSessionKey) } catch { return }
-}
-
-/**
- * 报价交接：仅当当前智选会话是“已出结果且条件未改动”的按条件匹配，且目标方案在本次结果内时才返回。
- * 传入 searchId（来自详情页链路）时还必须与会话中的检索一致，避免历史检索或其他会话的条件被关联到方案。
- */
-export function readSelectionQuoteHandoff(schemeCode: string, searchId?: string): SelectionQuoteHandoff | null {
-  const session = readSelectionSession()
-  const match = session?.liveMatchData
-  if (!session || !match || session.state !== 'results' || match.status !== 'matched' || match.mode !== 'filtered') return null
-  if (session.snapshot !== selectionSnapshot(session.requirement, session.text)) return null
-  if (searchId !== undefined && session.searchId !== searchId) return null
-  const item = match.items.find(candidate => candidate.code === schemeCode)
-  if (!item) return null
-  return {
-    requirementContext: { originalDescription: session.text, confirmedRequirements: session.requirement },
-    matchingSummary: { matchType: item.matchType, differences: item.differences, pendingConfirmations: item.pendingConfirmations },
-  }
 }

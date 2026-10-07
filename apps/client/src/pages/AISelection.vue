@@ -17,9 +17,11 @@ import MainLayout from '@/layouts/MainLayout.vue'
 import RequirementForm from '@/features/selection/RequirementForm.vue'
 import RequirementField from '@/features/selection/RequirementField.vue'
 import SchemeCard from '@/features/selection/SchemeCard.vue'
-import { emptyRequirement, type SelectionState, type Catalog, type MatchItem, type MatchResponse, type ParseResponse, type Requirement } from '@/features/selection/types'
+import { emptyRequirement, type SelectionState, type Catalog, type Requirement } from '@/features/selection/types'
 import { previewCatalog, previewItems, previewStates } from '@/features/selection/preview'
-import { clearSelectionSession, readSelectionSession, selectionSnapshot, writeSelectionSession, type PersistedSelection, type SelectionSessionInput } from '@/features/selection/session'
+import { clarificationFields, isDimensionClarification, useSelectionFlow } from '@/features/selection/useSelectionFlow'
+import { useSelectionSession } from '@/features/selection/useSelectionSession'
+import { writeManualHandoff } from '@/features/selection/handoff'
 import { apiFetch } from '@/lib/api-client'
 
 const { t } = useI18n()
@@ -28,20 +30,18 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const isPreview = computed(() => route.path.startsWith('/ai-selection/preview'))
-const requirement = ref(emptyRequirement())
-const text = ref('')
-const state = ref<SelectionState>('idle')
+const flow = useSelectionFlow({ enabled: () => !isPreview.value })
+const {
+  requirement, text, state, parseResult, parsedRequirement, matchData, searchId, interruptedRequest, activeImageByCode,
+  busy, stale, clarifications, textChangedSinceParse, unresolvedClarifications, clearText,
+} = flow
 const previewMode = ref('idle')
 const editing = ref(false)
-const confirmedClarifications = ref<Record<number, string>>({})
 const outcomeVisible = computed(() => state.value === 'results' || state.value === 'empty')
 const manualOpen = ref(false)
 const manualName = ref('')
 const manualContact = ref('')
 const manualDescription = ref('')
-const snapshot = ref('')
-const stale = computed(() => !!snapshot.value && snapshot.value !== selectionSnapshot(requirement.value, text.value))
-const busy = computed(() => state.value === 'parsing' || state.value === 'matching')
 const requirementError = computed(() => {
   const r = requirement.value
   if ((['lengthMm', 'widthMm', 'maxHeightMm'] as const).some(field => {
@@ -52,7 +52,23 @@ const requirementError = computed(() => {
   if (r.lengthMm && r.widthMm && r.areaM2 !== null && Math.abs(r.areaM2 - r.lengthMm * r.widthMm / 1_000_000) > 0.000001) return t('selection.validationAreaMismatch')
   return ''
 })
+const catalogState = ref<'loading' | 'ready' | 'error'>('loading')
 const canSearch = computed(() => !busy.value && !requirementError.value && (isPreview.value || catalogState.value === 'ready'))
+const canConfirm = computed(() => canSearch.value && flow.readyToConfirm.value)
+const inspirationResults = computed(() => state.value === 'results' && (isPreview.value ? previewMode.value === 'random' : matchData.value?.mode === 'random'))
+const editorVisible = computed(() => editing.value || state.value === 'idle' || state.value === 'error' || inspirationResults.value || (outcomeVisible.value && stale.value))
+
+function clearSelectionMemory() {
+  editing.value = false
+  flow.clear()
+}
+
+const { reset } = useSelectionSession({
+  live: computed(() => !isPreview.value),
+  snapshot: flow.toSession,
+  restore: flow.restore,
+  clear: clearSelectionMemory,
+})
 
 async function editRequirement() {
   editing.value = true
@@ -60,184 +76,18 @@ async function editRequirement() {
   document.getElementById('requirement-text')?.focus()
 }
 
-function clarificationFields(field: string): (keyof Requirement)[] {
-  if (field === 'lengthMm' || field === 'widthMm' || field === 'areaM2') return ['lengthMm', 'widthMm', ...(field === 'areaM2' ? ['areaM2' as const] : [])]
-  const supportedFields: (keyof Requirement)[] = ['boothSpaceId', 'maxHeightMm', 'openingCount', 'productSystemId', 'styleIds', 'industryIds', 'zoneIds', 'featureIds', 'budgetTierId']
-  return supportedFields.includes(field as keyof Requirement) ? [field as keyof Requirement] : []
-}
-
-function clarificationValue(field: string) {
-  return JSON.stringify(clarificationFields(field).map(key => requirement.value[key]))
-}
-
 function confirmClarification(index: number) {
-  const item = liveClarifications.value[index]
-  if (!item || !clarificationFields(item.field).length || requirementError.value) return
-  if (isDimensionClarification(item.field) && (!requirement.value.lengthMm || !requirement.value.widthMm)) return
-  confirmedClarifications.value[index] = clarificationValue(item.field)
+  if (requirementError.value) return
+  flow.confirmClarification(index)
 }
 
 const liveCatalog = ref<Catalog | null>(null)
-const liveItems = ref<MatchItem[]>([])
-const liveMatchData = ref<MatchResponse | null>(null)
-const inspirationResults = computed(() => state.value === 'results' && (isPreview.value ? previewMode.value === 'random' : liveMatchData.value?.mode === 'random'))
-const editorVisible = computed(() => editing.value || state.value === 'idle' || state.value === 'error' || inspirationResults.value || (outcomeVisible.value && stale.value))
-const liveClarifications = ref<ParseResponse['clarifications']>([])
-const parseResult = ref<ParseResponse | null>(null)
-const parsedText = ref<string | null>(null)
-const parsedRequirement = ref<Requirement | null>(null)
-const attemptId = ref<string>(crypto.randomUUID())
-const parseId = ref<string>()
-const searchId = ref<string>()
-const catalogState = ref<'loading' | 'ready' | 'error'>('loading')
-const activeImageByCode = ref<Record<string, number>>({})
-const imagesExpiresAt = ref(0)
-const interruptedRequest = ref(false)
-let requestSequence = 0
 let catalogSequence = 0
-let stopPersistence: (() => void) | undefined
-let selectionCleared = false
-let imageRefreshTimer: ReturnType<typeof setInterval> | undefined
-let imageRefreshPending = false
 
 watch(appLocale, () => { void loadCatalog() })
 
-function restoredState(value: SelectionState): SelectionState {
-  return value === 'parsing' || value === 'matching' ? 'idle' : value
-}
-
-function buildSelectionSession(): SelectionSessionInput {
-  return {
-    requirement: requirement.value,
-    text: text.value,
-    state: state.value,
-    snapshot: snapshot.value,
-    parseResult: parseResult.value,
-    parsedText: parsedText.value,
-    parsedRequirement: parsedRequirement.value,
-    liveMatchData: liveMatchData.value,
-    attemptId: attemptId.value,
-    parseId: parseId.value ?? null,
-    searchId: searchId.value ?? null,
-    imagesExpiresAt: imagesExpiresAt.value,
-    activeImageByCode: activeImageByCode.value,
-    confirmedClarifications: confirmedClarifications.value,
-  }
-}
-
-function restoreSelection(value: PersistedSelection) {
-  confirmedClarifications.value = value.confirmedClarifications ?? {}
-  interruptedRequest.value = value.state === 'parsing' || value.state === 'matching'
-  requirement.value = value.requirement
-  text.value = value.text
-  state.value = restoredState(value.state)
-  snapshot.value = value.snapshot
-  parseResult.value = value.parseResult
-  parsedText.value = value.parsedText
-  parsedRequirement.value = value.parsedRequirement
-  liveMatchData.value = value.liveMatchData
-  liveItems.value = value.liveMatchData?.items ?? []
-  liveClarifications.value = value.parseResult?.clarifications ?? []
-  attemptId.value = value.attemptId
-  parseId.value = value.parseId ?? undefined
-  searchId.value = value.searchId ?? undefined
-  imagesExpiresAt.value = value.imagesExpiresAt
-  activeImageByCode.value = Object.fromEntries(liveItems.value.map(item => {
-    const active = value.activeImageByCode[item.code]
-    return [item.code, typeof active === 'number' && active < item.images.length ? active : 0]
-  }))
-}
-
-function startPersistence() {
-  stopPersistence?.()
-  if (isPreview.value) return
-  stopPersistence = watch(buildSelectionSession, value => {
-    selectionCleared = false
-    writeSelectionSession(value)
-  }, { deep: true, flush: 'post' })
-}
-
-function clearSelectionMemory() {
-  editing.value = false
-  confirmedClarifications.value = {}
-  requestSequence++
-  attemptId.value = crypto.randomUUID()
-  parseId.value = undefined
-  searchId.value = undefined
-  requirement.value = emptyRequirement()
-  text.value = ''
-  parsedText.value = null
-  parsedRequirement.value = null
-  parseResult.value = null
-  liveClarifications.value = []
-  liveItems.value = []
-  liveMatchData.value = null
-  imagesExpiresAt.value = 0
-  activeImageByCode.value = {}
-  interruptedRequest.value = false
-  state.value = 'idle'
-  snapshot.value = ''
-}
-
-function reset() {
-  stopPersistence?.()
-  clearSelectionMemory()
-  if (!isPreview.value) {
-    selectionCleared = true
-    clearSelectionSession()
-  }
-  startPersistence()
-}
-
-async function refreshExpiredImages() {
-  if (imageRefreshPending || !liveItems.value.length || imagesExpiresAt.value > Date.now() + 30_000) return
-  imageRefreshPending = true
-  const sequence = requestSequence
-  const currentItems = liveItems.value
-  let allRefreshed = true
-  try {
-    const refreshed = await Promise.all(currentItems.map(async item => {
-      try {
-        const response = await apiFetch<{ code: number; data: { images: MatchItem['images'] } }>(`/api/v1/client/schemes/${encodeURIComponent(item.code)}`)
-        if (response.code !== 0 || !Array.isArray(response.data.images) ||
-          !item.images.every(image => response.data.images.some(fresh => fresh.assetId === image.assetId))) {
-          allRefreshed = false
-          return item
-        }
-        return { ...item, images: item.images.map(image => response.data.images.find(fresh => fresh.assetId === image.assetId)!) }
-      } catch {
-        allRefreshed = false
-        return item
-      }
-    }))
-    if (sequence !== requestSequence || isPreview.value || liveItems.value !== currentItems) return
-    liveItems.value = refreshed
-    if (liveMatchData.value) liveMatchData.value = { ...liveMatchData.value, items: refreshed }
-    if (allRefreshed) imagesExpiresAt.value = Date.now() + 270_000
-  } finally {
-    imageRefreshPending = false
-  }
-}
-
 const emptyCatalog: Catalog = { boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [] }
 const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value ?? emptyCatalog))
-const textChangedSinceParse = computed(() => parsedText.value !== null && parsedText.value !== text.value)
-const unresolvedClarifications = computed(() => liveClarifications.value.filter((item, index) => {
-  if (!parsedRequirement.value || item.field === 'text') return true
-  if (confirmedClarifications.value[index] === clarificationValue(item.field)) return false
-  const field = item.field as keyof Requirement
-  if (!(field in requirement.value)) return true
-  if (isDimensionClarification(item.field)) {
-    return !requirement.value.lengthMm || !requirement.value.widthMm ||
-      (requirement.value.lengthMm === parsedRequirement.value.lengthMm && requirement.value.widthMm === parsedRequirement.value.widthMm)
-  }
-  return JSON.stringify(requirement.value[field]) === JSON.stringify(parsedRequirement.value[field])
-}))
-
-function isDimensionClarification(field: string) {
-  return field === 'lengthMm' || field === 'widthMm'
-}
-const canConfirm = computed(() => canSearch.value && !!parsedRequirement.value && !textChangedSinceParse.value && !unresolvedClarifications.value.length)
 const sourceRows = computed(() => parseResult.value ? Object.entries(parseResult.value.fieldSources)
   .filter(([field, source]) => source.source !== 'form' || displayValue(field, requirement.value[field as keyof Requirement]) !== t('selection.fieldNotFilled') ||
     (parsedRequirement.value && JSON.stringify(requirement.value[field as keyof Requirement]) !== JSON.stringify(parsedRequirement.value[field as keyof Requirement])))
@@ -248,22 +98,18 @@ const sourceRows = computed(() => parseResult.value ? Object.entries(parseResult
     value: displayValue(field, requirement.value[field as keyof Requirement]),
     evidence: source.evidence
   })) : [])
-const items = computed(() => isPreview.value 
+const items = computed(() => isPreview.value
   ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: [{ type: 'missing_field' as const, message: t('selection.missingFieldsNotice') }] } : item)
-  : liveItems.value
+  : flow.items.value
 )
 const manualQuestions = computed(() => [...new Set([
   ...unresolvedClarifications.value.map(item => item.question),
   ...(parseResult.value?.unhandledText.map(item => t('selection.unrecognizedItem', { item })) ?? []),
-  ...(!stale.value && liveMatchData.value?.status === 'no_match' ? liveMatchData.value.reasons : []),
+  ...(!stale.value && matchData.value?.status === 'no_match' ? matchData.value.reasons : []),
 ])].slice(0, 30))
 const manualOriginalText = computed(() => [text.value.trim(), manualDescription.value.trim()].filter(Boolean).join('\n'))
 const contactValid = computed(() => /^(?:1[3-9]\d{9}|\+[1-9]\d{7,14}|[^\s@]+@[^\s@]+\.[^\s@]+)$/.test(manualContact.value.trim()))
 const canSubmitManual = computed(() => !isPreview.value && !!manualOriginalText.value.trim() && !!manualName.value.trim() && contactValid.value && manualOriginalText.value.length <= 1000)
-
-function cloneRequirement(value: Requirement): Requirement {
-  return JSON.parse(JSON.stringify(value)) as Requirement
-}
 
 function clearManualForm() {
   manualName.value = ''
@@ -279,14 +125,11 @@ function initializeManualForm() {
 
 async function submitManual() {
   if (!canSubmitManual.value) return
-  sessionStorage.setItem('booth:manual-context',JSON.stringify({originalDescription:manualOriginalText.value,confirmedRequirements:cloneRequirement(requirement.value),unresolvedQuestions:manualQuestions.value}))
-  const contact = manualContact.value.trim()
-  const existing = sessionStorage.getItem('booth:manual-draft')
-  let draft: { pendingManual?: unknown; receipt?: unknown } | null = null
-  try { draft = existing ? JSON.parse(existing) as { pendingManual?: unknown; receipt?: unknown } : null } catch { sessionStorage.removeItem('booth:manual-draft') }
-  if (!draft?.pendingManual && !draft?.receipt) sessionStorage.setItem('booth:manual-draft',JSON.stringify({owner:authStore.currentUser?.id ?? null,pending:null,pendingManual:null,
-    form:{contactName:manualName.value.trim(),...(contact.includes('@')?{email:contact}:{phone:contact})}}))
-  manualOpen.value=false
+  writeManualHandoff(
+    { originalDescription: manualOriginalText.value, confirmedRequirements: requirement.value, unresolvedQuestions: manualQuestions.value },
+    { owner: authStore.currentUser?.id ?? null, name: manualName.value.trim(), contact: manualContact.value.trim() },
+  )
+  manualOpen.value = false
   await router.push('/manual-request')
 }
 
@@ -306,9 +149,9 @@ const chips = computed(() => {
     currentCatalog.boothSpaces.find(space => space.id === r.boothSpaceId)?.label ?? '',
     r.lengthMm ? t('selection.dimLength', { value: r.lengthMm / 1000 }) : '',
     r.widthMm ? t('selection.dimWidth', { value: r.widthMm / 1000 }) : '',
-    r.areaM2 ? `${r.areaM2} ㎡` : '', 
+    r.areaM2 ? `${r.areaM2} ㎡` : '',
     r.maxHeightMm ? t('selection.dimMaxHeight', { value: r.maxHeightMm / 1000 }) : '',
-    r.openingCount ? t('selection.dimOpening', { count: r.openingCount }) : '', 
+    r.openingCount ? t('selection.dimOpening', { count: r.openingCount }) : '',
     ...currentCatalog.styles.filter(option => r.styleIds.includes(option.id)).map(option => option.label),
     ...currentCatalog.industries.filter(option => r.industryIds.includes(option.id)).map(option => option.label),
     ...currentCatalog.zones.filter(option => r.zoneIds.includes(option.id) || r.requiredZoneIds.includes(option.id)).map(option => option.label)
@@ -318,15 +161,6 @@ const chips = computed(() => {
 const conditionRows = computed(() => Object.entries(requirement.value)
   .map(([field, value]) => ({ field, label: fieldLabel(field), value: displayValue(field, value) }))
   .filter(row => row.value !== t('selection.fieldNotFilled')))
-
-function clearText() {
-  text.value = ''
-  parsedText.value = null
-  parsedRequirement.value = null
-  parseResult.value = null
-  liveClarifications.value = []
-  if (state.value === 'needs_clarification') state.value = 'idle'
-}
 
 const fieldLabels: Record<keyof Requirement, string> = {
   boothSpaceId: 'requirementForm.fieldBoothSpaceId',
@@ -350,42 +184,10 @@ function displayValue(field: string, value: unknown): string {
   return label(String(value))
 }
 
-async function parseText(sequence: number) {
-  confirmedClarifications.value = {}
-  editing.value = false
-  state.value = 'parsing'
-  try {
-    const res = await apiFetch<{ code: number; data: ParseResponse }>('/api/v1/client/requirements/parse', {
-      method: 'POST', body: { attemptId: attemptId.value, text: text.value, form: requirement.value }
-    })
-    if (sequence !== requestSequence) return false
-    if (res.code !== 0) throw new Error('Parse unavailable')
-    requirement.value = res.data.requirement
-    parsedText.value = text.value
-    parsedRequirement.value = cloneRequirement(res.data.requirement)
-    parseResult.value = res.data
-    attemptId.value = res.data.attemptId ?? attemptId.value
-    parseId.value = res.data.parseId
-    liveClarifications.value = res.data.clarifications
-    if (res.data.status === 'needs_clarification') {
-      state.value = 'needs_clarification'
-      snapshot.value = selectionSnapshot(requirement.value, text.value)
-      return false
-    }
-    return true
-  } catch (error) {
-    if (sequence !== requestSequence) return false
-    console.error('Parse failed', error)
-    state.value = 'error'
-    return false
-  }
-}
-
 async function reparseText() {
   if (!canSearch.value || !text.value.trim()) return
-  interruptedRequest.value = false
-  const sequence = ++requestSequence
-  if (await parseText(sequence)) await doMatch('filtered', true, sequence)
+  editing.value = false
+  await flow.reparse()
 }
 
 function choosePreview(value: string) {
@@ -396,7 +198,7 @@ function choosePreview(value: string) {
     text.value = t('selection.conditionPlaceholder')
   } else if (value === 'random' || value === 'idle') clearSelectionMemory()
   state.value = value === 'random' ? 'results' : value as SelectionState
-  snapshot.value = selectionSnapshot(requirement.value, text.value)
+  flow.takeSnapshot()
 }
 
 async function loadCatalog() {
@@ -417,99 +219,33 @@ async function loadCatalog() {
   }
 }
 
-async function doMatch(mode: 'random' | 'filtered', textProvided: boolean, sequence: number) {
-  editing.value = false
-  interruptedRequest.value = false
-  state.value = 'matching'
-  try {
-    const res = await apiFetch<{ code: number; data: MatchResponse }>('/api/v1/client/scheme-matches', {
-      method: 'POST',
-      body: { attemptId: attemptId.value, ...(parseId.value ? { parseId: parseId.value } : {}), mode, requirement: requirement.value, inputContext: { textProvided, text: text.value, degradedParse: parseResult.value?.degraded ?? false } }
-    })
-    if (sequence !== requestSequence) return
-    if (res.code === 0) {
-      liveMatchData.value = res.data
-      liveItems.value = res.data.items
-      imagesExpiresAt.value = Date.now() + 270_000
-      activeImageByCode.value = {}
-      attemptId.value = res.data.attemptId ?? attemptId.value
-      searchId.value = res.data.searchId
-      state.value = res.data.status === 'matched' ? 'results' : res.data.status === 'no_match' ? 'empty' : 'needs_clarification'
-      snapshot.value = selectionSnapshot(requirement.value, text.value)
-    } else {
-      state.value = 'error'
-    }
-  } catch (error) {
-    if (sequence !== requestSequence) return
-    console.error('Match failed', error)
-    state.value = 'error'
-  }
-}
-
 async function submit() {
   if (!canSearch.value) return
+  editing.value = false
   if (isPreview.value) {
-    editing.value = false
     previewMode.value = conditionRows.value.length || text.value.trim() ? 'results' : 'random'
     state.value = 'results'
-    snapshot.value = selectionSnapshot(requirement.value, text.value)
+    flow.takeSnapshot()
     return
   }
-  const sequence = ++requestSequence
-  interruptedRequest.value = false
-  const textProvided = !!text.value.trim()
-  if (textChangedSinceParse.value) {
-    if (!await parseText(sequence)) return
-  }
-  if (textProvided && !parsedRequirement.value) {
-    if (!await parseText(sequence)) return
-  }
-  if (textProvided && unresolvedClarifications.value.length) {
-    editing.value = false
-    state.value = 'needs_clarification'
-    return
-  }
-  
-  const isReqEmpty = Object.values(requirement.value).every(val => val === null || (Array.isArray(val) && val.length === 0) || (typeof val === 'object' && Object.keys(val).length === 0))
-  await doMatch(isReqEmpty && !textProvided ? 'random' : 'filtered', textProvided, sequence)
+  await flow.submit()
 }
 
-function confirm() { 
+function confirm() {
   if (isPreview.value) {
     editing.value = false
     state.value = 'results'
-    snapshot.value = selectionSnapshot(requirement.value, text.value)
+    flow.takeSnapshot()
   } else {
     if (busy.value || !canConfirm.value) return
-    void doMatch('filtered', !!text.value.trim(), ++requestSequence)
+    editing.value = false
+    void flow.confirm()
   }
 }
 
-if (!isPreview.value) {
-  const saved = readSelectionSession()
-  if (saved) {
-    restoreSelection(saved)
-    void refreshExpiredImages()
-  }
-  selectionCleared = !saved
-  startPersistence()
-}
-
-watch(isPreview, (newVal) => {
+watch(isPreview, preview => {
   catalogSequence++
-  if (newVal && !selectionCleared) writeSelectionSession(buildSelectionSession())
-  stopPersistence?.()
-  clearSelectionMemory()
-  if (!newVal) {
-    const saved = readSelectionSession()
-    if (saved) {
-      restoreSelection(saved)
-      void refreshExpiredImages()
-    }
-    selectionCleared = !saved
-    startPersistence()
-    void loadCatalog()
-  }
+  if (!preview) void loadCatalog()
 })
 
 watch(state, async value => {
@@ -520,21 +256,9 @@ watch(state, async value => {
   stage?.scrollIntoView({ block: 'start' })
 })
 
-function refreshImagesWhenVisible() {
-  if (!document.hidden && !isPreview.value) void refreshExpiredImages()
-}
-
-onUnmounted(() => {
-  document.removeEventListener('visibilitychange', refreshImagesWhenVisible)
-  if (imageRefreshTimer) clearInterval(imageRefreshTimer)
-  if (!isPreview.value && !selectionCleared) writeSelectionSession(buildSelectionSession())
-  requestSequence++
-  catalogSequence++
-})
+onUnmounted(() => { catalogSequence++ })
 
 onMounted(() => {
-  document.addEventListener('visibilitychange', refreshImagesWhenVisible)
-  imageRefreshTimer = setInterval(refreshImagesWhenVisible, 60_000)
   if (!isPreview.value) loadCatalog()
 })
 </script>
@@ -597,7 +321,7 @@ onMounted(() => {
             </template>
             <template v-else>
               <div class="space-y-3">
-                <div v-for="(clarification, i) in liveClarifications" :key="i" class="space-y-4 rounded-lg border bg-muted/20 p-4 text-sm text-foreground">
+                <div v-for="(clarification, i) in clarifications" :key="i" class="space-y-4 rounded-lg border bg-muted/20 p-4 text-sm text-foreground">
                   <p :class="unresolvedClarifications.includes(clarification) ? 'font-medium text-warning' : 'text-muted-foreground'">{{ clarification.question }} <span v-if="!unresolvedClarifications.includes(clarification)">{{ t('selection.confirmed') }}</span></p>
                   <template v-if="clarificationFields(clarification.field).length">
                     <div class="grid gap-4 sm:grid-cols-2"><RequirementField v-for="field in clarificationFields(clarification.field)" :id="`clarification-${i}-${field}`" :key="field" v-model="requirement" :field="field" :catalog="catalog" :disabled="busy" /></div>
@@ -605,8 +329,8 @@ onMounted(() => {
                   </template>
                   <template v-else><p v-if="parseResult?.unhandledText.length" class="break-words text-muted-foreground">{{ t('selection.unrecognized') }}{{ parseResult.unhandledText.join('、') }}</p><Label :for="`clarification-text-${i}`">{{ t('selection.editRequirementText') }}</Label><Textarea :id="`clarification-text-${i}`" v-model="text" maxlength="1000" :disabled="busy" /><Button variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">{{ t('selection.reparse') }}</Button></template>
                 </div>
-                <p v-if="!liveClarifications.length" class="text-sm text-muted-foreground">{{ liveMatchData?.reasons.join('；') || t('selection.clarifyError') }}</p>
-                <Button v-if="!liveClarifications.length" variant="outline" @click="editRequirement">{{ t('selection.editRequirement') }}</Button>
+                <p v-if="!clarifications.length" class="text-sm text-muted-foreground">{{ matchData?.reasons.join('；') || t('selection.clarifyError') }}</p>
+                <Button v-if="!clarifications.length" variant="outline" @click="editRequirement">{{ t('selection.editRequirement') }}</Button>
               </div>
             </template>
              <p v-if="requirementError" class="text-sm text-destructive" role="alert">{{ requirementError }}</p>
@@ -623,8 +347,8 @@ onMounted(() => {
           </div>
           
           <Card v-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? t('selection.loadingParsing') : t('selection.loadingMatching') }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? t('selection.loadingParsingHint') : t('selection.loadingMatchingHint') }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>
-              <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? t('selection.resultsHeadingInspiration') : t('selection.resultsHeadingMatched') }}</h2><Badge variant="secondary">{{ inspirationResults ? t('selection.resultsTagInspiration') : (isPreview ? t('selection.resultsDirect1') : t('selection.resultsDirectN', { direct: liveMatchData?.counts.direct ?? 0, reference: liveMatchData?.counts.reference ?? 0 })) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :product-systems="isPreview ? undefined : catalog.productSystems" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" /><p class="text-xs leading-relaxed text-muted-foreground">{{ t('selection.resultsDirectNote') }}</p></section>
-          <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? t('selection.emptyTitle') : t('selection.emptyTitleError') }}</h2><div v-if="state === 'empty'" class="max-w-md space-y-1 text-sm leading-relaxed text-muted-foreground"><p v-for="reason in liveMatchData?.reasons ?? [t('selection.emptyHint')]" :key="reason">{{ reason }}</p></div><p v-else class="max-w-md text-sm leading-relaxed text-muted-foreground">{{ t('selection.emptyErrorHint') }}</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="editRequirement">{{ t('selection.editConditions') }}</Button><Button v-else :disabled="!canSearch" @click="submit">{{ t('common.retry') }}</Button><Button variant="outline" @click="manualOpen = true">{{ t('selection.transferToAdvisor') }}</Button></div></CardContent></Card>
+              <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? t('selection.resultsHeadingInspiration') : t('selection.resultsHeadingMatched') }}</h2><Badge variant="secondary">{{ inspirationResults ? t('selection.resultsTagInspiration') : (isPreview ? t('selection.resultsDirect1') : t('selection.resultsDirectN', { direct: matchData?.counts.direct ?? 0, reference: matchData?.counts.reference ?? 0 })) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :product-systems="isPreview ? undefined : catalog.productSystems" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" /><p class="text-xs leading-relaxed text-muted-foreground">{{ t('selection.resultsDirectNote') }}</p></section>
+          <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? t('selection.emptyTitle') : t('selection.emptyTitleError') }}</h2><div v-if="state === 'empty'" class="max-w-md space-y-1 text-sm leading-relaxed text-muted-foreground"><p v-for="reason in matchData?.reasons ?? [t('selection.emptyHint')]" :key="reason">{{ reason }}</p></div><p v-else class="max-w-md text-sm leading-relaxed text-muted-foreground">{{ t('selection.emptyErrorHint') }}</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="editRequirement">{{ t('selection.editConditions') }}</Button><Button v-else :disabled="!canSearch" @click="submit">{{ t('common.retry') }}</Button><Button variant="outline" @click="manualOpen = true">{{ t('selection.transferToAdvisor') }}</Button></div></CardContent></Card>
           <div class="flex flex-wrap items-center justify-between gap-4 border-t pt-5"><div class="flex items-center gap-3"><MessageCircle class="size-5 shrink-0 text-muted-foreground" /><p class="text-sm text-muted-foreground">{{ t('selection.advisorCta') }}</p></div><Button variant="ghost" @click="manualOpen = true">{{ t('selection.advisorCtaLink') }}<ArrowUpRight class="ms-2 size-4 rtl:-scale-x-100" /></Button></div>
       </div>
     </main>
