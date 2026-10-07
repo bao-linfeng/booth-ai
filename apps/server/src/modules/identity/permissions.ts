@@ -20,7 +20,7 @@ export const permissionGroups = [
   { key: 'assets-models', label: '方案模型', routes: ['SchemeList', 'SchemeDetail'], actions: [['read', '查看模型'], ['upload', '上传模型'], ['download', '下载模型']] },
   { key: 'assets-checklists', label: '历史清单文件', routes: [], actions: [['read', '查看历史清单文件'], ['upload', '上传文件'], ['replace', '替换文件'], ['update', '编辑文件信息'], ['download', '下载文件'], ['delete', '删除文件']] },
   { key: 'bom', label: '清单管理', routes: ['BillOfMaterialsManagement'], actions: [['read', '查看清单与详情'], ['import', '导入 / 替换 Excel'], ['update', '编辑清单条目'], ['delete-item', '删除清单条目'], ['delete', '删除整份清单'], ['verify', '提交核验'], ['download', '导出客户清单']] },
-  { key: 'projects', label: '项目管理', routes: ['ProjectList', 'ProjectDetail'], actions: [['read', '查看项目与报价历史'], ['assign', '改派承接人'], ['follow-up', '追加跟进与状态记录'], ['link-scheme', '确认关联方案'], ['quotation', '编辑并保存报价修订'], ['quotation-download', '导出报价修订'], ['asset-download', '下载固定资料']] },
+  { key: 'projects', label: '项目管理', routes: ['ProjectList', 'ProjectDetail'], actions: [['read', '查看项目与报价历史及接单状态'], ['assign', '改派承接人 / 配置默认接单人'], ['follow-up', '追加跟进与状态记录'], ['link-scheme', '确认关联方案'], ['quotation', '编辑并保存报价修订'], ['quotation-download', '导出报价修订'], ['asset-download', '下载固定资料']] },
   { key: 'generation', label: '生成任务', routes: ['GenerationJobs'], actions: [['read', '查看生成任务'], ['detail', '查看任务详情']] },
   { key: 'notifications', label: '消息通知', routes: ['ProjectNotifications'], actions: [['read', '查看消息与详情'], ['mark-read', '标记消息已读'], ['mark-all-read', '全部已读']] },
   { key: 'dictionaries', label: '字典管理', routes: ['DictionaryList'], actions: [['read', '查看字典与字典项'], ['create', '新建字典'], ['update', '编辑字典'], ['delete', '删除字典'], ['item-create', '新增字典项'], ['item-update', '编辑字典项'], ['item-delete', '删除字典项']] },

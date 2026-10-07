@@ -793,7 +793,8 @@
     "errorNetworkSubmit": "Der Empfang wurde noch nicht bestätigt. Diese Einreichung ist erhalten geblieben. Verwenden Sie die Schaltfläche unten, um die Bestätigung erneut zu versuchen und die Erstellung doppelter Projekte zu vermeiden.",
     "errorAccountChanged2": "Das angemeldete Konto hat sich geändert. Bitte bestätigen Sie noch einmal.",
     "errorFormInvalid2": "Überprüfen Sie die Termine, das Budget, die Kontaktdaten und den Anmeldestatus. Ihre Eingabe wurde gespeichert.",
-    "errorNetworkRetry": "Der Empfang wurde noch nicht bestätigt. Bitte bestätigen Sie diese Anfrage erneut."
+    "errorNetworkRetry": "Der Empfang wurde noch nicht bestätigt. Bitte bestätigen Sie diese Anfrage erneut.",
+    "errorAssignmentUnavailable": "Anfragen können derzeit nicht angenommen werden. Es wurde kein Projekt erstellt. Ihre Eingaben bleiben erhalten; senden Sie die Anfrage später erneut oder kontaktieren Sie den Kundenservice."
   },
   "searches": {
     "pageTitle": "Suchverlauf",

@@ -23,6 +23,7 @@ import { registerAdminCreditRoutes } from './credits/index.js';
 import { registerAdminGenerationJobRoutes } from './generation-jobs/index.js';
 import { registerAdminAuthorization } from './authorization.js';
 import { registerAdminRoleRoutes } from './roles.controller.js';
+import { registerAdminDashboardRoutes } from './dashboard/index.js';
 
 export async function registerAdminModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
   await app.register(async admin => {
@@ -31,6 +32,7 @@ export async function registerAdminModule(app: FastifyInstance, config: Config, 
     await registerAdminRoleRoutes(admin, config, pool);
     await registerAdminAuthRoutes(admin, config, pool, redis);
     await registerAdminMeRoutes(admin, config, pool, redis);
+    await registerAdminDashboardRoutes(admin, pool);
     await registerAdminCreditRoutes(admin, pool, redis);
     await registerAdminUserRoutes(admin, pool);
     await registerAdminSchemesRoutes(admin, pool, redis);

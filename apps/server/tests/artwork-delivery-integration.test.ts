@@ -40,6 +40,7 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     const code = 'ARTWORK-TEST';
     for (const [index, id] of [user, other].entries()) await pool.query('INSERT INTO users(id,external_user_id,username) VALUES($1,$2,$3)', [id, index + 1, id]);
     await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,1,'test',ARRAY['ROLE_ADMIN'])", [admin]);
+    await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=$1', [admin]);
     await pool.query(`INSERT INTO schemes(id,code,name,publish_status,length_mm,width_mm,height_mm,area_sqm,opening_count,product_system_id,industry_ids,zone_ids,feature_ids)
       VALUES($1,$2,$2,'published',6000,6000,3000,36,2,$3,'{}','{}','{}')`, [scheme, code, productSystem]);
     const jpeg = await sharp({ create: { width: 2048, height: 1152, channels: 3, background: '#345678' } }).jpeg().toBuffer();

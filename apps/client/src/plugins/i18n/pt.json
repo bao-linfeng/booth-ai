@@ -775,7 +775,8 @@
     "errorNetworkSubmit": "O recebimento ainda não foi confirmado. A solicitação foi mantida. Use o botão abaixo para confirmar novamente e evitar projetos duplicados.",
     "errorAccountChanged2": "A conta conectada mudou. Confirme novamente.",
     "errorFormInvalid2": "Confira datas, orçamento, contato e estado de login. Seus dados foram mantidos.",
-    "errorNetworkRetry": "O recebimento ainda não foi confirmado. Confirme esta solicitação novamente."
+    "errorNetworkRetry": "O recebimento ainda não foi confirmado. Confirme esta solicitação novamente.",
+    "errorAssignmentUnavailable": "Não é possível aceitar solicitações no momento. Nenhum projeto foi criado. Seus dados foram mantidos; envie novamente mais tarde ou entre em contato com o atendimento ao cliente."
   },
   "searches": {
     "pageTitle": "Histórico de buscas",

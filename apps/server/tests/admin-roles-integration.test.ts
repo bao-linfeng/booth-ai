@@ -7,7 +7,8 @@ import { loadConfig } from '../src/config.js';
 import { getAdminRole, listAdminRoles, resolveAdminPermissions, updateRolePermissions } from '../src/modules/identity/roles.js';
 import { allPermissionCodes } from '../src/modules/identity/permissions.js';
 import { assertProjectAdmin } from '../src/modules/projects/admin-service.js';
-import { defaultAssignee } from '../src/modules/projects/service.js';
+import { configuredAssignee } from '../src/modules/projects/assignment.js';
+import { projectTestPool } from './project-fixtures.js';
 
 test('060 seeds the original grants and 061 migrates them to page actions without changing the role ID',
   { skip: !process.env.PROJECT_TEST_DATABASE_URL }, async t => {
@@ -31,7 +32,8 @@ test('060 seeds the original grants and 061 migrates them to page actions withou
         assert.equal(role.revision, existingId === undefined ? 0 : 8);
         await pool.query(await readFile(new URL('../migrations/061_page_action_permissions.sql', import.meta.url), 'utf8'));
         const migrated = await getAdminRole(pool, existingId ?? 5);
-        assert.deepEqual([...migrated.permissionCodes].sort(), [...allPermissionCodes].sort());
+        const historicalQuestionPermissions = ['create', 'delete', 'disable', 'enable', 'read', 'update'].map(action => `questions.${action}`);
+        assert.deepEqual([...migrated.permissionCodes].sort(), [...allPermissionCodes, ...historicalQuestionPermissions].sort());
         assert.equal(migrated.revision, role.revision + 1);
         assert.equal((await pool.query('SELECT count(*)::int AS count FROM admin_roles')).rows[0].count, 1);
         assert.deepEqual((await resolveAdminPermissions(pool, ['ROLE_ADMIN'])).sort(), [...allPermissionCodes].sort());
@@ -41,20 +43,11 @@ test('060 seeds the original grants and 061 migrates them to page actions withou
 
 test('role synchronization, grants, conflicts, audit and session trigger on real PostgreSQL',
   { skip: !process.env.PROJECT_TEST_DATABASE_URL }, async t => {
-    const schema = `roles_${randomUUID().replaceAll('-', '')}`;
-    const adminPool = new pg.Pool({ connectionString: process.env.PROJECT_TEST_DATABASE_URL });
-    await adminPool.query(`CREATE SCHEMA ${schema}`);
-    const pool = new pg.Pool({ connectionString: process.env.PROJECT_TEST_DATABASE_URL, options: `-c search_path=${schema}` });
+    const pool = await projectTestPool(t);
     const originalFetch = globalThis.fetch;
     t.after(async () => {
       globalThis.fetch = originalFetch;
-      await pool.end();
-      await adminPool.query(`DROP SCHEMA ${schema} CASCADE`);
-      await adminPool.end();
     });
-    for (const file of ['001_foundation.sql', '002_auth.sql', '022_audit_log.sql', '051_account_session_versions.sql', '059_admin_role_permissions.sql', '060_editable_admin_role.sql', '061_page_action_permissions.sql']) {
-      await pool.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
-    }
     const config = loadConfig({
       NODE_ENV: 'test', DATABASE_URL: process.env.PROJECT_TEST_DATABASE_URL, REDIS_URL: 'redis://localhost',
       S3_ENDPOINT: 'http://localhost:9000', S3_PUBLIC_ENDPOINT: 'http://localhost:9000', S3_BUCKET: 'test',
@@ -66,6 +59,7 @@ test('role synchronization, grants, conflicts, audit and session trigger on real
     globalThis.fetch = async () => Response.json({ code: '200', success: true, data: roles });
     const actor = randomUUID();
     await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,1,'role-test',ARRAY['ROLE_ADMIN'])", [actor]);
+    await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=$1', [actor]);
     const initial = await listAdminRoles(config, pool, 'jwt');
     assert.equal(initial.length, 3);
     assert.deepEqual((await getAdminRole(pool, 5)).permissionCodes.sort(), [...allPermissionCodes].sort());
@@ -93,7 +87,7 @@ test('role synchronization, grants, conflicts, audit and session trigger on real
     await assert.rejects(assertProjectAdmin(pool, actor), { statusCode: 403 });
     const client = await pool.connect();
     try {
-      await assert.rejects(defaultAssignee(client), { statusCode: 503 });
+      await assert.rejects(configuredAssignee(client), { statusCode: 503 });
       const adminConcurrent = await Promise.allSettled([
         updateRolePermissions(pool, 5, ['roles.read', 'roles.write', 'projects.read', 'projects.follow-up'], initialRevision + 1, actor),
         updateRolePermissions(pool, 5, ['roles.read'], initialRevision + 1, actor),
@@ -112,13 +106,13 @@ test('role synchronization, grants, conflicts, audit and session trigger on real
       await assertProjectAdmin(pool, actor);
       await assert.rejects(assertProjectAdmin(pool, actor, 'projects.assign'), { statusCode: 403 });
       await assert.rejects(assertProjectAdmin(pool, actor, 'projects.quotation'), { statusCode: 403 });
-      assert.equal(await defaultAssignee(client), actor);
+      assert.equal(await configuredAssignee(client), actor);
       await updateRolePermissions(pool, 5, [], initialRevision + 3, actor);
       await listAdminRoles(config, pool, 'jwt');
       assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), []);
       assert.deepEqual((await getAdminRole(pool, 5)).permissionCodes, []);
       await assert.rejects(assertProjectAdmin(pool, actor), { statusCode: 403 });
-      await assert.rejects(defaultAssignee(client), { statusCode: 503 });
+      await assert.rejects(configuredAssignee(client), { statusCode: 503 });
     } finally {
       client.release();
     }

@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import { projectError, type ProjectStatus } from './domain.js';
 import type { MaterialsSnapshot, SchemeSnapshot } from './snapshot.js';
+import { assigneeStatusSql, type AssigneeStatus } from './assignment.js';
 
 export interface RequestSnapshot {
   exhibition?: { name: string; countryCode: string; city: string; startDate: string; endDate: string };
@@ -12,7 +13,7 @@ export interface RequestSnapshot {
 }
 export interface ProjectRecord {
   projectId: string; projectNo: string; requestNo: string; sourceType: 'quote_request' | 'manual_request'; customerUserId: string | null;
-  assigneeAdminId: string; assigneeName: string; attribution: Record<string, unknown>; status: ProjectStatus; revision: number;
+  assigneeAdminId: string; assigneeName: string; assigneeStatus: AssigneeStatus; attribution: Record<string, unknown>; status: ProjectStatus; revision: number;
   schemeCode: string | null; request: RequestSnapshot; schemeSnapshot: SchemeSnapshot | null; materials: Partial<MaterialsSnapshot>;
   publicResult: string | null; createdAt: string; updatedAt: string;
 }
@@ -23,6 +24,7 @@ export interface ProjectQuery {
 }
 export const projectColumns = `p.id AS "projectId",p.project_no AS "projectNo",p.request_no AS "requestNo",p.source_type AS "sourceType",
   p.customer_user_id AS "customerUserId",p.assignee_admin_id AS "assigneeAdminId",coalesce(a.nickname,a.username) AS "assigneeName",
+  ${assigneeStatusSql('a')} AS "assigneeStatus",
   p.attribution,p.status,p.revision,p.scheme_code AS "schemeCode",p.request_snapshot AS request,p.scheme_snapshot AS "schemeSnapshot",
   p.materials_snapshot AS materials,p.public_result AS "publicResult",p.created_at AS "createdAt",p.updated_at AS "updatedAt"`;
 export async function getProject(db: pg.Pool | pg.PoolClient,id: string, userId?: string, lock = false): Promise<ProjectRecord> {

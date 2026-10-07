@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import pg from 'pg';
+import { projectTestPool } from './project-fixtures.js';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import { createManualProject } from '../src/modules/projects/service.js';
@@ -17,18 +17,10 @@ import type { ManualInput } from '../src/modules/projects/domain.js';
 import type { QuotationInput } from '../src/modules/projects/quotation.js';
 
 test('unified projects: manual acceptance, assignment, immutable quotation, state evidence and submitter isolation', {skip:!process.env.PROJECT_TEST_DATABASE_URL},async t=>{
-  const pool=new pg.Pool({connectionString:process.env.PROJECT_TEST_DATABASE_URL});
+  const pool=await projectTestPool(t);
   const admin=randomUUID();const secondAdmin=randomUUID();const user=randomUUID();const other=randomUUID();const ids:string[]=[];
-  t.after(async()=>{
-    await pool.query('DELETE FROM project_operations WHERE actor_id=ANY($1::uuid[])',[[admin,secondAdmin,user,other]]);
-    await pool.query('DELETE FROM project_quotation_revisions WHERE project_id=ANY($1::uuid[])',[ids]);
-    await pool.query('DELETE FROM project_notification_outbox WHERE project_id=ANY($1::uuid[])',[ids]);
-    await pool.query('DELETE FROM project_events WHERE project_id=ANY($1::uuid[])',[ids]);
-    await pool.query('DELETE FROM projects WHERE id=ANY($1::uuid[])',[ids]);
-    await pool.query('DELETE FROM admins WHERE id=ANY($1::uuid[])',[[admin,secondAdmin]]);
-    await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])',[[user,other]]);await pool.end();
-  });
   for(const id of [admin,secondAdmin])await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1::uuid,$2,$1::uuid::text,ARRAY['ROLE_ADMIN'])",[id,Math.floor(Math.random()*1e12)]);
+  await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=$1',[admin]);
   for(const id of [user,other])await pool.query('INSERT INTO users(id,external_user_id,username) VALUES($1::uuid,$2,$1::uuid::text)',[id,Math.floor(Math.random()*1e12)]);
   const input:ManualInput={requestKey:randomUUID(),entryPoint:'matching_results',originalDescription:'特殊尺寸，需要洽谈区',confirmedRequirements:emptyRequirement(),
     exhibition:{name:'集成验收展会',countryCode:'CN',city:'上海',startDate:'2026-11-20',endDate:'2026-11-22'},scopeCodes:['materials'],materialBudget:{currency:'CNY',amount:'30000'},customerType:'individual',contact:{name:'验收客户',email:'integration@example.com'}};

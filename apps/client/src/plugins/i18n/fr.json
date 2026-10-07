@@ -793,7 +793,8 @@
     "errorNetworkSubmit": "Résultat non confirmé. Réessayez pour éviter les doublons.",
     "errorAccountChanged2": "Le compte a changé. Reconfirmez.",
     "errorFormInvalid2": "Vérifiez les dates, le budget et les coordonnées. Vos données sont conservées.",
-    "errorNetworkRetry": "Résultat non confirmé. Réessayez."
+    "errorNetworkRetry": "Résultat non confirmé. Réessayez.",
+    "errorAssignmentUnavailable": "Les demandes ne peuvent pas être acceptées pour le moment. Aucun projet n’a été créé. Votre formulaire a été conservé ; renvoyez-le plus tard ou contactez le service client."
   },
   "searches": {
     "pageTitle": "Historique de recherche",

@@ -5,14 +5,8 @@ import { digest, normalizeQuote, normalizeManual, projectError, type ManualInput
 import { captureScheme } from './snapshot.js';
 import { loadCatalog } from '../selection/repository.js';
 import { validateRequirement } from '../selection/domain.js';
+import { configuredAssignee } from './assignment.js';
 
-export async function defaultAssignee(client: pg.PoolClient): Promise<string> {
-  const row = (await client.query<{ id: string }>(`SELECT id FROM admins WHERE enabled
-    AND EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.follow-up'=ANY(r.permission_codes))
-    ORDER BY created_at,id LIMIT 1 FOR SHARE`)).rows[0];
-  if (!row) throw projectError('ASSIGNMENT_UNAVAILABLE', 503);
-  return row.id;
-}
 export async function createManualProject(pool: pg.Pool,userId: string,raw: ManualInput) {
   const input = normalizeManual(raw); const hash = digest({...input,requestKey:undefined});
   return transaction(pool,async client=>{
@@ -21,7 +15,7 @@ export async function createManualProject(pool: pg.Pool,userId: string,raw: Manu
     const catalog=await loadCatalog(client);
     validateRequirement(input.confirmedRequirements,catalog);
     if(input.parsedRequirements)validateRequirement(input.parsedRequirements,catalog);
-    const assignee = await defaultAssignee(client); const id=randomUUID(); const requestNo=`MR-${id.toUpperCase()}`;
+    const assignee = await configuredAssignee(client); const id=randomUUID(); const requestNo=`MR-${id.toUpperCase()}`;
     const row=(await client.query<{projectNo:string;createdAt:Date}>(`INSERT INTO projects(id,request_no,source_type,customer_user_id,assignee_admin_id,request_snapshot)
       VALUES($1,$2,'manual_request',$3,$4,$5) RETURNING project_no AS "projectNo",created_at AS "createdAt"`,[id,requestNo,userId,assignee,JSON.stringify({...input,requestKey:undefined})])).rows[0]!;
     const event=(await client.query<{id:string}>("INSERT INTO project_events(project_id,kind,payload) VALUES($1,'accepted',$2) RETURNING id",[id,JSON.stringify({assigneeAdminId:assignee,revision:1})])).rows[0]!;
@@ -50,7 +44,7 @@ export async function createQuoteRequest(pool: pg.Pool, userId: string, raw: Quo
     const existing = await operationReceipt<Receipt>(client, 'client', userId, 'quote.create', 'collection', input.requestKey, hash);
     if (existing) return { replayed: true, receipt: existing };
     const { snapshot, materials, versions, matchingSummary } = await captureScheme(client, input, userId);
-    const assignee = await defaultAssignee(client);
+    const assignee = await configuredAssignee(client);
     const id = randomUUID();
     const requestNo = `QR-${id.toUpperCase()}`;
     const row = (await client.query<{ projectNo: string; createdAt: Date }>(`INSERT INTO projects(id,request_no,source_type,customer_user_id,assignee_admin_id,scheme_code,request_snapshot,scheme_snapshot,materials_snapshot)

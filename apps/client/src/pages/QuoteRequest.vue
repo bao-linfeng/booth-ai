@@ -208,7 +208,11 @@ async function submit() {
   try { receipt.value = await submitQuote(pending.value); pending.value = null; persist() }
   catch (failure: unknown) {
     const status = (failure as { response?: { status?: number } }).response?.status
-    if (status && status < 500 && status !== 408 && status !== 429) {
+    const reason = (failure as { data?: { error?: { reason?: string } } }).data?.error?.reason
+    if (status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE') {
+      pending.value = null
+      error.value = t('quoteRequest.errorAssignmentUnavailable')
+    } else if (status && status < 500 && status !== 408 && status !== 429) {
       pending.value = null
       conflict.value = status === 409
       error.value = status === 409 ? t('quoteRequest.errorDataChanged') : status === 401 ? t('quoteRequest.errorAuthFailed') : t('quoteRequest.errorFormInvalid')
@@ -234,7 +238,9 @@ async function submitManual() {
   try { receipt.value = await submitManualRequest(pendingManual.value); pendingManual.value = null; persist() }
   catch (failure: unknown) {
     const status = (failure as { response?: { status?: number } }).response?.status
-    if (status && status < 500 && status !== 408 && status !== 429) { pendingManual.value = null; error.value = t('quoteRequest.errorFormInvalid2') }
+    const reason = (failure as { data?: { error?: { reason?: string } } }).data?.error?.reason
+    if (status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE') { pendingManual.value = null; error.value = t('quoteRequest.errorAssignmentUnavailable') }
+    else if (status && status < 500 && status !== 408 && status !== 429) { pendingManual.value = null; error.value = t('quoteRequest.errorFormInvalid2') }
     else error.value = t('quoteRequest.errorNetworkRetry')
     persist()
   } finally { busy.value = false }

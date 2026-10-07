@@ -5,6 +5,7 @@ import { loadConfig } from '../src/config.js';
 import { encryptJwt } from '../src/infra/session.js';
 import { assignedRow } from './ai-fixtures.js';
 import { registerAdminPromptTemplateRoutes } from '../src/http/admin/prompt-templates/index.js';
+import { domainError } from '../src/lib/errors.js';
 
 const env = {
   NODE_ENV: 'test', LOG_LEVEL: 'silent', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',
@@ -64,6 +65,21 @@ test('OpenAPI documents real health routes; docs assets load', async t => {
   assert.ok(spec.json().paths['/health/ready']);
   assert.equal((await app.inject('/docs/')).statusCode, 200);
   assert.equal((await app.inject('/docs/static/swagger-ui-bundle.js')).statusCode, 200);
+});
+
+test('acceptance unavailable exposes only the stable business reason at 503', async t => {
+  const app = await buildApp(config, healthy);
+  t.after(() => app.close());
+  app.post('/test-acceptance', async () => { throw domainError('ASSIGNMENT_UNAVAILABLE', 503); });
+  app.post('/test-private-failure', async () => { throw domainError('private-connection-secret', 503); });
+  const response = await app.inject({ method: 'POST', url: '/test-acceptance' });
+  assert.equal(response.statusCode, 503);
+  assert.deepEqual(response.json().error, { code: 'REQUEST_ERROR', reason: 'ASSIGNMENT_UNAVAILABLE',
+    message: 'Request acceptance is temporarily unavailable', requestId: response.headers['x-request-id'] });
+  const privateFailure = await app.inject({ method: 'POST', url: '/test-private-failure' });
+  assert.equal(privateFailure.statusCode, 503);
+  assert.equal(privateFailure.json().error.reason, undefined);
+  assert.ok(!privateFailure.body.includes('private-connection-secret'));
 });
 
 test('production does not expose development documentation', async t => {

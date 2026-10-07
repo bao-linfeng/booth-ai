@@ -6,6 +6,28 @@ import { operationReceipt, saveOperation } from './service.js';
 import { captureScheme } from './snapshot.js';
 import { calculateQuotation, localCalendarDate, type QuotationInput, type SavedQuotation } from './quotation.js';
 import { resolveAdminPermissions } from '../identity/roles.js';
+import { eligibleAssignee, getAssignmentConfig } from './assignment.js';
+
+export interface AssignmentConfigInput { defaultAssigneeAdminId: string | null; expectedRevision: number }
+
+export async function saveAssignmentConfig(pool: pg.Pool, adminId: string, input: AssignmentConfigInput) {
+  return transaction(pool, async client => {
+    await assertProjectAdmin(client, adminId, 'projects.assign');
+    const current = (await client.query<{ id: string | null; revision: number }>(
+      'SELECT default_assignee_admin_id AS id,revision FROM project_assignment_config WHERE id=true FOR UPDATE')).rows[0];
+    if (!current) throw projectError('ASSIGNMENT_UNAVAILABLE', 503);
+    if (current.revision !== input.expectedRevision) throw projectError('ASSIGNMENT_CONFIG_CHANGED');
+    if (input.defaultAssigneeAdminId !== null && !await eligibleAssignee(client, input.defaultAssigneeAdminId)) {
+      throw projectError('INVALID_ASSIGNEE', 422);
+    }
+    await client.query(`UPDATE project_assignment_config SET default_assignee_admin_id=$1,
+      revision=revision+1,updated_by=$2,updated_at=now() WHERE id=true`, [input.defaultAssigneeAdminId, adminId]);
+    await client.query(`INSERT INTO admin_audit_logs(admin_id,action,target_type,target_id,detail)
+      VALUES($1,'project.assignment-config.update','project_assignment_config','default',$2::jsonb)`,
+    [adminId, JSON.stringify({ before: current.id, after: input.defaultAssigneeAdminId, revision: current.revision + 1 })]);
+    return getAssignmentConfig(client);
+  });
+}
 
 interface Change { requestKey: string; expectedRevision: number }
 export interface AssignmentInput extends Change { assigneeAdminId: string; reason: string }
@@ -17,7 +39,9 @@ export interface FollowUpInput extends Change {
 }
 export async function assertProjectAdmin(db: pg.Pool | pg.PoolClient,adminId: string, permission = 'projects.follow-up') {
   const admin=(await db.query<{enabled:boolean;roles:string[]}>('SELECT enabled,roles FROM admins WHERE id=$1',[adminId])).rows[0];
-  if(!admin?.enabled || !(await resolveAdminPermissions(db,admin.roles)).includes(permission)) throw projectError('ACCESS_DENIED',403);
+  if(!admin?.enabled) throw projectError('ACCESS_DENIED',403);
+  const permissions = await resolveAdminPermissions(db,admin.roles);
+  if(!permissions.includes('projects.read') || !permissions.includes(permission)) throw projectError('ACCESS_DENIED',403);
 }
 function editable(project: ProjectRecord) {if(terminalStatuses.includes(project.status)) throw projectError('INVALID_STATUS_TRANSITION');}
 async function change<T>(pool:pg.Pool,id:string,adminId:string,operation:string,input:Change,work:(client:pg.PoolClient,project:ProjectRecord)=>Promise<T>):Promise<T> {
@@ -44,12 +68,11 @@ async function event(client:pg.PoolClient,id:string,adminId:string,kind:string,p
 export async function assignProject(pool:pg.Pool,id:string,adminId:string,input:AssignmentInput) {
   return change(pool,id,adminId,'assignee',input,async(client,project)=>{
     editable(project);
-    const target=(await client.query<{id:string}>("SELECT id FROM admins WHERE id=$1 AND enabled AND EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.follow-up'=ANY(r.permission_codes)) FOR SHARE",[input.assigneeAdminId])).rows[0];
-    if(!target)throw projectError('INVALID_ASSIGNEE',422);
+    if(!await eligibleAssignee(client,input.assigneeAdminId))throw projectError('INVALID_ASSIGNEE',422);
     if(!input.reason.trim())throw projectError('INVALID_INPUT',400);
-    await client.query('UPDATE projects SET assignee_admin_id=$2,revision=revision+1,updated_at=now() WHERE id=$1',[id,target.id]);
-    await event(client,id,adminId,'assignment',{fromAdminId:project.assigneeAdminId,assigneeAdminId:target.id,reason:input.reason,revision:project.revision+1});
-    return {projectId:id,revision:project.revision+1,assigneeAdminId:target.id,attribution:project.attribution};
+    await client.query('UPDATE projects SET assignee_admin_id=$2,revision=revision+1,updated_at=now() WHERE id=$1',[id,input.assigneeAdminId]);
+    await event(client,id,adminId,'assignment',{fromAdminId:project.assigneeAdminId,assigneeAdminId:input.assigneeAdminId,reason:input.reason,revision:project.revision+1});
+    return {projectId:id,revision:project.revision+1,assigneeAdminId:input.assigneeAdminId,attribution:project.attribution};
   });
 }
 const transitions:Record<ProjectStatus,ProjectStatus[]>={pending:['following','closed'],following:['quoted','won','lost','closed'],quoted:['following','won','lost','closed'],won:[],lost:[],closed:[]};

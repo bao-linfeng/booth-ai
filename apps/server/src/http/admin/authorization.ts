@@ -14,6 +14,8 @@ export function requireAdminPermission(request: Parameters<typeof requirePrincip
 export function adminRoutePermissions(method: string, url: string): string[] | null {
   const path = url.replace(/^\/api\/v1\/admin(?=\/)/, '');
   if (['/me', '/access'].includes(path)) return [];
+  if (path === '/dashboard/summary' && (method === 'GET' || method === 'HEAD')) return ['dashboard.read', 'workspace.read'];
+  if (path === '/dashboard/analytics' && (method === 'GET' || method === 'HEAD')) return ['dashboard.read'];
   const read = method === 'GET' || method === 'HEAD';
   if (/^\/schemes\/:code\/assets(?:\/|$)/.test(path) || path === '/assets') {
     // 共享资产接口在解析类型或读取目标资产后检查对应页面的权限。
@@ -43,6 +45,7 @@ export function adminRoutePermissions(method: string, url: string): string[] | n
     return ['projects.read'];
   }
   if (path === '/project-assignees') return ['projects.assign'];
+  if (path === '/project-assignment-config') return [read ? 'projects.read' : 'projects.assign'];
   if (path === '/credits/recharge') return ['credits.recharge'];
   if (path === '/scheme-searches/statistics') return ['search-analytics.read'];
   if (path === '/scheme-searches/:id') return ['searches.detail'];

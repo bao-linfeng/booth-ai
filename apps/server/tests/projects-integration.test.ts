@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import pg from 'pg';
+import { projectTestPool } from './project-fixtures.js';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
 import { registerQuoteRequestRoutes } from '../src/http/client/quote-requests/index.js';
@@ -14,23 +14,12 @@ import { emptyRequirement } from '../src/modules/selection/domain.js';
 import { listDeliverables, signDeliverable } from '../src/modules/assets/deliverables.js';
 
 test('quote transaction: concurrent retries, immutable snapshots, revision conflict and rollback', { skip: !process.env.PROJECT_TEST_DATABASE_URL }, async t => {
-  const pool = new pg.Pool({ connectionString: process.env.PROJECT_TEST_DATABASE_URL });
+  const pool = await projectTestPool(t);
   const id = randomUUID(); const admin = randomUUID(); const user = randomUUID(); const other = randomUUID();
   const code = `project-test-${id}`;
   const projects: string[] = [];
-  t.after(async () => {
-    await pool.query('DELETE FROM project_operations WHERE actor_id=ANY($1::uuid[])',[[admin,user,other]]);
-    await pool.query('DELETE FROM project_notification_outbox WHERE project_id=ANY($1::uuid[])',[projects]);
-    await pool.query('DELETE FROM project_events WHERE project_id=ANY($1::uuid[])',[projects]);
-    await pool.query('DELETE FROM project_asset_versions WHERE project_id=ANY($1::uuid[])',[projects]);
-    await pool.query('DELETE FROM projects WHERE id=ANY($1::uuid[])',[projects]);
-    await pool.query('DELETE FROM theme_jobs WHERE user_id=ANY($1::uuid[])',[[user,other]]);
-    await pool.query('DELETE FROM schemes WHERE id=$1',[id]);
-    await pool.query('DELETE FROM users WHERE id=ANY($1::uuid[])',[[user,other]]);
-    await pool.query('DELETE FROM admins WHERE id=$1',[admin]);
-    await pool.end();
-  });
   await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,$2,$3,ARRAY['ROLE_ADMIN'])",[admin,Math.floor(Math.random()*1e12),code]);
+  await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=$1',[admin]);
   for (const uid of [user,other]) await pool.query('INSERT INTO users(id,external_user_id,username) VALUES($1,$2,$3)',[uid,Math.floor(Math.random()*1e12),uid]);
   const productSystem = (await pool.query<{ id: string }>("SELECT i.id FROM dictionary_items i JOIN dictionaries d ON d.id=i.dictionary_id WHERE d.code='product_system' AND d.enabled AND i.enabled LIMIT 1")).rows[0]!.id;
   await pool.query(`INSERT INTO schemes(id,code,name,publish_status,length_mm,width_mm,height_mm,area_sqm,opening_count,product_system_id,industry_ids,zone_ids,feature_ids)
@@ -59,6 +48,12 @@ test('quote transaction: concurrent retries, immutable snapshots, revision confl
   assert.ok(results.every(result => result.receipt.projectId === receipt.projectId));
   assert.equal(results.filter(result => !result.replayed).length,1);
   assert.equal((await pool.query('SELECT id FROM project_notification_outbox WHERE project_id=$1',[receipt.projectId])).rowCount,1);
+  await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=null');
+  await assert.rejects(createQuoteRequest(pool,user,{...input,requestKey:randomUUID()}),{reason:'ASSIGNMENT_UNAVAILABLE',statusCode:503});
+  assert.deepEqual((await createQuoteRequest(pool,user,input)).receipt,receipt);
+  assert.equal((await pool.query('SELECT count(*)::int AS count FROM projects')).rows[0].count,1);
+  assert.equal((await pool.query('SELECT count(*)::int AS count FROM project_notification_outbox')).rows[0].count,1);
+  await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=$1',[admin]);
   const redis = { get: async () => JSON.stringify({ site: 'client', localId: user, sessionVersion: 1, expiresAt: Math.floor(Date.now()/1000)+3600 }), eval: async () => 1 } as unknown as Redis;
   const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
   registerAuthentication(app, pool, redis, 'client');
@@ -149,6 +144,7 @@ test('quote transaction: concurrent retries, immutable snapshots, revision confl
   assert.equal(saved.materials_snapshot.bom.items[0]?.quantity,'2.500000');
   assert.equal(saved.materials_snapshot.bom.items[0]?.pricingUnit,'m');
   assert.ok(saved.assignee_admin_id);
-  await assert.rejects(createQuoteRequest(pool,user,{ ...input, requestKey: randomUUID() }),{ reason: 'SCHEME_UNAVAILABLE' });
+  await assert.rejects(createQuoteRequest(pool,user,{ ...input, requestKey: randomUUID() }),{ reason: 'SCHEME_REVISION_CHANGED' });
+  await assert.rejects(createQuoteRequest(pool,user,{ ...input, schemeRevision: 2, requestKey: randomUUID() }),{ reason: 'SCHEME_UNAVAILABLE' });
   assert.equal((await pool.query('SELECT id FROM projects WHERE customer_user_id=$1',[user])).rowCount,3);
 });

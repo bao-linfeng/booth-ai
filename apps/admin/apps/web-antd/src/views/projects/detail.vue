@@ -8,6 +8,7 @@ import { Page } from '@vben/common-ui';
 import { formatDateTime, openWindow } from '@vben/utils';
 
 import {
+  Alert,
   Button,
   Card,
   Descriptions,
@@ -18,6 +19,7 @@ import {
 
 import {
   assetDownloadApi,
+  assigneeStatusLabels,
   getProjectApi,
   projectEventsApi,
   statusLabels,
@@ -87,6 +89,18 @@ onMounted(load);
       <Button @click="load">重新加载</Button>
     </div>
     <template v-if="project">
+      <Alert
+        v-if="project.assigneeStatus !== 'active'"
+        class="mb-4"
+        type="warning"
+        show-icon
+        :message="`承接人${assigneeStatusLabels[project.assigneeStatus]} · ${project.assigneeName}`"
+        :description="
+          terminal
+            ? '已结束项目保留历史负责人；如需继续处理，请先重开项目，再由有分配权限的人员改派。'
+            : '项目已受理，原负责人及历史记录保留。该人员不能继续跟进，请由有分配权限的人员改派。'
+        "
+      />
       <Card :title="`${project.projectNo} · ${statusLabels[project.status]}`">
         <template #extra>
           <div class="flex flex-wrap gap-2">

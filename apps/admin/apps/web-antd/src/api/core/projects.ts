@@ -70,6 +70,7 @@ export interface Project {
   customerUserId: null | string;
   assigneeAdminId: string;
   assigneeName: string;
+  assigneeStatus: AssigneeStatus;
   attribution: Record<string, unknown>;
   status: ProjectStatus;
   revision: number;
@@ -91,6 +92,29 @@ export interface Project {
     artworks?: { status: string; assets: Asset[] };
   };
 }
+export type AssigneeStatus = 'active' | 'disabled' | 'permission_revoked';
+export const assigneeStatusLabels: Record<AssigneeStatus, string> = {
+  active: '有效',
+  disabled: '已停用',
+  permission_revoked: '缺少项目查看或跟进权限',
+};
+export interface AssignmentConfig {
+  defaultAssigneeAdminId: null | string;
+  assigneeName: null | string;
+  status: 'unconfigured' | AssigneeStatus;
+  revision: number;
+  updatedAt: string;
+}
+export const getAssignmentConfigApi = () =>
+  requestClient.get<AssignmentConfig>('/v1/admin/project-assignment-config');
+export const saveAssignmentConfigApi = (input: {
+  defaultAssigneeAdminId: null | string;
+  expectedRevision: number;
+}) =>
+  requestClient.put<AssignmentConfig>(
+    '/v1/admin/project-assignment-config',
+    input,
+  );
 export interface ProjectEvent {
   id: string;
   kind: string;

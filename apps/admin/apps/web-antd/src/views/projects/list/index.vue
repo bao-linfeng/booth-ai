@@ -9,8 +9,9 @@ import { formatDateTime } from '@vben/utils';
 import { Button, Tag } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { statusLabels } from '#/api/core/projects';
+import { assigneeStatusLabels, statusLabels } from '#/api/core/projects';
 
+import AssignmentConfig from '../AssignmentConfig.vue';
 import { createFormOptions, createGridOptions } from './options';
 
 const router = useRouter();
@@ -30,7 +31,22 @@ function handleProcess(row: Project) {
 
 <template>
   <Page auto-content-height>
+    <AssignmentConfig />
     <Grid>
+      <template #assignee="{ row }">
+        <span>{{ (row as Project).assigneeName }}</span>
+        <Tag
+          v-if="(row as Project).assigneeStatus !== 'active'"
+          color="warning"
+        >
+          {{ assigneeStatusLabels[(row as Project).assigneeStatus]
+          }}{{
+            ['closed', 'lost', 'won'].includes((row as Project).status)
+              ? ' · 历史负责人'
+              : ' · 待人工改派'
+          }}
+        </Tag>
+      </template>
       <template #source="{ row }">
         {{
           (row as Project).sourceType === 'quote_request'

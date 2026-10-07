@@ -3,7 +3,7 @@ import test from 'node:test';
 import { digest, normalizeQuote, type QuoteInput } from '../src/modules/projects/domain.js';
 import { resolvePrincipal } from '../src/modules/identity/principal.js';
 import { registerQuoteRequestRoutes } from '../src/http/client/quote-requests/index.js';
-import { defaultAssignee } from '../src/modules/projects/service.js';
+import { configuredAssignee } from '../src/modules/projects/assignment.js';
 import Fastify from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
@@ -50,5 +50,5 @@ test('quote route rejects anonymous, unknown fields and invalid partial theme re
   }
 });
 test('missing default assignee blocks acceptance rather than returning a phantom project', async () => {
-  await assert.rejects(defaultAssignee({ query: async () => ({ rows: [] }) } as unknown as pg.PoolClient),{ statusCode: 503, reason: 'ASSIGNMENT_UNAVAILABLE' });
+  await assert.rejects(configuredAssignee({ query: async () => ({ rows: [] }) } as unknown as pg.PoolClient),{ statusCode: 503, reason: 'ASSIGNMENT_UNAVAILABLE' });
 });

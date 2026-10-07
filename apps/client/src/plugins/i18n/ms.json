@@ -775,7 +775,8 @@
     "errorNetworkSubmit": "Penerimaan belum disahkan. Permohonan ini disimpan. Gunakan butang di bawah untuk mengesahkannya semula bagi mengelakkan projek pendua.",
     "errorAccountChanged2": "Akaun log masuk telah berubah. Sahkan semula.",
     "errorFormInvalid2": "Semak tarikh, bajet, maklumat hubungan dan status log masuk. Input anda disimpan.",
-    "errorNetworkRetry": "Penerimaan belum disahkan. Sahkan permohonan ini semula."
+    "errorNetworkRetry": "Penerimaan belum disahkan. Sahkan permohonan ini semula.",
+    "errorAssignmentUnavailable": "Permohonan tidak dapat diterima buat masa ini. Tiada projek dicipta. Maklumat borang anda telah disimpan; hantar semula kemudian atau hubungi khidmat pelanggan."
   },
   "searches": {
     "pageTitle": "Sejarah Carian",

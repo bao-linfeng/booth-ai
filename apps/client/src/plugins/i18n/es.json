@@ -793,7 +793,8 @@
     "errorNetworkSubmit": "Resultado no confirmado. Usa el botón para reconfirmar.",
     "errorAccountChanged2": "Cuenta cambiada. Reconfirma.",
     "errorFormInvalid2": "Verifica fechas, presupuesto, contactos y estado de sesión. Datos guardados.",
-    "errorNetworkRetry": "Resultado no confirmado. Reintenta."
+    "errorNetworkRetry": "Resultado no confirmado. Reintenta.",
+    "errorAssignmentUnavailable": "No se pueden aceptar solicitudes en este momento. No se ha creado ningún proyecto. Tus datos se han conservado; vuelve a enviarlos más tarde o contacta con atención al cliente."
   },
   "searches": {
     "pageTitle": "Historial de búsquedas",

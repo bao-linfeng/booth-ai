@@ -3,17 +3,22 @@ import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import type { createStorage } from '../../../infra/storage.js';
 import { adminUserId } from '../../authentication.js';
-import { assignProject,followUpProject,linkProjectScheme,quotationRevision,saveQuotation,type AssignmentInput,type FollowUpInput,type SchemeLinkInput } from '../../../modules/projects/admin-service.js';
+import { assignProject,followUpProject,linkProjectScheme,quotationRevision,saveQuotation,saveAssignmentConfig,type AssignmentInput,type FollowUpInput,type SchemeLinkInput,type AssignmentConfigInput } from '../../../modules/projects/admin-service.js';
 import { getProject,listProjects,projectEvents,type ProjectQuery } from '../../../modules/projects/repository.js';
 import { quotationWorkbook } from '../../../modules/projects/quotation-workbook.js';
 import { projectError } from '../../../modules/projects/domain.js';
 import type { QuotationInput } from '../../../modules/projects/quotation.js';
 import { assignmentSchema,followUpSchema,linkSchema,projectParams,queryProperties,quotationSchema,uuid } from '../../../modules/projects/schema.js';
+import { assigneePermissionSql, getAssignmentConfig } from '../../../modules/projects/assignment.js';
 
 export async function registerAdminProjectRoutes(app:FastifyInstance,pool:pg.Pool,redis:Redis,storage:ReturnType<typeof createStorage>) {
   await app.register(async routes=>{
     routes.addHook('onRequest',async(request,reply)=>{reply.header('Cache-Control','private, no-store');adminUserId(request);});
-    routes.get('/project-assignees',async()=>({code:0,data:(await pool.query("SELECT id,coalesce(nickname,username) AS name FROM admins WHERE enabled AND EXISTS (SELECT 1 FROM admin_roles r WHERE r.active AND r.name=ANY(admins.roles) AND 'projects.follow-up'=ANY(r.permission_codes)) ORDER BY username,id")).rows}));
+    routes.get('/project-assignees',async()=>({code:0,data:(await pool.query(`SELECT a.id,coalesce(a.nickname,a.username) AS name FROM admins a WHERE a.enabled AND ${assigneePermissionSql('a')} ORDER BY a.username,a.id`)).rows}));
+    routes.get('/project-assignment-config',async()=>({code:0,data:await getAssignmentConfig(pool)}));
+    routes.put<{Body:AssignmentConfigInput}>('/project-assignment-config',{schema:{body:{type:'object',additionalProperties:false,
+      required:['defaultAssigneeAdminId','expectedRevision'],properties:{defaultAssigneeAdminId:{anyOf:[uuid,{type:'null'}]},expectedRevision:{type:'integer',minimum:0}}}}},
+    async request=>({code:0,data:await saveAssignmentConfig(pool,adminUserId(request),request.body)}));
     routes.get<{Querystring:ProjectQuery}>('/projects',{schema:{querystring:{type:'object',additionalProperties:false,properties:{...queryProperties,city:{type:'string',maxLength:100},customerName:{type:'string',maxLength:200},customerUserId:uuid,assigneeAdminId:uuid,
       exhibitionStartFrom:{type:'string',format:'date'},exhibitionStartTo:{type:'string',format:'date'}}}}},async request=>({code:0,data:await listProjects(pool,request.query)}));
     routes.get<{Params:{projectId:string}}>('/projects/:projectId',{schema:{params:projectParams}},async request=>{

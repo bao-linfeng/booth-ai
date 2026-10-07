@@ -793,7 +793,8 @@
     "errorNetworkSubmit": "Receipt has not yet been confirmed. This submission has been preserved. Use the button below to retry confirmation and avoid creating duplicate projects.",
     "errorAccountChanged2": "The logged-in account has changed. Please confirm again.",
     "errorFormInvalid2": "Check the dates, budget, contact details and login status. Your input has been saved.",
-    "errorNetworkRetry": "Receipt has not yet been confirmed. Please retry confirmation of this request."
+    "errorNetworkRetry": "Receipt has not yet been confirmed. Please retry confirmation of this request.",
+    "errorAssignmentUnavailable": "Requests cannot be accepted right now. No project was created. Your form has been kept; please submit it again later or contact customer service."
   },
   "searches": {
     "pageTitle": "Search history",

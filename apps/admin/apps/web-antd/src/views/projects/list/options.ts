@@ -92,7 +92,12 @@ export const createGridOptions = () => ({
       minWidth: 140,
       slots: { default: 'budget' },
     },
-    { field: 'assigneeName', title: '承接人', minWidth: 120 },
+    {
+      field: 'assigneeName',
+      title: '承接人',
+      minWidth: 200,
+      slots: { default: 'assignee' },
+    },
     {
       field: 'status',
       title: '状态',
