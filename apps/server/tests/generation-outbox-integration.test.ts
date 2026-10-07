@@ -8,10 +8,11 @@ import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import pg from 'pg';
 import { THEME_TASK_NAME } from '../src/infra/queue.js';
-import { dispatchThemeOutbox, reconcileThemeOutbox } from '../src/workers/theme-outbox.js';
+import { dispatchGenerationOutbox } from '../src/workers/generation-outbox.js';
+import { recoverGenerationJobs } from '../src/workers/generation-recovery.js';
 import { settleThemeJob } from '../src/modules/generation/theme/execution.js';
 
-test('theme outbox delivery and recovery against PostgreSQL and Redis', {
+test('generation outbox delivery and recovery against PostgreSQL and Redis', {
   skip: !process.env.THEME_TEST_DATABASE_URL || !process.env.THEME_TEST_REDIS_URL,
   timeout: 90_000,
 }, async t => {
@@ -34,7 +35,7 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
   }
   await database.query('ALTER TABLE theme_jobs ADD COLUMN cache_hit boolean NOT NULL DEFAULT false');
   await database.query('ALTER TABLE theme_jobs ADD COLUMN generation_snapshot jsonb');
-  await database.query('CREATE TABLE artwork_jobs (id uuid PRIMARY KEY, status text, updated_at timestamptz DEFAULT now())');
+  await database.query('CREATE TABLE artwork_jobs (id uuid PRIMARY KEY, status text, updated_at timestamptz DEFAULT now(), lease_until timestamptz)');
   await database.query(await readFile(new URL('../migrations/049_generation_recovery.sql', import.meta.url), 'utf8'));
   const userId = randomUUID();
   await database.query("INSERT INTO users(id, external_user_id, username) VALUES ($1, 1, 'outbox-test')", [userId]);
@@ -71,12 +72,12 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
     unavailable.on('error', () => {});
     offline.disconnect();
     try {
-      await assert.rejects(dispatchThemeOutbox(database, { getJob: async () => undefined, add: unavailable.add.bind(unavailable) }));
+      await assert.rejects(dispatchGenerationOutbox(database, 'theme', { add: unavailable.add.bind(unavailable) }));
     } finally {
       await unavailable.close();
     }
     assert.deepEqual(await state(id), { status: 'pending', picked_at: null, reservation: 'reserved' });
-    await dispatchThemeOutbox(database, queue);
+    await dispatchGenerationOutbox(database, 'theme', queue);
     assert.equal((await state(id)).status, 'queued');
     assert.equal(await queue.getWaitingCount(), 1);
     await reset();
@@ -88,11 +89,11 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
       BEGIN RAISE EXCEPTION 'injected commit failure'; END $$;
       CREATE CONSTRAINT TRIGGER reject_publish AFTER UPDATE ON theme_job_outbox
       DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_publish()`);
-    await assert.rejects(dispatchThemeOutbox(database, queue), /injected commit failure/);
+    await assert.rejects(dispatchGenerationOutbox(database, 'theme', queue), /injected commit failure/);
     assert.deepEqual(await state(id), { status: 'pending', picked_at: null, reservation: 'reserved' });
     assert.equal(await queue.getWaitingCount(), 1);
     await database.query('DROP TRIGGER reject_publish ON theme_job_outbox');
-    await dispatchThemeOutbox(database, queue);
+    await dispatchGenerationOutbox(database, 'theme', queue);
     assert.equal(await queue.getWaitingCount(), 1);
     assert.ok((await state(id)).picked_at);
     await reset();
@@ -101,7 +102,7 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
   for (const stage of ['before-add', 'after-add']) {
     await t.test(`dispatcher process killed ${stage} recovers on restart`, async () => {
       const id = await seed();
-      const child = fork(new URL('./fixtures/theme-outbox-process.ts', import.meta.url), [], {
+      const child = fork(new URL('./fixtures/generation-outbox-process.ts', import.meta.url), [], {
         env: { ...process.env, THEME_TEST_SCHEMA: schema, THEME_TEST_QUEUE: schema, THEME_TEST_CRASH_STAGE: stage },
         stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
       });
@@ -116,7 +117,7 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
       }
       assert.equal(await queue.getWaitingCount(), stage === 'after-add' ? 1 : 0);
       await database.query('SELECT id FROM theme_jobs WHERE id = $1 FOR UPDATE', [id]);
-      await dispatchThemeOutbox(database, queue);
+      await dispatchGenerationOutbox(database, 'theme', queue);
       assert.equal(await queue.getWaitingCount(), 1);
       assert.equal((await state(id)).status, 'queued');
       await reset();
@@ -129,8 +130,7 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
     let resumeDispatch!: () => void;
     const added = new Promise<void>(resolve => { signalAdded = resolve; });
     const resume = new Promise<void>(resolve => { resumeDispatch = resolve; });
-    const first = dispatchThemeOutbox(database, {
-      getJob: queue.getJob.bind(queue),
+    const first = dispatchGenerationOutbox(database, 'theme', {
       add: async (...args: Parameters<Queue['add']>) => {
         const job = await queue.add(...args);
         signalAdded();
@@ -140,7 +140,7 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
     });
     await added;
     try {
-      await dispatchThemeOutbox(database, { getJob: async () => assert.fail('row must be skipped'), add: queue.add.bind(queue) });
+      await dispatchGenerationOutbox(database, 'theme', { add: async () => assert.fail('row must be skipped') });
       const consumer = await database.connect();
       try {
         await consumer.query('BEGIN');
@@ -153,25 +153,26 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
     await reset();
   });
 
-  await t.test('reconciliation repairs lost publications and missing outbox rows, preserving reservations', async () => {
+  const recover = () => recoverGenerationJobs(database, { theme: queue, artwork: queue });
+
+  await t.test('recovery re-enqueues stale jobs whose queue record was lost, preserving reservations', async () => {
     const queued = await seed('queued', 'picked', true);
     const missing = await seed('pending', 'missing', true);
+    const running = await seed('running', 'picked', true);
     const fresh = await seed('queued', 'picked');
-    const excluded = await Promise.all(['running', 'settling', 'succeeded', 'partially_succeeded', 'failed'].map(status => seed(status, 'picked', true)));
-    assert.equal(await reconcileThemeOutbox(database), 2);
-    assert.equal(await reconcileThemeOutbox(database), 0);
-    await dispatchThemeOutbox(database, queue);
-    for (const id of [queued, missing]) {
-      assert.equal((await state(id)).status, 'queued');
+    const terminal = await Promise.all(['succeeded', 'partially_succeeded', 'failed'].map(status => seed(status, 'picked', true)));
+    assert.equal((await recover()).enqueued, 3);
+    assert.equal((await recover()).enqueued, 0);
+    for (const id of [queued, missing, running]) {
       assert.equal((await state(id)).reservation, 'reserved');
-      assert.equal((await queue.getJob(id))?.id, id);
+      assert.equal(await (await queue.getJob(id))?.getState(), 'waiting');
     }
-    for (const id of [fresh, ...excluded]) assert.equal(await queue.getJob(id), undefined);
+    for (const id of [fresh, ...terminal]) assert.equal(await queue.getJob(id), undefined);
     await reset();
   });
 
   for (const terminal of ['completed', 'failed'] as const) {
-    await t.test(`recovery restarts a retained ${terminal} BullMQ record`, async () => {
+    await t.test(`recovery handles a stale queued job with a retained ${terminal} BullMQ record`, async () => {
       const id = await seed('queued', 'picked', true);
       const consumer = new Redis(process.env.THEME_TEST_REDIS_URL!, { maxRetriesPerRequest: null });
       const worker = new Worker(schema, async () => { if (terminal === 'failed') throw new Error('injected worker failure'); }, { connection: consumer });
@@ -181,10 +182,19 @@ test('theme outbox delivery and recovery against PostgreSQL and Redis', {
         await finished;
       } finally { await worker.close(); consumer.disconnect(); }
       assert.equal(await (await queue.getJob(id))?.getState(), terminal);
-      assert.equal(await reconcileThemeOutbox(database), 1);
-      await dispatchThemeOutbox(database, queue);
-      assert.equal(await (await queue.getJob(id))?.getState(), 'waiting');
-      assert.equal((await state(id)).reservation, 'reserved');
+      const report = await recover();
+      if (terminal === 'completed') {
+        // The consumer finished without advancing the job: run it again.
+        assert.equal(report.retried, 1);
+        assert.equal(await (await queue.getJob(id))?.getState(), 'waiting');
+        assert.equal((await state(id)).status, 'queued');
+        assert.equal((await state(id)).reservation, 'reserved');
+      } else {
+        // Retries were exhausted before the job was ever claimed: settle like the worker failure handler.
+        assert.equal(report.settled, 1);
+        assert.equal((await state(id)).status, 'failed');
+        assert.equal((await state(id)).reservation, 'released');
+      }
       await reset();
     });
   }

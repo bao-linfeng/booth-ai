@@ -39,6 +39,9 @@ export interface GenerationJob {
     brandColors?: string[];
     brandKeywords?: string;
   };
+  /** 积分对账无法自动修复的问题代码；修复后清空。 */
+  creditIssue: null | string;
+  creditIssueAt: null | string;
   createdAt: string;
   updatedAt: string;
   durationMs: number;
@@ -80,6 +83,7 @@ export function listGenerationJobsApi(params: {
   schemeCode?: string;
   from?: string;
   to?: string;
+  creditIssue?: boolean;
 }) {
   return requestClient.get<{
     data: GenerationJob[];

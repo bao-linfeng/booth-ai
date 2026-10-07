@@ -11,11 +11,10 @@ import { createQueue, QUEUE_NAME, TASK_NAME, THEME_QUEUE_NAME, THEME_TASK_NAME, 
 import { processEchoTask } from './modules/tasks/service.js';
 import { dispatchOutbox } from './workers/outbox.js';
 import { settleThemeJob, processThemeJob } from './modules/generation/theme/execution.js';
-import { dispatchThemeOutbox, reconcileThemeOutbox } from './workers/theme-outbox.js';
 import { processArtworkJob, settleArtworkJob } from './modules/generation/artwork/execution.js';
-import { dispatchArtworkOutbox } from './workers/artwork-outbox.js';
+import { dispatchGenerationOutbox } from './workers/generation-outbox.js';
 import { reconcileJobCredits } from './modules/credits/reconciliation.js';
-import { recoverGenerationJobs, recoverPendingGenerationJobs } from './workers/generation-recovery.js';
+import { recoverGenerationJobs } from './workers/generation-recovery.js';
 import { deliverProjectNotifications } from './workers/project-notifications.js';
 import { deliverReceiptEmails } from './workers/receipt-emails.js';
 import { createSmtpSender } from './infra/mailer.js';
@@ -71,16 +70,18 @@ async function main() {
       .catch(error => log.error({ queue: QUEUE_NAME, jobId: job.id, code: errorCode(error) }, 'Unable to persist failed task status'));
   });
 
+  const publishThemeEvent = async (jobId: string, event: unknown) => {
+    await producerRedis.publish(`theme-job:${jobId}`, JSON.stringify(event));
+  };
   const themeWorker = new Worker(THEME_QUEUE_NAME, observed(THEME_QUEUE_NAME, async job => {
     if (job.name !== THEME_TASK_NAME || typeof job.data.jobId !== 'string' || job.data.jobId !== job.id) throw new Error('Invalid theme job');
-    return processThemeJob(database, job.data.jobId, config, storage, async (jobId, event) => {
-      await producerRedis.publish(`theme-job:${jobId}`, JSON.stringify(event));
-    });
+    return processThemeJob(database, job.data.jobId, config, storage, publishThemeEvent);
   }), { connection: consumerRedis, concurrency: 2 });
   themeWorker.on('error', () => log.error({ queue: THEME_QUEUE_NAME }, 'Worker connection error'));
   themeWorker.on('failed', (job) => {
     if (!job?.id || job.attemptsMade < (job.opts.attempts ?? 1)) return;
-    void settleThemeJob(database, job.id).catch(error => log.error({ queue: THEME_QUEUE_NAME, jobId: job.id, code: errorCode(error) }, 'Unable to settle failed theme job'));
+    void settleThemeJob(database, job.id, undefined, publishThemeEvent)
+      .catch(error => log.error({ queue: THEME_QUEUE_NAME, jobId: job.id, code: errorCode(error) }, 'Unable to settle failed theme job'));
   });
 
   const publishArtworkEvent = async (jobId: string, event: unknown) => {
@@ -104,15 +105,17 @@ async function main() {
   const generationQueues = { theme: themeQueue, artwork: artworkQueue };
   const tasks: ScheduledTask[] = [
     { name: 'foundation-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchOutbox(database, queue) },
-    { name: 'theme-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchThemeOutbox(database, themeQueue) },
-    { name: 'artwork-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchArtworkOutbox(database, artworkQueue, publishArtworkEvent) },
-    { name: 'generation-recovery', intervalMs: 60_000, staleAfterMs: 300_000, run: () => recoverGenerationJobs(database, generationQueues) },
-    { name: 'pending-generation-recovery', intervalMs: 60_000, staleAfterMs: 300_000, run: () => recoverPendingGenerationJobs(database, generationQueues) },
+    { name: 'theme-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchGenerationOutbox(database, 'theme', themeQueue, publishThemeEvent) },
+    { name: 'artwork-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchGenerationOutbox(database, 'artwork', artworkQueue, publishArtworkEvent) },
+    { name: 'generation-recovery', intervalMs: 60_000, staleAfterMs: 300_000, run: async () => {
+      const recovery = await recoverGenerationJobs(database, generationQueues, { theme: publishThemeEvent, artwork: publishArtworkEvent });
+      if (recovery.enqueued || recovery.retried || recovery.settled || recovery.errors.length) log.warn({ recovery }, 'Generation recovery');
+    } },
+    // Unrepairable issues are persisted on the job rows and listed on the admin generation job page.
     { name: 'credit-reconciliation', intervalMs: 60_000, staleAfterMs: 300_000, run: async () => {
       const credits = await reconcileJobCredits(database);
       if (credits.repaired || credits.issues.length) log.warn({ credits }, 'Credit reconciliation');
     } },
-    { name: 'theme-outbox-reconciliation', intervalMs: 60_000, staleAfterMs: 300_000, run: () => reconcileThemeOutbox(database) },
   ];
   if (config.projectNotificationWebhook) {
     const send = createWebhookSender(config.projectNotificationWebhook);

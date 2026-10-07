@@ -11,6 +11,8 @@ export interface GenerationJobQuery {
   schemeCode?: string;
   from?: string;
   to?: string;
+  /** 只看积分对账无法自动修复的任务。 */
+  creditIssue?: boolean;
 }
 
 interface JobRow {
@@ -32,13 +34,16 @@ interface JobRow {
   selectionRevision: number;
   selectedResultId: string | null;
   input: unknown;
+  creditIssue: string | null;
+  creditIssueAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 const listColumns = `j.id,j.user_id AS "userId",u.username AS "username",j.scheme_code AS "schemeCode",j.status,j.phase,
   j.requested_count AS "requestedCount",j.usable_count AS "usableCount",j.unit_credits AS "unitCredits",
-  j.cache_hit AS "cacheHit",j.input,j.created_at AS "createdAt",j.updated_at AS "updatedAt"`;
+  j.cache_hit AS "cacheHit",j.input,j.credit_issue AS "creditIssue",j.credit_issue_at AS "creditIssueAt",
+  j.created_at AS "createdAt",j.updated_at AS "updatedAt"`;
 
 function jobMetrics<T extends Pick<JobRow, 'usableCount' | 'unitCredits' | 'createdAt' | 'updatedAt' | 'cacheHit' | 'jobType' | 'status'>>(row: T) {
   return {
@@ -54,8 +59,8 @@ export async function listGenerationJobs(pool: pg.Pool, params: GenerationJobQue
   const pageSize = params.pageSize ?? 20;
   const source = params.jobType === 'theme' ? 'theme_jobs' : params.jobType === 'artwork' ?
     "(SELECT a.*,false AS cache_hit,'artwork'::text AS job_type FROM artwork_jobs a)" :
-    `(SELECT id,user_id,scheme_code,status::text,phase,requested_count,usable_count,unit_credits,cache_hit,input,created_at,updated_at,'theme'::text AS job_type FROM theme_jobs
-      UNION ALL SELECT id,user_id,scheme_code,status::text,phase,requested_count,usable_count,unit_credits,false,input,created_at,updated_at,'artwork'::text FROM artwork_jobs)`;
+    `(SELECT id,user_id,scheme_code,status::text,phase,requested_count,usable_count,unit_credits,cache_hit,input,credit_issue,credit_issue_at,created_at,updated_at,'theme'::text AS job_type FROM theme_jobs
+      UNION ALL SELECT id,user_id,scheme_code,status::text,phase,requested_count,usable_count,unit_credits,false,input,credit_issue,credit_issue_at,created_at,updated_at,'artwork'::text FROM artwork_jobs)`;
   const typeColumn = params.jobType === 'theme' ? "'theme' AS \"jobType\"" : 'j.job_type AS "jobType"';
 
   const values: unknown[] = [];
@@ -65,6 +70,7 @@ export async function listGenerationJobs(pool: pg.Pool, params: GenerationJobQue
   if (params.schemeCode) { values.push(params.schemeCode); filters.push(`j.scheme_code = $${values.length}`); }
   if (params.from) { values.push(params.from); filters.push(`j.created_at >= $${values.length}::date`); }
   if (params.to) { values.push(params.to); filters.push(`j.created_at < ($${values.length}::date + interval '1 day')`); }
+  if (params.creditIssue !== undefined) filters.push(`j.credit_issue IS ${params.creditIssue ? 'NOT ' : ''}NULL`);
   const where = filters.length ? ` WHERE ${filters.join(' AND ')}` : '';
   const [records, count] = await Promise.all([
     pool.query<JobRow>(`SELECT ${listColumns},${typeColumn} FROM ${source} j LEFT JOIN users u ON u.id = j.user_id${where} ORDER BY j.created_at DESC,j.id DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,

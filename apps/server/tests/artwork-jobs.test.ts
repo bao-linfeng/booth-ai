@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type pg from 'pg';
-import type { Queue } from 'bullmq';
 import sharp from 'sharp';
 import { normalizeArtworkImage } from '../src/modules/generation/artwork/image.js';
-import { dispatchArtworkOutbox } from '../src/workers/artwork-outbox.js';
 import { loadArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
 import { DIRECTIONS, DIRECTION_LABELS } from '../src/modules/generation/artwork/types.js';
 import { assignedRow } from './ai-fixtures.js';
@@ -106,19 +104,3 @@ test('artwork acceptance converts actual JPEG pixels to PNG and rejects low reso
   await assert.rejects(normalizeArtworkImage(Buffer.alloc(30 * 1024 * 1024 + 1)), /ARTWORK_SIZE_INVALID/);
 });
 
-test('artwork outbox rolls back when queue unavailable and marks dispatch only after successful enqueue', async () => {
-  const events: string[] = [];
-  const client = { query: async (sql: string) => {
-    events.push(sql);
-    return sql.includes('SELECT job_id') ? { rows: [{ jobId: 'task' }] } : { rows: [] };
-  }, release: () => {} };
-  const pool = { query: async () => ({ rows: [] }), connect: async () => client } as unknown as pg.Pool;
-  await assert.rejects(dispatchArtworkOutbox(pool, { add: async () => { events.push('ENQUEUE_FAILED'); throw new Error('Redis unavailable'); } } as unknown as Queue));
-  assert.equal(events.at(-1), 'ROLLBACK');
-  assert.ok(!events.some(e => e.includes('picked_at = now()') || e === 'COMMIT'));
-  events.length = 0;
-  await dispatchArtworkOutbox(pool, { add: async (_name: string, _body: unknown, options: { jobId: string }) => { assert.equal(options.jobId, 'task'); events.push('ENQUEUED'); } } as unknown as Queue,
-    async (id, event) => { assert.equal(id, 'task'); assert.deepEqual(event, { status: 'queued' }); assert.equal(events.at(-1), 'COMMIT'); events.push('PUBLISHED'); });
-  assert.ok(events.indexOf('ENQUEUED') < events.findIndex(e => e.includes('picked_at = now()')));
-  assert.equal(events.at(-1), 'PUBLISHED');
-});

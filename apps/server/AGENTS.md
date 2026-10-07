@@ -9,7 +9,7 @@
 - 模块依赖规则：`tests/module-boundaries.test.ts` 用 AST 静态检查强制执行，反向依赖会导致测试失败（规则摘要见下文“模块开发规范”）
 - 认证体系：`src/http/authentication.ts` 统一建立请求级 principal，`src/modules/identity/principal.ts` 校验账户与 Session 版本
 - 积分账本（预占、结算、释放、对账）：`src/modules/credits/`，对账见 `reconciliation.ts`
-- 生成任务 Outbox 与恢复：`src/workers/theme-outbox.ts`、`artwork-outbox.ts`、`generation-recovery.ts`
+- 生成任务 Outbox 与恢复：`src/workers/generation-outbox.ts`（主题/画稿共用分发）、`generation-recovery.ts`（恢复矩阵 `decideRecovery`）
 - 方案基线资产与用户生成素材的作用域隔离：`migrations/050_asset_scope.sql`（`scheme_baseline_assets` 视图）
 - Worker 调度隔离、健康状态、指标与项目通知投递：`src/worker.ts`、`src/workers/scheduler.ts`、`metrics.ts`、`project-notifications.ts`
 - [`docs/一期功能拆分/AI模型接入与配置.md`](../../docs/一期功能拆分/AI模型接入与配置.md) — AI 供应商/模型/用途分配三层配置、协议注册表与适配器约定（业务代码不写供应商分支）

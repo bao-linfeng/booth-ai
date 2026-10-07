@@ -18,6 +18,7 @@ export async function registerAdminGenerationJobRoutes(
       status: { type: 'string', enum: ['pending', 'queued', 'running', 'settling', 'succeeded', 'partially_succeeded', 'failed'] },
       userId: { type: 'string', format: 'uuid' }, schemeCode: { type: 'string' },
       from: { type: 'string', format: 'date' }, to: { type: 'string', format: 'date' },
+      creditIssue: { type: 'boolean' },
     },
   } } }, async request => ({ code: 0, data: await listGenerationJobs(pool, request.query as GenerationJobQuery) }));
 

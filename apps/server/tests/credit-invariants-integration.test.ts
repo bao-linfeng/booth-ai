@@ -16,7 +16,7 @@ import { reconcileJobCredits } from '../src/modules/credits/reconciliation.js';
 import { lockCreditUser, reserveJobCredits, releaseJobCredits, type CreditJob } from '../src/modules/credits/service.js';
 import { settleThemeJob, processThemeJob } from '../src/modules/generation/theme/execution.js';
 import { settleArtworkJob } from '../src/modules/generation/artwork/execution.js';
-import { recoverGenerationJobs, recoverPendingGenerationJobs } from '../src/workers/generation-recovery.js';
+import { recoverGenerationJobs } from '../src/workers/generation-recovery.js';
 
 test('credit invariants against PostgreSQL: rollback, concurrency, terminal recovery and recharge replay', {
   skip: !process.env.CREDIT_TEST_DATABASE_URL, timeout: 120_000,
@@ -75,7 +75,6 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     await pool.query('UPDATE theme_jobs SET credit_checked_at=NULL');
     await pool.query('UPDATE artwork_jobs SET credit_checked_at=NULL');
     await recoverGenerationJobs(pool, { theme: queue, artwork: queue });
-    await recoverPendingGenerationJobs(pool, { theme: queue, artwork: queue });
     return reconcileJobCredits(pool);
   }
 
@@ -124,6 +123,10 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     const next = await job(owner); await generated(next); await run(next);
     const report = await reconcile();
     assert.ok(report.issues.some(issue => issue.id === old.id && issue.reason === 'RESERVATION_RESTORE_INSUFFICIENT_CREDITS'));
+    const persisted = (await pool.query('SELECT credit_issue,credit_issue_at FROM theme_jobs WHERE id=$1', [old.id])).rows[0];
+    assert.equal(persisted.credit_issue, 'RESERVATION_RESTORE_INSUFFICIENT_CREDITS');
+    assert.ok(persisted.credit_issue_at);
+    assert.equal((await pool.query('SELECT credit_issue FROM theme_jobs WHERE id=$1', [next.id])).rows[0].credit_issue, null);
     await assert.rejects(run(old), /Active credit reservation required/);
     assert.deepEqual((await state(old)).charges, []);
     await pool.query('DELETE FROM theme_job_results WHERE job_id=$1', [old.id]);
@@ -239,14 +242,17 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
           const report = await reconcile();
           assert.ok(report.issues.some(issue => issue.id === task.id && issue.reason === 'RECONCILIATION_FAILED'));
           assert.deepEqual(await state(task), { status, usable: 0, reservation: 'reserved', charges: [] });
-          assert.equal((await pool.query(`SELECT credit_checked_at FROM ${kind}_jobs WHERE id=$1`, [task.id])).rows[0].credit_checked_at, null);
+          assert.deepEqual((await pool.query(`SELECT credit_checked_at,credit_issue FROM ${kind}_jobs WHERE id=$1`, [task.id])).rows[0],
+            { credit_checked_at: null, credit_issue: 'RECONCILIATION_FAILED' });
         } finally {
           await pool.query(`DROP TRIGGER reject_zero_result_recovery ON ${kind}_jobs; DROP FUNCTION reject_zero_result_recovery()`);
         }
         const report = await reconcile();
         assert.ok(!report.issues.some(issue => issue.id === task.id));
         assert.deepEqual(await state(task), { status: 'failed', usable: 0, reservation: 'released', charges: [] });
-        const current = (await pool.query(`SELECT lease_token,lease_until,credit_checked_at FROM ${kind}_jobs WHERE id=$1`, [task.id])).rows[0];
+        const current = (await pool.query(`SELECT lease_token,lease_until,credit_checked_at,credit_issue,credit_issue_at FROM ${kind}_jobs WHERE id=$1`, [task.id])).rows[0];
+        assert.equal(current.credit_issue, null);
+        assert.equal(current.credit_issue_at, null);
         assert.equal(current.lease_token, null);
         assert.equal(current.lease_until, null);
         assert.ok(current.credit_checked_at);

@@ -36,6 +36,20 @@ test('admin generation jobs list applies all filters, pagination and calculated 
   assert.equal(queries.length, 2);
 });
 
+test('admin generation list filters jobs by unresolved credit reconciliation issues', async () => {
+  const queries: string[] = [];
+  const pool = { query: async (sql: string) => {
+    queries.push(sql);
+    return sql.includes('count(*)') ? { rows: [{ total: '1' }] } : { rows: [{ ...row, creditIssue: 'TERMINAL_CHARGE_MISMATCH' }] };
+  } } as unknown as pg.Pool;
+  const result = await listGenerationJobs(pool, { creditIssue: true });
+  assert.equal(result.data[0]?.creditIssue, 'TERMINAL_CHARGE_MISMATCH');
+  assert.ok(queries.every(sql => sql.includes('WHERE j.credit_issue IS NOT NULL')));
+  assert.match(queries[0]!, /credit_issue AS "creditIssue"/);
+  await listGenerationJobs(pool, { creditIssue: false });
+  assert.match(queries[2]!, /WHERE j\.credit_issue IS NULL/);
+});
+
 test('admin artwork list queries real task records and mixed lists include both job types', async () => {
   const queries: string[] = [];
   const pool = { query: async (sql: string) => {

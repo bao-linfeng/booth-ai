@@ -4,6 +4,12 @@ import { lockCreditJob, releaseJobCredits, reserveJobCredits, terminalCreditJob,
 
 type CreditIssue = CreditJob & { reason: string };
 
+// Persist the latest verdict so operators can see what automatic reconciliation could not repair; a clean pass clears it.
+async function recordCreditIssue(db: Pick<pg.Pool | pg.PoolClient, 'query'>, job: CreditJob, reason: string | null) {
+  await db.query(`UPDATE ${job.kind}_jobs SET credit_issue = $2::text, credit_issue_at = CASE WHEN $2::text IS NULL THEN NULL ELSE now() END
+    WHERE id = $1 AND credit_issue IS DISTINCT FROM $2::text`, [job.id, reason]);
+}
+
 export async function reconcileJobCredits(database: pg.Pool): Promise<{ checked: number; repaired: number; issues: CreditIssue[] }> {
   const report = { checked: 0, repaired: 0, issues: [] as CreditIssue[] };
   for (const kind of ['theme', 'artwork'] as const) {
@@ -16,83 +22,91 @@ export async function reconcileJobCredits(database: pg.Pool): Promise<{ checked:
       const job = { kind, id: candidate.id };
       try {
         const outcome = await transaction(database, async client => {
-          const current = await lockCreditJob(client, job);
-          if (!current) return { repaired: false };
-          await client.query(`UPDATE ${kind}_jobs SET credit_checked_at = now() WHERE id = $1`, [job.id]);
-          const reservation = (await client.query<{ userId: string; amount: number; status: string }>(
-            `SELECT user_id AS "userId", reserved_amount AS amount, status FROM credit_reservations WHERE ${kind}_job_id = $1 FOR UPDATE`, [job.id],
-          )).rows[0];
-          const charge = (await client.query<{ userId: string; amount: number; kind: string }>(
-            `SELECT user_id AS "userId", amount, kind FROM credit_transactions WHERE ${kind}_job_id = $1`, [job.id],
-          )).rows[0];
-          if (reservation && reservation.userId !== current.userId) return { reason: 'RESERVATION_OWNER_MISMATCH', repaired: false };
-          if (current.status === 'failed') {
-            if (charge) return { reason: 'FAILED_JOB_CHARGED', repaired: false };
-            if (reservation && reservation.status !== 'released') {
-              await releaseJobCredits(client, job);
-              return { repaired: true };
-            }
-            return { repaired: false };
-          }
-          if (current.cacheHit) {
-            if (charge) return { reason: 'CACHED_JOB_CHARGED', repaired: false };
-            if (reservation && reservation.status !== 'released') {
-              await client.query(`UPDATE credit_reservations SET status = 'released', updated_at = now() WHERE ${kind}_job_id = $1`, [job.id]);
-              return { repaired: true };
-            }
-            return { repaired: false };
-          }
-          if (terminalCreditJob(current.status)) {
-            if (current.usableCount === 0 && !charge) {
-              const results = await client.query(`SELECT 1 FROM ${kind}_job_results WHERE job_id = $1 LIMIT 1`, [job.id]);
-              if (results.rows.length) return { reason: 'TERMINAL_RESULT_MISMATCH', repaired: false };
-              await client.query(`UPDATE ${kind}_jobs SET status = 'failed', phase = NULL, lease_token = NULL,
-                lease_until = NULL, updated_at = now()${kind === 'artwork' ? ", delivery_status = 'incomplete'" : ''} WHERE id = $1`, [job.id]);
-              if (kind === 'artwork') {
-                await client.query(`UPDATE artwork_job_directions SET status = 'failed',
-                  reason = COALESCE(reason, 'PROCESSING_FAILED'), generated_url = NULL, updated_at = now() WHERE job_id = $1`, [job.id]);
-              }
-              await releaseJobCredits(client, job);
-              return { repaired: true };
-            }
-            if (!charge || current.unitCredits === null || charge.amount !== -current.usableCount * current.unitCredits ||
-                charge.userId !== current.userId || charge.kind !== `${kind}_consume`) return { reason: 'TERMINAL_CHARGE_MISMATCH', repaired: false };
-            if (!reservation) return { reason: 'TERMINAL_RESERVATION_MISSING', repaired: false };
-            if (reservation.amount !== current.requestedCount * current.unitCredits) return { reason: 'RESERVATION_AMOUNT_MISMATCH', repaired: false };
-            if (reservation.status !== 'settled') {
-              await client.query(`UPDATE credit_reservations SET status = 'settled', updated_at = now() WHERE ${kind}_job_id = $1`, [job.id]);
-              return { repaired: true };
-            }
-            return { repaired: false };
-          }
-          if (current.status === 'settling') return { reason: 'SETTLEMENT_IN_PROGRESS', repaired: false };
-          if (charge) return { reason: 'NONTERMINAL_JOB_CHARGED', repaired: false };
-          if (current.unitCredits === null) return { reason: 'JOB_PRICE_MISSING', repaired: false };
-          const amount = current.unitCredits * current.requestedCount;
-          if (reservation?.status === 'reserved') {
-            return reservation.amount === amount ? { repaired: false } : { reason: 'RESERVATION_AMOUNT_MISMATCH', repaired: false };
-          }
-          const balance = (await client.query<{ available: string }>(
-            `SELECT (COALESCE((SELECT SUM(amount) FROM credit_transactions WHERE user_id = $1), 0) -
-              COALESCE((SELECT SUM(reserved_amount) FROM credit_reservations WHERE user_id = $1 AND status = 'reserved'), 0))::text AS available`, [current.userId],
-          )).rows[0];
-          if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 2147483647 || Number(balance?.available ?? 0) < amount) {
-            return { reason: 'RESERVATION_RESTORE_INSUFFICIENT_CREDITS', repaired: false };
-          }
-          if (reservation) {
-            await client.query(`UPDATE credit_reservations SET status = 'reserved', reserved_amount = $2, updated_at = now() WHERE ${kind}_job_id = $1`, [job.id, amount]);
-          } else {
-            await reserveJobCredits(client, job, current.userId, amount);
-          }
-          return { repaired: true };
+          const result = await reconcileLockedJob(client, job);
+          await recordCreditIssue(client, job, result.reason ?? null);
+          return result;
         });
         report.checked++;
         if (outcome.repaired) report.repaired++;
         if (outcome.reason) report.issues.push({ ...job, reason: outcome.reason });
       } catch {
         report.issues.push({ ...job, reason: 'RECONCILIATION_FAILED' });
+        await recordCreditIssue(database, job, 'RECONCILIATION_FAILED').catch(() => {});
       }
     }
   }
   return report;
+}
+
+async function reconcileLockedJob(client: pg.PoolClient, job: CreditJob): Promise<{ reason?: string; repaired: boolean }> {
+  const { kind } = job;
+  const current = await lockCreditJob(client, job);
+  if (!current) return { repaired: false };
+  await client.query(`UPDATE ${kind}_jobs SET credit_checked_at = now() WHERE id = $1`, [job.id]);
+  const reservation = (await client.query<{ userId: string; amount: number; status: string }>(
+    `SELECT user_id AS "userId", reserved_amount AS amount, status FROM credit_reservations WHERE ${kind}_job_id = $1 FOR UPDATE`, [job.id],
+  )).rows[0];
+  const charge = (await client.query<{ userId: string; amount: number; kind: string }>(
+    `SELECT user_id AS "userId", amount, kind FROM credit_transactions WHERE ${kind}_job_id = $1`, [job.id],
+  )).rows[0];
+  if (reservation && reservation.userId !== current.userId) return { reason: 'RESERVATION_OWNER_MISMATCH', repaired: false };
+  if (current.status === 'failed') {
+    if (charge) return { reason: 'FAILED_JOB_CHARGED', repaired: false };
+    if (reservation && reservation.status !== 'released') {
+      await releaseJobCredits(client, job);
+      return { repaired: true };
+    }
+    return { repaired: false };
+  }
+  if (current.cacheHit) {
+    if (charge) return { reason: 'CACHED_JOB_CHARGED', repaired: false };
+    if (reservation && reservation.status !== 'released') {
+      await client.query(`UPDATE credit_reservations SET status = 'released', updated_at = now() WHERE ${kind}_job_id = $1`, [job.id]);
+      return { repaired: true };
+    }
+    return { repaired: false };
+  }
+  if (terminalCreditJob(current.status)) {
+    if (current.usableCount === 0 && !charge) {
+      const results = await client.query(`SELECT 1 FROM ${kind}_job_results WHERE job_id = $1 LIMIT 1`, [job.id]);
+      if (results.rows.length) return { reason: 'TERMINAL_RESULT_MISMATCH', repaired: false };
+      await client.query(`UPDATE ${kind}_jobs SET status = 'failed', phase = NULL, lease_token = NULL,
+        lease_until = NULL, updated_at = now()${kind === 'artwork' ? ", delivery_status = 'incomplete'" : ''} WHERE id = $1`, [job.id]);
+      if (kind === 'artwork') {
+        await client.query(`UPDATE artwork_job_directions SET status = 'failed',
+          reason = COALESCE(reason, 'PROCESSING_FAILED'), generated_url = NULL, updated_at = now() WHERE job_id = $1`, [job.id]);
+      }
+      await releaseJobCredits(client, job);
+      return { repaired: true };
+    }
+    if (!charge || current.unitCredits === null || charge.amount !== -current.usableCount * current.unitCredits ||
+        charge.userId !== current.userId || charge.kind !== `${kind}_consume`) return { reason: 'TERMINAL_CHARGE_MISMATCH', repaired: false };
+    if (!reservation) return { reason: 'TERMINAL_RESERVATION_MISSING', repaired: false };
+    if (reservation.amount !== current.requestedCount * current.unitCredits) return { reason: 'RESERVATION_AMOUNT_MISMATCH', repaired: false };
+    if (reservation.status !== 'settled') {
+      await client.query(`UPDATE credit_reservations SET status = 'settled', updated_at = now() WHERE ${kind}_job_id = $1`, [job.id]);
+      return { repaired: true };
+    }
+    return { repaired: false };
+  }
+  if (current.status === 'settling') return { reason: 'SETTLEMENT_IN_PROGRESS', repaired: false };
+  if (charge) return { reason: 'NONTERMINAL_JOB_CHARGED', repaired: false };
+  if (current.unitCredits === null) return { reason: 'JOB_PRICE_MISSING', repaired: false };
+  const amount = current.unitCredits * current.requestedCount;
+  if (reservation?.status === 'reserved') {
+    return reservation.amount === amount ? { repaired: false } : { reason: 'RESERVATION_AMOUNT_MISMATCH', repaired: false };
+  }
+  const balance = (await client.query<{ available: string }>(
+    `SELECT (COALESCE((SELECT SUM(amount) FROM credit_transactions WHERE user_id = $1), 0) -
+      COALESCE((SELECT SUM(reserved_amount) FROM credit_reservations WHERE user_id = $1 AND status = 'reserved'), 0))::text AS available`, [current.userId],
+  )).rows[0];
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 2147483647 || Number(balance?.available ?? 0) < amount) {
+    return { reason: 'RESERVATION_RESTORE_INSUFFICIENT_CREDITS', repaired: false };
+  }
+  if (reservation) {
+    await client.query(`UPDATE credit_reservations SET status = 'reserved', reserved_amount = $2, updated_at = now() WHERE ${kind}_job_id = $1`, [job.id, amount]);
+  } else {
+    await reserveJobCredits(client, job, current.userId, amount);
+  }
+  return { repaired: true };
 }

@@ -53,6 +53,26 @@ const statuses = Object.entries(statusLabels).map(([value, label]) => ({
   label,
 }));
 
+// 与服务端 src/modules/credits/reconciliation.ts 返回的原因代码一一对应。
+const creditIssueLabels: Record<string, string> = {
+  RESERVATION_OWNER_MISMATCH: '预占记录归属用户与任务不一致',
+  FAILED_JOB_CHARGED: '失败任务存在扣费流水',
+  CACHED_JOB_CHARGED: '缓存命中任务存在扣费流水',
+  TERMINAL_RESULT_MISMATCH: '任务已结束，但成功数量与结果记录不一致',
+  TERMINAL_CHARGE_MISMATCH: '扣费流水与成功数量不一致',
+  TERMINAL_RESERVATION_MISSING: '已扣费但缺少积分预占记录',
+  RESERVATION_AMOUNT_MISMATCH: '预占金额与任务价格不一致',
+  SETTLEMENT_IN_PROGRESS: '任务长时间停留在结算中',
+  NONTERMINAL_JOB_CHARGED: '未完成任务已产生扣费',
+  JOB_PRICE_MISSING: '任务缺少积分单价',
+  RESERVATION_RESTORE_INSUFFICIENT_CREDITS: '预占已释放，用户余额不足以恢复',
+  RECONCILIATION_FAILED: '对账执行出错，将自动重试',
+};
+
+function creditIssueLabel(code: string) {
+  return creditIssueLabels[code] ?? code;
+}
+
 const jobTypes = [
   { label: '主题生成', value: 'theme' },
   { label: '平面素材', value: 'artwork' },
@@ -86,6 +106,18 @@ const [Grid] = useVbenVxeGrid({
         componentProps: { allowClear: true, placeholder: '方案编号' },
       },
       {
+        component: 'Select',
+        fieldName: 'creditIssue',
+        label: '积分对账',
+        componentProps: {
+          options: [
+            { label: '异常', value: 'yes' },
+            { label: '正常', value: 'no' },
+          ],
+          allowClear: true,
+        },
+      },
+      {
         component: 'DatePicker',
         fieldName: 'from',
         label: '开始日期',
@@ -115,7 +147,7 @@ const [Grid] = useVbenVxeGrid({
       {
         field: 'status',
         title: '状态',
-        minWidth: 100,
+        minWidth: 160,
         slots: { default: 'status' },
       },
       {
@@ -163,6 +195,7 @@ const [Grid] = useVbenVxeGrid({
             schemeCode?: string;
             from?: string;
             to?: string;
+            creditIssue?: 'no' | 'yes';
           } = {},
         ) => {
           const result = await listGenerationJobsApi({
@@ -175,6 +208,9 @@ const [Grid] = useVbenVxeGrid({
               : {}),
             ...(formValues.from ? { from: formValues.from } : {}),
             ...(formValues.to ? { to: formValues.to } : {}),
+            ...(formValues.creditIssue
+              ? { creditIssue: formValues.creditIssue === 'yes' }
+              : {}),
           });
           return { items: result.data, total: result.total };
         },
@@ -216,6 +252,12 @@ async function openDetail(id: string) {
         <Tag :color="statusColors[(row as GenerationJob).status]">
           {{ statusLabels[(row as GenerationJob).status] }}
         </Tag>
+        <Tooltip
+          v-if="(row as GenerationJob).creditIssue"
+          :title="creditIssueLabel((row as GenerationJob).creditIssue!)"
+        >
+          <Tag color="red">对账异常</Tag>
+        </Tooltip>
       </template>
       <template #counts="{ row }">
         {{ (row as GenerationJob).requestedCount }}/{{
@@ -253,6 +295,14 @@ async function openDetail(id: string) {
         加载中...
       </div>
       <div v-else-if="detail">
+        <Alert
+          v-if="detail.creditIssue"
+          type="error"
+          :message="`积分对账异常：${creditIssueLabel(detail.creditIssue)}`"
+          :description="`自 ${formatDateTime(detail.creditIssueAt ?? undefined)} 起自动对账无法修复，请核对该用户的积分流水与预占记录（代码 ${detail.creditIssue}）。修复后下次对账会自动清除此标记。`"
+          show-icon
+          class="mb-4"
+        />
         <Alert
           v-if="
             detail.usableCount < detail.requestedCount &&
