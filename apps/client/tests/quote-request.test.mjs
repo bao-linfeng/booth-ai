@@ -57,7 +57,7 @@ const user = { id: 'test-user', username: '测试用户', nickname: '测试用�
 const validForm = { exhibitionName: '上海测试展', countryCode: 'CN', city: '上海', startDate: '2026-11-01', endDate: '2026-11-04', scopeCodes: ['materials'], scopeNotes: '保留范围说明', currency: 'CNY', amount: '30000', customerType: 'individual', company: '', contactName: '王测试', email: 'test@example.com', phone: '', notes: '不能丢失的补充说明' }
 const draftKey = manual => manual ? 'booth:manual-draft' : 'booth:quote-draft:SC-6030:standard:pending'
 async function settle() { for (let i = 0; i < 4; i++) { await nextTick(); await new Promise(resolve => setTimeout(resolve, 5)) } }
-async function mount({ manual = false, form = {}, description = '需要科技感展台', restore = false, selection, query = '' } = {}) {
+async function mount({ manual = false, form = {}, description = '需要科技感展台', restore = false, selection, query = '', respond } = {}) {
   if (!restore) {
     sessionStorage.clear()
     sessionStorage.setItem(draftKey(manual), JSON.stringify({ owner: user.id, form: { ...validForm, ...form }, pending: null, pendingManual: null, originalDescription: description }))
@@ -73,6 +73,7 @@ async function mount({ manual = false, form = {}, description = '需要科技感
       if (path === '/api/v1/client/schemes/SC-6030') return { code: 0, data: { images: [] } }
       assert.equal(path, manual ? '/api/v1/client/manual-requests' : '/api/v1/client/quote-requests')
       assert.equal(options.method, 'POST')
+      if (respond) await respond(calls.filter(call => call.method === 'POST').length)
       return { code: 0, data: { projectId: 'project-1', projectNo: 'PJ-001', requestNo: 'REQ-001', status: 'pending', revision: 1 } }
     },
   }
@@ -289,5 +290,50 @@ test('manual: first-error focus follows description > dates > scope > contact; r
     assert.equal(posts(mounted).length, 0); assertPreserved(mounted, true)
     input(mounted.container, '#email', validForm.email); await settle(); await submit(mounted)
     assert.equal(posts(mounted).length, 1); assert.equal(posts(mounted)[0].body.originalDescription, '需要科技感展台')
+  } finally { await mounted.close() }
+})
+const httpFailure = (status, reason) => Object.assign(new Error(`HTTP ${status}`), { response: { status }, data: { error: { reason } } })
+const draftOf = manual => JSON.parse(sessionStorage.getItem(draftKey(manual)))
+test('quote: unconfirmed result keeps the pending submission and the retry reuses its request key', async () => {
+  const mounted = await mount({ respond: attempt => { if (attempt === 1) throw httpFailure(502) } })
+  try {
+    await submit(mounted)
+    assert.match(mounted.container.textContent, /暂未确认受理结果/)
+    const pending = draftOf(false).pending
+    assert.equal(pending.requestKey, posts(mounted)[0].body.requestKey)
+    assert.equal(mounted.container.querySelector('fieldset').disabled, true)
+    await submit(mounted); assert.equal(posts(mounted).length, 2)
+    assert.equal(posts(mounted)[1].body.requestKey, pending.requestKey)
+    assert.match(mounted.container.textContent, /申请已受理/)
+    assert.equal(draftOf(false).pending, null)
+  } finally { await mounted.close() }
+})
+test('quote: version conflict drops the pending submission; refreshing context allows a new request key', async () => {
+  const mounted = await mount({ respond: attempt => { if (attempt === 1) throw httpFailure(409) } })
+  try {
+    await submit(mounted)
+    assert.match(mounted.container.textContent, /资料或主题选择已更新/)
+    assert.equal(draftOf(false).pending, null)
+    assert.equal(mounted.container.querySelector('button[type="submit"]').disabled, true)
+    const refresh = [...mounted.container.querySelectorAll('button')].find(button => button.textContent.includes('刷新'))
+    assert.ok(refresh, 'refresh button must be shown on conflict')
+    refresh.click(); await settle()
+    assert.equal(mounted.container.querySelector('button[type="submit"]').disabled, false)
+    await submit(mounted); assert.equal(posts(mounted).length, 2)
+    assert.notEqual(posts(mounted)[1].body.requestKey, posts(mounted)[0].body.requestKey)
+    assert.match(mounted.container.textContent, /申请已受理/)
+  } finally { await mounted.close() }
+})
+test('manual: a pending submission is discarded instead of resent after the account changes', async () => {
+  const mounted = await mount({ manual: true, respond: attempt => { if (attempt === 1) throw httpFailure(503) } })
+  try {
+    await submit(mounted)
+    assert.ok(draftOf(true).pendingManual, 'pending manual request must be kept after an unconfirmed result')
+    globalThis.__quoteRequest.auth.currentUser = { ...user, id: 'another-user' }
+    await submit(mounted)
+    assert.equal(posts(mounted).length, 1)
+    assert.match(mounted.container.textContent, /登录账户已变化，请重新确认。/)
+    assert.equal(draftOf(true).pendingManual, null)
+    assert.equal(mounted.container.querySelector('fieldset').disabled, false)
   } finally { await mounted.close() }
 })
