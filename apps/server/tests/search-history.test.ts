@@ -72,7 +72,8 @@ test('visitor search history uses browser identity and pagination without readin
       return { rows: [{ assetId, objectKey: 'original.png' }] };
     }
     assert.match(sql, /FROM selection_searches/);
-    assert.match(sql, /WHERE visitor_id = \$1 AND status = 'matched'/);
+    // 访客查询必须包含 user_id IS NULL 以防止读取已登录用户的记录（B-08）
+    assert.match(sql, /WHERE visitor_id = \$1 AND status = 'matched' AND user_id IS NULL/);
     if (sql.includes('count(*)')) {
       assert.deepEqual(params, [visitorId]);
       return { rows: [{ total: 3 }] };
@@ -110,6 +111,30 @@ test('search history does not downgrade an invalid session to browser identity',
   await registerClientSearchRoutes(app, pool, redis, storage);
   const response = await app.inject({ url: '/me/searches', headers: { authorization: 'Bearer expired', 'x-visitor-id': 'v_browser_1234567890' } });
   assert.equal(response.statusCode, 401);
+});
+
+// B-08 回归：访客查询 SQL 必须包含 user_id IS NULL，防止退出后看到已登录用户的检索记录
+test('visitor query excludes records written under a logged-in user (B-08)', async t => {
+  const visitorId = 'v_shared_browser_abc';
+  const capturedSqls: string[] = [];
+  const pool = { query: async (sql: string, params: unknown[]) => {
+    capturedSqls.push(sql);
+    if (sql.includes('count(*)')) return { rows: [{ total: 0 }] };
+    if (sql.includes('FROM selection_searches')) return { rows: [] };
+    return { rows: [] };
+  } } as unknown as pg.Pool;
+  const redis = { get: async () => null } as unknown as Redis;
+  const app = Fastify();
+  t.after(() => app.close());
+  registerAuthentication(app, pool, redis, 'client');
+  await registerClientSearchRoutes(app, pool, redis, storage);
+  const response = await app.inject({ url: '/me/searches', headers: { 'x-visitor-id': visitorId } });
+  assert.equal(response.statusCode, 200);
+  const searchSqls = capturedSqls.filter(sql => sql.includes('FROM selection_searches'));
+  assert.ok(searchSqls.length > 0, 'expected selection_searches queries');
+  for (const sql of searchSqls) {
+    assert.match(sql, /AND user_id IS NULL/, `visitor query missing "AND user_id IS NULL": ${sql}`);
+  }
 });
 
 test('empty search history does not query generation tables', async () => {
@@ -153,11 +178,20 @@ test('search previews: migration backfill, distinct searches, latest theme, sele
        VALUES($1,$2,'test',$3,'filtered','matched','{}',$4,'test','test',0,$5)`,
       [id, attempt, user, JSON.stringify([{ code }]), `2026-10-01T0${index * 2 + 1}:00:00.000Z`],
     );
-    assert.equal((await listClientSearches(pool, { visitorId: 'test' }, { page: 1, pageSize: 1 })).total, 2);
-    assert.deepEqual((await listClientSearches(pool, { visitorId: 'test' }, { page: 2, pageSize: 1 })).data.map(row => row.id), [searches[0]]);
+    assert.equal((await listClientSearches(pool, { visitorId: 'test' }, { page: 1, pageSize: 1 })).total, 0, 'visitor query must not return records that have a user_id (B-08)');
     assert.equal((await listClientSearches(pool, { visitorId: 'other-browser' }, { page: 1, pageSize: 20 })).total, 0);
     assert.equal((await listClientSearches(pool, { userId: user }, { page: 1, pageSize: 20 })).total, 2);
     assert.equal((await listClientSearches(pool, { userId: other }, { page: 1, pageSize: 20 })).total, 0);
+    // B-08 回归：纯访客记录（user_id IS NULL）可以被访客身份查到；带有 user_id 的记录即使 visitor_id 匹配也不可见
+    const visitorOnlySearch = randomUUID();
+    await pool.query(
+      `INSERT INTO selection_searches(id,attempt_id,visitor_id,user_id,mode,status,final_requirement,result_snapshot,rules_version,dictionary_version,duration_ms,created_at)
+       VALUES($1,$2,'test',NULL,'filtered','matched','{}',$3,'test','test',0,$4)`,
+      [visitorOnlySearch, attempt, JSON.stringify([{ code }]), '2026-10-01T09:00:00.000Z'],
+    );
+    const visitorResult = await listClientSearches(pool, { visitorId: 'test' }, { page: 1, pageSize: 20 });
+    assert.equal(visitorResult.total, 1, 'visitor query should return only records with user_id IS NULL');
+    assert.equal(visitorResult.data[0]?.id, visitorOnlySearch);
     async function asset(key: string) {
       const id = randomUUID();
       await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name) VALUES($1,$2,'rendering',$3)", [id, scheme, key]);

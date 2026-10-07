@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { CurrentUser } from '@/services/types/user.type'
+import { rotateVisitorId } from '@/lib/api-client'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(null)
@@ -23,6 +24,7 @@ export const useAuthStore = defineStore('auth', () => {
   function clearAuth() {
     token.value = null
     currentUser.value = null
+    rotateVisitorId()
   }
 
   return {

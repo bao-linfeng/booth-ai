@@ -18,6 +18,14 @@ export function getVisitorId() {
   return visitorId()
 }
 
+/** 退出登录时调用，生成新的访客 ID，防止以访客身份读取前一位登录用户的检索记录 */
+export function rotateVisitorId() {
+  const key = 'booth-ai:visitor-id'
+  const created = `v_${crypto.randomUUID().replaceAll('-', '')}`
+  localStorage.setItem(key, created)
+  return created
+}
+
 async function handleUnauthorized() {
   const [{ default: router }, { useAuthStore }, { default: pinia }] = await Promise.all([
     import('@/router'),

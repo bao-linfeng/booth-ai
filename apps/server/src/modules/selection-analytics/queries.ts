@@ -24,13 +24,16 @@ export async function listClientSearches(
   page: number;
   pageSize: number;
 }> {
-  const ownerColumn = 'userId' in identity ? 'user_id' : 'visitor_id';
-  const ownerId = 'userId' in identity ? identity.userId : identity.visitorId;
+  const isUser = 'userId' in identity;
+  const ownerColumn = isUser ? 'user_id' : 'visitor_id';
+  const ownerId = isUser ? identity.userId : identity.visitorId;
+  // 访客查询必须排除已关联用户的记录，防止退出后泄露登录期间的检索
+  const userIdFilter = isUser ? '' : ' AND user_id IS NULL';
   const [count, rows] = await Promise.all([
     pool.query<{ total: number }>(
       `SELECT count(*)::int AS total
        FROM selection_searches
-        WHERE ${ownerColumn} = $1 AND status = 'matched'`,
+        WHERE ${ownerColumn} = $1 AND status = 'matched'${userIdFilter}`,
       [ownerId],
     ),
     pool.query<{
@@ -51,7 +54,7 @@ export async function listClientSearches(
         random_count AS "randomCount", result_count AS "resultCount",
         result_snapshot AS "resultSnapshot", created_at AS "createdAt"
        FROM selection_searches
-        WHERE ${ownerColumn} = $1 AND status = 'matched'
+        WHERE ${ownerColumn} = $1 AND status = 'matched'${userIdFilter}
         ORDER BY created_at DESC, id DESC
        LIMIT $2 OFFSET $3`,
       [ownerId, query.pageSize, (query.page - 1) * query.pageSize],
