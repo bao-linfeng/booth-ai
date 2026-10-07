@@ -60,6 +60,16 @@ export const createFormOptions = () => ({
         ],
       },
     },
+    {
+      component: 'Select' as const,
+      fieldName: 'assigneeAdminId',
+      label: '承接人',
+      componentProps: {
+        allowClear: true,
+        placeholder: '请选择承接人',
+        options: [],
+      },
+    },
   ],
   showCollapseButton: true,
 });

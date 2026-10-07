@@ -11,7 +11,7 @@ export interface NotificationInboxItem {
   occurredAt: string; isRead: boolean; readAt: string | null; delivery: NotificationDelivery;
 }
 export interface NotificationInboxDetail extends NotificationInboxItem {
-  payload: unknown; status: string; schemeCode: string | null; assigneeName: string;
+  payload: unknown; status: string; schemeCode: string | null; assigneeName: string | null;
   deliveredAt: string | null; failedAt: string | null; attempts: number; lastErrorCode: string | null;
 }
 
