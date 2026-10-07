@@ -1,0 +1,86 @@
+# 与各子项目 AGENTS.md 的“检查流程”及 lefthook pre-push 保持一致；改动检查命令时三处同步。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # 标准检查（类型检查 → 重建 booth_test → 全部测试含集成测试 → 构建），再起 dev 栈跑端到端冒烟
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Generate .env
+        run: |
+          {
+            for name in POSTGRES_PASSWORD REDIS_PASSWORD S3_SECRET_KEY SESSION_SECRET AI_MODEL_ENCRYPTION_KEY; do
+              echo "$name=$(openssl rand -hex 32)"
+            done
+            echo "S3_ACCESS_KEY=booth$(openssl rand -hex 32)"
+            echo "EXTERNAL_API_URL=https://api.lingtong.net.cn"
+          } > .env
+
+      - name: Check
+        run: docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --rm check
+
+      - name: Start dev stack
+        run: docker compose --env-file .env -f infra/compose.dev.yaml up -d --build --wait --wait-timeout 180
+
+      - name: Smoke
+        run: docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --rm smoke
+
+      - name: Service logs
+        if: failure()
+        run: docker compose --env-file .env -f infra/compose.dev.yaml logs --no-color --tail 200
+
+  client:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/admin/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: apps/admin/.node-version
+          cache: pnpm
+          cache-dependency-path: apps/client/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+
+  admin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/admin
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/admin/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: apps/admin/.node-version
+          cache: pnpm
+          cache-dependency-path: apps/admin/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -F @vben/web-antd run typecheck
+      - run: pnpm test:antd
