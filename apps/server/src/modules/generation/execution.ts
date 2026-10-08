@@ -4,6 +4,17 @@ import type { CreditJob } from '../credits/service.js';
 import { GENERATION_DEADLINE_MINUTES, GENERATION_LEASE_MINUTES, ImageGenerationError } from '../../infra/ai/image.js';
 import { logger } from '../../infra/logger.js';
 
+/** Raised at a checkpoint once the worker drains; the lease is released and the next worker resumes from persisted state. */
+export class GenerationInterruptedError extends Error {
+  readonly code = 'GENERATION_INTERRUPTED';
+  constructor() { super('GENERATION_INTERRUPTED'); }
+}
+
+/** Checkpoint before starting a new provider call; a call already in flight is always allowed to finish. */
+export function throwIfDraining(draining?: AbortSignal) {
+  if (draining?.aborted) throw new GenerationInterruptedError();
+}
+
 export async function claimGeneration(database: pg.Pool, job: CreditJob) {
   const lease = randomUUID();
   const claimed = await database.query<{ deadline: Date }>(`UPDATE ${job.kind}_jobs SET lease_token = $2,

@@ -1,6 +1,6 @@
 import { writeFile, rm } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Worker, type Job, type Processor } from 'bullmq';
+import { DelayedError, Worker, type Job, type Processor } from 'bullmq';
 import { loadConfig } from './config.js';
 import { createDatabase } from './infra/database.js';
 import { createRedis, waitForRedis } from './infra/redis.js';
@@ -13,6 +13,7 @@ import { dispatchOutbox } from './workers/outbox.js';
 import { settleThemeJob, processThemeJob } from './modules/generation/theme/execution.js';
 import { processArtworkJob, settleArtworkJob } from './modules/generation/artwork/execution.js';
 import { dispatchGenerationOutbox } from './workers/generation-outbox.js';
+import { GenerationInterruptedError } from './modules/generation/execution.js';
 import { reconcileJobCredits } from './modules/credits/reconciliation.js';
 import { recoverGenerationJobs } from './workers/generation-recovery.js';
 import { deliverProjectNotifications } from './workers/project-notifications.js';
@@ -25,6 +26,9 @@ import { collectWorkerMetrics, createJobStats } from './workers/metrics.js';
 const heartbeatPath = '/tmp/worker-ready';
 const statusPath = '/tmp/worker-status.json';
 const log = logger.child({ process: 'worker' });
+// Stays below the container stop_grace_period (180s in infra/compose.dev.yaml) so the process exits on its own after an
+// in-flight provider call (a single Seedream image takes about a minute) instead of being killed mid-request.
+const SHUTDOWN_TIMEOUT_MS = 170_000;
 
 async function main() {
   await rm(heartbeatPath, { force: true });
@@ -41,6 +45,8 @@ async function main() {
   const themeQueue = createQueue(producerRedis, THEME_QUEUE_NAME, 2000);
   const artworkQueue = createQueue(producerRedis, ARTWORK_QUEUE_NAME, 2000);
   const jobStats = createJobStats();
+  // Aborted on SIGTERM: generation jobs stop at their next checkpoint between provider calls.
+  const draining = new AbortController();
 
   // Every consumer reports queue wait and run time with the job id that links API request logs to provider attempts.
   const observed = (queueName: string, processor: Processor): Processor => async (job: Job, token) => {
@@ -53,6 +59,12 @@ async function main() {
       log.info({ ...context, waitMs, runMs: Date.now() - started }, 'Queue job completed');
       return result;
     } catch (error) {
+      if (error instanceof GenerationInterruptedError && token) {
+        // Hand the job back without spending a retry; the next worker resumes it from the persisted state.
+        await job.moveToDelayed(Date.now() + 1000, token);
+        log.info({ ...context, waitMs, runMs: Date.now() - started }, 'Queue job interrupted by shutdown; resumes on the next worker');
+        throw new DelayedError();
+      }
       jobStats.record(queueName, 'failed', waitMs, Date.now() - started);
       log.warn({ ...context, waitMs, runMs: Date.now() - started, code: errorCode(error) }, 'Queue job failed');
       throw error;
@@ -75,7 +87,7 @@ async function main() {
   };
   const themeWorker = new Worker(THEME_QUEUE_NAME, observed(THEME_QUEUE_NAME, async job => {
     if (job.name !== THEME_TASK_NAME || typeof job.data.jobId !== 'string' || job.data.jobId !== job.id) throw new Error('Invalid theme job');
-    return processThemeJob(database, job.data.jobId, config, storage, publishThemeEvent);
+    return processThemeJob(database, job.data.jobId, config, storage, publishThemeEvent, draining.signal);
   }), { connection: consumerRedis, concurrency: 2 });
   themeWorker.on('error', () => log.error({ queue: THEME_QUEUE_NAME }, 'Worker connection error'));
   themeWorker.on('failed', (job) => {
@@ -89,7 +101,7 @@ async function main() {
   };
   const artworkWorker = new Worker(ARTWORK_QUEUE_NAME, observed(ARTWORK_QUEUE_NAME, async job => {
     if (job.name !== ARTWORK_TASK_NAME || typeof job.data.jobId !== 'string' || job.data.jobId !== job.id) throw new Error('Invalid artwork job');
-    return processArtworkJob(database, job.data.jobId, config, storage, publishArtworkEvent);
+    return processArtworkJob(database, job.data.jobId, config, storage, publishArtworkEvent, draining.signal);
   }), { connection: consumerRedis, concurrency: 2 });
   artworkWorker.on('error', () => log.error({ queue: ARTWORK_QUEUE_NAME }, 'Worker connection error'));
   artworkWorker.on('failed', (job) => {
@@ -167,12 +179,14 @@ async function main() {
     if (stopping) return;
     stopping = true;
     controller.abort();
-    const deadline = setTimeout(() => process.exit(1), 25000).unref();
+    draining.abort();
+    log.info('Worker draining; waiting for in-flight jobs to reach a checkpoint');
+    const deadline = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS).unref();
+    // Close every consumer at once so none keeps taking new jobs while another is still draining.
+    const closing = Promise.all([worker.close(), themeWorker.close(), artworkWorker.close()]);
     await loop;
     await rm(heartbeatPath, { force: true });
-    await worker.close();
-    await themeWorker.close();
-    await artworkWorker.close();
+    await closing;
     await queue.close();
     await themeQueue.close();
     await artworkQueue.close();

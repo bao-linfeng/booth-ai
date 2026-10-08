@@ -41,7 +41,7 @@ export async function settleThemeJob(database: pg.Pool, jobId: string, lease?: s
  * 每个阶段独立可重入，崩溃或重试后从落库状态继续。
  */
 export async function processThemeJob(database: pg.Pool, jobId: string, config: ThemeConfig,
-  storage?: ThemeStorage, publish: PublishThemeEvent = async () => {}): Promise<void> {
+  storage?: ThemeStorage, publish: PublishThemeEvent = async () => {}, draining?: AbortSignal): Promise<void> {
   if (!storage) throw new Error('Theme storage required');
   const claim = await claimGeneration(database, { kind: 'theme', id: jobId });
   if (!claim) return;
@@ -51,7 +51,7 @@ export async function processThemeJob(database: pg.Pool, jobId: string, config: 
     const log = logger.child({ jobKind: 'theme', jobId, requestId: job.requestId });
     if (deadline.getTime() <= Date.now()) { await settleThemeJob(database, jobId, lease, publish); return; }
     await publishGeneration(publish, jobId, { status: 'running' });
-    const run = { database, jobId, job, lease, deadline, config, storage, log };
+    const run = { database, jobId, job, lease, deadline, config, storage, log, draining };
     await generateTheme(run);
     await persistThemeResults(run);
     await refreshGeneration(database, { kind: 'theme', id: jobId }, lease, 'credit_settling');

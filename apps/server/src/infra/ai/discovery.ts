@@ -8,13 +8,15 @@ export class ModelDiscoveryError extends Error {
 }
 
 const MAX_LISTING_BYTES = 4 * 1024 * 1024;
+// Slow relays and cross-border routes can take tens of seconds; the admin UI waits a little longer to receive the reason.
+const LISTING_TIMEOUT_MS = 60_000;
 
 export async function fetchModelListing(baseUrl: string, path: string, headers: Record<string, string>): Promise<unknown> {
   try { await assertPublicEndpoint(baseUrl); } catch (error) {
     throw new ModelDiscoveryError(error instanceof EndpointError ? 'ENDPOINT_INVALID' : 'UNREACHABLE');
   }
   let response: Response;
-  const signal = AbortSignal.timeout(10_000);
+  const signal = AbortSignal.timeout(LISTING_TIMEOUT_MS);
   try {
     response = await fetch(`${baseUrl}${path}`, { headers, redirect: 'error', signal });
   } catch (error) {

@@ -39,7 +39,7 @@
 
 「测试连接」只验证模型列表请求：用未保存的新密钥测试时不保存任何内容，用已保存的配置测试时会顺带更新模型目录。模型目录不保证每个型号都能执行图像编辑或文本生成。保存供应商后，点击该行的「添加模型」，在「模型 ID」中搜索选择，并保存为本平台使用的模型。若供应商未提供列表接口，可根据其文档手动填写模型 ID。
 
-前端对此请求等待 20 秒，服务端供应商请求限时 10 秒。超时提示需要检查服务器出站网络；鉴权失败需要检查 API Key 与权限；响应不合法需要检查 Base URL 的版本路径及是否支持列表接口。失败信息保留在弹窗内，方便修正后重试。
+前端对此请求等待 70 秒，服务端供应商请求限时 60 秒。超时提示需要检查服务器出站网络；鉴权失败需要检查 API Key 与权限；响应不合法需要检查 Base URL 的版本路径及是否支持列表接口。失败信息保留在弹窗内，方便修正后重试。
 
 智选在 2.8 秒预算内有限重试并尝试备用模型；模型异常、非法 JSON/字典 ID、伪造证据或字段冲突时降级规则解析或要求客户确认。请求输入仅传公开字典项与用户文字，不传内部方案、备注或凭据。
 
@@ -63,7 +63,7 @@
 | `providers/*.ts` | 各协议实现：`openai`（Chat Completions、Images Edits、`GET /models`）、`gemini`（generateContent 图像、`GET /models`）、`dashscope`（万相异步任务 + 推荐模型）、`qwen-image`（百炼 `multimodal-generation` 同步图像编辑，单次最多 6 张，输出 `2048*1152`）、`ark`（火山方舟 Seedream `images/generations` 同步生图，单次 1 张，输出 `2560x1440`，结果为 base64） |
 | `config.ts` | 运行时读取分配给某用途的模型（`assignedAiModels` 不含密钥、`activeAiModels` 含解密后的密钥），凭据加解密 |
 | `endpoint.ts` | Base URL 校验：仅 https 公网地址，禁止账号/参数/内网与本机地址；非官方域名在每次请求前重新解析 DNS，拒绝解析到内网的地址 |
-| `discovery.ts` | 模型列表拉取（10 秒超时、禁止重定向、响应体上限），失败只返回 `AUTH_FAILED` / `TIMEOUT` / `UNREACHABLE` / `BAD_RESPONSE` / `ENDPOINT_INVALID`；管理端对此接口等待 20 秒，给服务端错误响应预留时间 |
+| `discovery.ts` | 模型列表拉取（60 秒超时、禁止重定向、响应体上限），失败只返回 `AUTH_FAILED` / `TIMEOUT` / `UNREACHABLE` / `BAD_RESPONSE` / `ENDPOINT_INVALID`；管理端对此接口等待 70 秒，给服务端错误响应预留时间 |
 | `image.ts` | 图像通用能力：`ImageGenerationError` 分类、超时、受限下载、格式归一化、`providerJson` 请求封装 |
 
 管理接口在 `modules/ai-models/service.ts`（`/api/v1/admin/ai-protocols`、`ai-providers`、`ai-providers/:id/catalog/refresh`、`ai-providers/probe`、`ai-models`、`ai-model-assignments`）。刷新已保存供应商的模型目录时只使用已保存的地址和密钥，密钥不会被发往请求中携带的其他地址。

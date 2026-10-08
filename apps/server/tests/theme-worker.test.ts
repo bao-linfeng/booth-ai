@@ -5,6 +5,7 @@ import type pg from 'pg';
 import sharp from 'sharp';
 import type { ProviderProtocol } from '../src/infra/ai/types.js';
 import { assignedRow } from './ai-fixtures.js';
+import { GenerationInterruptedError } from '../src/modules/generation/execution.js';
 import { processThemeJob } from '../src/modules/generation/theme/execution.js';
 
 const encryptionKey = 'a'.repeat(64);
@@ -92,6 +93,32 @@ test('theme worker calls a single-image provider again until the requested count
   await processThemeJob(f.pool, f.jobId, config, f.storage as never);
   assert.equal(calls, 2); assert.equal(f.state(), 'succeeded'); assert.equal(f.results.length, 2);
   assert.deepEqual(f.attempts.map(attempt => [attempt.modelId, attempt.status]), [[f.modelRow.id, 'succeeded'], [f.modelRow.id, 'succeeded']]);
+});
+
+test('a draining worker hands back a theme job before its first provider call and the next worker completes it', async t => {
+  const f = await fixture(2, undefined, 'gemini'); const oldFetch = globalThis.fetch; let calls = 0;
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async () => {
+    calls++; return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: f.image.toString('base64') } }] } }] });
+  };
+  const draining = new AbortController(); draining.abort();
+  await assert.rejects(processThemeJob(f.pool, f.jobId, config, f.storage as never, undefined, draining.signal), GenerationInterruptedError);
+  assert.equal(calls, 0); assert.equal(f.attempts.length, 0); assert.equal(f.state(), 'running');
+  assert.ok(f.queries.some(q => q.sql.startsWith('UPDATE theme_jobs SET lease_token = NULL')), 'lease is released for the next worker');
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+  assert.equal(calls, 2); assert.equal(f.state(), 'succeeded'); assert.equal(f.results.length, 2);
+});
+
+test('a theme job that already has output keeps calling the provider while the worker drains', async t => {
+  const f = await fixture(2, undefined, 'gemini'); const oldFetch = globalThis.fetch; let calls = 0;
+  const draining = new AbortController();
+  t.after(() => { globalThis.fetch = oldFetch; });
+  globalThis.fetch = async () => {
+    calls++; draining.abort();
+    return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: f.image.toString('base64') } }] } }] });
+  };
+  await processThemeJob(f.pool, f.jobId, config, f.storage as never, undefined, draining.signal);
+  assert.equal(calls, 2); assert.equal(f.state(), 'succeeded'); assert.equal(f.results.length, 2);
 });
 
 test('theme storage retry with partial generation never submits again and skips already uploaded ordinals', async t => {

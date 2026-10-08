@@ -45,4 +45,6 @@ export type ArtworkRun = {
   storage: ArtworkStorage;
   log: Logger;
   publish: PublishArtworkEvent;
+  /** Aborted when the worker shuts down; checked only before new provider calls. */
+  draining?: AbortSignal;
 };

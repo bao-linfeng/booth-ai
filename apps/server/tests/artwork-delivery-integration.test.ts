@@ -16,6 +16,7 @@ import { artworkArchive } from '../src/modules/generation/artwork/download.js';
 import { artworkFiles, getArtworkJob, readyArtworkFiles } from '../src/modules/generation/artwork/queries.js';
 import { DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot } from '../src/modules/generation/artwork/types.js';
 import { processArtworkJob, settleArtworkJob } from '../src/modules/generation/artwork/execution.js';
+import { GenerationInterruptedError } from '../src/modules/generation/execution.js';
 import { bindProjectArtworks } from '../src/modules/projects/artwork-delivery.js';
 import { createQuoteRequest } from '../src/modules/projects/service.js';
 import { getGenerationJob, listGenerationJobs } from '../src/modules/generation/queries.js';
@@ -207,6 +208,18 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
     await assert.rejects(processArtworkJob(pool, retryId, config, retryStorage), /Storage outage/);
     assert.equal(calls, beforeRetry + 1); await processArtworkJob(pool, retryId, config, retryStorage); assert.equal(calls, beforeRetry + 4);
     assert.equal((await getArtworkJob(pool, storage, user, retryId)).deliveryStatus, 'ready');
+    // A draining worker lets the in-flight direction finish, stops before the next provider call and releases the lease.
+    const drainId = await accept(await submission()); const beforeDrain = calls; const draining = new AbortController();
+    await assert.rejects(processArtworkJob(pool, drainId, config, storage, async (_id, event) => {
+      const update = event as { direction?: string; status: string };
+      if (update.direction === 'front' && update.status === 'succeeded') draining.abort();
+    }, draining.signal), GenerationInterruptedError);
+    assert.equal(calls, beforeDrain + 1);
+    assert.deepEqual((await pool.query('SELECT status,lease_token FROM artwork_jobs WHERE id=$1', [drainId])).rows[0], { status: 'running', lease_token: null });
+    assert.deepEqual((await pool.query('SELECT direction,status FROM artwork_job_directions WHERE job_id=$1 ORDER BY direction', [drainId])).rows
+      .map(row => `${row.direction}:${row.status}`), ['back:pending', 'front:succeeded', 'left:pending', 'right:pending']);
+    await processArtworkJob(pool, drainId, config, storage); assert.equal(calls, beforeDrain + 4);
+    assert.equal((await getArtworkJob(pool, storage, user, drainId)).deliveryStatus, 'ready');
     const providerFetch = globalThis.fetch;
     const downloadId = await accept(await submission()); const beforeDownload = calls;
     let downloadUnavailable = true;

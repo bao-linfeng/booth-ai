@@ -25,6 +25,7 @@ export async function processArtworkJob(
   config: ArtworkConfig,
   storage?: ArtworkStorage,
   publish: PublishArtworkEvent = async () => {},
+  draining?: AbortSignal,
 ): Promise<void> {
   if (!storage) throw new Error('Artwork storage required');
   const claim = await claimGeneration(database, { kind: 'artwork', id: jobId });
@@ -35,7 +36,7 @@ export async function processArtworkJob(
     const log = logger.child({ jobKind: 'artwork', jobId, requestId: job.requestId });
     if (deadline.getTime() <= Date.now()) { await settleArtworkJob(database, jobId, lease, publish); return; }
     await publishGeneration(publish, jobId, { status: 'running' });
-    await generateDirections({ database, jobId, job, lease, deadline, config, storage, log, publish });
+    await generateDirections({ database, jobId, job, lease, deadline, config, storage, log, publish, draining });
     await refreshGeneration(database, { kind: 'artwork', id: jobId }, lease, 'credit_settling');
     await settleArtworkJob(database, jobId, lease, publish);
   } finally {

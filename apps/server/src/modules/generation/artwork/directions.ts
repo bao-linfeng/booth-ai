@@ -8,7 +8,7 @@ import { transaction } from '../../../infra/database.js';
 import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot, type Direction } from './types.js';
 import type { ArtworkRun } from './types.js';
 import { normalizeArtworkImage } from './image.js';
-import { lockRunningLease, publishGeneration, refreshGeneration } from '../execution.js';
+import { lockRunningLease, publishGeneration, refreshGeneration, throwIfDraining } from '../execution.js';
 
 /** 模型与参考图只在第一个需要调用供应商的方向上加载，之后四个方向共用。 */
 type SharedInputs = { model(): Promise<ActiveAiModel | undefined>; reference(): Promise<Buffer> };
@@ -143,6 +143,8 @@ async function processDirection(run: ArtworkRun, snapshot: ArtworkSnapshot, dire
     await failDirection(run, direction, 'PROVIDER_OUTCOME_UNKNOWN');
     return;
   }
+  // Directions persist their state, so a draining worker stops before the next provider call and the job resumes here.
+  if (!state.url) throwIfDraining(run.draining);
   const url = state.url ?? await generateDirectionUrl(run, snapshot, direction, inputs);
   if (!url) return;
   const image = await fetchDirectionImage(run, direction, url);

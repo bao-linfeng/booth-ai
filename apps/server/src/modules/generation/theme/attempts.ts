@@ -6,7 +6,7 @@ import { activeAiModels } from '../../../infra/ai/config.js';
 import { ImageGenerationError } from '../../../infra/ai/image.js';
 import type { ActiveAiModel, ImageEditRequest, ImageModelAdapter } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
-import { lockRunningLease, refreshGeneration } from '../execution.js';
+import { lockRunningLease, refreshGeneration, throwIfDraining } from '../execution.js';
 import { loadThemeSource, resolveThemePrompt } from './source.js';
 import type { ThemeRun } from './types.js';
 
@@ -121,6 +121,8 @@ async function submitWithFallback(run: ThemeRun, attempts: ProviderAttempt[], ac
     const adapter = imageAdapter(model);
     const prior = attempts.filter(attempt => attempt.modelId === model.id && attempt.revision === model.revision).length;
     for (let index = prior; index < MAX_ATTEMPTS_PER_MODEL; index++) {
+      // Resuming only supports jobs without output yet; once images arrive the job runs to completion so it never shrinks.
+      if (collected === 0) throwIfDraining(run.draining);
       const count = Math.min(adapter.maxImagesPerRequest, themeJob.requestedCount - collected);
       const outcome = await runAttempt(run, model, adapter, { ...source, prompt, count, deadline });
       if (outcome.kind === 'halt') return;

@@ -126,7 +126,10 @@ services:
 
   worker:
     <<: *server
-    command: [npm, run, 'dev:worker']
+    # 不用 npm / tsx watch：tsx watch 收到 SIGTERM 后 5 秒即强杀子进程。直接由 init 把信号交给 node，
+    # 让进行中的供应商调用跑完（单张 Seedream 约 1 分钟），worker.ts 内部 170 秒后兜底退出。
+    command: [node, --import, tsx, src/worker.ts]
+    stop_grace_period: 180s
     depends_on:
       migrate:
         condition: service_completed_successfully

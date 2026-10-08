@@ -19,4 +19,6 @@ export type ThemeRun = {
   config: ThemeConfig;
   storage: ThemeStorage;
   log: Logger;
+  /** Aborted when the worker shuts down; checked only before new provider calls. */
+  draining?: AbortSignal;
 };
