@@ -121,7 +121,7 @@ export function refreshAiProviderCatalogApi(id: string) {
   return requestClient.post<{ models: DiscoveredModel[]; refreshedAt: string }>(
     `/v1/admin/ai-providers/${id}/catalog/refresh`,
     undefined,
-    { timeout: 20_000 },
+    { timeout: 60_000 },
   );
 }
 
@@ -134,7 +134,7 @@ export function probeAiProviderApi(input: {
   return requestClient.post<DiscoveredModel[]>(
     '/v1/admin/ai-providers/probe',
     input,
-    { timeout: 20_000 },
+    { timeout: 60_000 },
   );
 }
 

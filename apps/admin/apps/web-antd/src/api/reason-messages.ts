@@ -9,7 +9,7 @@ export const REASON_MESSAGES: Record<string, string> = {
     '拉取模型失败：请确认 Base URL 包含正确的 API 路径，且供应商支持模型列表接口',
   DISCOVERY_ENDPOINT_INVALID: '拉取模型失败：接口地址指向内网或不可用',
   DISCOVERY_TIMEOUT:
-    '拉取模型超时（10 秒）：请检查 API 服务所在服务器到供应商的网络或代理配置后重试',
+    '拉取模型超时（60 秒）：请检查 API 服务所在服务器到供应商的网络或代理配置后重试',
   DISCOVERY_UNREACHABLE:
     '拉取模型失败：API 服务器无法连接供应商，请检查 Base URL、服务器网络及代理配置',
   KIND_UNSUPPORTED: '该协议不支持此模型类型',
