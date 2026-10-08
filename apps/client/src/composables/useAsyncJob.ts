@@ -1,5 +1,9 @@
 import { onUnmounted } from 'vue'
 
+// SSE can stall silently (connection never reaches the API, proxy keeps a dead upstream open), so pending jobs are
+// also re-fetched on this slower cadence; SSE remains the fast path.
+export const FALLBACK_POLL_MS = 10_000
+
 interface AsyncJobOptions<T> {
   fetch: (id: string) => Promise<T>
   createEventsTicket: (id: string) => Promise<string>
@@ -15,6 +19,7 @@ export function useAsyncJob<T>(options: AsyncJobOptions<T>) {
   let generation = 0
   let events: EventSource | undefined
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  let fallbackTimer: ReturnType<typeof setTimeout> | undefined
   let connectingGeneration: number | undefined
   let fetchingGeneration: number | undefined
   let refreshRequestedGeneration: number | undefined
@@ -32,6 +37,19 @@ export function useAsyncJob<T>(options: AsyncJobOptions<T>) {
     reconnectTimer = undefined
   }
 
+  function cancelFallback() {
+    if (fallbackTimer) clearTimeout(fallbackTimer)
+    fallbackTimer = undefined
+  }
+
+  function scheduleFallback(version: number, id: string) {
+    cancelFallback()
+    fallbackTimer = setTimeout(() => {
+      fallbackTimer = undefined
+      if (isCurrent(version, id)) void refresh()
+    }, FALLBACK_POLL_MS)
+  }
+
   function stop() {
     generation += 1
     activeId = undefined
@@ -41,6 +59,7 @@ export function useAsyncJob<T>(options: AsyncJobOptions<T>) {
     refreshWaiters = []
     closeEvents()
     cancelReconnect()
+    cancelFallback()
   }
 
   function isCurrent(version: number, id: string) {
@@ -84,6 +103,7 @@ export function useAsyncJob<T>(options: AsyncJobOptions<T>) {
     }
     fetchingGeneration = version
     cancelReconnect()
+    cancelFallback()
     let succeeded = false
     try {
       const data = await options.fetch(id)
@@ -91,8 +111,10 @@ export function useAsyncJob<T>(options: AsyncJobOptions<T>) {
       options.onData(data)
       succeeded = true
       pending = options.isPending(data)
-      if (pending) void connectEvents(version, id)
-      else {
+      if (pending) {
+        scheduleFallback(version, id)
+        void connectEvents(version, id)
+      } else {
         closeEvents()
         cancelReconnect()
       }

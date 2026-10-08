@@ -306,6 +306,37 @@ test('pending task receives SSE updates, closes stream on partial completion and
   } finally { await mounted.close() }
 })
 
+test('pending task falls back to polling when SSE stays silent and stops polling once finished', async () => {
+  const realSetTimeout = globalThis.setTimeout
+  const fallbacks = []
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay !== 10_000) return realSetTimeout(callback, delay, ...args)
+    fallbacks.push(callback)
+    return realSetTimeout(() => {}, 0)
+  }
+  let reads = 0
+  let mounted
+  try {
+    mounted = await mount({ get: () => ++reads < 3 ? job({ status: 'running', results: [] }) : job() })
+    assert.equal(mounted.streams.length, 1)
+    assert.equal(fallbacks.length, 1)
+    fallbacks[0]()
+    await settle()
+    assert.equal(reads, 2)
+    assert.match(mounted.container.textContent, /AI 正在生成/)
+    assert.equal(fallbacks.length, 2)
+    fallbacks[1]()
+    await settle()
+    assert.equal(reads, 3)
+    assert.equal(mounted.streams[0].closed, true)
+    assert.match(mounted.container.textContent, /生成完成/)
+    assert.equal(fallbacks.length, 2)
+  } finally {
+    globalThis.setTimeout = realSetTimeout
+    await mounted?.close()
+  }
+})
+
 test('missing selected result cannot enable downstream actions; completed empty results provide a recovery action', async () => {
   const mounted = await mount({ get: () => job({ selection: { resultId: 'missing', revision: 2 } }) })
   try {
