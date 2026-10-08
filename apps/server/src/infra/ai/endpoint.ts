@@ -2,7 +2,8 @@ import dns from 'node:dns';
 import { BlockList, isIP } from 'node:net';
 
 // Official API hosts are trusted as-is; any other admin-supplied host must resolve to public addresses only.
-const OFFICIAL_HOSTS = new Set(['api.openai.com', 'generativelanguage.googleapis.com', 'dashscope.aliyuncs.com', 'api.deepseek.com']);
+const OFFICIAL_HOSTS = new Set(['api.openai.com', 'generativelanguage.googleapis.com', 'dashscope.aliyuncs.com', 'api.deepseek.com',
+  'ark.cn-beijing.volces.com']);
 
 const blocked = new BlockList();
 for (const [network, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],

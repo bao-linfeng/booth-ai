@@ -1,7 +1,7 @@
 export type AiPurpose = 'selection_parse' | 'theme' | 'artwork';
 export type ImagePurpose = Exclude<AiPurpose, 'selection_parse'>;
 export type ModelKind = 'text' | 'image';
-export type ProviderProtocol = 'openai' | 'gemini' | 'dashscope';
+export type ProviderProtocol = 'openai' | 'gemini' | 'dashscope' | 'qwen-image' | 'ark';
 export type ModelParams = Record<string, string | number>;
 
 /** A model assigned to a purpose, without secrets; safe for snapshots, offers and listings. */

@@ -177,3 +177,119 @@ test('openai adapter derives size and quality from the purpose and model params'
   assert.deepEqual([forms[1]?.get('size'), forms[1]?.get('quality'), forms[1]?.get('n'), forms[1]?.has('mask')], ['1792x1008', null, '3', true]);
   assert.equal(forms[2]?.get('quality'), 'medium');
 });
+
+test('qwen-image edits send the multimodal payload synchronously and collect every result image', async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  const reference = await sharp({ create: { width: 1200, height: 800, channels: 3, background: '#123456' } }).png().toBuffer();
+  const requests: { url: string; headers: Headers; body: any }[] = [];
+  globalThis.fetch = async (input, init) => {
+    assert.ok(init?.signal); assert.equal(init?.redirect, 'error');
+    requests.push({ url: String(input), headers: new Headers(init?.headers), body: JSON.parse(String(init?.body)) });
+    return Response.json({ request_id: 'qwen-req-1', output: { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: [
+      { image: 'https://dashscope-a717.oss-accelerate.aliyuncs.com/a.png?Expires=1', type: 'image' },
+      { image: 'https://dashscope-a717.oss-accelerate.aliyuncs.com/b.png?Expires=1', type: 'image' }] } }] } });
+  };
+  const observed: string[] = [];
+  const model = activeModel('qwen-image', 'artwork', { apiKey: 'qwen-secret' });
+  const images = await edit(model, reference, 'artwork prompt', { count: 2, mask: reference, onProviderRequest: id => { observed.push(id); } });
+  assert.equal(images.length, 2);
+  assert.deepEqual(observed, ['qwen-req-1']);
+  const [request] = requests;
+  assert.equal(request?.url, 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation');
+  assert.equal(request?.headers.get('authorization'), 'Bearer qwen-secret');
+  assert.equal(request?.headers.get('x-dashscope-async'), null);
+  assert.equal(request?.body.model, 'qwen-image-3.0-pro');
+  assert.deepEqual(request?.body.parameters, { n: 2, size: '2048*1152', prompt_extend: false, watermark: false });
+  const [image, text] = request?.body.input.messages[0].content;
+  assert.deepEqual(text, { text: 'artwork prompt' });
+  assert.equal(image.image, `data:image/png;base64,${reference.toString('base64')}`);
+  assert.equal(supportsPurpose('qwen-image', 'image', 'artwork'), true);
+  assert.equal(imageAdapter(model).maxImagesPerRequest, 6);
+});
+
+test('qwen-image shrinks oversized references and classifies empty or malformed responses', async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  const large = await sharp({ create: { width: 4000, height: 2250, channels: 3, background: '#123456' } }).png().toBuffer();
+  let sent = '';
+  globalThis.fetch = async (_input, init) => {
+    sent = JSON.parse(String(init?.body)).input.messages[0].content[0].image;
+    return Response.json({ output: { choices: [{ message: { content: [{ image: 'https://dashscope.oss-cn-beijing.aliyuncs.com/a.png' }] } }] } });
+  };
+  await edit(activeModel('qwen-image', 'theme'), large, 'prompt');
+  assert.match(sent, /^data:image\/jpeg;base64,/);
+  const { width, height } = await sharp(Buffer.from(sent.split(',')[1]!, 'base64')).metadata();
+  assert.deepEqual([width, height], [3072, 1728]);
+
+  const reference = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
+  const cases: [unknown, string, boolean][] = [
+    [{ output: { choices: [{ message: { content: [{ text: 'no image' }] } }] } }, 'PROVIDER_NO_IMAGE', false],
+    [{ code: 'Unexpected' }, 'PROVIDER_OUTCOME_UNKNOWN', true],
+  ];
+  for (const [body, code, unknown] of cases) {
+    globalThis.fetch = async () => Response.json(body);
+    await assert.rejects(edit(activeModel('qwen-image', 'theme'), reference, 'prompt'), error =>
+      error instanceof ImageGenerationError && error.code === code && !error.retryable && error.outcomeUnknown === unknown);
+  }
+  globalThis.fetch = async () => new Response('{"code":"DataInspectionFailed","message":"secret upstream"}', { status: 400 });
+  await assert.rejects(edit(activeModel('qwen-image', 'theme'), reference, 'prompt'), error =>
+    error instanceof ImageGenerationError && error.code === 'PROVIDER_REQUEST_FAILED' && !error.retryable && !error.outcomeUnknown);
+});
+
+test('ark seedream edits send one inline reference per call and return base64 results as data URLs', async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  const reference = await sharp({ create: { width: 1200, height: 800, channels: 3, background: '#123456' } }).png().toBuffer();
+  const requests: { url: string; headers: Headers; body: any }[] = [];
+  globalThis.fetch = async (input, init) => {
+    assert.ok(init?.signal); assert.equal(init?.redirect, 'error');
+    requests.push({ url: String(input), headers: new Headers(init?.headers), body: JSON.parse(String(init?.body)) });
+    return Response.json({ model: 'doubao-seedream-5-0-flash-260915', created: 1, data: [{ b64_json: 'aGVsbG8=', size: '2560x1440' }] },
+      { headers: { 'x-request-id': 'ark-req-1' } });
+  };
+  const observed: string[] = [];
+  const model = activeModel('ark', 'artwork', { apiKey: 'ark-secret' });
+  const images = await edit(model, reference, 'artwork prompt', { mask: reference, onProviderRequest: id => { observed.push(id); } });
+  assert.deepEqual(images, ['data:image/jpeg;base64,aGVsbG8=']);
+  assert.deepEqual(observed, ['ark-req-1']);
+  const [request] = requests;
+  assert.equal(request?.url, 'https://ark.cn-beijing.volces.com/api/v3/images/generations');
+  assert.equal(request?.headers.get('authorization'), 'Bearer ark-secret');
+  const { image, ...rest } = request?.body;
+  assert.deepEqual(rest, { model: 'doubao-seedream-5-0-flash-260915', prompt: 'artwork prompt', size: '2560x1440',
+    response_format: 'b64_json', watermark: false, stream: false });
+  assert.equal(image, `data:image/png;base64,${reference.toString('base64')}`);
+  assert.equal(supportsPurpose('ark', 'image', 'artwork'), true);
+  assert.equal(supportsPurpose('ark', 'image', 'theme'), true);
+  assert.equal(imageAdapter(model).maxImagesPerRequest, 1);
+
+  globalThis.fetch = async () => Response.json({ data: [{ b64_json: 'aGVsbG8=', output_format: 'png' }] });
+  assert.deepEqual(await edit(model, reference, 'prompt'), ['data:image/png;base64,aGVsbG8=']);
+});
+
+test('ark seedream shrinks oversized references and classifies blocked, empty or malformed responses', async t => {
+  const original = globalThis.fetch; t.after(() => { globalThis.fetch = original; });
+  const large = await sharp({ create: { width: 5000, height: 2500, channels: 3, background: '#123456' } }).png().toBuffer();
+  let sent = '';
+  globalThis.fetch = async (_input, init) => {
+    sent = JSON.parse(String(init?.body)).image;
+    return Response.json({ data: [{ b64_json: 'aGVsbG8=' }] });
+  };
+  await edit(activeModel('ark', 'theme'), large, 'prompt');
+  assert.match(sent, /^data:image\/jpeg;base64,/);
+  const { width, height } = await sharp(Buffer.from(sent.split(',')[1]!, 'base64')).metadata();
+  assert.deepEqual([width, height], [4096, 2048]);
+
+  const reference = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } }).png().toBuffer();
+  const cases: [unknown, string, boolean][] = [
+    [{ data: [{ error: { code: 'OutputImageSensitiveContentDetected', message: 'secret' } }] }, 'PROVIDER_CONTENT_BLOCKED', false],
+    [{ data: [] }, 'PROVIDER_NO_IMAGE', false],
+    [{ error: { code: 'Unexpected' } }, 'PROVIDER_OUTCOME_UNKNOWN', true],
+  ];
+  for (const [body, code, unknown] of cases) {
+    globalThis.fetch = async () => Response.json(body);
+    await assert.rejects(edit(activeModel('ark', 'theme'), reference, 'prompt'), error =>
+      error instanceof ImageGenerationError && error.code === code && !error.retryable && error.outcomeUnknown === unknown && !error.message.includes('secret'));
+  }
+  globalThis.fetch = async () => new Response('{"error":{"code":"InputImageSensitiveContentDetected","message":"secret upstream"}}', { status: 400 });
+  await assert.rejects(edit(activeModel('ark', 'theme'), reference, 'prompt'), error =>
+    error instanceof ImageGenerationError && error.code === 'PROVIDER_REQUEST_FAILED' && !error.retryable && !error.outcomeUnknown);
+});

@@ -8,6 +8,7 @@
 | 智选文本解析 | DeepSeek `deepseek-v4-flash`，`POST /chat/completions`，JSON 模式；提示词明确要求 JSON，需防空响应 | [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode)、[官方模型配置示例](https://api-docs.deepseek.com/quick_start/agent_integrations/pi_mono) |
 | 换主题 / 四面素材 | Gemini Nano Banana 系列，默认 `gemini-3.1-flash-image`。`POST /v1beta/models/{model}:generateContent`（官方标注为 legacy 但完全支持），`x-goog-api-key` 头鉴权；文字与原图 `inlineData` 作为多模态输入，`generationConfig: {responseModalities: ['IMAGE'], imageConfig: {aspectRatio, imageSize: '2K'}}`。换主题与四面素材均固定 `aspectRatio: '16:9'`。每次请求只出 1 张图，带 `thought: true` 的中间草图会被丢弃；`promptFeedback.blockReason` 或安全类 `finishReason` 归类为 `PROVIDER_CONTENT_BLOCKED`，无最终图归类为 `PROVIDER_NO_IMAGE`。参考图超过 14 MB 时先转为长边 ≤3072 的 JPEG，避免超出 20 MB 内联请求上限 | [Gemini 图像生成和编辑](https://ai.google.dev/gemini-api/docs/image-generation)、[API Key](https://ai.google.dev/gemini-api/docs/api-key) |
 | 换主题 | 通义万相 `wanx2.1-imageedit` 局部重绘，`description_edit_with_mask`，原图与**黑白**蒙版，异步任务 | [万相图像编辑 API](https://help.aliyun.com/zh/model-studio/wanx-image-edit-api-reference) |
+| 换主题 / 四面素材 | 火山方舟 Doubao Seedream（5.0 pro/flash/lite、4.5、4.0），`POST /api/v3/images/generations`，Bearer API Key 鉴权，同步返回。原图以 `data:image/<格式>;base64,` 传入 `image`（超过 10 MB 或长边 >4096 时先转为长边 ≤4096 的 JPEG），固定 `size: '2560x1440'`（严格 16:9，3,686,400 像素，同时满足 5.0 pro/flash 上限 4,624,220 与 5.0 lite/4.5 下限 3,686,400），`response_format: 'b64_json'`、`watermark: false`。5.0 pro/flash 不支持组图参数，因此每次请求只出 1 张；蒙版不传，编辑意图写在提示词里。`data[].error.code` 含 `SensitiveContent` 归类为 `PROVIDER_CONTENT_BLOCKED` | [图片生成 API](https://www.volcengine.com/docs/82379/1541523) |
 
 旧需求中的 `wanx-x-painting` + `mask_color` 与上面的现行图像编辑接口不一致。现有品红蒙版在调用万相前必须转换为白色可修改、黑色不可修改的二值蒙版；Gemini 无与万相等价的硬蒙版参数，必须在生成后做区域外像素保护并验证画面质量。图像输出 URL 有有效期，需要保存到平台私有 S3。各提供商调用适配器已按下文「代码结构与接入新模型」实现；万相的二值蒙版转换与 Gemini 的区域外像素保护尚未实现。
 
@@ -15,7 +16,7 @@
 
 1. 运维配置独立的 `AI_MODEL_ENCRYPTION_KEY`（32 字节随机值的 64 位十六进制编码），`scripts/setup.ps1` 为本地环境自动生成。API/Worker 使用同一个值；数据库备份必须与此密钥一起保管，丢失后已保存的 API Key 无法解密。生产环境请通过密钥管理系统注入，不要提交到仓库。
 2. 管理后台「系统配置 → AI 模型配置 → 供应商与模型」：
-   - **新建供应商**：选择接口协议（OpenAI 及兼容接口 / Google Gemini / 阿里云 DashScope 原生接口），填写 Base URL（留空用官方地址）与 API Key，可先「测试连接」用未保存的表单值拉取模型列表。API Key 以 AES-256-GCM 加密存储，关联数据为供应商 id，接口只返回“已配置”状态；编辑时留空保留原密钥，审计只记录是否更换/清除。协议创建后不可修改。
+   - **新建供应商**：选择接口协议（OpenAI 及兼容接口 / Google Gemini / 阿里云 DashScope 原生接口 / 阿里云百炼 Qwen-Image / 火山方舟 Doubao Seedream），填写 Base URL（留空用官方地址）与 API Key，可先「测试连接」用未保存的表单值拉取模型列表。API Key 以 AES-256-GCM 加密存储，关联数据为供应商 id，接口只返回“已配置”状态；编辑时留空保留原密钥，审计只记录是否更换/清除。协议创建后不可修改。
    - **模型目录**：供应商行的「刷新模型」用已保存的地址和密钥实时拉取模型列表，保存为该供应商的模型目录（`ai_providers.model_catalog`）并记录刷新时间；新建供应商、更换密钥或 Base URL 后自动刷新一次。修改 Base URL 时服务端清空旧目录，避免展示新地址不提供的型号；刷新期间供应商被编辑则丢弃结果（`REVISION_CONFLICT`）。
    - **添加模型**：在供应商下选择模型类型（文本/图像，取决于协议能力），从模型目录中选择型号（已添加的型号不再列出，也可手动输入或在弹窗内刷新目录）；参数表单按“协议 + 类型”由服务端声明自动生成并在保存时校验。模型不设单独的显示名称，后台与参展商端一律展示模型 ID；同一供应商下模型 ID 唯一（`MODEL_TAKEN`）。
 3. 「用途分配」标签页：为 AI 智选·需求解析、AI 换主题、四面平面素材分别选择模型并排序（第一个为主用）。图像用途在这里设置积分单价（换主题按张、四面素材按方向），同一个模型可以同时分配给换主题和四面素材并分别定价。未分配模型时该功能不可用（智选回退规则解析）。实际收费价格由后端费用 offer 冻结，不能以客户端显示数值直接扣费；具体规则见本平台自建积分模块（`credit_reservations` 预占扣费）。
@@ -31,6 +32,10 @@
 | Gemini | Google Gemini | `https://generativelanguage.googleapis.com/v1beta`（可留空） | `GET /models?pageSize=1000`，`x-goog-api-key` 鉴权 |
 | OpenAI 兼容中转 | OpenAI 及兼容接口 | 供应商提供的 API 根路径，通常以 `/v1` 结尾 | 在 Base URL 后追加 `/models` |
 | DashScope 原生 | 阿里云 DashScope 原生接口 | `https://dashscope.aliyuncs.com/api/v1`（可留空） | 当前提供推荐型号，不执行远程连接或密钥验证 |
+| 通义千问（文本） | OpenAI 及兼容接口 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `GET /models`，Bearer 鉴权；不含 Qwen-Image 等图像模型 |
+| Qwen-Image | 阿里云百炼 Qwen-Image | `https://dashscope.aliyuncs.com/api/v1`（可留空） | 推荐型号 `qwen-image-3.0-pro`、`qwen-image-3.0`，不执行远程连接或密钥验证 |
+| 火山方舟 Seedream | 火山方舟 Doubao Seedream | `https://ark.cn-beijing.volces.com/api/v3`（可留空） | 推荐型号 `doubao-seedream-5-0-pro-260628`、`doubao-seedream-5-0-flash-260915`、`doubao-seedream-5-0-lite-260128`、`doubao-seedream-4-5-251128`、`doubao-seedream-4-0-250828`，不执行远程连接或密钥验证；需先在方舟控制台开通对应模型，也可手动填写 Endpoint ID |
+| 豆包（文本） | OpenAI 及兼容接口 | `https://ark.cn-beijing.volces.com/api/v3` | 文本走方舟 OpenAI 兼容的 `/chat/completions`；若模型列表拉取失败，手动填写模型 ID |
 
 「测试连接」只验证模型列表请求：用未保存的新密钥测试时不保存任何内容，用已保存的配置测试时会顺带更新模型目录。模型目录不保证每个型号都能执行图像编辑或文本生成。保存供应商后，点击该行的「添加模型」，在「模型 ID」中搜索选择，并保存为本平台使用的模型。若供应商未提供列表接口，可根据其文档手动填写模型 ID。
 
@@ -55,7 +60,7 @@
 | 文件 | 职责 |
 |---|---|
 | `protocols.ts` | **协议注册表 `PROTOCOLS`**：每种协议的官方地址、模型列表拉取、文本/图像能力（适配器 + 参数表单定义 + 可服务的用途） |
-| `providers/*.ts` | 各协议实现：`openai`（Chat Completions、Images Edits、`GET /models`）、`gemini`（generateContent 图像、`GET /models`）、`dashscope`（万相异步任务 + 推荐模型） |
+| `providers/*.ts` | 各协议实现：`openai`（Chat Completions、Images Edits、`GET /models`）、`gemini`（generateContent 图像、`GET /models`）、`dashscope`（万相异步任务 + 推荐模型）、`qwen-image`（百炼 `multimodal-generation` 同步图像编辑，单次最多 6 张，输出 `2048*1152`）、`ark`（火山方舟 Seedream `images/generations` 同步生图，单次 1 张，输出 `2560x1440`，结果为 base64） |
 | `config.ts` | 运行时读取分配给某用途的模型（`assignedAiModels` 不含密钥、`activeAiModels` 含解密后的密钥），凭据加解密 |
 | `endpoint.ts` | Base URL 校验：仅 https 公网地址，禁止账号/参数/内网与本机地址；非官方域名在每次请求前重新解析 DNS，拒绝解析到内网的地址 |
 | `discovery.ts` | 模型列表拉取（10 秒超时、禁止重定向、响应体上限），失败只返回 `AUTH_FAILED` / `TIMEOUT` / `UNREACHABLE` / `BAD_RESPONSE` / `ENDPOINT_INVALID`；管理端对此接口等待 20 秒，给服务端错误响应预留时间 |
@@ -71,6 +76,6 @@
 - `downloadHosts` 声明结果 URL 的域名后缀；经中转服务返回其他域名的 URL 会被拒绝（`IMAGE_URL_UNTRUSTED`），返回 base64 不受影响。
 
 日常接入新模型、新中转或新厂商（只要协议已支持）都只需在后台操作，无需改代码或迁移。需要写代码的情况：
-1. **新协议**（接口格式不兼容现有三种）：在 `providers/` 实现适配器与模型列表拉取，在 `PROTOCOLS` 注册，并在 `tests/ai-image.test.ts` 补充请求格式与错误分类测试。
+1. **新协议**（接口格式不兼容现有协议）：在 `providers/` 实现适配器与模型列表拉取，在 `PROTOCOLS` 注册，并在 `tests/ai-image.test.ts` 补充请求格式与错误分类测试。
 2. **已有协议的新能力**（如 Gemini 文本解析）：在该协议定义中增加 `text` / `image` 能力及参数表单。
 3. **参数**：在能力的 `params` 中声明（数字范围或下拉选项），后台表单自动出现，服务端按声明校验并补默认值。

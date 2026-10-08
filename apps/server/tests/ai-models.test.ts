@@ -130,7 +130,10 @@ test('model discovery lists provider models, classifies kinds and maps failures 
     { id: 'gemini-3.1-flash-image', name: 'Nano Banana 2', kind: 'image' }]);
   assert.equal(requests[1]?.headers.get('x-goog-api-key'), providerKey);
   assert.deepEqual((await probeProviderModels({ protocol: 'dashscope', apiKey: providerKey })).map(model => model.id), ['wanx2.1-imageedit']);
-  assert.equal(requests.length, 2, 'dashscope suggestions need no request');
+  assert.deepEqual((await probeProviderModels({ protocol: 'qwen-image', apiKey: providerKey })).map(model => model.id), ['qwen-image-3.0-pro', 'qwen-image-3.0']);
+  assert.deepEqual((await probeProviderModels({ protocol: 'ark', apiKey: providerKey })).map(model => model.id).slice(0, 2),
+    ['doubao-seedream-5-0-pro-260628', 'doubao-seedream-5-0-flash-260915']);
+  assert.equal(requests.length, 2, 'dashscope, qwen-image and ark suggestions need no request');
   const stored = { protocol: 'openai', baseUrl: 'https://relay.example.com/v1', ciphertext: encryptCredential(providerKey, 'p1', encryptionKey), scope: 'p1', revision: 2 };
   const refreshedAt = new Date();
   let saveMatches = true;

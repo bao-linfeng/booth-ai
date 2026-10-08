@@ -12,6 +12,10 @@ const defaults: Record<ProviderProtocol, { baseUrl: string; model: Record<ModelK
     params: { text: {}, image: { imageSize: '2K' } } },
   dashscope: { baseUrl: 'https://dashscope.aliyuncs.com/api/v1', model: { text: 'qwen-test', image: 'wanx2.1-imageedit' },
     params: { text: {}, image: {} } },
+  'qwen-image': { baseUrl: 'https://dashscope.aliyuncs.com/api/v1', model: { text: 'qwen-test', image: 'qwen-image-3.0-pro' },
+    params: { text: {}, image: {} } },
+  ark: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: { text: 'doubao-test', image: 'doubao-seedream-5-0-flash-260915' },
+    params: { text: {}, image: {} } },
 };
 
 /** An in-memory model as returned by `activeAiModels`, for adapter and worker unit tests. */
