@@ -53,6 +53,15 @@ const tabs = computed(() =>
     })),
 );
 
+// 标签上的计数做成右上角的小角标
+const badgeStyle = {
+  fontSize: '10px',
+  height: '14px',
+  lineHeight: '14px',
+  minWidth: '14px',
+  padding: '0 4px',
+};
+
 const statusColors = {
   active: 'green',
   closed: 'default',
@@ -64,24 +73,29 @@ const statusColors = {
   <div
     class="flex h-full min-h-0 flex-col rounded-md border border-border bg-card"
   >
-    <Tabs
-      :active-key="tab"
-      class="px-3"
-      size="small"
-      @change="(key) => emit('update:tab', key as ConversationTab)"
-    >
-      <Tabs.TabPane v-for="item in tabs" :key="item.key">
-        <template #tab>
-          {{ item.label }}
-          <Badge
-            v-if="item.count"
-            :count="item.count"
-            :number-style="{ marginInlineStart: '4px' }"
-            size="small"
-          />
-        </template>
-      </Tabs.TabPane>
-    </Tabs>
+    <!-- antd Tabs 的样式重置会覆盖其自身的 padding，内边距放在外层 -->
+    <div class="px-3">
+      <Tabs
+        :active-key="tab"
+        centered
+        size="small"
+        :tab-bar-gutter="20"
+        @change="(key) => emit('update:tab', key as ConversationTab)"
+      >
+        <Tabs.TabPane v-for="item in tabs" :key="item.key">
+          <template #tab>
+            <Badge
+              :count="item.count ?? 0"
+              :number-style="badgeStyle"
+              :offset="[6, 0]"
+              size="small"
+            >
+              {{ item.label }}
+            </Badge>
+          </template>
+        </Tabs.TabPane>
+      </Tabs>
+    </div>
     <div
       class="min-h-0 flex-1 overflow-y-auto"
       :class="{ 'opacity-60': loading }"
