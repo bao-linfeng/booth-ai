@@ -7,6 +7,7 @@ import type {
 
 import { computed, nextTick, ref, watch } from 'vue';
 
+import { IconifyIcon } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
@@ -341,15 +342,67 @@ function toggle(id: string) {
           </div>
           <div
             v-else-if="item.kind === 'context' && item.context"
-            class="mx-auto max-w-md rounded border border-dashed border-border px-3 py-2 text-xs"
+            class="mx-auto flex max-w-[90%] items-start gap-3 rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2 text-sm"
           >
             <template v-if="item.context.kind === 'scheme'">
-              方案卡片：{{ item.context.snapshot.schemeCode }} ·
-              {{ item.context.snapshot.name }}
+              <IconifyIcon
+                icon="lucide:box"
+                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <div class="min-w-0">
+                <p class="break-words text-xs text-muted-foreground">
+                  方案 ·
+                  <span class="font-mono">{{
+                    item.context.snapshot.schemeCode
+                  }}</span>
+                </p>
+                <p
+                  class="truncate font-medium"
+                  :title="item.context.snapshot.name"
+                >
+                  {{ item.context.snapshot.name }}
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  <template
+                    v-if="
+                      item.context.snapshot.lengthMm &&
+                      item.context.snapshot.widthMm
+                    "
+                  >
+                    {{ item.context.snapshot.lengthMm / 1000 }} ×
+                    {{ item.context.snapshot.widthMm / 1000 }} m
+                  </template>
+                  <template v-if="item.context.snapshot.openingCount">
+                    · {{ item.context.snapshot.openingCount }} 面开口
+                  </template>
+                </p>
+              </div>
             </template>
             <template v-else>
-              项目卡片：{{ item.context.snapshot.projectNo }} ·
-              {{ item.context.snapshot.exhibitionName }}
+              <IconifyIcon
+                icon="lucide:briefcase-business"
+                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <div class="min-w-0">
+                <p class="break-words text-xs text-muted-foreground">
+                  项目 ·
+                  <span class="font-mono">{{
+                    item.context.snapshot.projectNo
+                  }}</span>
+                </p>
+                <p
+                  class="truncate font-medium"
+                  :title="item.context.snapshot.exhibitionName"
+                >
+                  {{ item.context.snapshot.exhibitionName }}
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  {{ item.context.snapshot.city }} ·
+                  {{ item.context.snapshot.status }}
+                </p>
+              </div>
             </template>
           </div>
           <div
@@ -437,10 +490,13 @@ function toggle(id: string) {
         </div>
       </div>
 
-      <div v-if="canText || canNote" class="border-t border-border px-4 py-2">
+      <div
+        v-if="canText || canNote"
+        class="flex flex-col gap-2 border-t border-border px-4 py-2"
+      >
         <Radio.Group
           v-model:value="mode"
-          class="mb-2"
+          class="self-start"
           size="small"
           button-style="solid"
         >
@@ -463,7 +519,7 @@ function toggle(id: string) {
           show-count
           @keydown="onKeydown"
         />
-        <div class="mt-2 text-right">
+        <div class="text-right">
           <Button
             :disabled="!body.trim() || !canCompose"
             type="primary"

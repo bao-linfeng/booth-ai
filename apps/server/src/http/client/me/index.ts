@@ -26,8 +26,8 @@ export async function registerClientMeRoutes(app: FastifyInstance, config: Confi
       if (detail.externalUserId !== session.externalUserId) {
         throw Object.assign(new Error('Authentication required'), { statusCode: 401 });
       }
-      const { id: localId } = await syncClientUser(pool, detail, false);
-      return { code: 0, message: 'ok', data: toCurrentUser(localId, detail, 'client', session.loginSource) };
+      const { id: localId, type } = await syncClientUser(pool, detail, false);
+      return { code: 0, message: 'ok', data: toCurrentUser(localId, detail, 'client', session.loginSource, type) };
     } catch (error) {
       if ([401, 403].includes((error as { statusCode: number }).statusCode)) {
         await revokeAccountSessions(pool, 'client', accountId);

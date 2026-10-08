@@ -298,12 +298,18 @@ test('real SQL: disable/re-enable, role removal and identity changes invalidate 
     await adminPool.query(`CREATE SCHEMA ${schema}`);
     const pool = new pg.Pool({ connectionString: process.env.PROJECT_TEST_DATABASE_URL, options: `-c search_path=${schema}` });
     t.after(async () => { await pool.end(); await adminPool.query(`DROP SCHEMA ${schema} CASCADE`); await adminPool.end(); });
-    for (const name of ['001_foundation.sql', '002_auth.sql', '043_user_login_source.sql', '051_account_session_versions.sql', '059_admin_role_permissions.sql', '060_editable_admin_role.sql']) {
+    for (const name of ['001_foundation.sql', '002_auth.sql', '043_user_login_source.sql', '051_account_session_versions.sql', '059_admin_role_permissions.sql', '060_editable_admin_role.sql', '076_user_type.sql']) {
       await pool.query(await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'));
     }
     const detail = { externalUserId: 1, username: 'test', nickname: null, email: null, mobile: null, avatarPath: null,
       company: null, country: null, city: null, languageCode: null, enabled: true, roles: ['ROLE_ADMIN'], permissions: [] };
     const client = await syncClientUser(pool, detail, true, 'password');
+    assert.equal(client.type, 'client');
+    const su = await syncClientUser(pool, detail, true, 'sso_token', 'su');
+    assert.equal(su.id, client.id);
+    assert.equal(su.type, 'su');
+    assert.equal((await syncClientUser(pool, detail, false)).type, 'su');
+    assert.equal((await syncClientUser(pool, detail, true, 'password', 'client')).type, 'client');
     const admin = await syncAdmin(pool, detail, true);
     // 只执行到 060：ROLE_ADMIN 拥有 060 授予且仍在权限目录中的权限码
     const seeded = (await pool.query<{ permission_codes: string[] }>("SELECT permission_codes FROM admin_roles WHERE name='ROLE_ADMIN'")).rows[0]!.permission_codes;

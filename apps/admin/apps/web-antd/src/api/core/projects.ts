@@ -90,7 +90,6 @@ export interface Project {
   assigneeAdminId: string;
   assigneeName: string;
   assigneeStatus: AssigneeStatus;
-  attribution: Record<string, unknown>;
   status: ProjectStatus;
   revision: number;
   schemeCode: null | string;

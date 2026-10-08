@@ -77,7 +77,6 @@ function project(events: ProjectEvent[]): ProjectDetail {
     assigneeAdminId: 'admin-1',
     assigneeName: '负责人',
     assigneeStatus: 'active',
-    attribution: {},
     createdAt: '2026-10-01T00:00:00Z',
     customerUserId: null,
     events,

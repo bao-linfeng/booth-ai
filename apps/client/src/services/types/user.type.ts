@@ -2,6 +2,7 @@ export interface CurrentUser {
   id: string
   externalUserId: string
   accountType: 'client' | 'admin'
+  type?: 'client' | 'su'
   username: string
   nickname: string | null
   email: string | null

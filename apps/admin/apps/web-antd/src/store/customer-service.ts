@@ -18,6 +18,8 @@ import {
 const PRESENCE_KEY = 'booth-admin:cs-presence';
 const WORKBENCH_PATH = '/customer-service/workbench';
 const MAX_FAILURES = 3;
+/** 服务端每 15 秒发一次 ping；连续 45 秒收不到任何事件就视为断线（代理吞掉上游断开时浏览器收不到 error） */
+export const STALE_MS = 45_000;
 
 type Listener = (event: WorkbenchEvent) => void;
 
@@ -39,6 +41,7 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let countsTimer: ReturnType<typeof setTimeout> | undefined;
+  let staleTimer: ReturnType<typeof setTimeout> | undefined;
   let baseTitle = '';
 
   const canReply = () =>
@@ -81,6 +84,20 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
     countsTimer = setTimeout(refreshCounts, 300);
   }
 
+  function fail(next: EventSource) {
+    next.close();
+    if (source !== next) return;
+    clearTimeout(staleTimer);
+    source = undefined;
+    connected.value = false;
+    scheduleReconnect();
+  }
+
+  function arm(next: EventSource) {
+    clearTimeout(staleTimer);
+    staleTimer = setTimeout(() => fail(next), STALE_MS);
+  }
+
   async function connect() {
     if (!running) return;
     try {
@@ -90,24 +107,23 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
         return;
       }
       source = next;
-      source.addEventListener('update', (message) => {
+      arm(next);
+      next.addEventListener('ping', () => arm(next));
+      next.addEventListener('update', (message) => {
+        arm(next);
         try {
           handle(JSON.parse((message as MessageEvent<string>).data));
         } catch {
           // 忽略无法解析的事件
         }
       });
-      source.addEventListener('open', () => {
+      next.addEventListener('open', () => {
+        arm(next);
         connected.value = true;
         failures = 0;
         stopPolling();
       });
-      source.addEventListener('error', () => {
-        source?.close();
-        source = undefined;
-        connected.value = false;
-        scheduleReconnect();
-      });
+      next.addEventListener('error', () => fail(next));
     } catch {
       scheduleReconnect();
     }
@@ -221,6 +237,7 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
     connected.value = false;
     clearTimeout(reconnectTimer);
     clearTimeout(countsTimer);
+    clearTimeout(staleTimer);
     stopPolling();
     document.removeEventListener('visibilitychange', onVisibility);
     unseen.value = 0;

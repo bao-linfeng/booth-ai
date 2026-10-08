@@ -72,7 +72,7 @@ export async function assignProject(pool:pg.Pool,id:string,adminId:string,input:
     if(!input.reason.trim())throw projectError('INVALID_INPUT',400);
     await client.query('UPDATE projects SET assignee_admin_id=$2,revision=revision+1,updated_at=now() WHERE id=$1',[id,input.assigneeAdminId]);
     await event(client,id,adminId,'assignment',{fromAdminId:project.assigneeAdminId,assigneeAdminId:input.assigneeAdminId,reason:input.reason,revision:project.revision+1});
-    return {projectId:id,revision:project.revision+1,assigneeAdminId:input.assigneeAdminId,attribution:project.attribution};
+    return {projectId:id,revision:project.revision+1,assigneeAdminId:input.assigneeAdminId};
   });
 }
 const transitions:Record<ProjectStatus,ProjectStatus[]>={pending:['following','closed'],following:['quoted','won','lost','closed'],quoted:['following','won','lost','closed'],won:[],lost:[],closed:[]};

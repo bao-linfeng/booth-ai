@@ -63,11 +63,13 @@ const server = await createServer({
     },
   }],
 })
-after(async () => { delete globalThis.__cs; delete globalThis.EventSource; await server.close(); await window.happyDOM.close() })
+// 断开最后一条连接：否则看门狗与重连定时器会让进程一直存活
+after(async () => { cs.resetCustomerService(); delete globalThis.__cs;delete globalThis.EventSource; await server.close(); await window.happyDOM.close() })
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: ChatLauncher } = await server.ssrLoadModule('/src/features/customer-service/ChatLauncher.vue')
 const timeline = await server.ssrLoadModule('/src/features/customer-service/timeline.ts')
 const cs = await server.ssrLoadModule('/src/features/customer-service/useCustomerService.ts')
+const { STALE_MS } = await server.ssrLoadModule('/src/features/customer-service/useCustomerServiceConnection.ts')
 const { appLocale } = await server.ssrLoadModule('/src/plugins/i18n/index.ts')
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -251,6 +253,31 @@ test('sending is idempotent on retry, starts a new round after the conversation 
   await settle()
   assert.equal(FakeEventSource.instances.every(source => source.closed), true, 'closing the panel disconnects the stream')
   unmount()
+})
+
+test('a stream silent for 45 seconds is dropped and reconnected; pings keep it alive', async t => {
+  setup()
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)) }
+  await cs.openWith(undefined, 'floating')
+  await flush()
+  const { state, closePanel } = cs.useCustomerService()
+  const [first] = FakeEventSource.instances
+  assert.equal(FakeEventSource.instances.length, 1)
+  first.emit('open')
+  assert.equal(state.connection, 'live')
+  t.mock.timers.tick(STALE_MS - 1)
+  first.emit('ping', {})
+  t.mock.timers.tick(STALE_MS - 1)
+  assert.equal(first.closed, false, 'a ping resets the watchdog')
+  t.mock.timers.tick(1)
+  // 代理吞掉上游断开时浏览器收不到 error，只能靠看门狗发现
+  assert.equal(first.closed, true)
+  assert.equal(state.connection, 'polling')
+  t.mock.timers.tick(3000)
+  await flush()
+  assert.equal(FakeEventSource.instances.length, 2, 'reconnects after the first backoff')
+  closePanel()
 })
 
 test('?cs=open from reply emails opens the panel and removes the query; the launcher shows unread replies', async () => {

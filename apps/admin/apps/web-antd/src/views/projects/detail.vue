@@ -164,11 +164,8 @@ onMounted(load);
           <DescriptionsItem label="项目修订">
             {{ project.revision }}
           </DescriptionsItem>
-          <DescriptionsItem label="承接人">
+          <DescriptionsItem label="承接人" :span="2">
             {{ project.assigneeName }}
-          </DescriptionsItem>
-          <DescriptionsItem label="渠道归属">
-            {{ project.attribution }}
           </DescriptionsItem>
           <DescriptionsItem label="客户 / 联系人">
             {{ project.request.company }} /

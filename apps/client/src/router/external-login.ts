@@ -6,7 +6,7 @@ import pinia from '@/plugins/pinia/setup'
 export const externalLoginGuard: NavigationGuard = async (to) => {
   if (to.path !== '/' || !('token' in to.query || 'username' in to.query)) return
 
-  const { token, username, ...query } = to.query
+  const { token, username, type = 'client', ...query } = to.query
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
     for (const item of Array.isArray(value) ? value : [value]) {
@@ -18,9 +18,9 @@ export const externalLoginGuard: NavigationGuard = async (to) => {
 
   const authStore = useAuthStore(pinia)
   authStore.clearAuth()
-  if (typeof token === 'string' && token.trim() && typeof username === 'string' && username.trim()) {
+  if (typeof token === 'string' && token.trim() && typeof username === 'string' && username.trim() && (type === 'client' || type === 'su')) {
     try {
-      const response = await syncAuth({ token, username })
+      const response = await syncAuth({ token, username, type })
       authStore.setLoginResult(response.accessToken, response.user)
       return { path: to.path, query, hash: to.hash, replace: true }
     } catch {}

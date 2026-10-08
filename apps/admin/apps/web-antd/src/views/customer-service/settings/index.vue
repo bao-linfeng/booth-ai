@@ -33,7 +33,10 @@ const saving = ref(false);
 
 const [Form, formApi] = useVbenForm<FormValues>({
   showDefaultActions: false,
-  commonConfig: { componentProps: { class: 'w-full', disabled: !editable } },
+  commonConfig: {
+    componentProps: { class: 'w-full', disabled: !editable },
+    labelWidth: 120,
+  },
   wrapperClass: 'grid-cols-1 max-w-2xl',
   schema: [
     {
@@ -58,7 +61,7 @@ const [Form, formApi] = useVbenForm<FormValues>({
     {
       component: 'Select',
       fieldName: 'offlineNotifyEmails',
-      label: '离线通知邮箱',
+      label: '通知邮箱',
       componentProps: {
         mode: 'tags',
         maxTagCount: 20,
@@ -70,7 +73,7 @@ const [Form, formApi] = useVbenForm<FormValues>({
     {
       component: 'Switch',
       fieldName: 'replyEmailEnabled',
-      label: '离线客户回复邮件',
+      label: '回复邮件',
       help: '坐席回复时客户不在线，5 分钟后把回复摘要发到客户邮箱；客户期间上线或已读则不发',
     },
   ],

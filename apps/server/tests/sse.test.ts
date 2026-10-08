@@ -82,8 +82,10 @@ test('shared SSE runs onOpen before replay and treats heartbeat callback errors 
   t.after(async () => { abort.abort(); await app.close(); });
   const response = await fetch(`${address}/events`, { signal: abort.signal });
   const reader = response.body!.getReader();
-  await readUntil(reader, '"ready":true');
+  const { text } = await readUntil(reader, '"ready":true');
   await new Promise(resolve => setTimeout(resolve, 80));
   assert.deepEqual(calls, ['open', 'replay']);
   assert.ok(beats >= 2);
+  // 心跳必须是浏览器可观察的具名事件（注释行不会触发任何监听），前端靠它发现被代理吞掉的断线
+  assert.match((await readUntil(reader, 'event: ping\ndata: {}\n\n', text)).text, /event: ping\ndata: \{\}\n\n/);
 });

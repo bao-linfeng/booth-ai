@@ -1,6 +1,8 @@
 import type pg from 'pg';
+import type { UserType } from './service.js';
 
 export interface AccountRecord {
+  type?: UserType;
   id: string;
   externalUserId: string;
   username: string;
@@ -22,6 +24,7 @@ export interface AccountRecord {
 }
 
 interface AccountRow {
+  type?: UserType;
   id: string;
   externalUserId: string;
   username: string;
@@ -122,7 +125,7 @@ async function listAccounts(pool: pg.Pool, table: AccountTable, options: ListAcc
   const { clause, values } = filters(options, supportsPhoneFilter);
   const offset = (options.page - 1) * options.pageSize;
   const [recordsResult, countResult] = await Promise.all([
-    pool.query<AccountRow>(`SELECT ${accountColumns} FROM ${table}${clause} ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, options.pageSize, offset]),
+    pool.query<AccountRow>(`SELECT ${accountColumns}${table === 'users' ? ', user_type AS type' : ''} FROM ${table}${clause} ORDER BY created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, options.pageSize, offset]),
     pool.query<{ total: string }>(`SELECT count(*)::text AS total FROM ${table}${clause}`, values),
   ]);
   return {
@@ -134,7 +137,7 @@ async function listAccounts(pool: pg.Pool, table: AccountTable, options: ListAcc
 }
 
 async function getAccount(pool: pg.Pool, table: AccountTable, id: string): Promise<AccountRecord> {
-  const result = await pool.query<AccountRow>(`SELECT ${accountColumns} FROM ${table} WHERE id = $1`, [id]);
+  const result = await pool.query<AccountRow>(`SELECT ${accountColumns}${table === 'users' ? ', user_type AS type' : ''} FROM ${table} WHERE id = $1`, [id]);
   const row = result.rows[0];
   if (!row) throw notFoundError();
   return toAccountRecord(row);

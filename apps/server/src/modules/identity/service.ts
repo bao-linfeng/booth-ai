@@ -1,9 +1,12 @@
 import type { ExternalUserDetail } from '../../infra/external-auth.js';
 
+export type UserType = 'client' | 'su';
+
 export interface CurrentUser {
   id: string;
   externalUserId: string;
   accountType: 'client' | 'admin';
+  type?: UserType;
   username: string;
   nickname: string | null;
   email: string | null;
@@ -32,11 +35,12 @@ export function jwtExpiresAt(jwt: string, fallbackTtlSeconds: number): number {
   }
 }
 
-export function toCurrentUser(localId: string, detail: ExternalUserDetail, accountType: 'client' | 'admin', loginSource: 'password' | 'sso_token'): CurrentUser {
+export function toCurrentUser(localId: string, detail: ExternalUserDetail, accountType: 'client' | 'admin', loginSource: 'password' | 'sso_token', type?: UserType): CurrentUser {
   return {
     id: localId,
     externalUserId: String(detail.externalUserId),
     accountType,
+    ...(type === undefined ? {} : { type }),
     username: detail.username,
     nickname: detail.nickname,
     email: detail.email,

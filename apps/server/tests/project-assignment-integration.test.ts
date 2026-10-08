@@ -52,7 +52,11 @@ test('explicit assignment: pause, restore, immutable owners, conflicts, permissi
   assert.deepEqual((await createManualProject(pool, user, input)).receipt, accepted.receipt);
   await assert.rejects(createManualProject(pool, user, { ...input, requestKey: randomUUID() }), { reason: 'ASSIGNMENT_UNAVAILABLE' });
   await assert.rejects(followUpProject(pool, id, target, { requestKey: randomUUID(), expectedRevision: 1, contactMethod: 'email', contactedAt: new Date().toISOString(), content: '停用后跟进' }), { statusCode: 403 });
-  await assignProject(pool, id, actor, { requestKey: randomUUID(), expectedRevision: 1, assigneeAdminId: actor, reason: '承接人停用，人工改派' });
+  const assignment = { requestKey: randomUUID(), expectedRevision: 1, assigneeAdminId: actor, reason: '承接人停用，人工改派' };
+  const assigned = await assignProject(pool, id, actor, assignment);
+  assert.deepEqual(assigned, { projectId: id, revision: 2, assigneeAdminId: actor });
+  assert.deepEqual(await assignProject(pool, id, actor, assignment), assigned);
+  assert.equal(Object.hasOwn(await getProject(pool, id), 'attribution'), false);
   assert.equal((await getProject(pool, id)).assigneeStatus, 'active');
   assert.equal((await getAssignmentConfig(pool)).defaultAssigneeAdminId, target);
   await pool.query('UPDATE admins SET enabled=true WHERE id=$1', [target]);
@@ -96,6 +100,13 @@ test('explicit assignment: pause, restore, immutable owners, conflicts, permissi
   const headers = { authorization: 'Bearer test' };
   assert.equal((await app.inject({ url: '/api/v1/admin/project-assignment-config', headers })).json().data.status, 'unconfigured');
   assert.equal((await app.inject({ method: 'PUT', url: '/api/v1/admin/project-assignment-config', headers, payload: { defaultAssigneeAdminId: actor, expectedRevision: 3 } })).statusCode, 403);
+  const detail = await app.inject({ url: `/api/v1/admin/projects/${id}`, headers });
+  assert.equal(detail.statusCode, 200);
+  assert.equal(Object.hasOwn(detail.json().data, 'attribution'), false);
+  const list = await app.inject({ url: '/api/v1/admin/projects', headers });
+  assert.equal(list.statusCode, 200);
+  assert.equal(list.json().data.items.length, 2);
+  assert.ok(list.json().data.items.every((item: Record<string, unknown>) => !Object.hasOwn(item, 'attribution')));
   site = 'client';
   const unavailable = await app.inject({ method: 'POST', url: '/api/v1/client/manual-requests', headers, payload: { ...input, requestKey: randomUUID() } });
   assert.equal(unavailable.statusCode, 503);

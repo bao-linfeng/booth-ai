@@ -12,6 +12,9 @@ interface Handlers {
   after: () => number
 }
 
+/** 服务端每 15 秒发一次 ping；连续 45 秒收不到任何事件就视为断线（代理吞掉上游断开时浏览器收不到 error） */
+export const STALE_MS = 45_000
+
 /**
  * 会话 SSE：先订阅后补发（after=已知最大 seq）。断线时降级为每 5 秒轮询，
  * 同时按 3、6、12……秒（上限 30 秒）退避重连，连上后回到实时。
@@ -22,6 +25,7 @@ export function useCustomerServiceConnection(handlers: Handlers) {
   let attempt = 0
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let pollTimer: ReturnType<typeof setInterval> | undefined
+  let staleTimer: ReturnType<typeof setTimeout> | undefined
 
   function stopPolling() {
     if (pollTimer) clearInterval(pollTimer)
@@ -42,6 +46,19 @@ export function useCustomerServiceConnection(handlers: Handlers) {
     reconnectTimer = setTimeout(() => { void connect() }, Math.min(3000 * 2 ** (attempt - 1), 30_000))
   }
 
+  function fail(next: EventSource) {
+    next.close()
+    if (source !== next) return
+    clearTimeout(staleTimer)
+    source = null
+    scheduleReconnect()
+  }
+
+  function arm(next: EventSource) {
+    clearTimeout(staleTimer)
+    staleTimer = setTimeout(() => fail(next), STALE_MS)
+  }
+
   async function connect() {
     const id = conversationId
     if (!id) return
@@ -51,20 +68,20 @@ export function useCustomerServiceConnection(handlers: Handlers) {
       if (conversationId !== id) return
       const next = openCustomerServiceEvents(id, ticket, handlers.after())
       source = next
+      arm(next)
+      next.addEventListener('ping', () => arm(next))
       next.addEventListener('update', message => {
+        arm(next)
         try { handlers.onEvent(JSON.parse((message as MessageEvent<string>).data) as CustomerEvent) } catch {}
       })
       next.addEventListener('open', () => {
+        arm(next)
         attempt = 0
         stopPolling()
         handlers.onState('live')
         handlers.onReconnected()
       })
-      next.onerror = () => {
-        next.close()
-        if (source === next) source = null
-        scheduleReconnect()
-      }
+      next.onerror = () => fail(next)
     } catch {
       scheduleReconnect()
     }
@@ -83,6 +100,7 @@ export function useCustomerServiceConnection(handlers: Handlers) {
     source?.close()
     source = null
     clearTimeout(reconnectTimer)
+    clearTimeout(staleTimer)
     stopPolling()
     handlers.onState('idle')
   }
