@@ -104,6 +104,15 @@ const entryLabels = {
                 · {{ context.snapshot.openingCount }} 面开口
               </template>
             </div>
+            <Button
+              v-access:code="['schemes.read']"
+              class="h-auto p-0"
+              size="small"
+              type="link"
+              @click="router.push(`/scheme/detail/${context.schemeCode}`)"
+            >
+              查看方案
+            </Button>
           </template>
           <template v-else>
             <div>

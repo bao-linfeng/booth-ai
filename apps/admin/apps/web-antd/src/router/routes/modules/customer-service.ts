@@ -15,6 +15,8 @@ const routes: RouteRecordRaw[] = [
         path: 'workbench',
         component: () => import('#/views/customer-service/workbench/index.vue'),
         meta: {
+          // 切换会话只改 query，不能按 fullPath 新开标签页并重建页面
+          fullPathKey: false,
           icon: 'lucide:messages-square',
           title: '客服工作台',
         },
