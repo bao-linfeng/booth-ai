@@ -1,6 +1,5 @@
 import { downloadImage, ImageGenerationError } from './image.js';
 import { arkImage, arkSuggestedModels } from './providers/ark.js';
-import { dashScopeSuggestedModels, wanxImage } from './providers/dashscope.js';
 import { geminiImage, geminiImageParams, listGeminiModels } from './providers/gemini.js';
 import { listOpenAiModels, openAiChat, openAiChatParams, openAiImage, openAiImageParams } from './providers/openai.js';
 import { qwenImage, qwenImageSuggestedModels } from './providers/qwen-image.js';
@@ -38,10 +37,7 @@ export const PROTOCOLS: readonly ProtocolDefinition[] = [
   { id: 'gemini', label: 'Google Gemini', description: 'Gemini API（Nano Banana 图像模型）',
     defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta', listModels: listGeminiModels, suggestedModels: [],
     image: { adapter: geminiImage, params: geminiImageParams, purposes: ['theme', 'artwork'] } },
-  { id: 'dashscope', label: '阿里云 DashScope 原生接口', description: '通义万相图像编辑；通义千问文本请用「OpenAI 及兼容接口」+ 兼容模式地址',
-    defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1', suggestedModels: dashScopeSuggestedModels,
-    image: { adapter: wanxImage, params: [], purposes: ['theme'] } },
-  { id: 'qwen-image', label: '阿里云百炼 Qwen-Image', description: 'Qwen-Image 图像编辑（DashScope 原生接口，同步返回）',
+  { id: 'qwen-image', label: '阿里云百炼 Qwen-Image / 万相 2.7', description: 'Qwen-Image 与万相 2.7 图像编辑（百炼 multimodal-generation 接口，同步返回）；通义千问文本请用「OpenAI 及兼容接口」+ 兼容模式地址',
     defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1', suggestedModels: qwenImageSuggestedModels,
     image: { adapter: qwenImage, params: [], purposes: ['theme', 'artwork'] } },
   { id: 'ark', label: '火山方舟 Doubao Seedream', description: 'Seedream 图像编辑（images/generations，同步返回）；豆包文本模型请用「OpenAI 及兼容接口」+ 方舟 /api/v3 地址',

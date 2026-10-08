@@ -23,7 +23,7 @@ export async function settleThemeJob(database: pg.Pool, jobId: string, lease?: s
     const results = await client.query<{ resultId: string; previewUrl: string }>('SELECT id AS "resultId", preview_url AS "previewUrl" FROM theme_job_results WHERE job_id = $1 ORDER BY ordinal', [jobId]);
     const usable = results.rows.length;
     await client.query(`UPDATE theme_job_provider_attempts SET status = 'unknown', reason = COALESCE(reason, 'PROVIDER_OUTCOME_UNKNOWN'),
-      updated_at = now() WHERE job_id = $1 AND status IN ('submitting', 'waiting')`, [jobId]);
+      updated_at = now() WHERE job_id = $1 AND status = 'submitting'`, [jobId]);
     if (usable) {
       if (job.unitCredits === null) throw new CreditInvariantError('CREDIT_JOB_PRICE_MISSING', 'Theme job price missing', { kind: 'theme', id: jobId });
       await settleJobCredits(client, { kind: 'theme', id: jobId }, usable * job.unitCredits);

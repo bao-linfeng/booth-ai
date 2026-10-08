@@ -142,7 +142,7 @@ test('protocol registry declares capabilities, purposes and parameter schemas co
       assert.equal(defaults[field.key], field.default);
     }
   }
-  assert.equal(supportsPurpose('dashscope', 'image', 'artwork'), false);
+  assert.equal(supportsPurpose('dashscope', 'image', 'theme'), false);
   assert.equal(supportsPurpose('openai', 'text', 'theme'), false);
   assert.equal(supportsPurpose('gemini', 'image', 'artwork'), true);
   assert.throws(() => normalizeParams('gemini', 'image', { imageSize: '1K' }), /Invalid model parameter/);

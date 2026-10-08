@@ -4,6 +4,7 @@ import type pg from 'pg';
 import sharp from 'sharp';
 import { normalizeArtworkImage } from '../src/modules/generation/artwork/image.js';
 import { loadArtworkSnapshot } from '../src/modules/generation/artwork/service.js';
+import type { ProviderProtocol } from '../src/infra/ai/types.js';
 import { DIRECTIONS, DIRECTION_LABELS } from '../src/modules/generation/artwork/types.js';
 import { assignedRow } from './ai-fixtures.js';
 
@@ -78,8 +79,8 @@ test('artwork snapshot freezes the first assigned model able to render artwork',
     input: { industryId: 'industry', styleId: 'style', brandColors: [], brandKeywords: '' } };
   const pool = { query: async (sql: string) => {
     if (sql.includes('FROM theme_jobs')) return { rows: [source] };
-    // Rows come back in position order; a protocol that cannot render artwork is skipped even if assigned.
-    if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('dashscope', 'artwork', { unitCredits: 1, revision: 9 }),
+    // Rows come back in position order; a protocol that is no longer registered is skipped even if assigned.
+    if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('gemini', 'artwork', { protocol: 'retired' as ProviderProtocol, unitCredits: 1, revision: 9 }),
       assignedRow('gemini', 'artwork', { id: 'gemini-model', unitCredits: 6, revision: 3, position: 2 })] };
     if (sql.includes('FROM dictionary_items')) return { rows: [] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };

@@ -12,7 +12,7 @@ import { reserveJobCredits } from '../src/modules/credits/service.js';
 import { processThemeJob } from '../src/modules/generation/theme/execution.js';
 import { recoverGenerationJobs } from '../src/workers/generation-recovery.js';
 
-test('generation recovery: durable submissions, partial uploads, lease exclusion, async polling and deadline settlement', {
+test('generation recovery: durable submissions, partial uploads, lease exclusion and deadline settlement', {
   skip: !process.env.THEME_TEST_DATABASE_URL, timeout: 60_000,
 }, async t => {
   const schema = `generation_${randomUUID().replaceAll('-', '')}`;
@@ -33,13 +33,13 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
   await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name) VALUES($1,$2,'rendering','source')", [source, scheme]);
   const version = (await pool.query<{ id: string }>(`INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum)
     VALUES($1,'source.png','source.png','image/png',$2,$3) RETURNING id`, [source, image.length, checksum])).rows[0]!.id;
-  const models = Object.fromEntries(await Promise.all((['openai', 'dashscope', 'gemini'] as const).map(async (protocol, index) =>
+  const models = Object.fromEntries(await Promise.all((['openai', 'gemini'] as const).map(async (protocol, index) =>
     [protocol, await seedAiModel(pool, { protocol, purpose: 'theme', position: index + 1, apiKey: 'secret-provider-key', encryptionKey: key })] as const))) as
-    Record<'openai' | 'dashscope' | 'gemini', string>;
+    Record<'openai' | 'gemini', string>;
   const config = { aiModelEncryptionKey: key, s3: { endpoint: 'http://silo:9000', publicEndpoint: 'http://localhost:19000',
     region: 'us-east-1', bucket: 'booth-assets', accessKeyId: 'test', secretAccessKey: 'test' } };
   const storage = { getBuffer: async () => image, putBuffer: async () => {}, signDownload: async (objectKey: string) => `https://assets.example/${objectKey}` } as unknown as ReturnType<typeof createStorage>;
-  async function seed(count = 3, protocol: 'openai' | 'dashscope' | 'gemini' = 'openai') {
+  async function seed(count = 3, protocol: 'openai' | 'gemini' = 'openai') {
     const id = randomUUID();
     await transaction(pool, async client => {
       await client.query(`INSERT INTO theme_jobs(id,user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,unit_credits,generation_snapshot)
@@ -77,16 +77,6 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
   await assert.rejects(processThemeJob(pool, concurrent, config, storage), /GENERATION_LEASE_BUSY/); unblock(); await running;
   assert.equal(calls, 2);
 
-  const waiting = await seed(1, 'dashscope');
-  await pool.query(`INSERT INTO theme_job_provider_attempts(id,job_id,provider,model,revision,status,provider_task_id,model_id)
-    VALUES($1,$2,'dashscope','wanx2.1-imageedit',1,'waiting','persisted-task',$3)`, [randomUUID(), waiting, models.dashscope]);
-  globalThis.fetch = async (input, init) => {
-    assert.equal(String(input), 'https://dashscope.aliyuncs.com/api/v1/tasks/persisted-task'); assert.ok(init?.signal);
-    return Response.json({ output: { task_status: 'SUCCEEDED', results: [{ url: `data:image/png;base64,${image.toString('base64')}` }] } });
-  };
-  await processThemeJob(pool, waiting, config, storage);
-  assert.equal((await pool.query('SELECT status FROM theme_jobs WHERE id=$1', [waiting])).rows[0].status, 'succeeded');
-
   const expired = await seed(2); let fail = true;
   globalThis.fetch = async () => Response.json({ data: [1, 2].map(() => ({ b64_json: image.toString('base64') })) });
   await assert.rejects(processThemeJob(pool, expired, config, { ...storage, putBuffer: async () => {
@@ -113,17 +103,4 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
   assert.equal((await pool.query('SELECT status,usable_count FROM theme_jobs WHERE id=$1', [gemini])).rows[0].status, 'partially_succeeded');
   assert.equal((await pool.query('SELECT id FROM theme_job_generated_urls WHERE job_id=$1', [gemini])).rowCount, 1);
 
-  const submitted = await seed(1, 'dashscope'); let submissions = 0; let pollUnavailable = true;
-  globalThis.fetch = async (input) => {
-    if (String(input).includes('image-synthesis')) { submissions++; return Response.json({ output: { task_id: 'submitted-once' } }); }
-    assert.equal(String(input), 'https://dashscope.aliyuncs.com/api/v1/tasks/submitted-once');
-    if (pollUnavailable) return new Response('unavailable', { status: 503 });
-    return Response.json({ output: { task_status: 'SUCCEEDED', results: [{ url: `data:image/png;base64,${image.toString('base64')}` }] } });
-  };
-  await assert.rejects(processThemeJob(pool, submitted, config, storage), /PROVIDER_REQUEST_FAILED/);
-  assert.equal((await pool.query('SELECT status,provider_task_id FROM theme_job_provider_attempts WHERE job_id=$1', [submitted])).rows[0].status, 'waiting');
-  pollUnavailable = false;
-  await processThemeJob(pool, submitted, config, storage);
-  assert.equal(submissions, 1);
-  assert.equal((await pool.query('SELECT status FROM theme_jobs WHERE id=$1', [submitted])).rows[0].status, 'succeeded');
 });

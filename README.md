@@ -130,7 +130,7 @@ pnpm dev:antd
 
 登录依赖灵通外部用户系统，后端地址通过 `EXTERNAL_API_URL` 配置。管理员的页面和操作权限来自本地角色授权，多角色权限取并集，包含 `ROLE_ADMIN` 在内的角色均按保存的权限执行。
 
-真实 AI 调用需在后台「AI 模型配置」中配置供应商凭据、启用模型并分配用途：`selection_parse`（需求解析）、`theme`（主题调整）、`artwork`（四面素材）。支持 OpenAI 及兼容协议、Gemini 图像协议、DashScope 原生图像协议；各协议支持的用途以 `GET /api/v1/admin/ai-protocols` 为准。用途配置包含主备顺序与生成积分费用，提示词模板在后台单独管理。
+真实 AI 调用需在后台「AI 模型配置」中配置供应商凭据、启用模型并分配用途：`selection_parse`（需求解析）、`theme`（主题调整）、`artwork`（四面素材）。支持 OpenAI 及兼容协议、Gemini 图像协议、阿里云百炼 Qwen-Image / 万相 2.7 图像协议、火山方舟 Seedream 图像协议；各协议支持的用途以 `GET /api/v1/admin/ai-protocols` 为准。用途配置包含主备顺序与生成积分费用，提示词模板在后台单独管理。
 
 公开选型需要已审核发布的方案；清单下载需要已核验清单，生成需要对应源素材和模型配置。初始化开发栈不等于业务数据与供应商配置已就绪。
 

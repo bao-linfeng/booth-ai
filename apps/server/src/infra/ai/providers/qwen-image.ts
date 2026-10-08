@@ -2,7 +2,7 @@ import sharp from 'sharp';
 import { IMAGE_LIMITS, ImageGenerationError, imageMimeType, providerEndpoint, providerJson } from '../image.js';
 import type { DiscoveredModel, ImageModelAdapter } from '../types.js';
 
-// Qwen-Image on Alibaba Cloud Model Studio (百炼): synchronous multimodal-generation on the DashScope native API.
+// Qwen-Image and Wan 2.7 on Alibaba Cloud Model Studio (百炼): both share the synchronous multimodal-generation API.
 // Inputs are capped at 3072px per edge and about 10 MB, so larger references are re-encoded first.
 const MAX_REFERENCE_EDGE = 3072;
 const INLINE_REFERENCE_BYTES = 7 * 1024 * 1024;
@@ -21,7 +21,9 @@ async function referenceDataUrl(reference: Buffer): Promise<string> {
   return `data:image/jpeg;base64,${resized.toString('base64')}`;
 }
 
-// https://help.aliyun.com/zh/model-studio/qwen-image-edit-api — the mask is ignored; edits are described in the prompt.
+// https://help.aliyun.com/zh/model-studio/qwen-image-edit-api and
+// https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference — the mask is ignored;
+// edits are described in the prompt. Wan 2.7 caps `n` at 4, which theme jobs never exceed.
 export const qwenImage: ImageModelAdapter = {
   maxImagesPerRequest: 6,
   downloadHosts: ['aliyuncs.com'],
@@ -47,4 +49,6 @@ export const qwenImage: ImageModelAdapter = {
 export const qwenImageSuggestedModels: DiscoveredModel[] = [
   { id: 'qwen-image-3.0-pro', name: 'Qwen-Image 3.0 Pro', kind: 'image' },
   { id: 'qwen-image-3.0', name: 'Qwen-Image 3.0', kind: 'image' },
+  { id: 'wan2.7-image-pro', name: '万相 2.7 Image Pro', kind: 'image' },
+  { id: 'wan2.7-image', name: '万相 2.7 Image', kind: 'image' },
 ];

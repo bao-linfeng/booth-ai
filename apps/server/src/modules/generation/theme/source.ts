@@ -7,7 +7,7 @@ import { buildThemePrompt } from './prompt.js';
 import { normalizeThemeInput } from './service.js';
 import type { ThemeJob, ThemeStorage } from './types.js';
 
-export type ThemeSource = { reference: Buffer; mask: Buffer | undefined; sourceUrl: string };
+export type ThemeSource = { reference: Buffer; mask: Buffer | undefined };
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
@@ -69,5 +69,5 @@ export async function loadThemeSource(database: pg.Pool, job: ThemeJob, storage:
     throw new ImageGenerationError('THEME_SOURCE_INTEGRITY_INVALID');
   }
   const mask = await loadMask(database, job, storage);
-  return { reference, mask, sourceUrl: await storage.signDownload(key, 900) };
+  return { reference, mask };
 }

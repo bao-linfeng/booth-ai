@@ -1,7 +1,7 @@
 export type AiPurpose = 'selection_parse' | 'theme' | 'artwork';
 export type ImagePurpose = Exclude<AiPurpose, 'selection_parse'>;
 export type ModelKind = 'text' | 'image';
-export type ProviderProtocol = 'openai' | 'gemini' | 'dashscope' | 'qwen-image' | 'ark';
+export type ProviderProtocol = 'openai' | 'gemini' | 'qwen-image' | 'ark';
 export type ModelParams = Record<string, string | number>;
 
 /** A model assigned to a purpose, without secrets; safe for snapshots, offers and listings. */
@@ -38,10 +38,6 @@ export interface ImageEditRequest {
   deadline: Date;
   /** Transparent pixels mark the editable region; adapters without mask support ignore it. */
   mask?: Buffer;
-  /** Short-lived download URL of `reference` for providers that fetch inputs themselves. */
-  sourceUrl?: string;
-  /** Asynchronous providers report their task id before polling so a crash can resume it. */
-  onSubmitted?: (taskId: string) => Promise<void>;
   onProviderRequest?: ProviderRequestObserver;
 }
 
@@ -54,8 +50,6 @@ export interface ImageModelAdapter {
   /** HTTPS host suffixes this provider may return result URLs on; `data:` URLs need none. */
   downloadHosts: readonly string[];
   edit(model: ActiveAiModel, request: ImageEditRequest): Promise<string[]>;
-  /** Present only for asynchronous providers that hand back a task id via `onSubmitted`. */
-  poll?(model: ActiveAiModel, taskId: string, deadline: Date): Promise<string[]>;
 }
 
 export interface ChatMessage {

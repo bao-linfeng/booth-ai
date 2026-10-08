@@ -3,6 +3,7 @@ import dns from 'node:dns';
 import { test } from 'node:test';
 import type pg from 'pg';
 import { activeAiModels, assignedAiModels, decryptCredential, encryptCredential } from '../src/infra/ai/config.js';
+import type { ProviderProtocol } from '../src/infra/ai/types.js';
 import {
   createProvider, listAssignments, listProtocols, probeProviderModels, refreshProviderCatalog, replaceAssignments, updateProvider,
 } from '../src/modules/ai-models/service.js';
@@ -27,7 +28,7 @@ test('credentials are bound to their provider scope', () => {
 });
 
 test('only assignments whose protocol can serve the purpose are usable, and listings never carry secrets', async () => {
-  const rows = [assignedRow('openai', 'theme', { model: 'gpt-image-test' }), assignedRow('dashscope', 'artwork'),
+  const rows = [assignedRow('openai', 'theme', { model: 'gpt-image-test' }), assignedRow('openai', 'theme', { protocol: 'retired' as ProviderProtocol }),
     assignedRow('gemini', 'theme', { unitCredits: null }), assignedRow('openai', 'selection_parse', { kind: 'image' })];
   const pool = { query: async () => ({ rows }) } as unknown as pg.Pool;
   const active = await activeAiModels(pool, 'theme', encryptionKey);
@@ -43,9 +44,10 @@ test('protocol listing exposes kinds, purposes and parameter forms for the admin
   assert.deepEqual(openai.kinds.map(kind => kind.kind), ['text', 'image']);
   assert.deepEqual(openai.kinds[1]?.purposes, ['theme', 'artwork']);
   assert.ok(openai.kinds[0]?.params.some(field => field.key === 'temperature'));
-  const dashscope = protocols.find(protocol => protocol.id === 'dashscope')!;
-  assert.equal(dashscope.discoverable, false);
-  assert.deepEqual(dashscope.kinds[0]?.purposes, ['theme']);
+  const qwenImage = protocols.find(protocol => protocol.id === 'qwen-image')!;
+  assert.equal(qwenImage.discoverable, false);
+  assert.deepEqual(qwenImage.kinds.map(kind => kind.kind), ['image']);
+  assert.equal(protocols.some(protocol => String(protocol.id) === 'dashscope'), false);
 });
 
 test('providers validate base URLs and keys, store keys encrypted to their own id and audit without secrets', async () => {
@@ -86,20 +88,20 @@ test('provider updates keep, rotate or clear the key under the original scope wi
 
 test('assignments enforce purpose capability, credit rules and optimistic versions', async () => {
   const models = [{ id: '00000000-0000-0000-0000-000000000001', kind: 'image', protocol: 'gemini' },
-    { id: '00000000-0000-0000-0000-000000000002', kind: 'image', protocol: 'dashscope' },
+    { id: '00000000-0000-0000-0000-000000000002', kind: 'image', protocol: 'qwen-image' },
     { id: '00000000-0000-0000-0000-000000000003', kind: 'text', protocol: 'openai' }];
   const { pool, queries } = recordingPool(sql => sql.includes('FROM ai_models m JOIN ai_providers') ? { rows: models } : { rows: [] });
   const [, theme, artwork] = await listAssignments(pool);
-  const [gemini, wanx, chat] = models.map(model => model.id);
+  const [gemini, qwenImage, chat] = models.map(model => model.id);
   const saved = await replaceAssignments(pool, 'theme', { expectedVersion: theme!.version, items: [
-    { modelId: gemini!, unitCredits: 7 }, { modelId: wanx!, unitCredits: 3 }] }, 'admin');
+    { modelId: gemini!, unitCredits: 7 }, { modelId: qwenImage!, unitCredits: 3 }] }, 'admin');
   const inserts = queries.filter(query => query.sql.startsWith('INSERT INTO ai_model_assignments'));
-  assert.deepEqual(inserts.map(query => query.values), [['theme', gemini, 1, 7], ['theme', wanx, 2, 3]]);
+  assert.deepEqual(inserts.map(query => query.values), [['theme', gemini, 1, 7], ['theme', qwenImage, 2, 3]]);
   assert.notEqual(saved.version, theme!.version);
   // One model may serve theme and artwork with independent prices.
   await replaceAssignments(pool, 'artwork', { expectedVersion: artwork!.version, items: [{ modelId: gemini!, unitCredits: 12 }] }, 'admin');
   for (const [purpose, items, reason] of [
-    ['artwork', [{ modelId: wanx!, unitCredits: 3 }], 'PURPOSE_UNSUPPORTED'],
+    ['artwork', [{ modelId: chat!, unitCredits: 3 }], 'PURPOSE_UNSUPPORTED'],
     ['theme', [{ modelId: chat!, unitCredits: 3 }], 'PURPOSE_UNSUPPORTED'],
     ['selection_parse', [{ modelId: chat!, unitCredits: 3 }], 'CREDITS_INVALID'],
     ['theme', [{ modelId: gemini!, unitCredits: null }], 'CREDITS_INVALID'],
@@ -129,11 +131,11 @@ test('model discovery lists provider models, classifies kinds and maps failures 
   assert.deepEqual(await probeProviderModels({ protocol: 'gemini', apiKey: providerKey }), [
     { id: 'gemini-3.1-flash-image', name: 'Nano Banana 2', kind: 'image' }]);
   assert.equal(requests[1]?.headers.get('x-goog-api-key'), providerKey);
-  assert.deepEqual((await probeProviderModels({ protocol: 'dashscope', apiKey: providerKey })).map(model => model.id), ['wanx2.1-imageedit']);
-  assert.deepEqual((await probeProviderModels({ protocol: 'qwen-image', apiKey: providerKey })).map(model => model.id), ['qwen-image-3.0-pro', 'qwen-image-3.0']);
+  assert.deepEqual((await probeProviderModels({ protocol: 'qwen-image', apiKey: providerKey })).map(model => model.id),
+    ['qwen-image-3.0-pro', 'qwen-image-3.0', 'wan2.7-image-pro', 'wan2.7-image']);
   assert.deepEqual((await probeProviderModels({ protocol: 'ark', apiKey: providerKey })).map(model => model.id).slice(0, 2),
     ['doubao-seedream-5-0-pro-260628', 'doubao-seedream-5-0-flash-260915']);
-  assert.equal(requests.length, 2, 'dashscope, qwen-image and ark suggestions need no request');
+  assert.equal(requests.length, 2, 'qwen-image and ark suggestions need no request');
   const stored = { protocol: 'openai', baseUrl: 'https://relay.example.com/v1', ciphertext: encryptCredential(providerKey, 'p1', encryptionKey), scope: 'p1', revision: 2 };
   const refreshedAt = new Date();
   let saveMatches = true;
