@@ -166,6 +166,12 @@ const [Grid] = useVbenVxeGrid({
       },
       { field: 'schemeCode', title: '方案编号', minWidth: 120 },
       {
+        field: 'aiModels',
+        title: 'AI 模型',
+        minWidth: 180,
+        slots: { default: 'aiModels' },
+      },
+      {
         field: 'status',
         title: '状态',
         minWidth: 160,
@@ -284,6 +290,9 @@ onMounted(() => {
         >
           <Tag color="red">对账异常</Tag>
         </Tooltip>
+      </template>
+      <template #aiModels="{ row }">
+        {{ (row as GenerationJob).aiModels.join(', ') || '—' }}
       </template>
       <template #counts="{ row }">
         {{ (row as GenerationJob).requestedCount }}/{{

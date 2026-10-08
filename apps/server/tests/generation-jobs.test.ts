@@ -13,7 +13,8 @@ const row = {
   status: 'succeeded', phase: null, requestedCount: 2, usableCount: 2, unitCredits: 10,
   cacheMode: 'reuse', selectionRevision: 0, selectedResultId: null,
   input: { industryId: userId, styleId: resultId, brandColors: [], brandKeywords: '' },
-  createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:05Z'),
+  // 选定效果等后续操作会刷新 updatedAt；耗时只看 completedAt。
+  createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:02:00Z'), completedAt: new Date('2026-01-01T00:00:05Z'),
 };
 
 test('admin generation jobs list applies all filters, pagination and calculated metrics', async () => {
@@ -62,6 +63,10 @@ test('admin artwork list queries real task records and mixed lists include both 
   assert.ok(queries.every(sql => sql.includes('FROM artwork_jobs')));
   await listGenerationJobs(pool, {});
   assert.match(queries[2]!, /UNION ALL/);
+  // 主题任务取成功尝试的模型（全部失败取最后一次），素材任务取生成快照中的模型；只在分页后的列表查询里计算。
+  assert.match(queries[2]!, /theme_job_provider_attempts a WHERE a\.job_id = j\.id AND a\.status = 'succeeded'/);
+  assert.match(queries[2]!, /generation_snapshot->'model'->>'model'/);
+  assert.ok(!queries[3]!.includes('theme_job_provider_attempts'), 'count query must not compute models');
 });
 
 test('admin generation job detail loads results, labels and signed original preview', async () => {
@@ -107,6 +112,13 @@ test('admin cache-hit metrics report zero credits consumed', async () => {
   const result = await listGenerationJobs(pool, {});
   assert.equal(result.data[0]?.cacheHit, true);
   assert.equal(result.data[0]?.totalCreditsConsumed, 0);
+});
+
+test('admin generation duration is unknown until the job completes', async () => {
+  const pool = { query: async (sql: string) => sql.includes('count(*)') ? { rows: [{ total: '1' }] } :
+    { rows: [{ ...row, status: 'running', completedAt: null }] } } as unknown as pg.Pool;
+  const result = await listGenerationJobs(pool, {});
+  assert.equal(result.data[0]?.durationMs, null);
 });
 
 test('admin generation job detail tolerates missing labels, missing asset and signing failure', async () => {

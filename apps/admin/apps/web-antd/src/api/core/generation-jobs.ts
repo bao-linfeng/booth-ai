@@ -42,9 +42,12 @@ export interface GenerationJob {
   /** 积分对账无法自动修复的问题代码；修复后清空。 */
   creditIssue: null | string;
   creditIssueAt: null | string;
+  /** 实际调用的 AI 模型 ID；早期任务没有记录时为空数组。 */
+  aiModels: string[];
   createdAt: string;
   updatedAt: string;
-  durationMs: number;
+  /** 从创建到首次进入终态的耗时；进行中的任务为 null。 */
+  durationMs: null | number;
 }
 
 export type CreditReservationStatus = 'released' | 'reserved' | 'settled';
