@@ -4,7 +4,7 @@ import { decryptCredential, encryptCredential } from '../../infra/ai/config.js';
 import { ModelDiscoveryError } from '../../infra/ai/discovery.js';
 import { EndpointError, normalizeBaseUrl } from '../../infra/ai/endpoint.js';
 import { PROTOCOLS, protocolDefinition } from '../../infra/ai/protocols.js';
-import type { AiPurpose, DiscoveredModel, ModelKind, ModelParams } from '../../infra/ai/types.js';
+import { TEXT_PURPOSES, type AiPurpose, type DiscoveredModel, type ModelKind, type ModelParams } from '../../infra/ai/types.js';
 import { writeAuditLog } from '../../infra/audit.js';
 import { transaction } from '../../infra/database.js';
 import { cleanApiKey, cleanName, requestError, uniqueViolation } from './_shared.js';
@@ -14,7 +14,7 @@ export function listProtocols() {
   return PROTOCOLS.map(({ id, label, description, defaultBaseUrl, listModels, suggestedModels, text, image }) => ({
     id, label, description, defaultBaseUrl, discoverable: Boolean(listModels), suggestedModels,
     kinds: [
-      ...(text ? [{ kind: 'text' as const, params: text.params, purposes: ['selection_parse'] as AiPurpose[] }] : []),
+      ...(text ? [{ kind: 'text' as const, params: text.params, purposes: [...TEXT_PURPOSES] as AiPurpose[] }] : []),
       ...(image ? [{ kind: 'image' as const, params: image.params, purposes: image.purposes as AiPurpose[] }] : []),
     ],
   }));

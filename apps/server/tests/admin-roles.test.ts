@@ -97,6 +97,36 @@ test('page grants and business actions are independent and enforce their real de
   ]) assert.deepEqual(adminRoutePermissions(method!, `/api/v1/admin${route}`), [expected], `${method} ${route}`);
 });
 
+test('customer service permissions: supervise needs reply, routes map to the four codes and agents land on the workbench', () => {
+  assert.throws(() => validatePermissionCodes(['customer-service.read', 'customer-service.supervise']), { statusCode: 400 });
+  assert.throws(() => validatePermissionCodes(['customer-service.reply']), { statusCode: 400 });
+  assert.deepEqual(validatePermissionCodes(['customer-service.supervise', 'customer-service.reply', 'customer-service.read']),
+    ['customer-service.read', 'customer-service.reply', 'customer-service.supervise']);
+  assert.deepEqual(validatePermissionCodes(['customer-service.settings', 'customer-service.read']), ['customer-service.read', 'customer-service.settings']);
+  const agent = accessSummary(['customer-service.read', 'customer-service.reply']);
+  assert.equal(agent.homePath, '/customer-service/workbench');
+  assert.deepEqual(agent.routeNames, ['Profile', 'CustomerServiceWorkbench', 'CustomerServiceSettings']);
+  assert.equal(accessSummary(['workspace.read', 'customer-service.read']).homePath, '/dashboard/workspace');
+  assert.equal(accessSummary(['dashboard.read', 'customer-service.read']).homePath, '/dashboard/analytics');
+  for (const [method, route, expected] of [
+    ['GET', '/conversations', 'customer-service.read'],
+    ['GET', '/conversations/:id', 'customer-service.read'],
+    ['GET', '/conversations/:id/messages', 'customer-service.read'],
+    ['POST', '/conversations/:id/claim', 'customer-service.reply'],
+    ['POST', '/conversations/:id/release', 'customer-service.reply'],
+    ['GET', '/agents', 'customer-service.supervise'],
+    ['POST', '/conversations/:id/transfer', 'customer-service.supervise'],
+    ['POST', '/conversations/:id/close', 'customer-service.reply'],
+    ['POST', '/conversations/:id/messages', 'customer-service.reply'],
+    ['POST', '/conversations/:id/read', 'customer-service.reply'],
+    ['PUT', '/presence', 'customer-service.reply'],
+    ['POST', '/events-ticket', 'customer-service.read'],
+    ['GET', '/events', 'customer-service.read'],
+    ['GET', '/settings', 'customer-service.read'],
+    ['PUT', '/settings', 'customer-service.settings'],
+  ]) assert.deepEqual(adminRoutePermissions(method!, `/api/v1/admin/customer-service${route}`), [expected], `${method} ${route}`);
+});
+
 test('action-only grants cannot mutate other operations, PATCH fields or other asset types', async t => {
   const actorId = '00000000-0000-4000-8000-000000000001';
   const assetId = '00000000-0000-4000-8000-000000000002';

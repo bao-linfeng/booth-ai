@@ -3,7 +3,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { appLocale } from '@/plugins/i18n'
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, Loader2 } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, Loader2, MessageCircle } from 'lucide-vue-next'
+import { openWith as openCustomerService } from '@/features/customer-service/useCustomerService'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -202,6 +203,7 @@ watch(() => route.params.projectId, () => { detail.value = undefined; list.value
                 <StatusBadge domain="project" :status="detail.status" class="rounded-full px-3 py-1" />
               </div>
               <p class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="font-medium">{{ t('projects.itemNextStep') }}</span>{{ nextSteps[detail.status] }}</p>
+              <Button variant="outline" @click="openCustomerService({ kind: 'project', projectId: detail.projectId }, 'my_project')"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
             </CardContent>
           </Card>
 

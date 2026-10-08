@@ -10,10 +10,12 @@ import { assertProjectAdmin } from '../src/modules/projects/admin-service.js';
 import { configuredAssignee } from '../src/modules/projects/assignment.js';
 import { projectTestPool } from './project-fixtures.js';
 
-// 061 只授予编写时已有的权限；之后新增的权限码由追加迁移补授给 ROLE_ADMIN（如 072）。
+// 061 只授予编写时已有的权限；之后新增的权限码由追加迁移补授给 ROLE_ADMIN（如 072、075）。
 // 新增权限码时必须追加补授迁移，否则下方“执行全部迁移后 ROLE_ADMIN 拥有全部权限”的断言会失败。
-const introducedAfter061 = ['credits.sign_in_config'];
+const introducedBy075 = ['customer-service.read', 'customer-service.reply', 'customer-service.supervise', 'customer-service.settings'];
+const introducedAfter061 = ['credits.sign_in_config', ...introducedBy075];
 const grantedBy061 = allPermissionCodes.filter(code => !introducedAfter061.includes(code));
+const grantedBy072 = allPermissionCodes.filter(code => !introducedBy075.includes(code));
 
 test('060 seeds the original grants, 061 migrates them to page actions and 072 grants later permissions without changing the role ID',
   { skip: !process.env.PROJECT_TEST_DATABASE_URL }, async t => {
@@ -46,7 +48,7 @@ test('060 seeds the original grants, 061 migrates them to page actions and 072 g
         const grant = await readFile(new URL('../migrations/072_grant_sign_in_config_to_admin.sql', import.meta.url), 'utf8');
         await pool.query(grant);
         const granted = await getAdminRole(pool, existingId ?? 5);
-        assert.deepEqual([...granted.permissionCodes].sort(), [...allPermissionCodes, ...historicalQuestionPermissions].sort());
+        assert.deepEqual([...granted.permissionCodes].sort(), [...grantedBy072, ...historicalQuestionPermissions].sort());
         assert.equal(granted.revision, migrated.revision + 1);
         await pool.query(grant);
         assert.equal((await getAdminRole(pool, existingId ?? 5)).revision, granted.revision);

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
@@ -5,11 +6,27 @@ import type { SessionSite } from '../infra/session.js';
 import { authenticationError, resolvePrincipal, type Principal } from '../modules/identity/principal.js';
 
 declare module 'fastify' {
-  interface FastifyRequest { principal: Principal | null }
+  interface FastifyRequest {
+    principal: Principal | null;
+    /** 客服访客 ID：访客事件票据或 X-Visitor-Token 鉴权后写入，不建立 principal；也用作 visitor 限流身份 */
+    csVisitorId: string | null;
+  }
   interface FastifyContextConfig {
     authentication?: 'public' | 'events';
-    eventTicketPrefix?: 'theme' | 'artwork';
+    eventTicketPrefix?: EventTicketPrefix;
+    /** 票据 subject 对应的路由参数，缺省 jobId；null 表示固定 subject 'workbench' */
+    eventTicketParam?: string | null;
   }
+}
+
+export type EventTicketPrefix = 'theme' | 'artwork' | 'cs' | 'cs-admin';
+/** SSE 一次性票据：登录主体带 token + userId，客服访客只带 visitorId */
+export type EventTicket = { subject: string; token?: string; userId?: string; visitorId?: string };
+
+export async function issueEventTicket(redis: Redis, prefix: EventTicketPrefix, ticket: EventTicket): Promise<string> {
+  const id = randomUUID();
+  await redis.set(`${prefix}-events-ticket:${id}`, JSON.stringify(ticket), 'EX', 300);
+  return id;
 }
 
 export function authorizationToken(authorization: string | undefined): string | null {
@@ -36,19 +53,23 @@ export function adminUserId(request: FastifyRequest): string {
 
 export function registerAuthentication(app: FastifyInstance, pool: pg.Pool, redis: Redis, site: SessionSite): void {
   app.decorateRequest('principal', null);
+  app.decorateRequest('csVisitorId', null);
   app.addHook('onRequest', async request => {
     const policy = request.routeOptions.config;
     if (policy.authentication === 'public') return;
     let token = authorizationToken(request.headers.authorization);
-    type EventTicket = { jobId: string; userId: string; token: string };
     let ticket: EventTicket | null = null;
     if (policy.authentication === 'events') {
       const id = (request.query as { ticket?: string }).ticket;
       if (!id) return;
       const raw = await redis.getdel(`${policy.eventTicketPrefix}-events-ticket:${id}`);
       try { ticket = raw ? JSON.parse(raw) as EventTicket : null; } catch { throw authenticationError(); }
-      if (!ticket || ticket.jobId !== (request.params as { jobId: string }).jobId || typeof ticket.token !== 'string') throw authenticationError();
-      token = ticket.token;
+      const param = policy.eventTicketParam === undefined ? 'jobId' : policy.eventTicketParam;
+      const subject = param === null ? 'workbench' : (request.params as Record<string, string | undefined>)[param];
+      if (!ticket || typeof ticket.subject !== 'string' || ticket.subject !== subject) throw authenticationError();
+      if (typeof ticket.token === 'string') token = ticket.token;
+      else if (site === 'client' && typeof ticket.visitorId === 'string') { request.csVisitorId = ticket.visitorId; return; }
+      else throw authenticationError();
     }
     if (!token) {
       if (site === 'admin' || request.headers.authorization) throw authenticationError();

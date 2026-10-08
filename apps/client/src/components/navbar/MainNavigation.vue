@@ -3,7 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
-import { ArrowRight, FolderOpen, History, Menu, MessageSquare, Sparkles } from 'lucide-vue-next'
+import { ArrowRight, FolderOpen, Headset, History, Menu, MessageSquare, Sparkles } from 'lucide-vue-next'
+import { useCustomerService } from '@/features/customer-service/useCustomerService'
 import { Navbar, NavbarBrand } from '@/components/navbar'
 import { ThemingSettings } from '@/components/theming'
 import LanguageToggle from '@/components/LanguageToggle.vue'
@@ -15,6 +16,7 @@ import UserAvatar from './UserAvatar.vue'
 
 const route = useRoute()
 const { t } = useI18n()
+const { state: customerService, openWith: openCustomerService } = useCustomerService()
 const mobileMenuOpen = ref(false)
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 
@@ -85,6 +87,15 @@ watch(isDesktop, (value) => { if (value) mobileMenuOpen.value = false })
             <MessageSquare class="me-2 size-4" aria-hidden="true" />
             {{ t('nav.contactAdvisor') }}
           </RouterLink>
+        </Button>
+        <Button variant="ghost" size="sm" class="relative hidden lg:inline-flex" data-cs-nav @click="openCustomerService(undefined, 'floating')">
+          <Headset class="me-2 size-4" aria-hidden="true" />
+          {{ t('customerService.launcher') }}
+          <span
+            v-if="customerService.unreadCount && !customerService.open"
+            class="ms-1 min-w-5 rounded-full bg-destructive px-1.5 text-xs leading-5 text-destructive-foreground"
+            :aria-label="t('customerService.unread', { count: customerService.unreadCount })"
+          >{{ customerService.unreadCount > 99 ? '99+' : customerService.unreadCount }}</span>
         </Button>
         <span class="mx-1 hidden h-5 w-px bg-border lg:block" aria-hidden="true" />
         <LanguageToggle />

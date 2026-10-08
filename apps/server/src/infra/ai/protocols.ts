@@ -3,8 +3,8 @@ import { arkImage, arkSuggestedModels } from './providers/ark.js';
 import { geminiImage, geminiImageParams, listGeminiModels } from './providers/gemini.js';
 import { listOpenAiModels, openAiChat, openAiChatParams, openAiImage, openAiImageParams } from './providers/openai.js';
 import { qwenImage, qwenImageSuggestedModels } from './providers/qwen-image.js';
-import type { AiPurpose, DiscoveredModel, ImageModelAdapter, ImagePurpose, ModelKind, ModelParams, ParamField,
-  ProviderProtocol, TextModelAdapter } from './types.js';
+import { isTextPurpose, type AiPurpose, type DiscoveredModel, type ImageModelAdapter, type ImagePurpose, type ModelKind, type ModelParams,
+  type ParamField, type ProviderProtocol, type TextModelAdapter } from './types.js';
 
 interface Capability<Adapter> {
   adapter: Adapter;
@@ -59,7 +59,7 @@ export function supportsKind(protocol: string, kind: ModelKind): boolean {
 }
 
 export function supportsPurpose(protocol: string, kind: ModelKind, purpose: AiPurpose): boolean {
-  if (purpose === 'selection_parse') return kind === 'text' && supportsKind(protocol, 'text');
+  if (isTextPurpose(purpose)) return kind === 'text' && supportsKind(protocol, 'text');
   return kind === 'image' && Boolean(protocolDefinition(protocol)?.image?.purposes.includes(purpose));
 }
 

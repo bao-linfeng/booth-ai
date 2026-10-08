@@ -8,6 +8,8 @@ export const THEME_QUEUE_NAME = 'booth-theme';
 export const THEME_TASK_NAME = 'theme.generate';
 export const ARTWORK_QUEUE_NAME = 'booth-artwork';
 export const ARTWORK_TASK_NAME = 'artwork.generate';
+export const CS_QUEUE_NAME = 'booth-cs';
+export const CS_TRANSLATE_TASK_NAME = 'cs.translate';
 export function createQueue(connection: Redis, name = QUEUE_NAME, backoffDelay = 1000) {
   const queue = new Queue(name, {
     connection,

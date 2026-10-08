@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
-import { randomUUID } from 'node:crypto';
-import { clientUserId, requirePrincipal } from '../../authentication.js';
+import { clientUserId, issueEventTicket, requirePrincipal } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { streamThemeJobEvents } from './events.js';
@@ -16,8 +15,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
   app.post<{ Params: { jobId: string } }>('/theme-jobs/:jobId/events-ticket', async request => {
     const userId = clientUserId(request);
     await ownedThemeJob(pool, userId, request.params.jobId);
-    const ticket = randomUUID();
-    await redis.set(`theme-events-ticket:${ticket}`, JSON.stringify({ jobId: request.params.jobId, userId, token: requirePrincipal(request, 'client').token }), 'EX', 300);
+    const ticket = await issueEventTicket(redis, 'theme', { subject: request.params.jobId, userId, token: requirePrincipal(request, 'client').token });
     return { code: 0, data: { ticket } };
   });
 

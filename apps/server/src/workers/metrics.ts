@@ -38,7 +38,11 @@ export async function collectWorkerMetrics(database: Pick<pg.Pool, 'query'>, que
      UNION ALL SELECT 'project_notification', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8
        FROM project_notification_outbox WHERE delivered_at IS NULL AND failed_at IS NULL
      UNION ALL SELECT 'receipt_email', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8
-       FROM project_receipt_emails WHERE delivered_at IS NULL AND failed_at IS NULL`);
+       FROM project_receipt_emails WHERE delivered_at IS NULL AND failed_at IS NULL
+     UNION ALL SELECT 'cs_translation', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8
+       FROM cs_message_translations WHERE status = 'pending'
+     UNION ALL SELECT 'cs_email', count(*)::int, EXTRACT(EPOCH FROM now() - min(due_at))::float8
+       FROM cs_email_outbox WHERE sent_at IS NULL AND cancelled_at IS NULL AND failed_at IS NULL`);
   const notificationsFailed = (await database.query<{ count: number }>(
     'SELECT count(*)::int AS count FROM project_notification_outbox WHERE failed_at IS NOT NULL AND delivered_at IS NULL')).rows[0]?.count ?? 0;
   const receiptEmailsFailed = (await database.query<{ count: number }>(

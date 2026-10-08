@@ -67,6 +67,12 @@ export function adminRoutePermissions(method: string, url: string): string[] | n
   if (path === '/prompt-templates/preview') return ['prompts.preview'];
   if (path === '/prompt-templates' && method === 'POST') return ['prompts.create'];
   if (path === '/prompt-templates/:id' && method === 'PATCH') return ['prompts.update', 'prompts.enable', 'prompts.disable'];
+  if (path.startsWith('/customer-service/')) {
+    if (path === '/customer-service/settings') return [read ? 'customer-service.read' : 'customer-service.settings'];
+    if (path === '/customer-service/agents' || path.endsWith('/transfer')) return ['customer-service.supervise'];
+    if (read || path === '/customer-service/events-ticket') return ['customer-service.read'];
+    return ['customer-service.reply'];
+  }
   const modules: Record<string, string> = {
     users: 'users', admins: 'admins', roles: 'roles', permissions: 'roles', credits: 'credits',
     'scheme-searches': 'searches', projects: 'projects', 'project-assignees': 'projects',

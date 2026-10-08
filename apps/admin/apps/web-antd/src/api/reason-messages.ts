@@ -34,4 +34,16 @@ export const REASON_MESSAGES: Record<string, string> = {
     '变更为已报价需填写发送依据：发送时间、发送渠道，外部报价还需填写编号或说明',
   SCHEME_ALREADY_LINKED: '项目已关联方案，无需重复确认',
   SCHEME_UNAVAILABLE: '方案不存在或尚未就绪（需已发布、清单已核验且资产齐全）',
+  // 在线客服
+  AGENT_UNAVAILABLE: '目标坐席已不可用（账号停用或无回复权限）',
+  CONVERSATION_ALREADY_CLAIMED: '已被其他坐席接入',
+  CONVERSATION_CLOSED: '会话已结束',
+  CONVERSATION_NOT_ACTIVE: '会话已在队列中，无需退回',
+  CONVERSATION_NOT_FOUND: '会话不存在或无权查看',
+  IDEMPOTENCY_CONFLICT: '消息重复提交且内容不一致',
+  MESSAGE_INVALID: '消息不能为空、超过 2000 字或包含控制字符',
+  NOT_CONVERSATION_AGENT: '仅当前接待坐席可执行此操作',
+  TRANSFER_REASON_REQUIRED: '请填写改派原因（最多 500 字）',
+  CONTACT_EMAIL_INVALID: '邮箱格式不正确',
+  TOO_MANY_EMAILS: '离线通知邮箱最多 20 个',
 };

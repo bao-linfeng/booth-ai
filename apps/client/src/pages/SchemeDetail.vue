@@ -14,7 +14,9 @@ import {
   Loader2,
   Eye,
   ArrowUpRight,
+  MessageCircle,
 } from "lucide-vue-next";
+import { openWith as openCustomerService } from "@/features/customer-service/useCustomerService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import ImagePreviewDialog from "@/components/ImagePreviewDialog.vue";
@@ -326,6 +328,9 @@ const specifications = computed(() => {
     { label: t('schemeDetail.specProductSystem'), value: spec.productSystemLabel },
   ];
 });
+function consultCustomerService() {
+  if (item.value?.code) void openCustomerService({ kind: 'scheme', schemeCode: item.value.code }, 'scheme_detail');
+}
 const quoteLocation = computed(() => ({
   path: `/schemes/${encodeURIComponent(item.value?.code ?? '')}/quote`,
   query: {
@@ -396,6 +401,7 @@ onMounted(async () => {
               <Button v-if="!preview" as-child size="lg" class="w-full"><RouterLink :to="quoteLocation">{{ t('schemeDetail.requestQuote') }}<ArrowUpRight class="ml-2 size-4" aria-hidden="true" /></RouterLink></Button>
               <Button v-else disabled size="lg" class="w-full">{{ t('schemeDetail.previewNoQuote') }}</Button>
               <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.quoteDisclaimer') }}</p>
+              <Button v-if="!preview" variant="outline" class="w-full" @click="consultCustomerService"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
             </div>
             <div class="space-y-3 border-t pt-5">
               <div class="flex items-center justify-between gap-3"><h3 class="text-sm font-medium">{{ t('schemeDetail.themeCallout') }}</h3><span class="shrink-0 text-xs text-muted-foreground">{{ t('schemeDetail.themeOptional') }}</span></div>

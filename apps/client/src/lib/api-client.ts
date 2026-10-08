@@ -40,7 +40,7 @@ async function handleUnauthorized() {
   await router.push({ path: '/auth/sign-in', query: { redirect: router.currentRoute.value.fullPath } })
 }
 
-async function injectBearerToken(options: Parameters<typeof ofetch>[1]) {
+async function injectBearerToken(options: Parameters<typeof ofetch>[1]): Promise<boolean> {
   const { useAuthStore } = await import('@/stores/auth')
   const { default: pinia } = await import('@/plugins/pinia/setup')
   const authStore = useAuthStore(pinia)
@@ -49,6 +49,12 @@ async function injectBearerToken(options: Parameters<typeof ofetch>[1]) {
     headers.set('Authorization', `Bearer ${authStore.token}`)
     if (options) options.headers = headers
   }
+  return Boolean(authStore.token)
+}
+
+// 与 features/customer-service/visitor.ts 的 CS_VISITOR_TOKEN_KEY 一致；这里直接读取，避免 api-client 反向依赖业务模块
+function csVisitorToken() {
+  try { return localStorage.getItem('booth-ai:cs-visitor-token') } catch { return null }
 }
 
 /** 本地 Fastify API 客户端 */
@@ -57,9 +63,12 @@ export const apiFetch = ofetch.create({
   timeout: API_TIMEOUT,
 
   onRequest: async ({ options }) => {
-    await injectBearerToken(options)
+    const loggedIn = await injectBearerToken(options)
     const headers = new Headers(options.headers as HeadersInit | undefined)
     headers.set('x-visitor-id', visitorId())
+    // 客服访客令牌只在未登录时携带（合并接口自行传入）
+    const csToken = csVisitorToken()
+    if (!loggedIn && csToken && !headers.has('X-Visitor-Token')) headers.set('X-Visitor-Token', csToken)
     headers.set('Accept-Language', appLocale.value === 'zh' ? 'zh-CN' : appLocale.value)
     options.headers = headers
   },

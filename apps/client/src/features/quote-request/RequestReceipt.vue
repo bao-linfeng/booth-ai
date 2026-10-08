@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { CheckCircle2 } from 'lucide-vue-next'
+import { CheckCircle2, MessageCircle } from 'lucide-vue-next'
+import { openWith as openCustomerService } from '@/features/customer-service/useCustomerService'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import type { ProjectReceipt } from '@/services/api/quote-requests'
@@ -21,5 +22,6 @@ const { t } = useI18n()
     <template v-if="loggedIn"><Button as-child><RouterLink :to="`/my-projects/${receipt.projectId}`">{{ t('quoteRequest.viewProjects') }}</RouterLink></Button></template>
     <template v-else><p class="text-sm leading-6">{{ t('quoteRequest.successGuestNote', { email: guestEmail }) }}</p><Button @click="$emit('login')">{{ t('quoteRequest.loginToTrack') }}</Button></template>
     <Button variant="outline" class="ml-3" @click="$emit('new-request')">{{ t('quoteRequest.submitAnother') }}</Button>
+    <Button variant="outline" class="ml-3" @click="openCustomerService({ kind: 'project', projectId: receipt.projectId }, 'quote_receipt')"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
   </CardContent></Card>
 </template>

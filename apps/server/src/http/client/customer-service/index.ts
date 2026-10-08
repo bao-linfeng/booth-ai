@@ -1,1 +1,112 @@
-// A6 客服会话上下文 — /api/v1/client/customer-service
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { Redis } from 'ioredis';
+import type pg from 'pg';
+import { currentConversation, openConversation, ownedConversation } from '../../../modules/customer-service/conversations.js';
+import { notFound, type ContextInput, type EntryPoint, type Subject } from '../../../modules/customer-service/domain.js';
+import { cancelReplyNotices } from '../../../modules/customer-service/emails.js';
+import { conversationChannel } from '../../../modules/customer-service/events.js';
+import { customerMessagesAfter, listCustomerMessages, markCustomerRead, postCustomerMessage, type CustomerMessageInput } from '../../../modules/customer-service/messages.js';
+import { touchCustomer } from '../../../modules/customer-service/presence.js';
+import { issueVisitor, mergeVisitor, resolveVisitor, touchVisitor, visitorActive } from '../../../modules/customer-service/visitors.js';
+import { loadConversation } from '../../../modules/customer-service/store.js';
+import { clientUserId, issueEventTicket, requirePrincipal } from '../../authentication.js';
+import { requestMessageLocale } from '../../locale.js';
+import { enforceRateLimit, rateLimit } from '../../rate-limits.js';
+import { streamEvents } from '../../sse.js';
+import {
+  currentConversationSchema, eventsSchema, messagesQuerySchema, openConversationSchema, postMessageSchema, readSchema, ticketSchema,
+  visitorIssueSchema, visitorMergeSchema,
+} from './schema.js';
+import { requireSubject } from './subject.js';
+
+type ConversationParams = { conversationId: string };
+
+// 在线客服客户端接口（开发计划 §6.2）。访客以 X-Visitor-Token 识别，登录身份优先。
+export async function registerClientCustomerServiceRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
+  await app.register(async scope => {
+    scope.addHook('onRequest', async (_request, reply) => { reply.header('Cache-Control', 'private, no-store'); });
+
+    scope.post('/visitors', { schema: visitorIssueSchema, preHandler: rateLimit(redis, 'csVisitorIssue') }, async (request, reply) => {
+      return reply.code(201).send({ code: 0, data: await issueVisitor(pool, requestMessageLocale(request)) });
+    });
+
+    scope.post('/visitors/merge', { schema: visitorMergeSchema }, async request => {
+      const userId = clientUserId(request);
+      const visitorId = await resolveVisitor(pool, request.headers['x-visitor-token']);
+      return { code: 0, data: { mergedConversations: visitorId ? await mergeVisitor(pool, redis, userId, visitorId) : 0 } };
+    });
+
+    scope.post<{ Body: { context?: ContextInput; entryPoint: EntryPoint } }>('/conversations', { schema: openConversationSchema }, async (request, reply) => {
+      const subject = await requireSubject(request, pool);
+      const { created, ...data } = await openConversation(pool, redis, subject, request.body, requestMessageLocale(request));
+      return reply.code(created ? 201 : 200).send({ code: 0, data });
+    });
+
+    scope.get('/conversations/current', { schema: currentConversationSchema }, async request => {
+      return { code: 0, data: await currentConversation(pool, redis, await requireSubject(request, pool)) };
+    });
+
+    scope.get<{ Querystring: { before?: number; after?: number; limit: number } }>('/messages', { schema: messagesQuerySchema }, async request => {
+      return { code: 0, data: await listCustomerMessages(pool, await requireSubject(request, pool), request.query) };
+    });
+
+    scope.post<{ Params: ConversationParams; Body: CustomerMessageInput }>('/conversations/:conversationId/messages', { schema: postMessageSchema }, async (request, reply) => {
+      const subject = await requireSubject(request, pool);
+      await enforceMessageLimits(request, reply, subject);
+      const { created, ...data } = await postCustomerMessage(pool, redis, subject, request.params.conversationId, request.body, requestMessageLocale(request));
+      return reply.code(created ? 201 : 200).send({ code: 0, data });
+    });
+
+    scope.post<{ Params: ConversationParams; Body: { seq: number } }>('/conversations/:conversationId/read', { schema: readSchema }, async request => {
+      const subject = await requireSubject(request, pool);
+      return { code: 0, data: await markCustomerRead(pool, redis, subject, request.params.conversationId, request.body.seq) };
+    });
+
+    scope.post<{ Params: ConversationParams }>('/conversations/:conversationId/events-ticket', { schema: ticketSchema }, async request => {
+      const subject = await requireSubject(request, pool);
+      await ownedConversation(pool, subject, request.params.conversationId);
+      const ticket = await issueEventTicket(redis, 'cs', subject.kind === 'user'
+        ? { subject: request.params.conversationId, userId: subject.userId, token: requirePrincipal(request, 'client').token }
+        : { subject: request.params.conversationId, visitorId: subject.visitorId });
+      return { code: 0, data: { ticket } };
+    });
+
+    scope.get<{ Params: ConversationParams; Querystring: { ticket: string; after?: number } }>('/conversations/:conversationId/events', {
+      config: { authentication: 'events', eventTicketPrefix: 'cs', eventTicketParam: 'conversationId' }, schema: eventsSchema,
+    }, async (request, reply) => {
+      const subject = await eventSubject(request);
+      const conversationId = request.params.conversationId;
+      await ownedConversation(pool, subject, conversationId);
+      await streamEvents(redis, reply, {
+        channels: [conversationChannel(conversationId)],
+        // 客户上线：取消待发的回复提醒并标记在线
+        onOpen: async () => { await touchCustomer(redis, conversationId); await cancelReplyNotices(pool, conversationId); },
+        replay: async () => {
+          const messages = await customerMessagesAfter(pool, conversationId, request.query.after ?? 0);
+          const conversation = await loadConversation(pool, conversationId);
+          return [...messages.map(message => ({ type: 'message.created', message })), { type: 'ready', conversation: conversation?.customer ?? null }];
+        },
+        onHeartbeat: async () => {
+          await touchCustomer(redis, conversationId);
+          if (subject.kind === 'user') return true;
+          await touchVisitor(pool, subject.visitorId);
+          return visitorActive(pool, subject.visitorId);
+        },
+      });
+    });
+
+    async function eventSubject(request: FastifyRequest): Promise<Subject> {
+      if (request.principal) return { kind: 'user', userId: clientUserId(request) };
+      if (request.csVisitorId && await visitorActive(pool, request.csVisitorId)) return { kind: 'visitor', visitorId: request.csVisitorId };
+      throw notFound();
+    }
+
+    // 登录用户每分钟 20 条；访客每分钟 10 条且同一 IP 每分钟 30 条；访客留言每小时 5 条
+    async function enforceMessageLimits(request: FastifyRequest<{ Body: CustomerMessageInput }>, reply: FastifyReply, subject: Subject) {
+      if (subject.kind === 'user') return enforceRateLimit(redis, request, reply, 'csUserMessage');
+      await enforceRateLimit(redis, request, reply, 'csVisitorMessage');
+      await enforceRateLimit(redis, request, reply, 'csIpMessage');
+      if (request.body.kind === 'offline') await enforceRateLimit(redis, request, reply, 'csOffline');
+    }
+  }, { prefix: '/customer-service' });
+}

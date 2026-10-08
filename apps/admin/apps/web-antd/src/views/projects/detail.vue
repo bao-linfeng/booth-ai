@@ -25,6 +25,7 @@ import {
   statusLabels,
 } from '#/api/core/projects';
 
+import CustomerServiceCard from './CustomerServiceCard.vue';
 import OperationModal from './OperationModal.vue';
 import {
   eventSummary,
@@ -285,6 +286,7 @@ onMounted(load);
         </div>
       </Card>
       <QuotationEditor :project="project" @reload="load" />
+      <CustomerServiceCard :project-id="project.projectId" />
       <Card title="项目时间线">
         <Timeline>
           <TimelineItem

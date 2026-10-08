@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { supportsPurpose } from '../../infra/ai/protocols.js';
-import type { AiPurpose, ModelKind } from '../../infra/ai/types.js';
+import { isTextPurpose, type AiPurpose, type ModelKind } from '../../infra/ai/types.js';
 import { writeAuditLog } from '../../infra/audit.js';
 import { transaction } from '../../infra/database.js';
 import { AI_PURPOSES, MAX_ASSIGNMENTS, requestError } from './_shared.js';
@@ -28,7 +28,7 @@ export async function listAssignments(pool: Pick<pg.Pool, 'query'>) {
 export async function replaceAssignments(pool: pg.Pool, purpose: AiPurpose, input: { expectedVersion: string; items: AssignmentItem[] }, adminId: string) {
   const { items } = input;
   if (items.length > MAX_ASSIGNMENTS || new Set(items.map(item => item.modelId)).size !== items.length) throw requestError('Invalid assignment list');
-  if (items.some(item => purpose === 'selection_parse' ? item.unitCredits !== null :
+  if (items.some(item => isTextPurpose(purpose) ? item.unitCredits !== null :
     !Number.isInteger(item.unitCredits) || item.unitCredits! < 1 || item.unitCredits! > 100000)) {
     throw requestError('Image purposes need credits per unit; text purposes take none', 400, 'CREDITS_INVALID');
   }

@@ -13,6 +13,8 @@ import { resolvePrincipal } from '../src/modules/identity/principal.js';
 import { getThemeJob, ownedThemeJob, selectThemeResult } from '../src/modules/generation/theme/queries.js';
 import { rateLimitPolicies } from '../src/http/rate-limits.js';
 import { allPermissionCodes } from '../src/modules/identity/permissions.js';
+import { issueEventTicket, registerAuthentication } from '../src/http/authentication.js';
+import Fastify from 'fastify';
 import { resolveAdminPermissions } from '../src/modules/identity/roles.js';
 
 const config = loadConfig({
@@ -218,6 +220,42 @@ test('theme and artwork event tickets cannot outlive disabled accounts, logout o
       assert.equal(values.has(`${kind}-events-ticket:${ticket}`), false);
       assert.equal((await app.inject({ url })).statusCode, 401);
     }
+  }
+});
+
+test('generalized event tickets bind subject, support visitor tickets on client routes and fixed workbench subject on admin routes', async t => {
+  for (const site of ['client', 'admin'] as const) {
+    const { pool, redis, token } = await setup(t, site);
+    const app = Fastify();
+    registerAuthentication(app, pool, redis, site);
+    const echo = async (request: { principal: { localId: string } | null; csVisitorId: string | null }) => ({ user: request.principal?.localId ?? null, visitor: request.csVisitorId });
+    app.get('/cs/:conversationId/events', { config: { authentication: 'events', eventTicketPrefix: 'cs', eventTicketParam: 'conversationId' } }, echo);
+    app.get('/workbench/events', { config: { authentication: 'events', eventTicketPrefix: 'cs-admin', eventTicketParam: null } }, echo);
+    t.after(() => app.close());
+    const conversationId = randomUUID();
+    const visitorId = randomUUID();
+
+    const visitorTicket = await issueEventTicket(redis, 'cs', { subject: conversationId, visitorId });
+    const visitor = await app.inject({ url: `/cs/${conversationId}/events?ticket=${visitorTicket}` });
+    if (site === 'client') assert.deepEqual(visitor.json(), { user: null, visitor: visitorId });
+    else assert.equal(visitor.statusCode, 401, 'visitor tickets are client-only');
+    assert.equal((await app.inject({ url: `/cs/${conversationId}/events?ticket=${visitorTicket}` })).statusCode, 401, 'tickets are single-use');
+
+    const mismatched = await issueEventTicket(redis, 'cs', { subject: randomUUID(), visitorId });
+    assert.equal((await app.inject({ url: `/cs/${conversationId}/events?ticket=${mismatched}` })).statusCode, 401);
+    const anonymous = await issueEventTicket(redis, 'cs', { subject: conversationId });
+    assert.equal((await app.inject({ url: `/cs/${conversationId}/events?ticket=${anonymous}` })).statusCode, 401);
+    const wrongPrefix = await issueEventTicket(redis, 'theme', { subject: conversationId, visitorId });
+    assert.equal((await app.inject({ url: `/cs/${conversationId}/events?ticket=${wrongPrefix}` })).statusCode, 401);
+
+    const user = await issueEventTicket(redis, 'cs', { subject: conversationId, userId, token });
+    if (site === 'client') assert.deepEqual((await app.inject({ url: `/cs/${conversationId}/events?ticket=${user}` })).json(), { user: userId, visitor: null });
+    const workbench = await issueEventTicket(redis, 'cs-admin', { subject: 'workbench', userId, token });
+    assert.deepEqual((await app.inject({ url: `/workbench/events?ticket=${workbench}` })).json(), { user: userId, visitor: null });
+    const otherUser = await issueEventTicket(redis, 'cs-admin', { subject: 'workbench', userId: randomUUID(), token });
+    assert.equal((await app.inject({ url: `/workbench/events?ticket=${otherUser}` })).statusCode, 401);
+    const wrongSubject = await issueEventTicket(redis, 'cs-admin', { subject: conversationId, userId, token });
+    assert.equal((await app.inject({ url: `/workbench/events?ticket=${wrongSubject}` })).statusCode, 401);
   }
 });
 

@@ -108,7 +108,7 @@ test('artwork event tickets require ownership, reject invalid and mismatched tic
   assert.equal((await app.inject({ method: 'POST', url: '/artwork-jobs/invalid/events-ticket' })).statusCode, 400);
   assert.equal((await app.inject({ url: `/artwork-jobs/${jobId}/events?ticket=${randomUUID()}` })).statusCode, 401);
   const issued = await ticket();
-  assert.deepEqual(JSON.parse(values.get(`artwork-events-ticket:${issued}`)!), { jobId, userId, token: 'owner' });
+  assert.deepEqual(JSON.parse(values.get(`artwork-events-ticket:${issued}`)!), { subject: jobId, userId, token: 'owner' });
   assert.equal((await app.inject({ url: `/artwork-jobs/${otherJobId}/events?ticket=${issued}` })).statusCode, 401);
   assert.equal((await app.inject({ url: `/artwork-jobs/${jobId}/events?ticket=${issued}` })).statusCode, 401);
   assert.equal((await app.inject({ url: `/artwork-jobs/${jobId}/events` })).statusCode, 400);

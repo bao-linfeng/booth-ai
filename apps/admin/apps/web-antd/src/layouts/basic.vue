@@ -23,7 +23,11 @@ import {
   notificationTitle,
 } from '#/api/core/project-notifications';
 import { $t } from '#/locales';
-import { useAuthStore, useNotificationStore } from '#/store';
+import {
+  useAuthStore,
+  useCustomerServiceStore,
+  useNotificationStore,
+} from '#/store';
 import LoginForm from '#/views/_core/authentication/login.vue';
 import NotificationDetailModal from '#/views/notifications/components/NotificationDetailModal.vue';
 
@@ -32,6 +36,7 @@ const userStore = useUserStore();
 const authStore = useAuthStore();
 const accessStore = useAccessStore();
 const notificationStore = useNotificationStore();
+const customerServiceStore = useCustomerServiceStore();
 const detailRef = ref<InstanceType<typeof NotificationDetailModal>>();
 const { destroyWatermark, updateWatermark } = useWatermark();
 const { isDark } = usePreferences();
@@ -67,7 +72,20 @@ watch(
     else notificationStore.stop();
   },
 );
-onBeforeUnmount(() => notificationStore.stop());
+// 客服工作台事件流与提醒：有 customer-service.read 时全局常驻，切换页面不断开
+const canReadCustomerService = () =>
+  accessStore.accessCodes.includes('customer-service.read');
+onMounted(() => {
+  if (canReadCustomerService()) customerServiceStore.start();
+});
+watch(canReadCustomerService, (allowed) => {
+  if (allowed) customerServiceStore.start();
+  else customerServiceStore.stop();
+});
+onBeforeUnmount(() => {
+  notificationStore.stop();
+  customerServiceStore.stop();
+});
 
 const menus = computed(() => [
   {

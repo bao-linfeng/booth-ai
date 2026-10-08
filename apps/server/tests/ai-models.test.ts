@@ -29,19 +29,22 @@ test('credentials are bound to their provider scope', () => {
 
 test('only assignments whose protocol can serve the purpose are usable, and listings never carry secrets', async () => {
   const rows = [assignedRow('openai', 'theme', { model: 'gpt-image-test' }), assignedRow('openai', 'theme', { protocol: 'retired' as ProviderProtocol }),
-    assignedRow('gemini', 'theme', { unitCredits: null }), assignedRow('openai', 'selection_parse', { kind: 'image' })];
-  const pool = { query: async () => ({ rows }) } as unknown as pg.Pool;
+    assignedRow('gemini', 'theme', { unitCredits: null }), assignedRow('openai', 'selection_parse', { kind: 'image' }),
+    assignedRow('openai', 'cs_translation', { model: 'gpt-text-test' }), assignedRow('openai', 'cs_translation', { kind: 'image' })];
+  const pool = { query: async (_sql: string, [purpose]: [string]) => ({ rows: rows.filter(row => row.purpose === purpose) }) } as unknown as pg.Pool;
   const active = await activeAiModels(pool, 'theme', encryptionKey);
   assert.deepEqual(active.map(model => model.model), ['gpt-image-test']);
   assert.equal(active[0]?.apiKey, 'secret');
   const assigned = await assignedAiModels(pool, 'theme');
   assert.deepEqual(Object.keys(assigned[0]!).filter(key => /key|credential|baseUrl/i.test(key)), []);
+  assert.deepEqual((await assignedAiModels(pool, 'cs_translation')).map(model => [model.model, model.unitCredits]), [['gpt-text-test', null]]);
 });
 
 test('protocol listing exposes kinds, purposes and parameter forms for the admin UI', () => {
   const protocols = listProtocols();
   const openai = protocols.find(protocol => protocol.id === 'openai')!;
   assert.deepEqual(openai.kinds.map(kind => kind.kind), ['text', 'image']);
+  assert.deepEqual(openai.kinds[0]?.purposes, ['selection_parse', 'cs_translation']);
   assert.deepEqual(openai.kinds[1]?.purposes, ['theme', 'artwork']);
   assert.ok(openai.kinds[0]?.params.some(field => field.key === 'temperature'));
   const qwenImage = protocols.find(protocol => protocol.id === 'qwen-image')!;
@@ -104,6 +107,8 @@ test('assignments enforce purpose capability, credit rules and optimistic versio
     ['artwork', [{ modelId: chat!, unitCredits: 3 }], 'PURPOSE_UNSUPPORTED'],
     ['theme', [{ modelId: chat!, unitCredits: 3 }], 'PURPOSE_UNSUPPORTED'],
     ['selection_parse', [{ modelId: chat!, unitCredits: 3 }], 'CREDITS_INVALID'],
+    ['cs_translation', [{ modelId: chat!, unitCredits: 3 }], 'CREDITS_INVALID'],
+    ['cs_translation', [{ modelId: gemini!, unitCredits: null }], 'PURPOSE_UNSUPPORTED'],
     ['theme', [{ modelId: gemini!, unitCredits: null }], 'CREDITS_INVALID'],
   ] as const) {
     await assert.rejects(replaceAssignments(pool, purpose, { expectedVersion: artwork!.version, items: [...items] }, 'admin'), { statusCode: 400, reason });

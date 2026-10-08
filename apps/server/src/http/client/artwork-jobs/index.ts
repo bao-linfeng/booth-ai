@@ -1,9 +1,8 @@
-import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { createStorage } from '../../../infra/storage.js';
-import { clientUserId, requirePrincipal } from '../../authentication.js';
+import { clientUserId, issueEventTicket, requirePrincipal } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
 import { streamArtworkJobEvents } from './events.js';
 import { getArtworkJob, listArtworkJobs, ownedArtworkJob } from '../../../modules/generation/artwork/queries.js';
@@ -18,8 +17,7 @@ export async function registerArtworkJobRoutes(app: FastifyInstance, pool: pg.Po
     reply.header('Cache-Control', 'private, no-store');
     const userId = clientUserId(request);
     await ownedArtworkJob(pool, userId, request.params.jobId);
-    const ticket = randomUUID();
-    await redis.set(`artwork-events-ticket:${ticket}`, JSON.stringify({ jobId: request.params.jobId, userId, token: requirePrincipal(request, 'client').token }), 'EX', 300);
+    const ticket = await issueEventTicket(redis, 'artwork', { subject: request.params.jobId, userId, token: requirePrincipal(request, 'client').token });
     return { code: 0, data: { ticket } };
   });
   app.get<{ Params: { jobId: string }; Querystring: { ticket: string } }>('/artwork-jobs/:jobId/events', { config: { authentication: 'events', eventTicketPrefix: 'artwork' }, schema: artworkEventsSchema }, async (request, reply) => {

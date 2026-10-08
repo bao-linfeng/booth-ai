@@ -7,6 +7,7 @@ import { createRedis, waitForRedis } from '../infra/redis.js';
 import { createStorage } from '../infra/storage.js';
 import { createQueue, TASK_NAME } from '../infra/queue.js';
 import { submitEchoTask, processEchoTask, type Task } from '../modules/tasks/service.js';
+import { createSession, encryptJwt } from '../infra/session.js';
 
 const config = loadConfig();
 const database = createDatabase(config);
@@ -18,6 +19,8 @@ const objectKey = `smoke/${probe}.txt`;
 const redisKey = `booth:smoke:${probe}`;
 let taskId: string | undefined;
 let completed = false;
+// 客服链路创建的临时坐席、访客与会话，结束时清理
+const cs = { roleId: null as number | null, adminId: null as string | null, visitorId: null as string | null, conversationId: null as string | null };
 
 try {
   const api = process.env.API_BASE_URL ?? 'http://localhost:3000';
@@ -75,6 +78,8 @@ try {
   const after = await database.query('SELECT updated_at FROM foundation_tasks WHERE id = $1', [taskId]);
   assert.deepEqual(after.rows[0], before.rows[0], 'Completed task was executed again');
   console.info('PASS DB → Outbox → BullMQ → Worker → DB, concurrent idempotency and duplicate processing');
+  await customerServiceSmoke(api);
+  console.info('PASS customer service: visitor → conversation → claim → reply over SSE → close');
   console.info('All foundation smoke checks passed');
 } catch (error) {
   // Assertion messages contain only probe diagnostics; never emit raw SDK errors/URLs.
@@ -87,8 +92,92 @@ try {
     await (await queue.getJob(taskId))?.remove();
     await database.query('DELETE FROM foundation_tasks WHERE id = $1', [taskId]);
   }
+  await cleanupCustomerService().catch(() => console.error('Customer service smoke cleanup failed'));
   await queue.close();
   redis.disconnect();
   storage.close();
   await database.end();
+}
+
+type Envelope<T> = { code: number; data: T };
+async function call<T>(url: string, init: RequestInit & { json?: unknown } = {}): Promise<{ status: number; data: T }> {
+  const { json, ...rest } = init;
+  const response = await fetch(url, { ...rest, signal: AbortSignal.timeout(10_000),
+    ...(json === undefined ? {} : { body: JSON.stringify(json), headers: { 'content-type': 'application/json', ...rest.headers } }) });
+  const body = await response.json() as Envelope<T>;
+  return { status: response.status, data: body.data };
+}
+
+/** 读取 SSE 直到出现满足条件的事件 */
+async function waitForEvent(response: Response, match: (event: Record<string, unknown>) => boolean): Promise<void> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const next = await reader.read();
+    assert.equal(next.done, false, 'Customer service SSE ended early');
+    buffer += decoder.decode(next.value, { stream: true });
+    for (const line of buffer.split(/\r?\n/)) {
+      if (line.startsWith('data: ') && match(JSON.parse(line.slice(6)) as Record<string, unknown>)) { await reader.cancel(); return; }
+    }
+  }
+  assert.fail('Customer service SSE event not received');
+}
+
+async function customerServiceSmoke(api: string) {
+  const client = `${api}/api/v1/client/customer-service`;
+  const admin = `${api}/api/v1/admin/customer-service`;
+  const visitor = await call<{ visitorToken: string; visitorId: string }>(`${client}/visitors`, { method: 'POST' });
+  assert.equal(visitor.status, 201, 'Issue visitor token');
+  cs.visitorId = visitor.data.visitorId;
+  const visitorHeaders = { 'x-visitor-token': visitor.data.visitorToken };
+  const scheme = (await database.query<{ code: string }>("SELECT code FROM schemes WHERE publish_status='published' ORDER BY code LIMIT 1")).rows[0];
+  const opened = await call<{ conversation: { id: string } }>(`${client}/conversations`, { method: 'POST', headers: visitorHeaders,
+    json: { entryPoint: scheme ? 'scheme_detail' : 'floating', ...(scheme ? { context: { kind: 'scheme', schemeCode: scheme.code } } : {}) } });
+  assert.equal(opened.status, 201, 'Open conversation');
+  cs.conversationId = opened.data.conversation.id;
+  const posted = await call(`${client}/conversations/${cs.conversationId}/messages`, { method: 'POST', headers: visitorHeaders,
+    json: { clientMessageId: randomUUID(), body: 'smoke question', kind: 'text' } });
+  assert.equal(posted.status, 201, 'Customer message');
+
+  // 临时坐席：本地角色授予 read + reply，直接写入会话（不经过外部 SSO）
+  cs.roleId = -Math.floor(Math.random() * 1e9) - 1;
+  await database.query('INSERT INTO admin_roles(id,name,permission_codes) VALUES($1,$2,$3)',
+    [cs.roleId, `ROLE_SMOKE_CS_${probe}`, ['customer-service.read', 'customer-service.reply']]);
+  cs.adminId = (await database.query<{ id: string }>('INSERT INTO admins(external_user_id,username,nickname,roles) VALUES($1,$2,$3,$4) RETURNING id',
+    [cs.roleId, `smoke-cs-${probe}`, 'Smoke', [`ROLE_SMOKE_CS_${probe}`]])).rows[0]!.id;
+  const token = await createSession(redis, { site: 'admin', localId: cs.adminId, externalUserId: cs.roleId, username: `smoke-cs-${probe}`,
+    externalJwtCiphertext: encryptJwt('smoke', config.sessionSecret), loginSource: 'password', sessionVersion: 1 }, 300, Math.floor(Date.now() / 1000) + 300);
+  const adminHeaders = { authorization: `Bearer ${token}` };
+  assert.equal((await call(`${admin}/events-ticket`, { method: 'POST', headers: adminHeaders })).status, 200, 'Admin events ticket');
+  assert.equal((await call(`${admin}/conversations/${cs.conversationId}/claim`, { method: 'POST', headers: adminHeaders })).status, 200, 'Claim');
+
+  const ticket = await call<{ ticket: string }>(`${client}/conversations/${cs.conversationId}/events-ticket`, { method: 'POST', headers: visitorHeaders });
+  const stream = await fetch(`${client}/conversations/${cs.conversationId}/events?ticket=${ticket.data.ticket}&after=0`, { signal: AbortSignal.timeout(20_000) });
+  assert.equal(stream.status, 200, 'Customer SSE');
+  const received = waitForEvent(stream, event => event.type === 'message.created'
+    && (event.message as { senderType?: string; body?: string } | undefined)?.body === 'smoke reply');
+  await delay(300);
+  const reply = await call(`${admin}/conversations/${cs.conversationId}/messages`, { method: 'POST', headers: adminHeaders,
+    json: { clientMessageId: randomUUID(), body: 'smoke reply', kind: 'text' } });
+  assert.equal(reply.status, 201, 'Agent reply');
+  await received;
+  assert.equal((await call(`${admin}/conversations/${cs.conversationId}/close`, { method: 'POST', headers: adminHeaders })).status, 200, 'Close');
+}
+
+async function cleanupCustomerService() {
+  if (cs.conversationId) {
+    await database.query('DELETE FROM cs_message_translations WHERE message_id IN (SELECT id FROM cs_messages WHERE conversation_id=$1)', [cs.conversationId]);
+    await database.query('DELETE FROM cs_messages WHERE conversation_id=$1', [cs.conversationId]);
+    await database.query('DELETE FROM cs_conversation_contexts WHERE conversation_id=$1', [cs.conversationId]);
+    await database.query('DELETE FROM cs_email_outbox WHERE conversation_id=$1', [cs.conversationId]);
+    await database.query('DELETE FROM cs_conversations WHERE id=$1', [cs.conversationId]);
+  }
+  if (cs.visitorId) await database.query('DELETE FROM cs_visitors WHERE id=$1', [cs.visitorId]);
+  if (cs.adminId) {
+    await redis.zrem('cs:presence', cs.adminId);
+    await database.query('DELETE FROM admins WHERE id=$1', [cs.adminId]);
+  }
+  if (cs.roleId !== null) await database.query('DELETE FROM admin_roles WHERE id=$1', [cs.roleId]);
 }

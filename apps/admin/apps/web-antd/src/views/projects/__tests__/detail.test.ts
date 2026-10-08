@@ -68,6 +68,9 @@ vi.mock('ant-design-vue', async () => {
 });
 vi.mock('../OperationModal.vue', () => ({ default: { render: () => null } }));
 vi.mock('../QuotationEditor.vue', () => ({ default: { render: () => null } }));
+vi.mock('../CustomerServiceCard.vue', () => ({
+  default: { render: () => null },
+}));
 
 function project(events: ProjectEvent[]): ProjectDetail {
   return {

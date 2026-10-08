@@ -23,6 +23,7 @@ export const permissionGroups = [
   { key: 'projects', label: '项目管理', routes: ['ProjectList', 'ProjectDetail'], actions: [['read', '查看项目与报价历史及接单状态'], ['assign', '改派承接人 / 配置默认接单人'], ['follow-up', '追加跟进与状态记录'], ['link-scheme', '确认关联方案'], ['quotation', '编辑并保存报价修订'], ['quotation-download', '导出报价修订'], ['asset-download', '下载固定资料']] },
   { key: 'generation', label: '生成任务', routes: ['GenerationJobs'], actions: [['read', '查看生成任务'], ['detail', '查看任务详情']] },
   { key: 'notifications', label: '消息通知', routes: ['ProjectNotifications'], actions: [['read', '查看消息与详情'], ['mark-read', '标记消息已读'], ['mark-all-read', '全部已读']] },
+  { key: 'customer-service', label: '在线客服', routes: ['CustomerServiceWorkbench', 'CustomerServiceSettings'], actions: [['read', '进入工作台、查看会话与设置'], ['reply', '抢接、回复、备注、释放、结束会话与在线状态'], ['supervise', '查看他人进行中会话与改派'], ['settings', '修改客服设置']] },
   { key: 'dictionaries', label: '字典管理', routes: ['DictionaryList'], actions: [['read', '查看字典与字典项'], ['create', '新建字典'], ['update', '编辑字典'], ['delete', '删除字典'], ['item-create', '新增字典项'], ['item-update', '编辑字典项'], ['item-delete', '删除字典项']] },
   { key: 'ai-models', label: 'AI 模型配置', routes: ['AiModels'], actions: [['read', '查看供应商、模型与用途'], ['provider-create', '新建供应商'], ['provider-update', '编辑供应商'], ['provider-delete', '删除供应商'], ['discover', '测试连接 / 刷新模型目录'], ['model-create', '添加模型'], ['model-update', '编辑模型'], ['model-delete', '删除模型'], ['assign', '配置用途、主备顺序与积分']] },
   { key: 'prompts', label: '提示词模板', routes: ['PromptTemplates'], actions: [['read', '查看模板'], ['create', '新建模板'], ['update', '编辑模板'], ['enable', '启用模板'], ['disable', '停用模板'], ['preview', '渲染预览']] },
@@ -38,6 +39,7 @@ const actionDependencies: Record<string, string[]> = {
   'assets-masks.preview': ['assets-renderings.read', 'assets-renderings.preview'],
   'prompts.create': ['prompts.preview'], 'prompts.update': ['prompts.preview'],
   'schemes.review': ['schemes.readiness'], 'schemes.publish': ['schemes.readiness'],
+  'customer-service.supervise': ['customer-service.reply'],
 };
 
 export const permissionCatalog = permissionGroups.flatMap(group => group.actions.map(([action, label]) => ({
@@ -60,7 +62,9 @@ export function accessSummary(permissions: string[]) {
     if (item.kind === 'route' && granted.has(item.code)) item.routes.forEach(route => routeNames.add(route));
   }
   if (granted.has('schemes.read') && granted.has('schemes.create')) routeNames.add('SchemeCreate');
-  return { permissions, routeNames: [...routeNames], homePath: granted.has('dashboard.read') ? '/dashboard/analytics' : granted.has('workspace.read') ? '/dashboard/workspace' : '/profile' };
+  const homePath = granted.has('dashboard.read') ? '/dashboard/analytics' : granted.has('workspace.read') ? '/dashboard/workspace'
+    : granted.has('customer-service.read') ? '/customer-service/workbench' : '/profile';
+  return { permissions, routeNames: [...routeNames], homePath };
 }
 
 export function validatePermissionCodes(codes: string[]): string[] {

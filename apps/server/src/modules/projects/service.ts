@@ -16,7 +16,8 @@ function submitter(userId: string | null, contact: QuoteInput['contact']) {
   if (!contact.email) throw projectError('CLAIM_EMAIL_REQUIRED',400);
   return { actorType: 'anonymous', actorId: ANONYMOUS_ACTOR, claimEmail: contact.email.toLowerCase() };
 }
-export async function createManualProject(pool: pg.Pool,userId: string | null,raw: ManualInput,locale: MessageLocale = DEFAULT_MESSAGE_LOCALE) {
+// visitorId：匿名提交时携带的客服访客（在线客服设计 §4.2），只用于访客附加项目上下文，不参与归属；登录提交忽略
+export async function createManualProject(pool: pg.Pool,userId: string | null,raw: ManualInput,locale: MessageLocale = DEFAULT_MESSAGE_LOCALE,visitorId: string | null = null) {
   const input = normalizeManual(raw); const hash = digest({...input,requestKey:undefined});
   const { actorType, actorId, claimEmail } = submitter(userId,input.contact);
   return transaction(pool,async client=>{
@@ -26,8 +27,8 @@ export async function createManualProject(pool: pg.Pool,userId: string | null,ra
     validateRequirement(input.confirmedRequirements,catalog);
     if(input.parsedRequirements)validateRequirement(input.parsedRequirements,catalog);
     const assignee = await configuredAssignee(client); const id=randomUUID(); const requestNo=`MR-${id.toUpperCase()}`;
-    const row=(await client.query<{projectNo:string;createdAt:Date}>(`INSERT INTO projects(id,request_no,source_type,customer_user_id,assignee_admin_id,request_snapshot,claim_email)
-      VALUES($1,$2,'manual_request',$3,$4,$5,$6) RETURNING project_no AS "projectNo",created_at AS "createdAt"`,[id,requestNo,userId,assignee,JSON.stringify({...input,requestKey:undefined}),claimEmail])).rows[0]!;
+    const row=(await client.query<{projectNo:string;createdAt:Date}>(`INSERT INTO projects(id,request_no,source_type,customer_user_id,assignee_admin_id,request_snapshot,claim_email,visitor_id)
+      VALUES($1,$2,'manual_request',$3,$4,$5,$6,$7) RETURNING project_no AS "projectNo",created_at AS "createdAt"`,[id,requestNo,userId,assignee,JSON.stringify({...input,requestKey:undefined}),claimEmail,userId?null:visitorId])).rows[0]!;
     const event=(await client.query<{id:string}>("INSERT INTO project_events(project_id,kind,payload) VALUES($1,'accepted',$2) RETURNING id",[id,JSON.stringify({assigneeAdminId:assignee,revision:1})])).rows[0]!;
     await client.query('INSERT INTO project_notification_outbox(project_id,event_id) VALUES($1,$2)',[id,event.id]);
     if(input.contact.email) await enqueueReceiptEmail(client,{projectId:id,recipient:input.contact.email,locale,accountBound:userId!==null});
@@ -48,7 +49,8 @@ export async function saveOperation(client: pg.PoolClient, actorType: string, ac
   await client.query(`INSERT INTO project_operations(actor_type,actor_id,operation,target,request_key,payload_hash,receipt) VALUES($1,$2,$3,$4,$5,$6,$7)`,
     [actorType,actorId,operation,target,key,hash,JSON.stringify(receipt)]);
 }
-export async function createQuoteRequest(pool: pg.Pool, userId: string | null, raw: QuoteInput, locale: MessageLocale = DEFAULT_MESSAGE_LOCALE): Promise<{ replayed: boolean; receipt: Receipt }> {
+export async function createQuoteRequest(pool: pg.Pool, userId: string | null, raw: QuoteInput, locale: MessageLocale = DEFAULT_MESSAGE_LOCALE,
+  visitorId: string | null = null): Promise<{ replayed: boolean; receipt: Receipt }> {
   const input = normalizeQuote(raw);
   // 主题效果与画稿属于用户私有生成结果，只能由登录用户引用
   if (!userId && (input.themeSelection || input.artworkJobId)) throw projectError('AUTH_REQUIRED', 401);
@@ -61,9 +63,9 @@ export async function createQuoteRequest(pool: pg.Pool, userId: string | null, r
     const assignee = await configuredAssignee(client);
     const id = randomUUID();
     const requestNo = `QR-${id.toUpperCase()}`;
-    const row = (await client.query<{ projectNo: string; createdAt: Date }>(`INSERT INTO projects(id,request_no,source_type,customer_user_id,assignee_admin_id,scheme_code,request_snapshot,scheme_snapshot,materials_snapshot,claim_email)
-      VALUES($1,$2,'quote_request',$3,$4,$5,$6,$7,$8,$9) RETURNING project_no AS "projectNo",created_at AS "createdAt"`,
-      [id,requestNo,userId,assignee,input.schemeCode,JSON.stringify({ ...input, requestKey: undefined, matchingSummary }),JSON.stringify(snapshot),JSON.stringify(materials),claimEmail])).rows[0]!;
+    const row = (await client.query<{ projectNo: string; createdAt: Date }>(`INSERT INTO projects(id,request_no,source_type,customer_user_id,assignee_admin_id,scheme_code,request_snapshot,scheme_snapshot,materials_snapshot,claim_email,visitor_id)
+      VALUES($1,$2,'quote_request',$3,$4,$5,$6,$7,$8,$9,$10) RETURNING project_no AS "projectNo",created_at AS "createdAt"`,
+      [id,requestNo,userId,assignee,input.schemeCode,JSON.stringify({ ...input, requestKey: undefined, matchingSummary }),JSON.stringify(snapshot),JSON.stringify(materials),claimEmail,userId ? null : visitorId])).rows[0]!;
     for (const version of new Set(versions)) await client.query('INSERT INTO project_asset_versions(project_id,asset_version_id) VALUES($1,$2)', [id,version]);
     const event = (await client.query<{ id: string }>(`INSERT INTO project_events(project_id,kind,payload) VALUES($1,'accepted',$2) RETURNING id`, [id,JSON.stringify({ assigneeAdminId: assignee, revision: 1 })])).rows[0]!;
     await client.query('INSERT INTO project_notification_outbox(project_id,event_id) VALUES($1,$2)', [id,event.id]);

@@ -12,6 +12,7 @@
 - 生成任务 Outbox 与恢复：`src/workers/generation-outbox.ts`（主题/画稿共用分发）、`generation-recovery.ts`（恢复矩阵 `decideRecovery`）
 - 方案基线资产与用户生成素材的作用域隔离：`migrations/050_asset_scope.sql`（`scheme_baseline_assets` 视图）
 - Worker 调度隔离、健康状态、指标与项目通知投递：`src/worker.ts`、`src/workers/scheduler.ts`、`metrics.ts`、`project-notifications.ts`
+- 在线客服：`src/modules/customer-service/`（访客、会话、消息、翻译、邮件、保留期），实时通道为共用 SSE `src/http/sse.ts`；设计与落地调整见 [`docs/一期功能拆分/在线客服模块开发计划.md`](../../docs/一期功能拆分/在线客服模块开发计划.md)
 - [`docs/一期功能拆分/AI模型接入与配置.md`](../../docs/一期功能拆分/AI模型接入与配置.md) — AI 供应商/模型/用途分配三层配置、协议注册表与适配器约定（业务代码不写供应商分支）
 
 ---
@@ -147,7 +148,7 @@ GET  /api/v1/admin/me                → 管理端当前用户信息
 
 ## 队列 / Outbox 约束
 
-- 队列定义在 `src/infra/queue.ts`：`booth-foundation`、`booth-theme`、`booth-artwork`
+- 队列定义在 `src/infra/queue.ts`：`booth-foundation`、`booth-theme`、`booth-artwork`、`booth-cs`（在线客服翻译；`cs_message_translations` 的 pending 行即 outbox，由 `cs-translation-outbox` 调度任务投递）
 - `jobId` = `taskId`（BullMQ 去重，重试幂等）
 - Task 写入 + Outbox 写入必须在**同一事务**内
 - **调用 AI/外部 API 时不得持有 DB 锁**
@@ -184,7 +185,7 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 可选：`NODE_ENV`（默认 `development`）、`HOST`（默认 `0.0.0.0`）、`PORT`（默认 `3000`）、`LOG_LEVEL`（默认 `info`）、`PROJECT_NOTIFICATION_WEBHOOK_URL` / `PROJECT_NOTIFICATION_WEBHOOK_SECRET`（未配置时项目通知停留在 `project_notification_outbox`，见 `src/worker.ts`）。
 
 - `TRUST_PROXY`：反向代理信任范围，填代理跳数（如 `1`）或逗号分隔的 IP/CIDR/关键字（`loopback`/`linklocal`/`uniquelocal`）。默认不信任，`request.ip` 为直连地址；部署在代理后必须配置，否则按 IP 的限流（登录、智选、匿名询价）会共用代理地址。
-- 回执邮件（询价/人工需求受理）：`SMTP_HOST` / `SMTP_PORT`（默认 465，非 465 默认 STARTTLS）/ `SMTP_SECURE` / `SMTP_USER` + `SMTP_PASSWORD` / `SMTP_FROM`，以及邮件链接用的 `CLIENT_PUBLIC_URL`（生产须 https）。未配置 `SMTP_HOST` 时邮件停留在 `project_receipt_emails`；同一收件人 24 小时最多入队 5 封。
+- 回执邮件（询价/人工需求受理）与在线客服邮件（离线留言通知、回复提醒，outbox 为 `cs_email_outbox`）共用以下配置：`SMTP_HOST` / `SMTP_PORT`（默认 465，非 465 默认 STARTTLS）/ `SMTP_SECURE` / `SMTP_USER` + `SMTP_PASSWORD` / `SMTP_FROM`，以及邮件链接用的 `CLIENT_PUBLIC_URL`（生产须 https）。未配置 `SMTP_HOST` 时邮件停留在 `project_receipt_emails`；同一收件人 24 小时最多入队 5 封。
 
 日志：Fastify 已关闭请求日志（`disableRequestLogging: true`），headers 中 `authorization`/`cookie` 已脱敏。
 
@@ -195,7 +196,7 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - Runner：Node 原生 `node:test`，**不是 Jest/Vitest**
 - `tests/app.test.ts`：`fastify.inject()` 路由测试，无需外部服务
 - `npm run smoke`：需要 Postgres 17、Redis 7.4、Silo S3 全部运行
-- **标准检查是 Docker `check` 服务**（命令见根目录 `AGENTS.md`）：`npm run check` → `tests/setup-integration-db.ts` → `npm test` → `npm run build`。它注入全部 `*_TEST_DATABASE_URL`（统一指向独立库 `booth_test`）与 `THEME_TEST_REDIS_URL`（Redis 15 号库），并设置 `REQUIRE_INTEGRATION_TESTS=1`，因此集成测试必须执行，结果应为 `skipped 0`。
+- **标准检查是 Docker `check` 服务**（命令见根目录 `AGENTS.md`）：`npm run check` → `tests/setup-integration-db.ts` → `npm test` → `npm run build`。它注入全部 `*_TEST_DATABASE_URL`（统一指向独立库 `booth_test`）与 `THEME_TEST_REDIS_URL` / `CS_TEST_REDIS_URL`（Redis 15 号库），并设置 `REQUIRE_INTEGRATION_TESTS=1`，因此集成测试必须执行，结果应为 `skipped 0`。
 - `tests/setup-integration-db.ts` 每次检查都会删除并重建 `booth_test`、在 `public` 执行全部迁移（BOM、通知收件箱等测试直接使用 `public`），并清空 Redis 测试库；脚本只接受名称以 `_test` 结尾的库和非 0 号 Redis 库，不会触碰开发库 `booth`。
 - 宿主机直接 `npm test` 时这些变量缺失，集成测试会 `skip`，**本地通过不代表集成测试跑过**；`tests/integration-env.test.ts` 在 `REQUIRE_INTEGRATION_TESTS=1` 时校验变量齐全，缺项直接失败。变量清单从测试源码中的 `process.env.*_TEST_(DATABASE|REDIS)_URL` 自动收集（`tests/integration-env.ts`），新增集成测试变量后须同步加到 `infra/compose.dev.yaml` 的 `check` 服务。
 - 集成测试按文件并行，读系统目录（`pg_constraint`、`information_schema` 等）时必须限定当前 schema（如 `connamespace = current_schema()::regnamespace`），否则会读到其他测试的临时 schema。

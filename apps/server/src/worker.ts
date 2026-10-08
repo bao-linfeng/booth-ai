@@ -7,7 +7,7 @@ import { createRedis, waitForRedis } from './infra/redis.js';
 import { createStorage } from './infra/storage.js';
 import { configureLogger, errorCode, logger } from './infra/logger.js';
 import { createWebhookSender } from './infra/webhook.js';
-import { createQueue, QUEUE_NAME, TASK_NAME, THEME_QUEUE_NAME, THEME_TASK_NAME, ARTWORK_QUEUE_NAME, ARTWORK_TASK_NAME } from './infra/queue.js';
+import { createQueue, QUEUE_NAME, TASK_NAME, THEME_QUEUE_NAME, THEME_TASK_NAME, ARTWORK_QUEUE_NAME, ARTWORK_TASK_NAME, CS_QUEUE_NAME, CS_TRANSLATE_TASK_NAME } from './infra/queue.js';
 import { processEchoTask } from './modules/tasks/service.js';
 import { dispatchOutbox } from './workers/outbox.js';
 import { settleThemeJob, processThemeJob } from './modules/generation/theme/execution.js';
@@ -21,6 +21,11 @@ import { deliverReceiptEmails } from './workers/receipt-emails.js';
 import { createSmtpSender } from './infra/mailer.js';
 import { createScheduler, type ScheduledTask } from './workers/scheduler.js';
 import { collectWorkerMetrics, createJobStats } from './workers/metrics.js';
+import { CS_LOCALES, type CsLocale } from './modules/customer-service/domain.js';
+import { failTranslation, translateMessage } from './modules/customer-service/translation.js';
+import { dispatchCsTranslations } from './workers/cs-translation.js';
+import { deliverCsEmails } from './workers/cs-emails.js';
+import { runCsRetention, sweepCsAgents } from './workers/cs-maintenance.js';
 
 // Liveness marker for the container healthcheck (mtime) and a JSON status report for diagnosis.
 const heartbeatPath = '/tmp/worker-ready';
@@ -44,6 +49,7 @@ async function main() {
   const queue = createQueue(producerRedis);
   const themeQueue = createQueue(producerRedis, THEME_QUEUE_NAME, 2000);
   const artworkQueue = createQueue(producerRedis, ARTWORK_QUEUE_NAME, 2000);
+  const csQueue = createQueue(producerRedis, CS_QUEUE_NAME, 2000);
   const jobStats = createJobStats();
   // Aborted on SIGTERM: generation jobs stop at their next checkpoint between provider calls.
   const draining = new AbortController();
@@ -110,9 +116,28 @@ async function main() {
       .catch(error => log.error({ queue: ARTWORK_QUEUE_NAME, jobId: job.id, code: errorCode(error) }, 'Unable to settle failed artwork job'));
   });
 
+  // 客服翻译：每次尝试按主备顺序调用全部模型，3 次都失败后标记 failed，前端显示原文
+  const csTranslation = (data: unknown): { messageId: string; locale: CsLocale } | null => {
+    const value = data as { messageId?: unknown; locale?: unknown } | null;
+    return typeof value?.messageId === 'string' && CS_LOCALES.includes(value.locale as CsLocale) ? { messageId: value.messageId, locale: value.locale as CsLocale } : null;
+  };
+  const csWorker = new Worker(CS_QUEUE_NAME, observed(CS_QUEUE_NAME, async job => {
+    const item = csTranslation(job.data);
+    if (job.name !== CS_TRANSLATE_TASK_NAME || !item) throw new Error('Invalid customer service job');
+    return translateMessage(database, config.aiModelEncryptionKey, producerRedis, item.messageId, item.locale);
+  }), { connection: consumerRedis, concurrency: 4 });
+  csWorker.on('error', () => log.error({ queue: CS_QUEUE_NAME }, 'Worker connection error'));
+  csWorker.on('failed', (job, error) => {
+    const item = csTranslation(job?.data);
+    if (!job || !item || job.attemptsMade < (job.opts.attempts ?? 1)) return;
+    void failTranslation(database, producerRedis, item.messageId, item.locale, errorCode(error))
+      .catch(failure => log.error({ queue: CS_QUEUE_NAME, jobId: job.id, code: errorCode(failure) }, 'Unable to persist failed translation'));
+  });
+
   await worker.waitUntilReady();
   await themeWorker.waitUntilReady();
   await artworkWorker.waitUntilReady();
+  await csWorker.waitUntilReady();
 
   const generationQueues = { theme: themeQueue, artwork: artworkQueue };
   const tasks: ScheduledTask[] = [
@@ -123,6 +148,9 @@ async function main() {
       const recovery = await recoverGenerationJobs(database, generationQueues, { theme: publishThemeEvent, artwork: publishArtworkEvent });
       if (recovery.enqueued || recovery.retried || recovery.settled || recovery.errors.length) log.warn({ recovery }, 'Generation recovery');
     } },
+    { name: 'cs-translation-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchCsTranslations(database, csQueue) },
+    { name: 'cs-retention', intervalMs: 3_600_000, staleAfterMs: 7_200_000, run: () => runCsRetention(database, log) },
+    { name: 'cs-agent-sweep', intervalMs: 60_000, staleAfterMs: 300_000, run: () => sweepCsAgents(database, producerRedis, log) },
     // Unrepairable issues are persisted on the job rows and listed on the admin generation job page.
     { name: 'credit-reconciliation', intervalMs: 60_000, staleAfterMs: 300_000, run: async () => {
       const credits = await reconcileJobCredits(database);
@@ -139,13 +167,14 @@ async function main() {
     const { smtp, clientPublicUrl } = config.receiptEmail;
     const send = createSmtpSender(smtp);
     tasks.push({ name: 'receipt-emails', intervalMs: 5000, staleAfterMs: 180_000, run: () => deliverReceiptEmails(database, send, clientPublicUrl, log) });
+    tasks.push({ name: 'cs-emails', intervalMs: 5000, staleAfterMs: 180_000, run: () => deliverCsEmails(database, producerRedis, send, clientPublicUrl, log) });
   } else {
-    log.warn('SMTP not configured; receipt emails stay pending in project_receipt_emails');
+    log.warn('SMTP not configured; receipt and customer service emails stay pending in project_receipt_emails / cs_email_outbox');
   }
   // Metrics are diagnostics only and never decide worker health.
   let metrics: unknown = null;
   tasks.push({ name: 'metrics', intervalMs: 60_000, staleAfterMs: 300_000, critical: false, run: async () => {
-    metrics = { ...await collectWorkerMetrics(database, { foundation: queue, ...generationQueues }), jobs: jobStats.drain() };
+    metrics = { ...await collectWorkerMetrics(database, { foundation: queue, ...generationQueues, cs: csQueue }), jobs: jobStats.drain() };
     log.info({ metrics }, 'Worker metrics');
   } });
   const scheduler = createScheduler(tasks, log);
@@ -159,7 +188,7 @@ async function main() {
       await scheduler.tick(() => stopping);
       const report = scheduler.health({
         consumerRedis: consumerRedis.status === 'ready', producerRedis: producerRedis.status === 'ready',
-        foundationWorker: worker.isRunning(), themeWorker: themeWorker.isRunning(), artworkWorker: artworkWorker.isRunning(),
+        foundationWorker: worker.isRunning(), themeWorker: themeWorker.isRunning(), artworkWorker: artworkWorker.isRunning(), csWorker: csWorker.isRunning(),
       });
       if (report.healthy !== lastHealthy) log[report.healthy ? 'info' : 'error']({ problems: report.problems }, report.healthy ? 'Worker healthy' : 'Worker unhealthy');
       lastHealthy = report.healthy;
@@ -183,13 +212,14 @@ async function main() {
     log.info('Worker draining; waiting for in-flight jobs to reach a checkpoint');
     const deadline = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS).unref();
     // Close every consumer at once so none keeps taking new jobs while another is still draining.
-    const closing = Promise.all([worker.close(), themeWorker.close(), artworkWorker.close()]);
+    const closing = Promise.all([worker.close(), themeWorker.close(), artworkWorker.close(), csWorker.close()]);
     await loop;
     await rm(heartbeatPath, { force: true });
     await closing;
     await queue.close();
     await themeQueue.close();
     await artworkQueue.close();
+    await csQueue.close();
     consumerRedis.disconnect();
     producerRedis.disconnect();
     await database.end();

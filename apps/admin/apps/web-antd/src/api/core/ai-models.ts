@@ -1,6 +1,19 @@
 import { requestClient } from '#/api/request';
 
-export type AiPurpose = 'artwork' | 'selection_parse' | 'theme';
+export type AiPurpose =
+  | 'artwork'
+  | 'cs_translation'
+  | 'selection_parse'
+  | 'theme';
+
+/** 文本用途调用文本模型且不计积分，与服务端 TEXT_PURPOSES 一致 */
+export const TEXT_PURPOSES: readonly AiPurpose[] = [
+  'selection_parse',
+  'cs_translation',
+];
+export function isTextPurpose(purpose: AiPurpose): boolean {
+  return TEXT_PURPOSES.includes(purpose);
+}
 export type ModelKind = 'image' | 'text';
 export type ModelParams = Record<string, number | string>;
 
@@ -175,6 +188,7 @@ export const PURPOSE_LABELS: Record<AiPurpose, string> = {
   selection_parse: 'AI 智选 · 需求解析',
   theme: 'AI 换主题',
   artwork: '四面平面素材',
+  cs_translation: '在线客服 · 消息翻译',
 };
 
 export const KIND_LABELS: Record<ModelKind, string> = {

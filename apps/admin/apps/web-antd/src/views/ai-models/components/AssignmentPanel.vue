@@ -11,6 +11,7 @@ import type {
 import { computed, ref, watch } from 'vue';
 
 import { useAccess } from '@vben/access';
+
 import {
   Alert,
   Button,
@@ -24,6 +25,7 @@ import {
 } from 'ant-design-vue';
 
 import {
+  isTextPurpose,
   PURPOSE_LABELS,
   saveAiModelAssignmentsApi,
 } from '#/api/core/ai-models';
@@ -43,11 +45,14 @@ const PURPOSE_HINTS: Record<AiPurpose, string> = {
     '按顺序回退：第一个可用模型为主用，失败时依次尝试后续模型。积分按张计，客户端报价按主用模型单价。',
   artwork:
     '只使用第一个可用模型生成四个方向，不跨模型回退。积分按方向计（每套 4 个方向）。',
+  cs_translation:
+    '客服消息双向翻译：按顺序调用，失败或改写编号时切换下一个；全部失败时显示原文。不计积分。',
 };
 const UNIT_LABELS: Record<AiPurpose, string> = {
   selection_parse: '',
   theme: '积分/张',
   artwork: '积分/方向',
+  cs_translation: '',
 };
 
 type ModelOption = AiModelRecord & { provider: AiProviderRecord };
@@ -116,7 +121,7 @@ function add(purpose: AiPurpose) {
   }
   drafts.value[purpose] = [
     ...(drafts.value[purpose] ?? []),
-    { modelId: next.id, unitCredits: purpose === 'selection_parse' ? null : 1 },
+    { modelId: next.id, unitCredits: isTextPurpose(purpose) ? null : 1 },
   ];
 }
 
@@ -136,10 +141,7 @@ function remove(purpose: AiPurpose, index: number) {
 
 async function save(purpose: AiPurpose) {
   const items = drafts.value[purpose] ?? [];
-  if (
-    purpose !== 'selection_parse' &&
-    items.some((item) => !item.unitCredits)
-  ) {
+  if (!isTextPurpose(purpose) && items.some((item) => !item.unitCredits)) {
     message.warning('请为每个模型填写积分');
     return;
   }
@@ -204,7 +206,7 @@ async function save(purpose: AiPurpose) {
         />
         <InputNumber
           :disabled="!hasAccessByCodes(['ai-models.assign'])"
-          v-if="assignment.purpose !== 'selection_parse'"
+          v-if="!isTextPurpose(assignment.purpose)"
           :value="item.unitCredits ?? undefined"
           @update:value="
             (value) =>
@@ -259,8 +261,9 @@ async function save(purpose: AiPurpose) {
           v-access:code="['ai-models.assign']"
           size="small"
           @click="add(assignment.purpose)"
-          >添加模型</Button
         >
+          添加模型
+        </Button>
         <Button
           type="primary"
           size="small"

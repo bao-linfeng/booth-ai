@@ -16,6 +16,7 @@ import { registerQuoteRequestRoutes } from './quote-requests/index.js';
 import { registerClientProjectRoutes } from './projects/index.js';
 import { registerClientSearchRoutes } from './searches/index.js';
 import { registerAuthentication } from '../authentication.js';
+import { registerClientCustomerServiceRoutes } from './customer-service/index.js';
 
 export async function registerClientModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
   await app.register(async client => {
@@ -32,5 +33,6 @@ export async function registerClientModule(app: FastifyInstance, config: Config,
     await registerClientSchemeAssetRoutes(client, pool, storage);
     await registerThemeModelRoutes(client, pool, redis, storage);
     await registerArtworkJobRoutes(client, pool, redis, storage);
+    await registerClientCustomerServiceRoutes(client, pool, redis);
   }, { prefix: '/api/v1/client' });
 }

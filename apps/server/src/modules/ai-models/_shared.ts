@@ -1,6 +1,6 @@
 import type { AiPurpose } from '../../infra/ai/types.js';
 
-export const AI_PURPOSES: readonly AiPurpose[] = ['selection_parse', 'theme', 'artwork'];
+export const AI_PURPOSES: readonly AiPurpose[] = ['selection_parse', 'theme', 'artwork', 'cs_translation'];
 export const MAX_ASSIGNMENTS = 10;
 
 export function requestError(message: string, statusCode = 400, reason?: string) {

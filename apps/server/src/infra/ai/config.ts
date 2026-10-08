@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type pg from 'pg';
 import { supportsPurpose } from './protocols.js';
-import type { ActiveAiModel, AiPurpose, AssignedAiModel, ModelKind, ModelParams, ProviderProtocol } from './types.js';
+import { isTextPurpose, type ActiveAiModel, type AiPurpose, type AssignedAiModel, type ModelKind, type ModelParams, type ProviderProtocol } from './types.js';
 
 /** `scope` is AES-GCM associated data binding the ciphertext to one provider row. */
 export function encryptCredential(value: string, scope: string, encryptionKey: string): Buffer {
@@ -39,7 +39,7 @@ const assignedQuery = `SELECT m.id, m.kind, m.model, m.params, m.revision, a.pur
 
 async function assignedRows(pool: Pick<pg.Pool, 'query'>, purpose: AiPurpose) {
   return (await pool.query<AssignedRow>(assignedQuery, [purpose])).rows.filter(row => supportsPurpose(row.protocol, row.kind, row.purpose) &&
-    (purpose === 'selection_parse' || row.unitCredits !== null));
+    (isTextPurpose(purpose) || row.unitCredits !== null));
 }
 
 /** Usable models for a purpose in primary-first order, without secrets. */

@@ -9,6 +9,7 @@ import type { QuoteInput } from '../../../modules/projects/domain.js';
 import { captureScheme } from '../../../modules/projects/snapshot.js';
 import { transaction } from '../../../infra/database.js';
 import { quoteSchema } from './schema.js';
+import { resolveVisitor } from '../../../modules/customer-service/visitors.js';
 
 export async function registerQuoteRequestRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis) {
   app.get<{ Params: { code: string } }>('/schemes/:code/quote-context', {
@@ -23,7 +24,9 @@ export async function registerQuoteRequestRoutes(app: FastifyInstance, pool: pg.
   app.post<{ Body: QuoteInput }>('/quote-requests',{ preHandler: rateLimit(redis, 'quote', 'anonymousProject'), schema: { tags: ['client-quote-requests'], body: quoteSchema } },async (request,reply) => {
     reply.header('Cache-Control','private, no-store');
     const userId = optionalClientUserId(request);
-    const result = await createQuoteRequest(pool,userId,request.body,requestMessageLocale(request));
+    // 匿名提交绑定客服访客（令牌缺失或无效时照常受理），供访客以项目为上下文咨询
+    const visitorId = userId ? null : await resolveVisitor(pool, request.headers['x-visitor-token']);
+    const result = await createQuoteRequest(pool,userId,request.body,requestMessageLocale(request),visitorId);
     return reply.code(result.replayed ? 200 : 201).send({ code: 0, data: result.receipt });
   });
 }

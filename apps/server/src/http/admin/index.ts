@@ -24,6 +24,7 @@ import { registerAdminGenerationJobRoutes } from './generation-jobs/index.js';
 import { registerAdminAuthorization } from './authorization.js';
 import { registerAdminRoleRoutes } from './roles.controller.js';
 import { registerAdminDashboardRoutes } from './dashboard/index.js';
+import { registerAdminCustomerServiceRoutes } from './customer-service/index.js';
 
 export async function registerAdminModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
   await app.register(async admin => {
@@ -48,5 +49,6 @@ export async function registerAdminModule(app: FastifyInstance, config: Config, 
     await registerAdminAiModelRoutes(admin, pool, redis, config.aiModelEncryptionKey);
     await registerAdminPromptTemplateRoutes(admin, pool, redis);
     await registerAdminGenerationJobRoutes(admin, pool, storage, redis);
+    await registerAdminCustomerServiceRoutes(admin, pool, redis);
   }, { prefix: '/api/v1/admin' });
 }

@@ -163,7 +163,9 @@ services:
       AI_MODEL_TEST_DATABASE_URL: *test-db
       PROMPT_TEMPLATE_TEST_DATABASE_URL: *test-db
       ADMIN_ROLE_TEST_DATABASE_URL: *test-db
-      THEME_TEST_REDIS_URL: redis://:${REDIS_PASSWORD:?Run scripts/setup.ps1 first}@redis:6379/15
+      CS_TEST_DATABASE_URL: *test-db
+      THEME_TEST_REDIS_URL: &test-redis redis://:${REDIS_PASSWORD:?Run scripts/setup.ps1 first}@redis:6379/15
+      CS_TEST_REDIS_URL: *test-redis
     volumes:
       - ../apps/server/src:/app/src:ro
       - ../apps/server/migrations:/app/migrations:ro
