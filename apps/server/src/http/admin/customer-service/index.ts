@@ -10,9 +10,10 @@ import { AGENTS_CHANNEL, agentEventVisible } from '../../../modules/customer-ser
 import { listAdminMessages, markAgentRead, postAgentMessage, type AgentMessageInput } from '../../../modules/customer-service/messages.js';
 import { agentsOnline, removeAgent, setAway, touchAgent } from '../../../modules/customer-service/presence.js';
 import { settingsView, updateSettings, type CsSettingsInput } from '../../../modules/customer-service/settings.js';
+import { revalidatePrincipal, type Principal } from '../../../modules/identity/principal.js';
 import { adminUserId, issueEventTicket, requirePrincipal } from '../../authentication.js';
 import { streamEvents } from '../../sse.js';
-import { requireAdminPermission } from '../authorization.js';
+import { hasAdminPermission, requireAdminPermission } from '../authorization.js';
 import {
   actionSchema, agentsSchema, detailSchema, eventsSchema, getSettingsSchema, listSchema, messagesSchema, postMessageSchema, presenceSchema,
   putSettingsSchema, readSchema, ticketSchema, transferSchema,
@@ -22,6 +23,30 @@ type ConversationParams = { conversationId: string };
 
 function has(request: FastifyRequest, code: string): boolean {
   try { requireAdminPermission(request, code); return true; } catch { return false; }
+}
+
+/**
+ * 工作台流的事件过滤与心跳复核。心跳按建立时的令牌复核 Session 与最新权限：Session 失效或失去 read 时断流
+ * （坐席在线状态随心跳过期，与断线一致）；坐席资格失效时移出在线并退回其会话；supervise 按最新权限收窄或放宽过滤范围。
+ */
+export function workbenchStream(pool: pg.Pool, redis: Redis, principal: Principal, agent: boolean) {
+  const adminId = principal.localId;
+  let supervise = hasAdminPermission(principal.permissions, 'customer-service.supervise');
+  return {
+    visible: (payload: string) => agentEventVisible(payload, adminId, supervise),
+    heartbeat: async (): Promise<boolean> => {
+      if (agent && !await eligibleAgent(pool, adminId)) {
+        await removeAgent(redis, adminId);
+        await requeueAgentConversations(pool, redis, adminId);
+        return false;
+      }
+      const current = await revalidatePrincipal(pool, redis, principal);
+      if (!current || !hasAdminPermission(current.permissions, 'customer-service.read')) return false;
+      supervise = hasAdminPermission(current.permissions, 'customer-service.supervise');
+      if (agent) await touchAgent(redis, adminId);
+      return true;
+    },
+  };
 }
 
 /** 路由级权限由 adminRoutePermissions 检查；这里再校验依赖（如 supervise 依赖 read + reply） */
@@ -90,24 +115,19 @@ export async function registerAdminCustomerServiceRoutes(app: FastifyInstance, p
       return { code: 0, data: { ticket: await issueEventTicket(redis, 'cs-admin', { subject: 'workbench', userId: adminId, token: requirePrincipal(request, 'admin').token }) } };
     });
 
-    // 工作台流：只订阅 cs:agents；坐席连接存活且未设为离开时计入在线，心跳时重新校验坐席有效性
+    // 工作台流：只订阅 cs:agents；坐席连接存活且未设为离开时计入在线，心跳时复核登录状态、权限与坐席有效性
     scope.get<{ Querystring: { ticket: string } }>('/events', {
       config: { authentication: 'events', eventTicketPrefix: 'cs-admin', eventTicketParam: null }, schema: eventsSchema,
     }, async (request, reply) => {
-      const current = viewer(request, 'customer-service.read');
-      const agent = has(request, 'customer-service.reply') && await eligibleAgent(pool, current.adminId);
+      const { adminId } = viewer(request, 'customer-service.read');
+      const agent = has(request, 'customer-service.reply') && await eligibleAgent(pool, adminId);
+      const stream = workbenchStream(pool, redis, requirePrincipal(request, 'admin'), agent);
       await streamEvents(redis, reply, {
         channels: [AGENTS_CHANNEL],
-        filter: (_channel, payload) => (agentEventVisible(payload, current.adminId, current.supervise) ? payload : null),
-        onOpen: async () => { if (agent) await touchAgent(redis, current.adminId); },
-        replay: async () => [{ type: 'ready', counts: await conversationCounts(pool, current.adminId) }],
-        onHeartbeat: async () => {
-          if (!agent) return true;
-          if (await eligibleAgent(pool, current.adminId)) { await touchAgent(redis, current.adminId); return true; }
-          await removeAgent(redis, current.adminId);
-          await requeueAgentConversations(pool, redis, current.adminId);
-          return false;
-        },
+        filter: (_channel, payload) => (stream.visible(payload) ? payload : null),
+        onOpen: async () => { if (agent) await touchAgent(redis, adminId); },
+        replay: async () => [{ type: 'ready', counts: await conversationCounts(pool, adminId) }],
+        onHeartbeat: stream.heartbeat,
       });
     });
 

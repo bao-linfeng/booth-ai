@@ -5,7 +5,15 @@ import type {
   WorkbenchEvent,
 } from '#/api/core/customer-service';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -39,6 +47,7 @@ import {
 import { statusLabels as projectStatusLabels } from '#/api/core/projects';
 
 import {
+  fetchAllAfter,
   maxSeq,
   mergeMessages,
   minSeq,
@@ -61,13 +70,21 @@ const brokenCovers = reactive(new Set<string>());
 interface Pending {
   body: string;
   clientMessageId: string;
+  conversationId: string;
   kind: 'note' | 'text';
   status: 'failed' | 'sending';
 }
 
 const userStore = useUserStore();
 const messages = ref<AdminMessage[]>([]);
-const pending = ref<Pending[]>([]);
+/** 发送队列与草稿按会话保存：切走再切回时仍能看到发送中/失败的消息并重试 */
+const outbox = reactive(new Map<string, Pending[]>());
+const drafts = new Map<string, string>();
+/**
+ * 消息窗口版本：每次切换会话递增。异步请求发出时记下版本，返回时版本不同就丢弃，
+ * 避免旧会话（或同一会话上一轮窗口）的响应写进当前面板。
+ */
+let windowVersion = 0;
 const hasMore = ref(false);
 const loading = ref(false);
 const acting = ref(false);
@@ -77,6 +94,10 @@ const expanded = ref(new Set<string>());
 const scroller = ref<HTMLElement>();
 
 const conversation = computed(() => props.detail?.conversation ?? null);
+const pending = computed(() => {
+  const id = conversation.value?.id;
+  return (id && outbox.get(id)) || [];
+});
 const isMine = computed(
   () =>
     conversation.value?.status === 'active' &&
@@ -103,7 +124,9 @@ async function scrollToBottom() {
   scroller.value?.scrollTo({ top: scroller.value.scrollHeight });
 }
 
+/** 只在页面可见时上报已读：后台标签页收到的消息不算读到，切回前台时再补报 */
 async function reportRead() {
+  if (document.visibilityState !== 'visible') return;
   const current = conversation.value;
   if (!current || !props.canReply || current.status !== 'active') return;
   if (!isMine.value && !props.supervise) return;
@@ -111,60 +134,93 @@ async function reportRead() {
   if (seq !== null) await markReadApi(current.id, seq).catch(() => undefined);
 }
 
+function reportReadWhenVisible() {
+  if (document.visibilityState === 'visible' && !loading.value)
+    void reportRead();
+}
+onMounted(() =>
+  document.addEventListener('visibilitychange', reportReadWhenVisible),
+);
+onBeforeUnmount(() =>
+  document.removeEventListener('visibilitychange', reportReadWhenVisible),
+);
+
 watch(
   () => conversation.value?.id,
-  async (id) => {
+  async (id, previousId) => {
+    const version = ++windowVersion;
+    if (previousId) {
+      if (body.value) drafts.set(previousId, body.value);
+      else drafts.delete(previousId);
+    }
     messages.value = [];
-    pending.value = [];
+    hasMore.value = false;
     expanded.value = new Set();
-    body.value = '';
-    if (!id) return;
+    body.value = (id && drafts.get(id)) || '';
+    if (!id) {
+      loading.value = false;
+      return;
+    }
     loading.value = true;
     try {
       const page = await listMessagesApi(id, { limit: 30 });
-      if (conversation.value?.id !== id) return;
+      if (version !== windowVersion) return;
       messages.value = page.items;
       hasMore.value = page.hasMore;
       await scrollToBottom();
       await reportRead();
     } finally {
-      loading.value = false;
+      if (version === windowVersion) loading.value = false;
     }
   },
   { immediate: true },
 );
 
-async function fetchNewer() {
+/**
+ * 增量拉取直到 hasMore=false。默认从已有最大 seq 之后拉；
+ * 校准时从已加载窗口起点重拉，顺带更新断线期间完成的译文。
+ */
+async function fetchNewer(after = maxSeq(messages.value)) {
   const id = conversation.value?.id;
   if (!id) return;
-  const page = await listMessagesApi(id, {
-    after: maxSeq(messages.value),
-    limit: 100,
-  });
-  if (conversation.value?.id !== id || page.items.length === 0) return;
+  const version = windowVersion;
+  const items = await fetchAllAfter(
+    (cursor) => listMessagesApi(id, { after: cursor, limit: 100 }),
+    after,
+  );
+  if (version !== windowVersion || items.length === 0) return;
   const atBottom =
     !scroller.value ||
     scroller.value.scrollHeight -
       scroller.value.scrollTop -
       scroller.value.clientHeight <
       80;
-  messages.value = mergeMessages(messages.value, page.items);
+  messages.value = mergeMessages(messages.value, items);
   if (atBottom) await scrollToBottom();
   await reportRead();
 }
 
-// 收到事件后按 after 增量拉取；译文完成时只重取该条
+// 收到事件后按 after 增量拉取；译文完成时只重取该条；ready 表示可能漏了事件，整窗校准
 watch(
   () => props.event?.version,
   async () => {
     const id = conversation.value?.id;
     const event = props.event?.event;
-    if (!id || !event || event.type === 'ready') return;
+    if (!id || !event) return;
+    if (event.type === 'ready') {
+      // 首屏仍在加载时拿到的就是最新数据，无需校准
+      if (loading.value) return;
+      const first = minSeq(messages.value);
+      await fetchNewer(first === undefined ? 0 : first - 1);
+      return;
+    }
     if (event.type === 'message.translated' && event.seq) {
+      const version = windowVersion;
       const page = await listMessagesApi(id, {
         after: event.seq - 1,
         limit: 1,
       });
+      if (version !== windowVersion) return;
       messages.value = mergeMessages(messages.value, page.items);
       return;
     }
@@ -177,7 +233,10 @@ async function loadOlder() {
   const before = minSeq(messages.value);
   if (!id || before === undefined) return;
   const previousHeight = scroller.value?.scrollHeight ?? 0;
+  const version = windowVersion;
   const page = await listMessagesApi(id, { before, limit: 30 });
+  // 切换过会话（包括切走再切回）时窗口已重建，旧游标拉到的历史会留下断层
+  if (version !== windowVersion) return;
   messages.value = mergeMessages(messages.value, page.items);
   hasMore.value = page.hasMore;
   await nextTick();
@@ -186,8 +245,7 @@ async function loadOlder() {
 }
 
 async function deliver(item: Pending) {
-  const id = conversation.value?.id;
-  if (!id) return;
+  const id = item.conversationId;
   item.status = 'sending';
   try {
     const { message } = await postMessageApi(id, {
@@ -195,7 +253,11 @@ async function deliver(item: Pending) {
       clientMessageId: item.clientMessageId,
       kind: item.kind,
     });
-    pending.value = pending.value.filter((other) => other !== item);
+    const rest = (outbox.get(id) ?? []).filter((other) => other !== item);
+    if (rest.length > 0) outbox.set(id, rest);
+    else outbox.delete(id);
+    // 发送期间已切到其他会话时只出队，消息由切回后的加载或事件拉取补上
+    if (conversation.value?.id !== id) return;
     messages.value = mergeMessages(messages.value, [message]);
     await scrollToBottom();
   } catch {
@@ -205,16 +267,20 @@ async function deliver(item: Pending) {
 }
 
 async function send() {
+  const id = conversation.value?.id;
   const text = body.value.trim();
-  if (!text || !canCompose.value) return;
-  pending.value.push({
+  if (!id || !text || !canCompose.value) return;
+  if (!outbox.has(id)) outbox.set(id, []);
+  const queue = outbox.get(id);
+  queue?.push({
     body: text,
     clientMessageId: crypto.randomUUID(),
+    conversationId: id,
     kind: mode.value,
     status: 'sending',
   });
   // 取回响应式代理，后续状态变更才能触发渲染
-  const item = pending.value.at(-1);
+  const item = queue?.at(-1);
   if (!item) return;
   body.value = '';
   await scrollToBottom();

@@ -3,12 +3,14 @@ import { authenticationError } from '../../modules/identity/principal.js';
 import { requirePrincipal } from '../authentication.js';
 import { assetPermissionGroups, permissionCatalog } from '../../modules/identity/permissions.js';
 
-export function requireAdminPermission(request: Parameters<typeof requirePrincipal>[0], code: string): void {
-  const permissions = requirePrincipal(request, 'admin').permissions;
+/** 权限码及其依赖（如 supervise 依赖 read + reply）是否全部授予 */
+export function hasAdminPermission(permissions: string[], code: string): boolean {
   const definition = permissionCatalog.find(item => item.code === code);
-  if (!definition || ![code, ...definition.requires].every(required => permissions.includes(required))) {
-    throw authenticationError(403, 'ACCESS_DENIED');
-  }
+  return !!definition && [code, ...definition.requires].every(required => permissions.includes(required));
+}
+
+export function requireAdminPermission(request: Parameters<typeof requirePrincipal>[0], code: string): void {
+  if (!hasAdminPermission(requirePrincipal(request, 'admin').permissions, code)) throw authenticationError(403, 'ACCESS_DENIED');
 }
 
 export function adminRoutePermissions(method: string, url: string): string[] | null {

@@ -2,8 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
+import { readUploadedFile, workbookUploadMaxBytes } from '../../uploads.js';
 import { commitImport } from '../../../modules/schemes/imports/commit.js';
 import { previewImport } from '../../../modules/schemes/imports/preview.js';
+import { buildImportTemplate } from '../../../modules/schemes/imports/template.js';
 import type { CommitImportOptions } from '../../../modules/schemes/imports/types.js';
 
 interface ImportParams {
@@ -11,10 +13,19 @@ interface ImportParams {
 }
 
 export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
+  app.get('/scheme-imports/template', {
+    schema: { tags: ['admin-scheme-imports'], summary: '下载与当前解析规则和启用字典一致的方案导入模板' },
+  }, async (_request, reply) => {
+    const file = await buildImportTemplate(pool);
+    return reply.header('Cache-Control', 'private, no-store')
+      .header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('方案导入模板.xlsx')}`)
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(file);
+  });
+
   app.post('/scheme-imports', {
     schema: { tags: ['admin-scheme-imports'] },
   }, async (request, reply) => {
-    const data = await request.file();
+    const data = await request.file({ limits: { fileSize: workbookUploadMaxBytes } });
     if (!data) {
       return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'No file uploaded' } });
     }
@@ -22,11 +33,7 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
     if (!lowerFilename.endsWith('.xlsx')) {
       return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Only .xlsx files are supported' } });
     }
-    const chunks: Buffer[] = [];
-    for await (const chunk of data.file) {
-      chunks.push(chunk);
-    }
-    const buffer = Buffer.concat(chunks);
+    const buffer = await readUploadedFile(data);
     const adminId = adminUserId(request);
     const result = await previewImport(pool, adminId, buffer, data.filename);
     return { code: 0, data: result };
@@ -40,7 +47,7 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
         type: 'object', required: ['duplicateStrategy'], additionalProperties: false,
         properties: {
           duplicateStrategy: { type: 'string', enum: ['skip', 'update'] },
-          selectedRows: { type: 'array', items: { type: 'integer', minimum: 2 }, uniqueItems: true },
+          selectedRowIds: { type: 'array', items: { type: 'integer', minimum: 1 }, uniqueItems: true },
         },
       },
     },

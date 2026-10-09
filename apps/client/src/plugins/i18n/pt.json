@@ -310,7 +310,8 @@
     "validationRange": "Informe um valor entre 0,001 e 1000 metros.",
     "validationDecimal": "Até três casas decimais (precisão de milímetros).",
     "validationArea": "Informe uma área maior que 0 e de até 1.000.000.",
-    "boothSpaceSelectLabel": "Dimensões do estande"
+    "boothSpaceSelectLabel": "Dimensões do estande",
+    "customSize": "Personalizado {length} × {width} m"
   },
   "schemeCard": {
     "matchDirect": "Uso direto",
@@ -525,7 +526,8 @@
     "errorNetworkConfirm": "Ainda não foi possível confirmar a criação da tarefa. Confirme novamente; a mesma solicitação será reutilizada para evitar duplicações. Seus dados permanecem nesta página.",
     "errorMaskUnavailable": "Não há área editável disponível para esta vista. Escolha outra imagem original.",
     "errorTemplateUnavailable": "Este estilo está indisponível no momento. Ajuste suas preferências visuais.",
-    "errorBlocked": "Não é possível gerar com estas configurações agora. Ajuste suas preferências ou tente mais tarde."
+    "errorBlocked": "Não é possível gerar com estas configurações agora. Ajuste suas preferências ou tente mais tarde.",
+    "pendingRestored": "O último envio ainda não foi confirmado, por isso as configurações foram restauradas. Ao gerar, a solicitação original será confirmada sem criar tarefa duplicada nem reservar créditos novamente."
   },
   "themeJob": {
     "back": "Voltar",
@@ -599,7 +601,9 @@
     "failureProviderError": "Provedor de IA temporariamente indisponível",
     "failureInternalError": "Erro interno do sistema",
     "statusSucceeded": "Geração concluída",
-    "previewThumbnailAriaLabel": "Pré-visualizar renderização {n}"
+    "previewThumbnailAriaLabel": "Pré-visualizar renderização {n}",
+    "failureGenerationFailed": "A geração não foi concluída. Você pode ajustar as configurações e gerar novamente.",
+    "failureGeneric": "A geração não foi concluída. Tente novamente mais tarde."
   },
   "artworkJob": {
     "pageTitle": "Identidade / Artes dos quatro lados / Entrega",
@@ -680,7 +684,11 @@
     "statusSubmitting": "Generating",
     "statusGenerated": "Checking and storing",
     "statusSucceeded": "Accepted",
-    "statusFailed": "Not accepted"
+    "statusFailed": "Not accepted",
+    "offerChanged": "O preço foi atualizado. Revise o novo custo e confirme novamente.",
+    "offerRenewed": "A cotação anterior expirou e uma nova foi obtida pelo mesmo preço. Confirme novamente.",
+    "errorOfferFailed": "Não foi possível obter o preço. Atualize e tente novamente mais tarde.",
+    "errorServiceUnavailable": "O serviço de geração de materiais está temporariamente indisponível. Tente novamente mais tarde."
   },
   "quoteRequest": {
     "backToSelection": "Voltar à seleção",

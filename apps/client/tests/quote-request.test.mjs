@@ -53,14 +53,15 @@ const { default: QuoteRequest } = await server.ssrLoadModule('/src/pages/QuoteRe
 const { emptyRequirement } = await server.ssrLoadModule('/src/features/selection/types.ts')
 const { selectionSnapshot, writeSelectionSession } = await server.ssrLoadModule('/src/features/selection/session.ts')
 const { writeManualHandoff } = await server.ssrLoadModule('/src/features/selection/handoff.ts')
+const { getVisitorId } = await server.ssrLoadModule('/src/lib/visitor-id.ts')
 const user = { id: 'test-user', username: '测试用户', nickname: '测试用户', city: '上海', email: '', mobile: '', company: '' }
 const validForm = { exhibitionName: '上海测试展', countryCode: 'CN', city: '上海', startDate: '2026-11-01', endDate: '2026-11-04', scopeCodes: ['materials'], scopeNotes: '保留范围说明', currency: 'CNY', amount: '30000', customerType: 'individual', company: '', contactName: '王测试', email: 'test@example.com', phone: '', notes: '不能丢失的补充说明' }
-const draftKey = manual => manual ? 'booth:manual-draft' : 'booth:quote-draft:SC-6030:standard:pending'
+const draftKey = (manual, themeJobId = 'standard') => manual ? 'booth:manual-draft' : `booth:quote-draft:SC-6030:${themeJobId}:pending`
 async function settle() { for (let i = 0; i < 4; i++) { await nextTick(); await new Promise(resolve => setTimeout(resolve, 5)) } }
-async function mount({ manual = false, form = {}, description = '需要科技感展台', restore = false, selection, query = '', respond } = {}) {
+async function mount({ manual = false, form = {}, description = '需要科技感展台', restore = false, selection, query = '', respond, themeJob } = {}) {
   if (!restore) {
     sessionStorage.clear()
-    sessionStorage.setItem(draftKey(manual), JSON.stringify({ owner: user.id, form: { ...validForm, ...form }, pending: null, pendingManual: null, originalDescription: description }))
+    sessionStorage.setItem(draftKey(manual, themeJob?.jobId), JSON.stringify({ owner: user.id, form: { ...validForm, ...form }, pending: null, pendingManual: null, originalDescription: description }))
     if (selection) writeSelectionSession(selection)
   }
   const calls = []
@@ -71,6 +72,7 @@ async function mount({ manual = false, form = {}, description = '需要科技感
       calls.push({ path, method: options?.method ?? 'GET', body: options?.body ? JSON.parse(JSON.stringify(options.body)) : undefined })
       if (path.endsWith('/quote-context')) return { code: 0, data: { schemeCode: 'SC-6030', schemeRevision: 1, bomRevision: 7, drawingRevision: 1, artworkRevision: 1, materialsStatus: { bom: 'available', drawings: 'available', artworks: 'available' } } }
       if (path === '/api/v1/client/schemes/SC-6030') return { code: 0, data: { images: [] } }
+      if (themeJob && path === `/api/v1/client/theme-jobs/${themeJob.jobId}`) return { code: 0, data: structuredClone(themeJob) }
       assert.equal(path, manual ? '/api/v1/client/manual-requests' : '/api/v1/client/quote-requests')
       assert.equal(options.method, 'POST')
       if (respond) await respond(calls.filter(call => call.method === 'POST').length)
@@ -133,7 +135,7 @@ function selectionSession({ code = 'SC-6030', mode = 'filtered', searchId = 'sea
       counts: { direct: 0, reference: mode === 'random' ? 0 : 1, random: mode === 'random' ? 1 : 0, total: 1 },
       diagnostics: { reviewedPublished: 1, ready: 1, exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 } },
       reasons: [], suggestions: [], missingFields: [] },
-    attemptId: 'attempt-1', parseId: null, searchId, imagesExpiresAt: 0, activeImageByCode: {} }
+    attemptId: 'attempt-1', visitorId: getVisitorId(), parseId: null, searchId, imagesExpiresAt: 0, activeImageByCode: {} }
 }
 test('manual: AI selection handoff pre-fills the description, pending questions and contact', async () => {
   sessionStorage.clear()
@@ -172,6 +174,44 @@ for (const scenario of [
     } finally { await mounted.close() }
   })
 }
+function themeJob(searchId) {
+  return { jobId: 'theme-1', schemeCode: 'SC-6030', searchId, status: 'succeeded', phase: null, requestedCount: 1, usableCount: 1,
+    original: { assetId: 'asset-1', previewUrl: '/original.png' }, results: [{ resultId: 'result-1', previewUrl: '/result.png', width: 1600, height: 900 }],
+    selection: { resultId: 'result-1', revision: 2 }, credits: { status: 'settled', reservedCredits: 1, chargedCredits: 1, releasedCredits: 0 }, failure: null, pollAfterMs: null }
+}
+test('quote: theme result uses the requirements of the search recorded on the theme job', async () => {
+  const mounted = await mount({ selection: selectionSession(), themeJob: themeJob('search-1'), query: '?themeJobId=theme-1' })
+  try {
+    assert.match(mounted.container.textContent, /高度略高于需求/)
+    await submit(mounted); assert.equal(posts(mounted).length, 1)
+    assert.deepEqual(posts(mounted)[0].body.requirementContext, { originalDescription: selectionText, confirmedRequirements: selectionRequirement })
+    assert.deepEqual(posts(mounted)[0].body.themeSelection, { themeJobId: 'theme-1', resultId: 'result-1', selectionRevision: 2 })
+  } finally { await mounted.close() }
+})
+for (const scenario of [
+  { name: 'from another search of the same scheme', searchId: 'search-old', query: '?themeJobId=theme-1' },
+  { name: 'from another search even when the route names the current one', searchId: 'search-old', query: '?themeJobId=theme-1&searchId=search-1' },
+  { name: 'not created from AI selection', searchId: null, query: '?themeJobId=theme-1' },
+]) {
+  test(`quote: theme result ${scenario.name} does not attach the current selection requirements`, async () => {
+    const mounted = await mount({ selection: selectionSession(), themeJob: themeJob(scenario.searchId), query: scenario.query })
+    try {
+      assert.doesNotMatch(mounted.container.textContent, /高度略高于需求/)
+      await submit(mounted); assert.equal(posts(mounted).length, 1)
+      assert.equal('requirementContext' in posts(mounted)[0].body, false)
+      assert.equal(posts(mounted)[0].body.themeSelection.themeJobId, 'theme-1')
+    } finally { await mounted.close() }
+  })
+}
+test('quote: a selection session owned by a previous visitor is discarded', async () => {
+  const mounted = await mount({ selection: { ...selectionSession(), visitorId: 'v_previous_visitor' }, query: '?entryPoint=scheme_detail&searchId=search-1' })
+  try {
+    assert.doesNotMatch(mounted.container.textContent, /高度略高于需求/)
+    await submit(mounted); assert.equal(posts(mounted).length, 1)
+    assert.equal('requirementContext' in posts(mounted)[0].body, false)
+    assert.equal(sessionStorage.getItem('booth-ai:ai-selection'), null)
+  } finally { await mounted.close() }
+})
 for (const manual of [false, true]) {
   const label = manual ? 'manual' : 'quote'
   for (const scenario of [

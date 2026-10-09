@@ -346,3 +346,24 @@ test('BOM load errors retry; stale XLSX displays refresh status and quote revisi
     assert.deepEqual(quoteQueries(mounted), Array(2).fill({ entryPoint: 'bill_of_materials', bomRevision: '8', searchId: 'search-42' }))
   } finally { await mounted.close() }
 })
+
+test('an expired gallery link is re-signed by re-reading the scheme detail once the link is no longer fresh', async () => {
+  let version = 0
+  const signed = () => ({ ...detail, images: detail.images.map(image => ({ ...image, url: `${image.url}?v=${version}`, thumbnailUrl: `${image.thumbnailUrl}?v=${version}` })) })
+  const mounted = await mount({ api: { apiFetch: async () => ({ code: 0, data: signed() }) } })
+  const realNow = Date.now
+  try {
+    const reads = () => mounted.calls.filter(call => call.name === 'apiFetch').length
+    const gallery = () => mounted.container.querySelector('img[src^="https://assets.example/front-thumb.jpg"]')
+    assert.equal(reads(), 1)
+    gallery().dispatchEvent(new Event('error'))
+    await settle()
+    assert.equal(reads(), 1, 'a link that was just issued is not renewed')
+    Date.now = () => realNow() + 60_000
+    version = 1
+    mounted.container.querySelector('[role="group"] img').dispatchEvent(new Event('error'))
+    await settle()
+    assert.equal(reads(), 2)
+    assert.equal(gallery().getAttribute('src'), 'https://assets.example/front-thumb.jpg?v=1')
+  } finally { Date.now = realNow; await mounted.close() }
+})

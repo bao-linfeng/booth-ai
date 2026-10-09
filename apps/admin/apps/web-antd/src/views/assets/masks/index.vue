@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import type { ImageSize } from '../shared/image-spec';
+import type { SchemeFilterValues } from '../shared/scheme-filter';
+
 import { onMounted, ref } from 'vue';
 
 import { useAccess } from '@vben/access';
 import { Page } from '@vben/common-ui';
-import { debounce, formatDate } from '@vben/utils';
+import { formatDate } from '@vben/utils';
 
-import { Button, InputNumber, message, Modal } from 'ant-design-vue';
+import { Button, InputNumber, message, Modal, Tag } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
@@ -15,59 +18,67 @@ import {
   replaceAssetFileApi,
   updateAssetApi,
 } from '#/api/core/assets';
-import { getSchemeListApi } from '#/api/core/schemes';
 
+import {
+  maskSizeError,
+  readImageSize,
+  versionImageSize,
+} from '../shared/image-spec';
+import {
+  createSchemeFilterFormOptions,
+  useRouteSchemeCode,
+  useSchemeOptions,
+} from '../shared/scheme-filter';
 import MaskOverlayModal from './components/MaskOverlayModal.vue';
+import PairModal from './components/PairModal.vue';
 import UploadModal from './components/UploadModal.vue';
-import { createFormOptions, createGridOptions } from './options';
+import { createGridOptions } from './options';
 
 const uploadModalRef = ref<InstanceType<typeof UploadModal>>();
 const { hasAccessByCodes } = useAccess();
 const overlayModalRef = ref<InstanceType<typeof MaskOverlayModal>>();
+const pairModalRef = ref<InstanceType<typeof PairModal>>();
+// 配对需要列出同方案效果图
+const canPair = () =>
+  hasAccessByCodes(['assets-masks.update']) &&
+  hasAccessByCodes(['assets-renderings.read']);
 
-const schemeOptions = ref<{ label: string; value: string }[]>([]);
-const schemeLoading = ref(false);
-
-async function fetchSchemes(keyword?: string) {
-  schemeLoading.value = true;
-  try {
-    const res = await getSchemeListApi({
-      ...(keyword ? { code: keyword } : {}),
-      pageSize: 20,
-    });
-    schemeOptions.value = (res.data ?? []).map((item) => ({
-      label: `${item.code} - ${item.name}`,
-      value: item.code,
-    }));
-  } finally {
-    schemeLoading.value = false;
-  }
-}
-
-const handleSchemeSearch = debounce((value: string) => {
-  fetchSchemes(value || undefined);
-}, 300);
+const schemes = useSchemeOptions();
+const initialSchemeCode = useRouteSchemeCode(applySchemeFilter);
+schemes.pin(initialSchemeCode);
 
 onMounted(() => {
-  fetchSchemes();
+  schemes.search();
 });
 
-const formOptions = createFormOptions({
-  options: schemeOptions,
-  loading: schemeLoading,
-  onSearch: handleSchemeSearch,
+const formOptions = createSchemeFilterFormOptions({
+  defaultSchemeCode: initialSchemeCode,
+  loading: schemes.loading,
+  onSearch: schemes.onSearch,
+  options: schemes.options,
 });
 const gridOptions = createGridOptions('mask');
 
 const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
 
+async function applySchemeFilter(code: string | undefined) {
+  schemes.pin(code);
+  await gridApi.formApi.setFieldValue('schemeCode', code);
+  const values = await gridApi.formApi.getValues();
+  gridApi.formApi.setLatestSubmissionValues(values);
+  gridApi.reload(values);
+}
+
 function handleUpload() {
-  uploadModalRef.value?.open();
+  // 上传默认归属列表当前生效的筛选方案
+  const { schemeCode } =
+    gridApi.formApi.getLatestSubmissionValues() as SchemeFilterValues;
+  uploadModalRef.value?.open(schemeCode);
 }
 
 async function handlePreview(row: any) {
   if (!row.relatedAssetId) {
-    message.warning('该蒙版未配对效果图，无法叠加预览');
+    message.warning('该蒙版未配对效果图，请先配对后再预览');
     return;
   }
 
@@ -76,7 +87,7 @@ async function handlePreview(row: any) {
     const renderingRow = assets.find((a: any) => a.id === row.relatedAssetId);
 
     if (!renderingRow) {
-      message.error('未找到配对的效果图数据');
+      message.error('未找到配对的效果图，请刷新列表后通过「改配」重新配对');
       return;
     }
 
@@ -94,19 +105,45 @@ async function handleReplace(row: any) {
   input.addEventListener('change', async () => {
     const file = input.files?.[0];
     if (!file) return;
+    let size: ImageSize;
     try {
+      size = await readImageSize(file);
+    } catch (error) {
+      message.error((error as Error).message);
+      return;
+    }
+    try {
+      // 未配对的蒙版没有尺寸基准，交由发布检查兜底
+      if (row.relatedAssetId) {
+        const renderings = await listSchemeAssetsApi(
+          row.schemeCode,
+          'rendering',
+        );
+        const rendering = renderings.find((a) => a.id === row.relatedAssetId);
+        const sizeError = maskSizeError(
+          size,
+          versionImageSize(rendering?.currentVersion),
+        );
+        if (sizeError) {
+          message.error(sizeError);
+          return;
+        }
+      }
       await replaceAssetFileApi(row.schemeCode, row.id, file, row.revision);
       message.success('替换成功');
       gridApi.reload();
-    } catch {
-      message.error('替换失败');
+    } catch (error) {
+      // 接口错误已由请求拦截器提示具体原因
+      console.error(error);
     }
   });
   input.click();
 }
 
 async function handleSortOrderChange(value: any, row: any) {
-  const num = typeof value === 'number' ? value : value ? Number(value) : null;
+  let num: null | number = null;
+  if (typeof value === 'number') num = value;
+  else if (value) num = Number(value);
   if (num === null || num === row.sortOrder || Number.isNaN(num)) return;
   try {
     await updateAssetApi(row.schemeCode, row.id, {
@@ -132,6 +169,10 @@ async function handleDownload(row: any) {
   } catch (error) {
     console.error(error);
   }
+}
+
+function handlePair(row: any) {
+  pairModalRef.value?.open(row);
 }
 
 function handleDelete(row: any) {
@@ -161,8 +202,9 @@ function handleDelete(row: any) {
           v-access:code="['assets-masks.upload']"
           type="primary"
           @click="handleUpload"
-          >上传蒙版</Button
         >
+          上传蒙版
+        </Button>
       </template>
       <template #filename="{ row }">
         {{ row.currentVersion?.originalFilename || '-' }}
@@ -177,6 +219,10 @@ function handleDelete(row: any) {
           @change="(value) => handleSortOrderChange(value, row)"
         />
       </template>
+      <template #pairing="{ row }">
+        <Tag v-if="row.relatedAssetId" color="success">已配对</Tag>
+        <Tag v-else color="error">未配对</Tag>
+      </template>
       <template #createdAt="{ row }">
         {{ formatDate(row.createdAt) }}
       </template>
@@ -188,6 +234,14 @@ function handleDelete(row: any) {
           @click="handlePreview(row)"
         >
           预览
+        </Button>
+        <Button
+          v-if="canPair()"
+          type="link"
+          size="small"
+          @click="handlePair(row)"
+        >
+          {{ row.relatedAssetId ? '改配' : '配对' }}
         </Button>
         <Button
           v-access:code="['assets-masks.replace']"
@@ -218,5 +272,6 @@ function handleDelete(row: any) {
     </Grid>
     <UploadModal ref="uploadModalRef" @reload="gridApi.reload()" />
     <MaskOverlayModal ref="overlayModalRef" />
+    <PairModal ref="pairModalRef" @reload="gridApi.reload()" />
   </Page>
 </template>

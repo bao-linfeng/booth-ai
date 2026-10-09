@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import type { ImageSize } from '../shared/image-spec';
+import type { SchemeFilterValues } from '../shared/scheme-filter';
+
+import type { SchemeAsset } from '#/api/core/assets';
+
 import { onMounted, ref } from 'vue';
 
 import { useAccess } from '@vben/access';
 import { Page } from '@vben/common-ui';
-import { debounce, formatDate } from '@vben/utils';
+import { formatDate } from '@vben/utils';
 
 import { Button, InputNumber, message, Modal } from 'ant-design-vue';
 
@@ -11,55 +16,59 @@ import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
   deleteAssetApi,
   getAssetDownloadUrlApi,
+  listSchemeAssetsApi,
   replaceAssetFileApi,
   updateAssetApi,
 } from '#/api/core/assets';
-import { getSchemeListApi } from '#/api/core/schemes';
 
+import {
+  pairedMaskWarning,
+  readImageSize,
+  renderingSizeError,
+} from '../shared/image-spec';
+import { renderingDeletePlan } from '../shared/pairing';
+import {
+  createSchemeFilterFormOptions,
+  useRouteSchemeCode,
+  useSchemeOptions,
+} from '../shared/scheme-filter';
 import UploadModal from './components/UploadModal.vue';
-import { createFormOptions, createGridOptions } from './options';
+import { createGridOptions } from './options';
 
 const uploadModalRef = ref<InstanceType<typeof UploadModal>>();
 const { hasAccessByCodes } = useAccess();
 
-const schemeOptions = ref<{ label: string; value: string }[]>([]);
-const schemeLoading = ref(false);
-
-async function fetchSchemes(keyword?: string) {
-  schemeLoading.value = true;
-  try {
-    const res = await getSchemeListApi({
-      ...(keyword ? { code: keyword } : {}),
-      pageSize: 20,
-    });
-    schemeOptions.value = (res.data ?? []).map((item) => ({
-      label: `${item.code} - ${item.name}`,
-      value: item.code,
-    }));
-  } finally {
-    schemeLoading.value = false;
-  }
-}
-
-const handleSchemeSearch = debounce((value: string) => {
-  fetchSchemes(value || undefined);
-}, 300);
+const schemes = useSchemeOptions();
+const initialSchemeCode = useRouteSchemeCode(applySchemeFilter);
+schemes.pin(initialSchemeCode);
 
 onMounted(() => {
-  fetchSchemes();
+  schemes.search();
 });
 
-const formOptions = createFormOptions({
-  options: schemeOptions,
-  loading: schemeLoading,
-  onSearch: handleSchemeSearch,
+const formOptions = createSchemeFilterFormOptions({
+  defaultSchemeCode: initialSchemeCode,
+  loading: schemes.loading,
+  onSearch: schemes.onSearch,
+  options: schemes.options,
 });
 const gridOptions = createGridOptions('rendering');
 
 const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
 
+async function applySchemeFilter(code: string | undefined) {
+  schemes.pin(code);
+  await gridApi.formApi.setFieldValue('schemeCode', code);
+  const values = await gridApi.formApi.getValues();
+  gridApi.formApi.setLatestSubmissionValues(values);
+  gridApi.reload(values);
+}
+
 function handleUpload() {
-  uploadModalRef.value?.open();
+  // 上传默认归属列表当前生效的筛选方案
+  const { schemeCode } =
+    gridApi.formApi.getLatestSubmissionValues() as SchemeFilterValues;
+  uploadModalRef.value?.open(schemeCode);
 }
 
 async function handlePreview(row: any) {
@@ -78,19 +87,53 @@ async function handleReplace(row: any) {
   input.addEventListener('change', async () => {
     const file = input.files?.[0];
     if (!file) return;
+    let size: ImageSize;
     try {
+      size = await readImageSize(file);
+    } catch (error) {
+      message.error((error as Error).message);
+      return;
+    }
+    const sizeError = renderingSizeError(size);
+    if (sizeError) {
+      message.error(sizeError);
+      return;
+    }
+    try {
+      const masks = await listSchemeAssetsApi(row.schemeCode, 'mask');
+      const warning = pairedMaskWarning(
+        size,
+        masks.find((mask) => mask.relatedAssetId === row.id),
+      );
+      if (warning && !(await confirmReplace(warning))) return;
       await replaceAssetFileApi(row.schemeCode, row.id, file, row.revision);
-      message.success('替换成功');
+      message.success(warning ? '替换成功，请继续替换对应蒙版' : '替换成功');
       gridApi.reload();
-    } catch {
-      message.error('替换失败');
+    } catch (error) {
+      // 接口错误已由请求拦截器提示具体原因
+      console.error(error);
     }
   });
   input.click();
 }
 
+function confirmReplace(content: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    Modal.confirm({
+      title: '蒙版尺寸将不一致',
+      content,
+      okText: '继续替换',
+      cancelText: '取消',
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  });
+}
+
 async function handleSortOrderChange(value: any, row: any) {
-  const num = typeof value === 'number' ? value : value ? Number(value) : null;
+  let num: null | number = null;
+  if (typeof value === 'number') num = value;
+  else if (value) num = Number(value);
   if (num === null || num === row.sortOrder || Number.isNaN(num)) return;
   try {
     await updateAssetApi(row.schemeCode, row.id, {
@@ -105,16 +148,40 @@ async function handleSortOrderChange(value: any, row: any) {
   }
 }
 
-function handleDelete(row: any) {
+async function handleDelete(row: any) {
+  let masks: SchemeAsset[] = [];
+  // 无蒙版查看权限时无法预先说明影响，存在配对蒙版时由服务端拒绝并提示
+  if (hasAccessByCodes(['assets-masks.read'])) {
+    try {
+      masks = await listSchemeAssetsApi(row.schemeCode, 'mask');
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
+  const plan = renderingDeletePlan(
+    row,
+    masks,
+    hasAccessByCodes(['assets-masks.delete']),
+  );
+  if (plan.blocked) {
+    Modal.warning({ title: plan.title, content: plan.content });
+    return;
+  }
   Modal.confirm({
-    title: '确认删除',
-    content: `确定要删除「${row.name}」吗？`,
+    title: plan.title,
+    content: plan.content,
     okText: '确认',
+    okType: plan.withPairedMasks ? 'danger' : 'primary',
     cancelText: '取消',
     onOk: async () => {
       try {
-        await deleteAssetApi(row.schemeCode, row.id, row.revision);
-        message.success('删除成功');
+        await deleteAssetApi(row.schemeCode, row.id, row.revision, {
+          withPairedMasks: plan.withPairedMasks,
+        });
+        message.success(
+          plan.withPairedMasks ? '已删除效果图及配对蒙版' : '删除成功',
+        );
         gridApi.reload();
       } catch (error) {
         console.error(error);
@@ -132,8 +199,9 @@ function handleDelete(row: any) {
           v-access:code="['assets-renderings.upload']"
           type="primary"
           @click="handleUpload"
-          >上传效果图</Button
         >
+          上传效果图
+        </Button>
       </template>
       <template #filename="{ row }">
         {{ row.currentVersion?.originalFilename || '-' }}

@@ -57,6 +57,27 @@ test('selection service records no-match diagnostics and links search to parse a
   assert.deepEqual(JSON.parse(String(recorded.params[19])), result.diagnostics);
 });
 
+test('selection service replaces an attempt owned by another visitor instead of failing on the primary key', async () => {
+  const calls: Array<{ sql: string; params: unknown[] }> = [];
+  const pool = { query: async (sql: string, params: unknown[] = []) => {
+    calls.push({ sql, params });
+    if (sql.includes('INSERT INTO selection_attempts')) return { rows: params[0] === 'attempt-foreign' ? [] : [{ id: params[0] }] };
+    if (sql.includes('INSERT INTO selection_searches')) return { rows: [{ id: 'search-1' }] };
+    return { rows: [] };
+  } } as unknown as pg.Pool;
+  const result = await matchSelection(pool, { signDownload: async () => 'signed' }, {
+    attemptId: 'attempt-foreign', parseId: 'parse-foreign', mode: 'random',
+    inputContext: { textProvided: false, text: '', degradedParse: false },
+    requirement: emptyRequirement(),
+  }, identity);
+  assert.notEqual(result.attemptId, 'attempt-foreign');
+  const inserts = calls.filter(call => call.sql.includes('INSERT INTO selection_attempts'));
+  assert.equal(inserts.length, 2);
+  assert.match(inserts[0]!.sql, /ON CONFLICT \(id\) DO NOTHING/);
+  const recorded = calls.find(call => call.sql.includes('INSERT INTO selection_searches'));
+  assert.deepEqual(recorded?.params.slice(0, 2), [result.attemptId, null]);
+});
+
 test('selection dependency errors preserve HTTP status semantics and invisible schemes remain unavailable', async () => {
   const unavailable = { query: async () => { throw new Error('database unavailable'); } } as unknown as pg.Pool;
   await assert.rejects(getSelectionCatalog(unavailable), { statusCode: 503 });

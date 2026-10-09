@@ -37,13 +37,12 @@ const columns = [
 
 async function searchSchemes(keyword: string) {
   try {
-    schemes.value = (
-      await getSchemeListApi({
-        ...(keyword.trim() ? { code: keyword.trim() } : {}),
-        page: 1,
-        pageSize: 30,
-      })
-    ).data;
+    const res = await getSchemeListApi({
+      ...(keyword.trim() ? { keyword: keyword.trim() } : {}),
+      page: 1,
+      pageSize: 30,
+    });
+    schemes.value = res.data;
   } catch {
     message.error('获取方案失败');
   }
@@ -90,6 +89,8 @@ async function submit() {
     const reason = (
       error as { response?: { data?: { error?: { reason?: string } } } }
     )?.response?.data?.error?.reason;
+    // 文件过大已由请求拦截器提示
+    if (reason === 'FILE_TOO_LARGE') return;
     if (reason === 'UNSUPPORTED_BOM_TEMPLATE') message.error(templateHint, 8);
     else if (reason === 'SCHEME_CODE_MISMATCH')
       message.error('Excel 说明页的方案编号与所选方案不一致');
@@ -160,7 +161,7 @@ defineExpose({ open });
               value: scheme.code,
             }))
           "
-          placeholder="搜索并选择已有方案 code"
+          placeholder="搜索方案编号或名称"
           class="w-full"
           :disabled="!!preview || busy"
           @search="searchSchemes"

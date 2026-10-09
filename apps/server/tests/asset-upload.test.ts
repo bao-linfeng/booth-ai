@@ -14,19 +14,25 @@ import { createAssetWithVersion, updateAsset } from '../src/modules/assets/servi
 import { validateAssetMetadata } from '../src/modules/assets/metadata.js';
 import { allPermissionCodes } from '../src/modules/identity/permissions.js';
 
-function dependencies(options: { saveError?: Error; storageError?: Error; cleanupError?: Error; revision?: number } = {}) {
+function dependencies(options: {
+  saveError?: Error; storageError?: Error; cleanupError?: Error; revision?: number;
+  assetType?: 'rendering' | 'mask'; renderingSize?: { widthPx: number; heightPx: number } | null;
+} = {}) {
   const events: string[] = [];
   const objects = new Map<string, Buffer | Uint8Array>();
   let versionValues: unknown[] = [];
   const asset = {
-    id: 'asset-id', schemeId: 'scheme-id', schemeCode: 'S-1', schemeName: '方案', type: 'rendering',
-    name: '效果图', sortOrder: 0, relatedAssetId: null, metadata: {}, isActive: true, revision: options.revision ?? 1,
-    createdAt: new Date(), updatedAt: new Date(), versionId: null,
+    id: 'asset-id', schemeId: 'scheme-id', schemeCode: 'S-1', schemeName: '方案', type: options.assetType ?? 'rendering',
+    name: '效果图', sortOrder: 0, relatedAssetId: options.assetType === 'mask' ? 'rendering-id' : null, metadata: {},
+    isActive: true, revision: options.revision ?? 1, createdAt: new Date(), updatedAt: new Date(), versionId: null,
   };
   const query = async (sql: string, values: unknown[] = []) => {
     events.push(sql);
     if (sql.includes('SELECT id::text AS id FROM schemes')) return { rows: [{ id: 'scheme-id' }] };
     if (sql.includes('FROM scheme_baseline_assets sa')) return { rows: [asset] };
+    if (sql.includes("type = 'rendering' AND is_active = true")) return { rows: [{ type: 'rendering' }], rowCount: 1 };
+    if (sql.includes("type = 'mask' AND related_asset_id")) return { rows: [], rowCount: 0 };
+    if (sql.includes('SELECT width_px')) return { rows: options.renderingSize ? [options.renderingSize] : [] };
     if (sql.includes('MAX(sort_order)')) return { rows: [{ sortOrder: null }] };
     if (sql.includes('INSERT INTO asset_versions')) {
       if (options.saveError) throw options.saveError;
@@ -51,6 +57,11 @@ function dependencies(options: { saveError?: Error; storageError?: Error; cleanu
     },
   };
   return { pool, storage, events, objects, versionValues: () => versionValues };
+}
+
+async function sizedImage(width: number, height: number): Promise<AssetUploadFile> {
+  const buffer = await sharp({ create: { width, height, channels: 3, background: '#000000' } }).png().toBuffer();
+  return { buffer, originalFilename: 'image.png', mimeType: 'image/png' };
 }
 
 async function imageFile(format: 'png' | 'jpeg' | 'webp', lossless = false): Promise<AssetUploadFile> {
@@ -91,6 +102,44 @@ test('invalid, mismatched and unsupported rendering images are rejected before s
       { schemeCode: 'S-1', type: 'rendering', name: '效果图' }, file), { statusCode: 400, message: 'Unsupported or invalid image' });
     assert.deepEqual(deps.events, []);
   }
+});
+
+test('rendering uploads and replacements require an exact 16:9 image before storage', async t => {
+  for (const existing of [false, true]) {
+    await t.test(`existing=${existing}`, async () => {
+      const deps = dependencies();
+      const upload = (file: AssetUploadFile) => existing
+        ? uploadAssetVersion(deps.pool, deps.storage, null, 'S-1', 'asset-id', file, 1)
+        : uploadAsset(deps.pool, deps.storage, null, { schemeCode: 'S-1', type: 'rendering', name: '效果图' }, file);
+      await assert.rejects(upload(await sizedImage(1600, 901)),
+        { statusCode: 400, reason: 'RENDERING_ASPECT_INVALID', message: 'Rendering must be exactly 16:9' });
+      assert.ok(!deps.events.includes('put') && !deps.events.includes('BEGIN'));
+      await upload(await sizedImage(1600, 900));
+      assert.deepEqual(deps.versionValues().slice(7, 9), [1600, 900]);
+    });
+  }
+});
+
+test('mask uploads and replacements must match the paired rendering pixel size', async t => {
+  const input = { schemeCode: 'S-1', type: 'mask' as const, name: '蒙版', relatedAssetId: 'rendering-id' };
+  for (const existing of [false, true]) {
+    await t.test(`existing=${existing}`, async () => {
+      const deps = dependencies({ assetType: 'mask', renderingSize: { widthPx: 1600, heightPx: 900 } });
+      const upload = (file: AssetUploadFile) => existing
+        ? uploadAssetVersion(deps.pool, deps.storage, null, 'S-1', 'asset-id', file, 1)
+        : uploadAsset(deps.pool, deps.storage, null, input, file);
+      await assert.rejects(upload(await sizedImage(800, 450)), { statusCode: 400, reason: 'MASK_SIZE_MISMATCH' });
+      assert.ok(deps.events.includes('ROLLBACK'));
+      assert.ok(!deps.events.some(sql => sql.includes('INSERT INTO asset_versions')));
+      assert.equal(deps.objects.size, 0);
+      await upload(await sizedImage(1600, 900));
+      assert.deepEqual(deps.versionValues().slice(7, 9), [1600, 900]);
+    });
+  }
+  const deps = dependencies({ assetType: 'mask', renderingSize: null });
+  await assert.rejects(uploadAsset(deps.pool, deps.storage, null, input, await sizedImage(1600, 900)),
+    { statusCode: 400, reason: 'RENDERING_FILE_MISSING' });
+  assert.equal(deps.objects.size, 0);
 });
 
 test('non-image assets keep accepting arbitrary files without image dimensions', async () => {
@@ -217,6 +266,7 @@ test('admin upload routes share multipart parsing for either field order and rej
     { url: '/schemes/S-1/assets', fields: { type: 'drawing', name: '图纸', metadata: '[]' }, files: [file], message: 'Metadata must be a JSON object' },
     { url: '/schemes/S-1/assets', fields: { type: 'artwork', name: '画稿' }, files: [file], message: 'artwork metadata.artworkKey is required' },
     { url: '/schemes/S-1/assets', fields: { type: 'mask', name: '蒙版' }, files: [file], message: 'relatedAssetId is required for mask assets' },
+    { url: '/schemes/S-1/assets', fields: { type: 'rendering', name: '效果图', idempotencyKey: 'retry-1' }, files: [file], message: 'idempotencyKey must be a valid UUID' },
     { url: versionUrl, fields: { expectedRevision: '0' }, files: [file], message: 'expectedRevision is required' },
     { url: versionUrl, fields: { expectedRevision: '1.5' }, files: [file], message: 'expectedRevision must be an integer' },
   ];
@@ -228,4 +278,60 @@ test('admin upload routes share multipart parsing for either field order and rej
     assert.equal(response.json().message, message);
     assert.ok(deps.events.every(sql => sql.includes('FROM scheme_baseline_assets sa')), 'invalid requests must not write to storage or the database');
   }
+});
+
+test('deleting a rendering together with its paired masks also requires the mask delete permission', async t => {
+  const deps = dependencies();
+  const app = Fastify();
+  t.after(() => app.close());
+  app.decorateRequest('principal', null);
+  app.addHook('onRequest', async request => {
+    request.principal = { site: 'admin', localId: 'admin-id', permissions: allPermissionCodes.filter(code => code !== 'assets-masks.delete') } as Principal;
+  });
+  await registerAdminAssetsRoutes(app, deps.pool, deps.storage as unknown as ReturnType<typeof createStorage>, {} as Redis);
+  const url = '/schemes/S-1/assets/123e4567-e89b-42d3-a456-426614174000';
+
+  const forbidden = await app.inject({ method: 'DELETE', url, payload: { expectedRevision: 1, withPairedMasks: true } });
+  assert.equal(forbidden.statusCode, 403, forbidden.body);
+  assert.ok(deps.events.every(sql => sql.includes('FROM scheme_baseline_assets sa')), 'forbidden requests must not write to the database');
+});
+
+test('mask pairing candidates list renderings with size, order and occupying mask, signing thumbnails only with preview permission', async t => {
+  const row = (id: string, type: 'rendering' | 'mask', sortOrder: number, relatedAssetId: string | null, version: boolean) => ({
+    id, schemeId: 'scheme-id', schemeCode: 'S-1', schemeName: '方案', type, name: `${type}-${id}`, sortOrder, relatedAssetId,
+    metadata: {}, isActive: true, revision: 4, createdAt: new Date(), updatedAt: new Date(),
+    versionId: version ? `v-${id}` : null, versionAssetId: version ? id : null, versionObjectKey: version ? `key/${id}` : null,
+    versionOriginalFilename: version ? `${id}.png` : null, versionMimeType: version ? 'image/png' : null, versionByteSize: version ? 10 : null,
+    versionChecksum: version ? 'c' : null, versionWidthPx: version ? 1600 : null, versionHeightPx: version ? 900 : null,
+    versionPageCount: null, versionCreatedAt: version ? new Date() : null,
+  });
+  const pool = { query: async (_sql: string, values: unknown[]) => ({
+    rows: values[1] === 'rendering' ? [row('r1', 'rendering', 0, null, true), row('r2', 'rendering', 1, null, false)] : [row('m1', 'mask', 0, 'r1', true)],
+  }) } as unknown as pg.Pool;
+  const signed: string[] = [];
+  const storage = { signDownload: async (key: string) => { signed.push(key); return `https://cdn.test/${key}`; } };
+  async function request(permissions: string[]) {
+    const app = Fastify();
+    t.after(() => app.close());
+    app.decorateRequest('principal', null);
+    app.addHook('onRequest', async req => { req.principal = { site: 'admin', localId: 'admin-id', permissions } as Principal; });
+    await registerAdminAssetsRoutes(app, pool, storage as unknown as ReturnType<typeof createStorage>, {} as Redis);
+    return app.inject({ method: 'GET', url: '/schemes/S-1/assets/mask-candidates' });
+  }
+
+  const full = await request(allPermissionCodes);
+  assert.equal(full.statusCode, 200, full.body);
+  assert.deepEqual(full.json().data, [
+    { id: 'r1', name: 'rendering-r1', sortOrder: 0, file: { originalFilename: 'r1.png', widthPx: 1600, heightPx: 900 },
+      thumbnailUrl: 'https://cdn.test/key/r1', pairedMask: { id: 'm1', name: 'mask-m1', revision: 4 } },
+    { id: 'r2', name: 'rendering-r2', sortOrder: 1, file: null, thumbnailUrl: null, pairedMask: null },
+  ]);
+  assert.deepEqual(signed, ['key/r1']);
+
+  const noPreview = await request(allPermissionCodes.filter(code => code !== 'assets-renderings.preview'));
+  assert.equal(noPreview.json().data[0].thumbnailUrl, null);
+  assert.equal(signed.length, 1);
+
+  const readOnly = await request(allPermissionCodes.filter(code => code !== 'assets-masks.upload' && code !== 'assets-masks.update'));
+  assert.equal(readOnly.statusCode, 403);
 });

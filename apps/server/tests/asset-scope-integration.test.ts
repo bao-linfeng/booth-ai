@@ -141,6 +141,8 @@ test('asset scope migration and all baseline consumers isolate generated assets 
 
   await t.test('admin baseline operations cannot list, edit, version, delete or relate private assets', async () => {
     assert.equal((await listAssets(pool, { page: 1, pageSize: 100 })).total, 10);
+    assert.equal((await listAssets(pool, { page: 1, pageSize: 100, schemeCode: code })).total, 10);
+    assert.equal((await listAssets(pool, { page: 1, pageSize: 100, schemeCode: 'ASSET' })).total, 0);
     assert.equal((await listSchemeAssets(pool, code)).length, 10);
     await assert.rejects(getAsset(pool, code, artwork.id), { statusCode: 404 });
     await assert.rejects(updateAsset(pool, admin, code, artwork.id, { name: 'changed' }, 1), { statusCode: 404 });
@@ -193,21 +195,81 @@ test('asset scope migration and all baseline consumers isolate generated assets 
     assert.deepEqual(await state(), beforeConflict);
     assert.deepEqual(await publication(), publishedState);
 
+    await assert.rejects(updateAsset(pool, admin, code, maskA, { sortOrder: 0 }, 1), { statusCode: 409 });
+    assert.deepEqual(await state(), beforeConflict);
+    assert.deepEqual(await publication(), publishedState);
+
+    // 蒙版移动时其效果图与被占位的一对各只递增一次修订
     await updateAsset(pool, admin, code, maskA, { sortOrder: 0 }, 2);
-    for (const [id, order, revision] of [[renderingA, 0, 4], [maskA, 0, 3], [renderingB, 1, 3], [maskB, 1, 3]] as const) {
+    for (const [id, order, revision] of [[renderingA, 0, 3], [maskA, 0, 3], [renderingB, 1, 3], [maskB, 1, 3]] as const) {
       const current = await getAsset(pool, code, id);
       assert.equal(current.sortOrder, order);
       assert.equal(current.revision, revision);
     }
 
     const replacement = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'rendering', name: '新效果图', sortOrder: 7 },
-      { objectKey: 'replacement', originalFilename: 'replacement.png', mimeType: 'image/png', byteSize: 10, checksum: 'c'.repeat(64) });
+      { objectKey: 'replacement', originalFilename: 'replacement.png', mimeType: 'image/png', byteSize: 10, checksum: 'c'.repeat(64), widthPx: 1600, heightPx: 900 });
+    const smaller = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'rendering', name: '小效果图', sortOrder: 8 },
+      { objectKey: 'smaller', originalFilename: 'smaller.png', mimeType: 'image/png', byteSize: 10, checksum: 'e'.repeat(64), widthPx: 1280, heightPx: 720 });
+    const beforeMismatch = await state();
+    await assert.rejects(updateAsset(pool, admin, code, maskA, { relatedAssetId: smaller.id }, 3), { statusCode: 400, reason: 'MASK_SIZE_MISMATCH' });
+    assert.deepEqual(await state(), beforeMismatch);
     await updateAsset(pool, admin, code, maskA, { relatedAssetId: replacement.id }, 3);
-    assert.equal((await getAsset(pool, code, maskA)).sortOrder, 0);
+    assert.equal((await getAsset(pool, code, maskA)).sortOrder, 7);
     assert.equal((await getAsset(pool, code, replacement.id)).sortOrder, 7);
+    const maskVersion = { objectKey: 'mask', originalFilename: 'mask.png', mimeType: 'image/png', byteSize: 10, checksum: 'd'.repeat(64) };
+    await assert.rejects(createAssetWithVersion(pool, admin, { schemeCode: code, type: 'mask', name: '错尺寸蒙版', relatedAssetId: renderingA },
+      { ...maskVersion, widthPx: 800, heightPx: 450 }), { statusCode: 400, reason: 'MASK_SIZE_MISMATCH' });
     const pairedMask = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'mask', name: '新蒙版', relatedAssetId: renderingA },
-      { objectKey: 'mask', originalFilename: 'mask.png', mimeType: 'image/png', byteSize: 10, checksum: 'd'.repeat(64) });
+      { ...maskVersion, widthPx: 1600, heightPx: 900 });
     assert.equal(pairedMask.sortOrder, 0);
+    await assert.rejects(addAssetVersion(pool, admin, code, pairedMask.id, { ...maskVersion, widthPx: 1280, heightPx: 720 }, pairedMask.revision),
+      { statusCode: 400, reason: 'MASK_SIZE_MISMATCH' });
+  });
+
+  await t.test('deleting a paired rendering requires confirmation and never leaves an active orphan mask', async () => {
+    const file = { mimeType: 'image/png', byteSize: 10, checksum: 'f'.repeat(64), widthPx: 1600, heightPx: 900 };
+    const rendering = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'rendering', name: '待删效果图', sortOrder: 20 },
+      { ...file, objectKey: 'delete-rendering', originalFilename: 'rendering.png' });
+    const mask = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'mask', name: '待删蒙版', relatedAssetId: rendering.id },
+      { ...file, objectKey: 'delete-mask', originalFilename: 'mask.png' });
+
+    await assert.rejects(deleteAsset(pool, admin, code, rendering.id, rendering.revision), { statusCode: 409, reason: 'RENDERING_HAS_PAIRED_MASK' });
+    await assert.rejects(deleteAsset(pool, admin, code, rendering.id, rendering.revision + 1, { withPairedMasks: true }), { statusCode: 409 });
+    assert.deepEqual(await getAsset(pool, code, rendering.id), rendering);
+    assert.deepEqual(await getAsset(pool, code, mask.id), mask);
+
+    await pool.query("UPDATE schemes SET publish_status='published',verification_status='verified' WHERE id=$1", [scheme]);
+    assert.equal(await deleteAsset(pool, admin, code, rendering.id, rendering.revision, { withPairedMasks: true }), rendering.revision + 1);
+    await assert.rejects(getAsset(pool, code, rendering.id), { statusCode: 404 });
+    await assert.rejects(getAsset(pool, code, mask.id), { statusCode: 404 });
+    assert.equal((await pool.query('SELECT publish_status FROM schemes WHERE id=$1', [scheme])).rows[0]!.publish_status, 'draft');
+  });
+
+  await t.test('legacy orphan masks are detached and can be re-paired, sorted and reviewed again', async () => {
+    const file = { mimeType: 'image/png', byteSize: 10, checksum: 'f'.repeat(64), widthPx: 1600, heightPx: 900 };
+    const deleted = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'rendering', name: '旧效果图', sortOrder: 30 },
+      { ...file, objectKey: 'legacy-rendering', originalFilename: 'rendering.png' });
+    const mask = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'mask', name: '旧蒙版', relatedAssetId: deleted.id },
+      { ...file, objectKey: 'legacy-mask', originalFilename: 'mask.png' });
+    // 修复前的删除流程只软删除效果图
+    await pool.query('UPDATE scheme_assets SET is_active=false WHERE id=$1', [deleted.id]);
+    await pool.query(await readFile(new URL('../migrations/079_detach_orphan_masks.sql', import.meta.url), 'utf8'));
+    const detached = await getAsset(pool, code, mask.id);
+    assert.equal(detached.relatedAssetId, null);
+    assert.equal(detached.revision, mask.revision + 1);
+
+    const target = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'rendering', name: '新效果图', sortOrder: 31 },
+      { ...file, objectKey: 'legacy-target', originalFilename: 'target.png' });
+    await pool.query("UPDATE schemes SET publish_status='published',verification_status='verified' WHERE id=$1", [scheme]);
+    const repaired = await updateAsset(pool, admin, code, mask.id, { relatedAssetId: target.id }, detached.revision);
+    assert.equal(repaired.relatedAssetId, target.id);
+    assert.equal(repaired.sortOrder, 31);
+    assert.deepEqual((await pool.query('SELECT publish_status,verification_status FROM schemes WHERE id=$1', [scheme])).rows[0],
+      { publish_status: 'draft', verification_status: 'unverified' });
+
+    await updateAsset(pool, admin, code, mask.id, { sortOrder: 32 }, repaired.revision);
+    assert.equal((await getAsset(pool, code, target.id)).sortOrder, 32);
   });
 
   await t.test('asset mutation services enforce metadata rules without changing rows on failure', async () => {

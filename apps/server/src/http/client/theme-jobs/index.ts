@@ -25,7 +25,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
   }, async (request, reply) => {
     const userId = clientUserId(request);
     await ownedThemeJob(pool, userId, request.params.jobId);
-    await streamThemeJobEvents(pool, redis, request.params.jobId, userId, reply);
+    await streamThemeJobEvents(pool, redis, request.params.jobId, requirePrincipal(request, 'client'), reply);
   });
 
   app.get('/theme-models', { schema: themeModelsSchema }, async () => {

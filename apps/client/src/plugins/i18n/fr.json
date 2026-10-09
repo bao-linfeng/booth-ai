@@ -328,7 +328,8 @@
     "validationRange": "Veuillez saisir une valeur entre 0,001 et 1 000 m.",
     "validationDecimal": "Maximum 3 décimales (précision au millimètre).",
     "validationArea": "Veuillez saisir une superficie supérieure à 0 et inférieure à 1 000 000.",
-    "boothSpaceSelectLabel": "Dimensions du stand"
+    "boothSpaceSelectLabel": "Dimensions du stand",
+    "customSize": "Personnalisé {length} × {width} m"
   },
   "schemeCard": {
     "matchDirect": "Utilisable directement",
@@ -543,7 +544,8 @@
     "errorNetworkConfirm": "Statut de création non confirmé. Réessayez pour éviter les doublons. Vos données sont conservées.",
     "errorMaskUnavailable": "Aucune zone modifiable pour cette vue. Choisissez une autre image originale.",
     "errorTemplateUnavailable": "Ce style est momentanément indisponible. Modifiez vos préférences visuelles.",
-    "errorBlocked": "Ces paramètres ne peuvent pas être générés actuellement. Modifiez vos préférences ou réessayez plus tard."
+    "errorBlocked": "Ces paramètres ne peuvent pas être générés actuellement. Modifiez vos préférences ou réessayez plus tard.",
+    "pendingRestored": "Votre dernière soumission n'est pas encore confirmée ; ses paramètres ont été restaurés. Générer confirmera la demande d'origine sans créer de tâche en double ni réserver à nouveau des crédits."
   },
   "themeJob": {
     "back": "Retour",
@@ -617,7 +619,9 @@
     "failureProviderError": "Fournisseur IA temporairement indisponible",
     "failureInternalError": "Erreur système interne",
     "statusSucceeded": "Génération terminée",
-    "previewThumbnailAriaLabel": "Aperçu du rendu {n}"
+    "previewThumbnailAriaLabel": "Aperçu du rendu {n}",
+    "failureGenerationFailed": "La génération n'a pas abouti. Vous pouvez ajuster les paramètres et relancer.",
+    "failureGeneric": "La génération n'a pas abouti. Veuillez réessayer plus tard."
   },
   "artworkJob": {
     "pageTitle": "Thème / Visuels 4 faces / Livraison",
@@ -698,7 +702,11 @@
     "statusSubmitting": "Generating",
     "statusGenerated": "Checking and storing",
     "statusSucceeded": "Accepted",
-    "statusFailed": "Not accepted"
+    "statusFailed": "Not accepted",
+    "offerChanged": "Le prix a été mis à jour. Vérifiez le nouveau coût puis confirmez à nouveau.",
+    "offerRenewed": "Le devis précédent a expiré ; un nouveau devis au même prix a été obtenu. Veuillez confirmer à nouveau.",
+    "errorOfferFailed": "Impossible d'obtenir le prix. Actualisez et réessayez plus tard.",
+    "errorServiceUnavailable": "Le service de génération des visuels est temporairement indisponible. Veuillez réessayer plus tard."
   },
   "quoteRequest": {
     "backToSelection": "Retour à la sélection",

@@ -1,8 +1,9 @@
 import type pg from 'pg';
+import { sameImageSize, type MaybeImageSize } from './image-spec.js';
 import type { AssetType, SchemeAsset, UpdateAssetInput } from './types.js';
 
-function requestError(message: string, statusCode: number): Error & { statusCode: number } {
-  return Object.assign(new Error(message), { statusCode });
+function requestError(message: string, statusCode: number, reason?: string): Error & { statusCode: number } {
+  return Object.assign(new Error(message), { statusCode }, reason ? { reason } : {});
 }
 
 export async function ensureRelatedAsset(client: pg.PoolClient, schemeId: string, relatedAssetId: string | null | undefined): Promise<void> {
@@ -27,6 +28,46 @@ export async function ensureMaskRelatedAsset(client: pg.PoolClient, schemeId: st
     LIMIT 1
   `, assetId ? [schemeId, relatedAssetId, assetId] : [schemeId, relatedAssetId]);
   if (paired.rowCount) throw requestError('This rendering is already paired with another mask', 409);
+}
+
+/** 蒙版像素尺寸必须与配对效果图的当前版本一致；需在已锁定方案的事务内调用。 */
+export async function ensureMaskMatchesRendering(
+  client: pg.PoolClient,
+  renderingId: string | null | undefined,
+  mask: MaybeImageSize,
+): Promise<void> {
+  if (!renderingId) return;
+  const result = await client.query<{ widthPx: number | null; heightPx: number | null }>(`
+    SELECT width_px AS "widthPx", height_px AS "heightPx"
+    FROM asset_versions
+    WHERE asset_id = $1
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+  `, [renderingId]);
+  const rendering = result.rows[0];
+  if (!rendering) throw requestError('Paired rendering has no uploaded file', 400, 'RENDERING_FILE_MISSING');
+  if (!sameImageSize(mask, rendering)) throw requestError('Mask size must match its paired rendering', 400, 'MASK_SIZE_MISMATCH');
+}
+
+/**
+ * 效果图软删除不会触发 related_asset_id 的 ON DELETE SET NULL：未确认时拒绝删除仍有活动蒙版的效果图，
+ * 确认后在同一事务内一并删除配对蒙版，避免留下指向失效效果图的活动蒙版。需在已锁定方案的事务内调用。
+ */
+export async function retirePairedMasks(client: pg.PoolClient, adminId: string | null, schemeId: string, renderingId: string, confirmed: boolean): Promise<void> {
+  if (confirmed) {
+    await client.query(`
+      UPDATE scheme_baseline_assets
+      SET is_active = false, revision = revision + 1, updated_by = $1, updated_at = now()
+      WHERE scheme_id = $2 AND type = 'mask' AND related_asset_id = $3 AND is_active = true
+    `, [adminId, schemeId, renderingId]);
+    return;
+  }
+  const paired = await client.query(`
+    SELECT 1 FROM scheme_baseline_assets
+    WHERE scheme_id = $1 AND type = 'mask' AND related_asset_id = $2 AND is_active = true
+    LIMIT 1
+  `, [schemeId, renderingId]);
+  if (paired.rowCount) throw requestError('Rendering is paired with an active mask', 409, 'RENDERING_HAS_PAIRED_MASK');
 }
 
 export async function resolveSortOrder(
@@ -82,8 +123,6 @@ async function synchronizeSortOrder(client: pg.PoolClient, adminId: string | nul
     await setPairedMasksSortOrder(client, asset.schemeId, displacedRenderingId, asset.sortOrder, adminId);
   }
   if (asset.type === 'mask') {
-    // Preserve the existing two revision increments when a mask moves its rendering.
-    await setAssetSortOrder(client, asset.schemeId, renderingId, sortOrder, adminId);
     await setAssetSortOrder(client, asset.schemeId, renderingId, sortOrder, adminId);
   } else {
     await setPairedMasksSortOrder(client, asset.schemeId, renderingId, sortOrder, adminId);
@@ -94,6 +133,9 @@ export async function updateAssetPairing(client: pg.PoolClient, adminId: string 
   const relatedAssetId = Object.hasOwn(input, 'relatedAssetId') ? input.relatedAssetId : asset.relatedAssetId;
   if (Object.hasOwn(input, 'relatedAssetId')) await ensureRelatedAsset(client, asset.schemeId, relatedAssetId);
   if (asset.type === 'mask') await ensureMaskRelatedAsset(client, asset.schemeId, relatedAssetId, asset.id);
+  if (asset.type === 'mask' && asset.currentVersion && relatedAssetId !== asset.relatedAssetId) {
+    await ensureMaskMatchesRendering(client, relatedAssetId, asset.currentVersion);
+  }
   if (Object.hasOwn(input, 'sortOrder') && input.sortOrder !== undefined) {
     await synchronizeSortOrder(client, adminId, asset, relatedAssetId, input.sortOrder);
   }

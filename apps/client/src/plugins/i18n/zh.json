@@ -328,7 +328,8 @@
     "fieldKeywords": "关键词",
     "validationRange": "请输入 0.001–1000 米之间的数值。",
     "validationDecimal": "最多保留三位小数（精确到毫米）。",
-    "validationArea": "请输入大于 0 且不超过 1,000,000 的面积。"
+    "validationArea": "请输入大于 0 且不超过 1,000,000 的面积。",
+    "customSize": "自定义 {length} × {width} m"
   },
   "schemeCard": {
     "matchDirect": "可直接采用",
@@ -543,7 +544,8 @@
     "errorNetworkConfirm": "暂未确认任务是否创建成功，请重试确认；将复用同一请求，避免重复创建。已填写内容保留在当前页面。",
     "errorMaskUnavailable": "该视角暂无可用编辑区域，请选择其他原图。",
     "errorTemplateUnavailable": "当前风格暂不可用，请调整视觉偏好。",
-    "errorBlocked": "当前条件暂不可生成，请调整偏好或稍后重试。"
+    "errorBlocked": "当前条件暂不可生成，请调整偏好或稍后重试。",
+    "pendingRestored": "上次提交尚未确认结果，已恢复原参数。点击生成将按原请求确认，不会重复创建任务或预占积分。"
   },
   "themeJob": {
     "back": "返回",
@@ -617,7 +619,9 @@
     "phaseGenerating": "AI 正在生成",
     "failureInsufficientCredits": "积分不足",
     "failureProviderError": "AI 服务商暂不可用",
-    "failureInternalError": "系统内部错误"
+    "failureInternalError": "系统内部错误",
+    "failureGenerationFailed": "效果图生成未成功，可调整参数后重新生成。",
+    "failureGeneric": "生成未成功，请稍后重试。"
   },
   "artworkJob": {
     "pageTitle": "主题 / 四面素材 / 交付",
@@ -698,7 +702,11 @@
     "statusSubmitting": "正在生成",
     "statusGenerated": "验收与存储中",
     "statusSucceeded": "已验收",
-    "statusFailed": "未通过"
+    "statusFailed": "未通过",
+    "offerChanged": "费用报价已更新，请核对新费用后再次确认生成。",
+    "offerRenewed": "原报价已过期，已获取最新报价，费用未变。请再次确认生成。",
+    "errorOfferFailed": "费用报价获取失败，请稍后刷新重试。",
+    "errorServiceUnavailable": "四面素材生成服务暂不可用，请稍后重试。"
   },
   "quoteRequest": {
     "backToSelection": "返回智选",

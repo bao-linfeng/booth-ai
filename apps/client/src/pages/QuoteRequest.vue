@@ -28,11 +28,17 @@ const code = String(route.params.code)
 const manual = route.name === 'ManualRequest'
 const draft = useRequestDraft(manual ? manualDraftKey : quoteDraftKey(code, route.query.themeJobId, route.query.artworkJobId), auth.currentUser, manual ? readManualHandoff() : null)
 const { form, pending, pendingManual, receipt, originalDescription, confirmedRequirements, unresolvedQuestions } = draft
-const selectionHandoff = manual ? null : readSelectionQuoteHandoff(code, typeof route.query.searchId === 'string' ? route.query.searchId : undefined)
-const matchingSummary = selectionHandoff?.matchingSummary ?? null
 const error = ref('')
 const conflict = ref(false)
-const { context, theme, themePreview, standardPreview, artworkJobId, loading, refresh: refreshContext } = useQuoteContext(code, !manual, { error, conflict })
+const { context, theme, themeSearchId, themePreview, standardPreview, artworkJobId, loading, refresh: refreshContext } = useQuoteContext(code, !manual, { error, conflict })
+// 智选需求交接：带主题任务时只认任务自身记录的来源检索（未来自检索或尚未读到任务时不附带需求），
+// 避免同一方案在其他检索中的条件被串入；标准报价沿用详情页链路带来的 searchId
+const selectionHandoff = computed(() => {
+  if (manual) return null
+  if (typeof route.query.themeJobId === 'string') return themeSearchId.value ? readSelectionQuoteHandoff(code, themeSearchId.value) : null
+  return readSelectionQuoteHandoff(code, typeof route.query.searchId === 'string' ? route.query.searchId : undefined)
+})
+const matchingSummary = computed(() => selectionHandoff.value?.matchingSummary ?? null)
 const { descriptionError, fieldErrors, validate } = useRequestValidation(form, { description: manual ? originalDescription : undefined, isLoggedIn: () => auth.isLoggedIn })
 const currentUserId = () => auth.currentUser?.id ?? null
 
@@ -43,7 +49,7 @@ function buildQuote(requestKey: string): QuoteRequest {
     ...(!theme.value && current.artworkRevision ? { artworkRevision: current.artworkRevision } : {}), ...(theme.value ? { themeSelection: theme.value } : {}),
     ...(artworkJobId.value ? { artworkJobId: artworkJobId.value } : {}),
     entryPoint: theme.value ? 'theme_result' : route.query.entryPoint === 'bill_of_materials' ? 'bill_of_materials' : 'scheme_detail',
-    ...toRequestPayload(form), ...(selectionHandoff ? { requirementContext: selectionHandoff.requirementContext } : {}) }
+    ...toRequestPayload(form), ...(selectionHandoff.value ? { requirementContext: selectionHandoff.value.requirementContext } : {}) }
 }
 const { busy, submit } = manual
   ? useRequestSubmission({ draft, pending: pendingManual, error, currentUserId, validate, ready: () => true, send: submitManualRequest,

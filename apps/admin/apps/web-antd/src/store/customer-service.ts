@@ -45,6 +45,8 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let countsTimer: ReturnType<typeof setTimeout> | undefined;
   let staleTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 连接中断或建立失败过：下一次收到 ready 时需要通知页面全量校准 */
+  let lost = false;
   let baseTitle = '';
 
   const canReply = () =>
@@ -70,19 +72,38 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
     return () => listeners.delete(listener);
   }
 
+  function notify(event: WorkbenchEvent) {
+    for (const listener of listeners) listener(event);
+  }
+
+  /** 降级轮询：计数之外也通知页面重拉列表、详情与消息 */
+  async function poll() {
+    await refreshCounts();
+    notify({ counts: counts.value, type: 'ready' });
+  }
+
   function handle(event: WorkbenchEvent) {
     if (event.type === 'ready') {
-      counts.value = event.counts;
+      // 首次连接只同步计数；重连后断线期间的事件已丢失，转给页面做一次全量校准
+      if (lost) {
+        lost = false;
+        applyCounts(event.counts);
+        notify(event);
+      } else {
+        counts.value = event.counts;
+      }
       return;
     }
+    // 只有客户发来的消息才提醒；客服回复、内部备注与系统消息不提醒，入队提醒见 applyCounts
     if (
       event.type === 'message.created' &&
+      event.senderType === 'customer' &&
       event.agentAdminId === userStore.userInfo?.userId &&
       event.status === 'active'
     ) {
       remind('我的会话有新消息');
     }
-    for (const listener of listeners) listener(event);
+    notify(event);
     clearTimeout(countsTimer);
     countsTimer = setTimeout(refreshCounts, 300);
   }
@@ -134,6 +155,7 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
 
   function scheduleReconnect() {
     if (!running) return;
+    lost = true;
     failures++;
     if (failures >= MAX_FAILURES) startPolling();
     clearTimeout(reconnectTimer);
@@ -142,7 +164,7 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
 
   function startPolling() {
     if (pollTimer) return;
-    pollTimer = setInterval(refreshCounts, 10_000);
+    pollTimer = setInterval(poll, 10_000);
   }
 
   function stopPolling() {
@@ -227,6 +249,7 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
     if (running) return;
     running = true;
     failures = 0;
+    lost = false;
     document.addEventListener('visibilitychange', onVisibility);
     if (canReply()) void setPresenceApi(presence.value).catch(() => undefined);
     void refreshCounts();

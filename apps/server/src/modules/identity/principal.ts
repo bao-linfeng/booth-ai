@@ -12,8 +12,14 @@ export interface Principal {
   token: string;
 }
 
-export function authenticationError(statusCode = 401, reason = 'AUTH_REQUIRED') {
-  return Object.assign(new Error('Authentication failed'), { statusCode, reason });
+class AuthenticationError extends Error {
+  constructor(readonly statusCode: number, readonly reason: string) {
+    super('Authentication failed');
+  }
+}
+
+export function authenticationError(statusCode = 401, reason = 'AUTH_REQUIRED'): AuthenticationError {
+  return new AuthenticationError(statusCode, reason);
 }
 
 export async function revokeAccountSessions(pool: pg.Pool, site: SessionSite, localId: string): Promise<void> {
@@ -42,4 +48,14 @@ export async function resolvePrincipal(pool: pg.Pool, redis: Redis, token: strin
     throw authenticationError(403, 'ACCESS_DENIED');
   }
   return { site, localId: session.localId, roles: account.roles, permissions, session, token };
+}
+
+/** 长连接复核：按建立时的令牌重新校验 Session 与账户并取最新权限；已失效返回 null，Redis/DB 故障照常抛出 */
+export async function revalidatePrincipal(pool: pg.Pool, redis: Redis, principal: Principal): Promise<Principal | null> {
+  try {
+    return await resolvePrincipal(pool, redis, principal.token, principal.site);
+  } catch (error) {
+    if (error instanceof AuthenticationError) return null;
+    throw error;
+  }
 }

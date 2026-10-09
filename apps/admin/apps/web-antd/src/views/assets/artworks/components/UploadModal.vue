@@ -5,45 +5,26 @@ import { h, markRaw, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
-import { debounce } from '@vben/utils';
 
 import { message, Select, Upload } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import { uploadAssetApi } from '#/api/core/assets';
-import { getSchemeListApi } from '#/api/core/schemes';
+
+import { useSchemeOptions } from '../../shared/scheme-filter';
+import { createUploadKey } from '../../shared/upload-key';
 
 const emit = defineEmits(['reload']);
 
 const schemeCode = ref<string | undefined>(undefined);
-const schemeOptions = ref<{ label: string; value: string }[]>([]);
-const schemeLoading = ref(false);
+const schemes = useSchemeOptions();
+const uploadKey = createUploadKey();
 
 const DIMENSION_UNIT_OPTIONS = [
   { label: 'mm（毫米）', value: 'mm' },
   { label: 'cm（厘米）', value: 'cm' },
   { label: 'm（米）', value: 'm' },
 ];
-
-async function fetchSchemes(keyword?: string) {
-  schemeLoading.value = true;
-  try {
-    const res = await getSchemeListApi({
-      ...(keyword ? { code: keyword } : {}),
-      pageSize: 20,
-    });
-    schemeOptions.value = (res.data ?? []).map((item) => ({
-      label: `${item.code} - ${item.name}`,
-      value: item.code,
-    }));
-  } finally {
-    schemeLoading.value = false;
-  }
-}
-
-const handleSearch = debounce((value: string) => {
-  fetchSchemes(value || undefined);
-}, 300);
 
 const [Form, formApi] = useVbenForm({
   commonConfig: {
@@ -161,6 +142,7 @@ const [Modal, modalApi] = useVbenModal({
         type: 'artwork',
         name: values.name,
         file: file as File,
+        idempotencyKey: uploadKey.forFile(file as File),
         metadata: JSON.stringify(metadata),
       });
       message.success('上传成功');
@@ -174,16 +156,19 @@ const [Modal, modalApi] = useVbenModal({
   },
   onOpenChange: (isOpen) => {
     if (isOpen) {
-      fetchSchemes();
+      uploadKey.renew();
+      schemes.search();
     } else {
       schemeCode.value = undefined;
-      schemeOptions.value = [];
+      schemes.clear();
       formApi.resetForm();
     }
   },
 });
 
-function open() {
+function open(defaultSchemeCode?: string) {
+  schemeCode.value = defaultSchemeCode;
+  schemes.pin(defaultSchemeCode);
   modalApi.open();
 }
 defineExpose({ open });
@@ -196,14 +181,14 @@ defineExpose({ open });
         <label class="mb-1 block text-sm font-medium">归属方案</label>
         <Select
           v-model:value="schemeCode"
-          :options="schemeOptions"
-          :loading="schemeLoading"
+          :options="schemes.options.value"
+          :loading="schemes.loading.value"
           show-search
           :filter-option="false"
           allow-clear
           placeholder="搜索方案编号或名称"
           class="w-full"
-          @search="handleSearch"
+          @search="schemes.onSearch"
         />
       </div>
       <Form />

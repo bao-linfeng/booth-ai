@@ -8,7 +8,6 @@ const importHeaders = ['产品名称', '型号', '规格/mm', '数量', '计量�
 const exportHeaders = ['产品名称', '型号', '规格/mm', '数量', '单价/¥', '总价/¥', '重量合计/kg', 'ERP编码'];
 const sourceUnits: Record<MeasurementKind, string> = { count: '件', length: 'mm', area: 'mm²' };
 function inspectZip(buffer: Buffer): void {
-  if (buffer.length > 10 * 1024 * 1024) throw Object.assign(new Error('Workbook too large'), {statusCode:422,reason:'INVALID_WORKBOOK'});
   let expanded = 0; let entries = 0;
   const footer = buffer.lastIndexOf(Buffer.from([0x50,0x4b,0x05,0x06]));
   if (footer < 0 || footer + 22 > buffer.length) throw Object.assign(new Error('Invalid ZIP directory'), {statusCode:422,reason:'INVALID_WORKBOOK'});

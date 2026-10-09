@@ -16,6 +16,23 @@ export function maxSeq(messages: AdminMessage[]): number {
   return max;
 }
 
+/** 从 after 之后逐页拉取直到 hasMore=false，返回拉到的全部消息 */
+export async function fetchAllAfter(
+  fetchPage: (
+    after: number,
+  ) => Promise<{ hasMore: boolean; items: AdminMessage[] }>,
+  after: number,
+): Promise<AdminMessage[]> {
+  const collected: AdminMessage[] = [];
+  let cursor = after;
+  for (;;) {
+    const page = await fetchPage(cursor);
+    collected.push(...page.items);
+    if (!page.hasMore || page.items.length === 0) return collected;
+    cursor = maxSeq(page.items);
+  }
+}
+
 export function minSeq(messages: AdminMessage[]): number | undefined {
   let min: number | undefined;
   for (const message of messages) {

@@ -78,8 +78,10 @@ export async function matchSelection(pool: pg.Pool, storage: Pick<ReturnType<typ
     ...result, items, status: result.status as 'matched' | 'no_match' | 'needs_clarification',
     dictionaryVersion: catalog.dictionaryVersion, attemptId, visitorId: identity.visitorId,
   };
+  // 尝试被重建时，传入的解析记录属于旧尝试，不能挂到新检索上
+  const parseId = attemptId === input.attemptId ? input.parseId ?? null : null;
   const searchId = await recordSearch(pool, {
-    attemptId, parseId: input.parseId ?? null, identity, mode: input.mode,
+    attemptId, parseId, identity, mode: input.mode,
     inputText: input.inputContext.text ?? '', catalog, result: data, degradedParse: input.inputContext.degradedParse ?? false,
     durationMs: performance.now() - startedAt,
   });

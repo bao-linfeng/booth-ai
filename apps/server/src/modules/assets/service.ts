@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
 import { invalidatePublication } from '../schemes/publication.js';
+import { recordAssetUploadRequest, type AssetUploadRequest } from './idempotency.js';
 import { validateAssetMetadata } from './metadata.js';
-import { ensureMaskRelatedAsset, ensureRelatedAsset, resolveSortOrder, updateAssetPairing } from './pairing.js';
+import { ensureMaskMatchesRendering, ensureMaskRelatedAsset, ensureRelatedAsset, resolveSortOrder, retirePairedMasks, updateAssetPairing } from './pairing.js';
 import { assetVersionColumns, findAsset, getAsset, toAssetVersion, type AssetVersionRow } from './queries.js';
-import type { AssetVersion, CreateAssetInput, SchemeAsset, UpdateAssetInput, UploadVersionInput } from './types.js';
+import type { AssetVersion, CreateAssetInput, DeleteAssetOptions, SchemeAsset, UpdateAssetInput, UploadVersionInput } from './types.js';
 
 function requestError(message: string, statusCode: number): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode });
@@ -53,12 +54,14 @@ export async function createAsset(pool: pg.Pool, adminId: string | null, input: 
   return asset;
 }
 
-export async function createAssetWithVersion(pool: pg.Pool, adminId: string | null, input: CreateAssetInput, versionInput: UploadVersionInput): Promise<SchemeAsset> {
+export async function createAssetWithVersion(pool: pg.Pool, adminId: string | null, input: CreateAssetInput, versionInput: UploadVersionInput, uploadRequest?: AssetUploadRequest): Promise<SchemeAsset> {
   validateAssetMetadata(input.type, input.metadata);
   return transaction(pool, async client => {
     const schemeId = await lockScheme(client, input.schemeCode);
     const assetId = randomUUID();
     await insertAsset(client, adminId, schemeId, assetId, input);
+    if (uploadRequest) await recordAssetUploadRequest(client, adminId, schemeId, assetId, uploadRequest);
+    if (input.type === 'mask') await ensureMaskMatchesRendering(client, input.relatedAssetId, versionInput);
     await insertVersion(client, adminId, assetId, versionInput);
     await invalidatePublication(client, schemeId, adminId);
     const asset = await findAsset(client, input.schemeCode, assetId);
@@ -72,6 +75,7 @@ export async function addAssetVersion(pool: pg.Pool, adminId: string | null, sch
     const schemeId = await lockScheme(client, schemeCode);
     const asset = await getAsset(client, schemeCode, assetId);
     if (asset.revision !== expectedRevision) throw requestError('Asset revision conflict', 409);
+    if (asset.type === 'mask') await ensureMaskMatchesRendering(client, asset.relatedAssetId, versionInput);
     const version = await insertVersion(client, adminId, assetId, versionInput);
     const updated = await client.query(`
       UPDATE scheme_baseline_assets SET revision = revision + 1, updated_by = $1, updated_at = now()
@@ -89,10 +93,13 @@ export async function updateAsset(pool: pg.Pool, adminId: string | null, schemeC
     const asset = await getAsset(client, schemeCode, assetId);
     if (Object.hasOwn(input, 'metadata')) validateAssetMetadata(asset.type, input.metadata);
     await updateAssetPairing(client, adminId, asset, input);
+    // 蒙版改配效果图时跟随新效果图的排序，否则配对因排序不一致仍无法发布
+    const repaired = asset.type === 'mask' && !Object.hasOwn(input, 'sortOrder') && !!input.relatedAssetId && input.relatedAssetId !== asset.relatedAssetId;
+    const sortOrder = repaired ? await resolveSortOrder(client, schemeId, 'mask', input.relatedAssetId, undefined) : input.sortOrder;
     const values: unknown[] = [];
     const updates: string[] = [];
     if (Object.hasOwn(input, 'name')) { values.push(input.name); updates.push(`name = $${values.length}`); }
-    if (Object.hasOwn(input, 'sortOrder')) { values.push(input.sortOrder); updates.push(`sort_order = $${values.length}`); }
+    if (Object.hasOwn(input, 'sortOrder') || repaired) { values.push(sortOrder); updates.push(`sort_order = $${values.length}`); }
     if (Object.hasOwn(input, 'relatedAssetId')) { values.push(input.relatedAssetId); updates.push(`related_asset_id = $${values.length}`); }
     if (Object.hasOwn(input, 'metadata')) { values.push(input.metadata); updates.push(`metadata = $${values.length}`); }
     if (updates.length === 0) throw requestError('No fields to update', 400);
@@ -109,7 +116,7 @@ export async function updateAsset(pool: pg.Pool, adminId: string | null, schemeC
   return getAsset(pool, schemeCode, assetId);
 }
 
-export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeCode: string, assetId: string, expectedRevision: number): Promise<number> {
+export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeCode: string, assetId: string, expectedRevision: number, options: DeleteAssetOptions = {}): Promise<number> {
   if ((await getAsset(pool, schemeCode, assetId)).type === 'model') {
     return transaction(pool, async client => {
       const schemeId = await lockScheme(client, schemeCode);
@@ -121,7 +128,8 @@ export async function deleteAsset(pool: pg.Pool, adminId: string | null, schemeC
   }
   return transaction(pool, async client => {
     const schemeId = await lockScheme(client, schemeCode);
-    await getAsset(client, schemeCode, assetId);
+    const asset = await getAsset(client, schemeCode, assetId);
+    if (asset.type === 'rendering') await retirePairedMasks(client, adminId, schemeId, assetId, options.withPairedMasks === true);
     const result = await client.query<{ revision: number }>(`
       UPDATE scheme_baseline_assets SET is_active = false, revision = revision + 1, updated_by = $1, updated_at = now()
       WHERE id = $2 AND revision = $3 AND is_active = true RETURNING revision

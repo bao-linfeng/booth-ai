@@ -146,7 +146,7 @@ test('thumbnail browsing only changes preview; unselected state emphasizes selec
   } finally { await mounted.close() }
 })
 
-test('restored selection stays distinct from preview and both downstream routes carry the saved task context', async () => {
+test('restored selection stays distinct from preview and both downstream routes carry the saved task context and its source search', async () => {
   const mounted = await mount({ get: () => job({ selection: { resultId: 'result-2', revision: 4 } }) })
   try {
     await preview(mounted, 3)
@@ -155,11 +155,11 @@ test('restored selection stays distinct from preview and both downstream routes 
     button(mounted.container, quoteLabel).click()
     await settle()
     assert.equal(mounted.router.currentRoute.value.path, '/schemes/SC-6030/quote')
-    assert.deepEqual(mounted.router.currentRoute.value.query, { themeJobId: jobId })
+    assert.deepEqual(mounted.router.currentRoute.value.query, { themeJobId: jobId, searchId: 'search-42' })
     button(mounted.container, artworkLabel).click()
     await settle()
     assert.equal(mounted.router.currentRoute.value.path, '/schemes/SC-6030/artwork')
-    assert.deepEqual(mounted.router.currentRoute.value.query, { themeJobId: jobId })
+    assert.deepEqual(mounted.router.currentRoute.value.query, { themeJobId: jobId, searchId: 'search-42' })
     button(mounted.container, '预览已选定效果').click()
     await settle()
     assert.match(mounted.container.querySelector('#preview-heading').textContent, /正在预览第 2 张/)
@@ -383,4 +383,41 @@ test('customer service "send scheme" attaches this task only while a selected ef
   } finally {
     await mounted.close()
   }
+})
+
+test('failed task explains the server failure reason instead of showing the internal code', async () => {
+  const mounted = await mount({ get: () => job({ status: 'failed', results: [], usableCount: 0, failure: { reason: 'GENERATION_FAILED', retryable: true } }) })
+  try {
+    assert.match(mounted.container.textContent, /效果图生成未成功，可调整参数后重新生成/)
+    assert.doesNotMatch(mounted.container.textContent, /GENERATION_FAILED/)
+  } finally { await mounted.close() }
+})
+
+test('unknown failure reasons fall back to a generic message', async () => {
+  const mounted = await mount({ get: () => job({ status: 'failed', results: [], usableCount: 0, failure: { reason: 'SOMETHING_NEW', retryable: false } }) })
+  try {
+    assert.match(mounted.container.textContent, /生成未成功，请稍后重试/)
+    assert.doesNotMatch(mounted.container.textContent, /SOMETHING_NEW/)
+  } finally { await mounted.close() }
+})
+
+test('an expired result link is re-signed once by re-reading the task without touching the selection', async () => {
+  let version = 0
+  const mounted = await mount({ get: () => job({ selection: { resultId: 'result-1', revision: 1 }, results: [1, 2, 3].map(number => ({ resultId: `result-${number}`, previewUrl: `/result-${number}.jpg?v=${version}`, width: 1600, height: 900 })) }) })
+  const realNow = Date.now
+  try {
+    const reads = () => mounted.calls.filter(call => call.path === endpoint).length
+    const before = reads()
+    mounted.container.querySelector('#preview-heading').closest('section').querySelector('img').dispatchEvent(new Event('error'))
+    await settle()
+    assert.equal(reads(), before, 'a link that was just issued is not renewed')
+    Date.now = () => realNow() + 60_000
+    version = 1
+    mounted.container.querySelector('#preview-heading').closest('section').querySelector('img').dispatchEvent(new Event('error'))
+    await settle()
+    assert.equal(reads(), before + 1)
+    assert.equal(mounted.container.querySelector('#preview-heading').closest('section').querySelector('img').getAttribute('src'), '/result-1.jpg?v=1')
+    assert.equal(saves(mounted).length, 0)
+    assert.match(aside(mounted).textContent, /已选定第 1 张/)
+  } finally { Date.now = realNow; await mounted.close() }
 })

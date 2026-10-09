@@ -2,12 +2,13 @@
 import type {
   ImportCommitResult,
   ImportPreviewResult,
+  ImportPreviewRow,
 } from '#/api/core/schemes';
 
-import { h, ref } from 'vue';
+import { computed, h, onBeforeUnmount, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
-import { downloadFileFromBlob, downloadFileFromUrl } from '@vben/utils';
+import { downloadFileFromBlob } from '@vben/utils';
 
 import {
   Alert,
@@ -22,7 +23,21 @@ import {
   Upload,
 } from 'ant-design-vue';
 
-import { commitImportApi, previewImportApi } from '#/api/core/schemes';
+import {
+  commitImportApi,
+  downloadImportTemplateApi,
+  previewImportApi,
+} from '#/api/core/schemes';
+
+import {
+  formatImportSize,
+  formatOpeningCount,
+  formatPreviewRemaining,
+  importDictionaryEntries,
+  importRowNote,
+  overwriteImpact,
+  previewRemainingMs,
+} from '../import-preview';
 
 const emit = defineEmits(['reload']);
 
@@ -34,6 +49,40 @@ const loading = ref(false);
 const previewResult = ref<ImportPreviewResult | null>(null);
 const commitResult = ref<ImportCommitResult | null>(null);
 const duplicateStrategy = ref<'skip' | 'update'>('update');
+const templateLoading = ref(false);
+
+// 预览有效期倒计时：服务端以 expiresAt 为准，提交时返回 IMPORT_PREVIEW_EXPIRED 也视为过期
+const now = ref(Date.now());
+const expiredByServer = ref(false);
+let clock: ReturnType<typeof setInterval> | undefined;
+
+function stopClock() {
+  if (clock !== undefined) clearInterval(clock);
+  clock = undefined;
+}
+
+function startClock() {
+  stopClock();
+  now.value = Date.now();
+  clock = setInterval(() => {
+    now.value = Date.now();
+  }, 15_000);
+}
+
+onBeforeUnmount(stopClock);
+
+const remainingMs = computed(() =>
+  previewResult.value
+    ? previewRemainingMs(previewResult.value.expiresAt, now.value)
+    : 0,
+);
+const impact = computed(() => overwriteImpact(previewResult.value?.rows ?? []));
+
+const previewExpired = computed(
+  () =>
+    step.value === 'preview' &&
+    (expiredByServer.value || remainingMs.value === 0),
+);
 
 const [Modal, modalApi] = useVbenModal({
   onConfirm: async () => {
@@ -48,12 +97,22 @@ const [Modal, modalApi] = useVbenModal({
   onCancel: () => {
     modalApi.close();
   },
+  onClosed: stopClock,
+});
+
+watch(previewExpired, (expired) => {
+  modalApi.setState({ confirmDisabled: expired });
 });
 
 function getConfirmText() {
   if (step.value === 'upload') return '下一步：预览';
   if (step.value === 'preview') return '确认导入';
   return '完成';
+}
+
+function errorReason(error: unknown): string | undefined {
+  return (error as { response?: { data?: { error?: { reason?: string } } } })
+    ?.response?.data?.error?.reason;
 }
 
 async function doPreview() {
@@ -66,13 +125,15 @@ async function doPreview() {
   try {
     const res = await previewImportApi(selectedFile.value);
     previewResult.value = res;
+    expiredByServer.value = false;
     step.value = 'preview';
+    startClock();
     modalApi.setState({
       title: '批量导入方案 — 预览确认',
       confirmText: getConfirmText(),
     });
   } catch {
-    message.error('文件解析失败，请检查格式');
+    // 解析失败、表头不一致、超限、权限等错误已由请求拦截器按 reason 提示
   } finally {
     loading.value = false;
     modalApi.setState({ confirmLoading: false });
@@ -81,6 +142,10 @@ async function doPreview() {
 
 async function doCommit() {
   if (!previewResult.value) return;
+  if (previewExpired.value) {
+    message.warning('预览已过期，请重新预览后再导入');
+    return;
+  }
   loading.value = true;
   modalApi.setState({ confirmLoading: true });
   try {
@@ -90,14 +155,18 @@ async function doCommit() {
     );
     commitResult.value = res;
     step.value = 'result';
+    stopClock();
     modalApi.setState({
       title: '批量导入方案 — 导入结果',
       confirmText: getConfirmText(),
       cancelText: '关闭',
     });
     emit('reload');
-  } catch {
-    message.error('提交失败，请重试');
+  } catch (error: unknown) {
+    // 失败原因已由请求拦截器提示；预览过期时切换到重新预览入口
+    if (errorReason(error) === 'IMPORT_PREVIEW_EXPIRED') {
+      expiredByServer.value = true;
+    }
   } finally {
     loading.value = false;
     modalApi.setState({ confirmLoading: false });
@@ -110,6 +179,8 @@ const open = () => {
   previewResult.value = null;
   commitResult.value = null;
   duplicateStrategy.value = 'update';
+  expiredByServer.value = false;
+  stopClock();
   modalApi.open();
   modalApi.setState({
     title: '批量导入方案',
@@ -117,6 +188,16 @@ const open = () => {
     cancelText: '取消',
   });
 };
+
+async function downloadTemplate() {
+  templateLoading.value = true;
+  try {
+    const blob = await downloadImportTemplateApi();
+    downloadFileFromBlob({ source: blob, fileName: '方案导入模板.xlsx' });
+  } finally {
+    templateLoading.value = false;
+  }
+}
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
@@ -133,9 +214,9 @@ const beforeUpload = (file: File) => {
 
 function exportFailedRows() {
   if (!commitResult.value?.failed.length) return;
-  const header = '行号\t方案编号\t失败原因\n';
+  const header = '工作表\t行号\t方案编号\t失败原因\n';
   const rows = commitResult.value.failed
-    .map((r) => `${r.rowNumber}\t${r.code}\t${r.reason}`)
+    .map((r) => `${r.sheetName}\t${r.rowNumber}\t${r.code}\t${r.reason}`)
     .join('\n');
   const content = header + rows;
   const blob = new Blob([`\uFEFF${content}`], {
@@ -145,27 +226,44 @@ function exportFailedRows() {
 }
 
 const previewColumns = [
-  { title: '行号', dataIndex: 'rowNumber', width: 70 },
-  { title: '方案编号', dataIndex: 'code', width: 140 },
-  { title: '方案名称', dataIndex: 'name', width: 180 },
+  { title: '工作表', dataIndex: 'sheetName', width: 100, ellipsis: true },
+  { title: '行号', dataIndex: 'rowNumber', width: 60 },
+  { title: '方案编号', dataIndex: 'code', width: 130, ellipsis: true },
+  { title: '方案名称', dataIndex: 'name', width: 150, ellipsis: true },
+  {
+    title: '尺寸（长×宽×高）',
+    key: 'size',
+    width: 150,
+    ellipsis: true,
+    customRender: ({ record }: { record: ImportPreviewRow }) =>
+      formatImportSize(record.data),
+  },
   {
     title: '状态',
     dataIndex: 'status',
-    width: 90,
+    width: 86,
     customRender: ({ text }: { text: string }) => {
       const map: Record<string, { color: string; label: string }> = {
         valid: { color: 'green', label: '新增' },
-        duplicate: { color: 'blue', label: '重复' },
+        duplicate: { color: 'blue', label: '有变更' },
+        unchanged: { color: 'default', label: '无需更新' },
         error: { color: 'red', label: '错误' },
       };
       const cfg = map[text] ?? { color: 'default', label: text };
       return h(Tag, { color: cfg.color }, () => cfg.label);
     },
   },
-  { title: '原因', dataIndex: 'reason', ellipsis: true },
+  {
+    title: '说明',
+    key: 'note',
+    ellipsis: true,
+    customRender: ({ record }: { record: ImportPreviewRow }) =>
+      importRowNote(record),
+  },
 ];
 
 const errorColumns = [
+  { title: '工作表', dataIndex: 'sheetName', width: 120, ellipsis: true },
   { title: '行号', dataIndex: 'rowNumber', width: 70 },
   { title: '方案编号', dataIndex: 'code', width: 140 },
   { title: '失败原因', dataIndex: 'reason' },
@@ -182,18 +280,15 @@ defineExpose({ open });
         type="info"
         class="mb-4"
         message="上传说明"
-        description="请上传 .xlsx 格式的方案打标模板，第 1 行为表头，从第 2 行开始为数据行。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按有效方案自动补齐开口面数、展位长宽高和面积字典。"
+        description="请使用标准模板（.xlsx）填写，每个数据工作表第 1 行为表头且列顺序须与模板一致，从第 2 行开始为数据行（名称含“说明”“选项”的工作表不导入），单次最多 10 个数据工作表、2000 行。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按有效方案自动补齐开口面数、展位长宽高和面积字典。"
         show-icon
       />
       <div class="mb-3 flex justify-end">
         <Button
           type="link"
           size="small"
-          @click="
-            downloadFileFromUrl({
-              source: '/templates/scheme-import-template.xlsx',
-            })
-          "
+          :loading="templateLoading"
+          @click="downloadTemplate"
         >
           <span class="icon-[ant-design--download-outlined] mr-1"></span>
           下载标准导入模板
@@ -227,7 +322,24 @@ defineExpose({ open });
 
     <!-- 步骤2：预览 -->
     <template v-else-if="step === 'preview' && previewResult">
-      <Descriptions bordered size="small" :column="4" class="mb-4">
+      <Alert v-if="previewExpired" type="warning" class="mb-4" show-icon>
+        <template #message>
+          预览已过期，文件内容需重新校验后才能导入。
+          <Button
+            type="link"
+            size="small"
+            :loading="loading"
+            @click="doPreview"
+          >
+            重新预览
+          </Button>
+        </template>
+      </Alert>
+      <div v-else class="text-muted-foreground mb-2 text-right text-xs">
+        预览有效期 1 小时，{{ formatPreviewRemaining(remainingMs) }}
+      </div>
+
+      <Descriptions bordered size="small" :column="5" class="mb-4">
         <DescriptionsItem label="总行数">
           {{ previewResult.summary.total }}
         </DescriptionsItem>
@@ -236,10 +348,13 @@ defineExpose({ open });
             previewResult.summary.valid
           }}</span>
         </DescriptionsItem>
-        <DescriptionsItem label="重复">
+        <DescriptionsItem label="有变更">
           <span class="text-blue-600 font-medium">{{
             previewResult.summary.duplicate
           }}</span>
+        </DescriptionsItem>
+        <DescriptionsItem label="无需更新">
+          {{ previewResult.summary.unchanged }}
         </DescriptionsItem>
         <DescriptionsItem label="错误">
           <span class="text-red-500 font-medium">{{
@@ -252,11 +367,40 @@ defineExpose({ open });
         v-if="previewResult.summary.duplicate > 0"
         class="bg-muted/50 text-foreground mb-4 rounded border border-border px-4 py-3"
       >
-        <div class="mb-2 text-sm font-medium">重复编号处理策略：</div>
+        <div class="mb-2 text-sm font-medium">
+          已存在且有变更的方案（{{ impact.updates }} 个）处理策略：
+        </div>
         <RadioGroup v-model:value="duplicateStrategy">
           <Radio value="update">覆盖更新（用文件内容更新已有方案）</Radio>
           <Radio value="skip">跳过（保留已有方案不变）</Radio>
         </RadioGroup>
+        <Alert
+          v-if="duplicateStrategy === 'update'"
+          :type="
+            impact.unpublish > 0 || impact.clearing > 0 ? 'warning' : 'info'
+          "
+          class="mt-3"
+          show-icon
+        >
+          <template #message>
+            <div>
+              将覆盖 {{ impact.updates }} 个已有方案，仅写入有变化的字段。
+            </div>
+            <div v-if="impact.unpublish > 0">
+              其中
+              {{
+                impact.unpublish
+              }}
+              个已发布方案将退回草稿，需重新核验并通过整体审核后才能再次发布（仅改备注的不受影响）。
+            </div>
+            <div v-if="impact.clearing > 0">
+              {{
+                impact.clearing
+              }}
+              个方案的部分字段在文件中为空，覆盖后原值将被清空，具体见“说明”列。
+            </div>
+          </template>
+        </Alert>
       </div>
 
       <Table
@@ -264,9 +408,31 @@ defineExpose({ open });
         :data-source="previewResult.rows"
         size="small"
         :pagination="{ pageSize: 10, showSizeChanger: false }"
-        row-key="rowNumber"
+        row-key="rowId"
+        :row-expandable="(record: ImportPreviewRow) => !!record.data"
         :scroll="{ y: 320 }"
-      />
+      >
+        <template #expandedRowRender="{ record }">
+          <Descriptions size="small" :column="3">
+            <DescriptionsItem label="母方案">
+              {{ record.data?.parentCode ?? '—' }}
+            </DescriptionsItem>
+            <DescriptionsItem label="尺寸">
+              {{ formatImportSize(record.data) }}
+            </DescriptionsItem>
+            <DescriptionsItem label="开口">
+              {{ formatOpeningCount(record.data?.openingCount) }}
+            </DescriptionsItem>
+            <DescriptionsItem
+              v-for="entry in importDictionaryEntries(record)"
+              :key="entry.label"
+              :label="entry.label"
+            >
+              <Tag v-for="value in entry.values" :key="value">{{ value }}</Tag>
+            </DescriptionsItem>
+          </Descriptions>
+        </template>
+      </Table>
     </template>
 
     <!-- 步骤3：结果 -->
@@ -277,6 +443,9 @@ defineExpose({ open });
         </DescriptionsItem>
         <DescriptionsItem label="更新">
           <span class="text-blue-600 font-medium">{{ commitResult.updated }} 条</span>
+        </DescriptionsItem>
+        <DescriptionsItem label="无需更新">
+          {{ commitResult.unchanged ?? 0 }} 条
         </DescriptionsItem>
         <DescriptionsItem label="失败">
           <span class="text-red-500 font-medium">{{ commitResult.failed.length }} 条</span>
@@ -291,7 +460,7 @@ defineExpose({ open });
         :data-source="commitResult.failed"
         size="small"
         :pagination="false"
-        row-key="rowNumber"
+        row-key="rowId"
       >
         <template #title>
           <div class="flex items-center justify-between">

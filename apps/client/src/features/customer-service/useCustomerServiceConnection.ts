@@ -7,7 +7,7 @@ interface Handlers {
   onState: (state: ConnectionState) => void
   /** 断线期间每 5 秒调用一次，补拉消息与会话状态 */
   poll: () => Promise<void>
-  /** 每次（重新）连上后调用：重新读取坐席在线状态 */
+  /** 每次（重新）连上后调用：重新读取坐席在线状态；连接期间由服务端心跳推送 presence 事件更新 */
   onReconnected: () => void
   after: () => number
 }
@@ -23,6 +23,8 @@ export function useCustomerServiceConnection(handlers: Handlers) {
   let source: EventSource | null = null
   let conversationId: string | null = null
   let attempt = 0
+  /** 每次 open/close 递增，用来识别过期的建连结果 */
+  let session = 0
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let pollTimer: ReturnType<typeof setInterval> | undefined
   let staleTimer: ReturnType<typeof setTimeout> | undefined
@@ -62,10 +64,12 @@ export function useCustomerServiceConnection(handlers: Handlers) {
   async function connect() {
     const id = conversationId
     if (!id) return
+    // 等票据期间 close/open 过（含退出后同一会话被新身份重新打开）就丢弃这次结果，避免多出一条无人关闭的连接
+    const current = session
     if (!pollTimer) handlers.onState('connecting')
     try {
       const ticket = await createEventsTicket(id)
-      if (conversationId !== id) return
+      if (session !== current) return
       const next = openCustomerServiceEvents(id, ticket, handlers.after())
       source = next
       arm(next)
@@ -83,19 +87,21 @@ export function useCustomerServiceConnection(handlers: Handlers) {
       })
       next.onerror = () => fail(next)
     } catch {
-      scheduleReconnect()
+      if (session === current) scheduleReconnect()
     }
   }
 
   function open(id: string) {
     if (conversationId === id && source) return
     close()
+    session++
     conversationId = id
     attempt = 0
     void connect()
   }
 
   function close() {
+    session++
     conversationId = null
     source?.close()
     source = null

@@ -113,7 +113,7 @@ test('stale revision is rejected before diffing scheme fields', async () => {
 
 test('import update invalidates publication without trusting source verification claim', async () => {
   const sqls: string[] = [];
-  const preview = [{ rowNumber: 2, code: 'S-1', name: 'imported', status: 'duplicate', snapshotRevision: 1, data: {
+  const preview = [{ rowId: 1, sheetName: '方案', rowNumber: 2, code: 'S-1', name: 'imported', status: 'duplicate', snapshotRevision: 1, data: {
     code: 'S-1', name: 'imported', parentCode: null, widthMm: 3000, lengthMm: 6000,
     areaM2: 18, heightMm: 3500, openingCount: 2, productSystemId: null, styleId: null,
     industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], description: null,
@@ -122,6 +122,7 @@ test('import update invalidates publication without trusting source verification
   const query = async (sql: string, params?: unknown[]) => {
     sqls.push(sql);
     if (sql.includes('SELECT preview')) return { rows: [{ preview, status: 'pending' }] };
+    if (sql.includes('FROM schemes WHERE code = ANY')) return { rows: [{ ...publishedSchemeRow(), code: 'S-1', editRevision: 1 }] };
     if (sql.includes('UPDATE schemes SET')) {
       assert.equal(params?.[16], null);
       assert.equal(params?.length, 19);

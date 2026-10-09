@@ -9,7 +9,7 @@ import ts from 'typescript'
 import { createServer, transformWithEsbuild } from 'vite'
 
 const window = new Window({ url: 'http://localhost/' })
-for (const name of ['window', 'document', 'navigator', 'history', 'localStorage', 'sessionStorage', 'Storage', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'HTMLSelectElement', 'HTMLTextAreaElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+for (const name of ['window', 'document', 'navigator', 'history', 'localStorage', 'sessionStorage', 'Storage', 'StorageEvent', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'HTMLSelectElement', 'HTMLTextAreaElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   Object.defineProperty(globalThis, name, { configurable: true, value: name === 'window' ? window : ['getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame'].includes(name) ? window[name].bind(window) : window[name] })
 }
 window.localStorage.setItem('app-locale', 'zh')
@@ -184,7 +184,26 @@ test('login merges the cookie-held visitor once and clears the marker; without a
   assert.deepEqual(merges.map(call => [call.method, call.body, call.headers]), [['POST', undefined, undefined]], 'the token is never sent from script')
   assert.equal(localStorage.getItem('booth-ai:cs-visitor'), null)
   await cs.handleCustomerServiceLogin()
+  await cs.refreshCurrent()
   assert.equal(calls.filter(call => call.path.endsWith('/visitors/merge')).length, 1)
+})
+
+test('a failed merge keeps the marker and is retried before the next signed-in request until it succeeds', async () => {
+  localStorage.setItem('booth-ai:cs-visitor', '1')
+  let failures = 1
+  const calls = setup({ loggedIn: true, respond: call => {
+    if (call.path.endsWith('/visitors/merge') && failures-- > 0) throw new TypeError('Failed to fetch')
+  } })
+  const warn = console.warn
+  console.warn = () => {}
+  try { await cs.handleCustomerServiceLogin() } finally { console.warn = warn }
+  assert.equal(localStorage.getItem('booth-ai:cs-visitor'), '1', 'the marker survives a network failure')
+  await cs.refreshCurrent()
+  const paths = calls.map(call => call.path.replace(/^.*\/customer-service/, ''))
+  assert.deepEqual(paths, ['/visitors/merge', '/visitors/merge', '/conversations/current'], 'the retry runs before loading the conversation')
+  assert.equal(localStorage.getItem('booth-ai:cs-visitor'), null)
+  await cs.refreshCurrent()
+  assert.equal(calls.filter(call => call.path.endsWith('/visitors/merge')).length, 2, 'no further merge once it succeeded')
 })
 
 test('offline mode replaces the composer, requires a visitor email and sends an offline message', async () => {
@@ -209,6 +228,51 @@ test('offline mode replaces the composer, requires a visitor email and sends an 
   await settle()
   const sent = calls.find(call => call.method === 'POST' && call.path.endsWith('/messages'))
   assert.deepEqual({ ...sent.body, clientMessageId: typeof sent.body.clientMessageId }, { body: '请联系我', kind: 'offline', contactEmail: 'Buyer@Example.com', clientMessageId: 'string' })
+  unmount()
+})
+
+test('presence events from the stream heartbeat switch between offline form and composer, keeping the draft', async () => {
+  setup({ agentsOnline: false })
+  const { unmount, container } = await mount()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  const textarea = () => container.querySelector('[data-cs-panel] textarea')
+  textarea().value = '还在吗'; textarea().dispatchEvent(new Event('input'))
+  await settle()
+
+  FakeEventSource.instances[0].emit('update', { type: 'presence', agentsOnline: true })
+  await settle()
+  assertNoNode(container.querySelector('[data-cs-offline]'), 'an agent coming online replaces the offline form')
+  assert.match(container.querySelector('[data-cs-status]').textContent, /排队/)
+  assert.equal(textarea().value, '还在吗', 'the draft survives the switch')
+
+  FakeEventSource.instances[0].emit('update', { type: 'presence', agentsOnline: false })
+  await settle()
+  assert.equal(Boolean(container.querySelector('[data-cs-offline]')), true, 'all agents leaving brings the offline form back')
+  assert.equal(textarea().value, '还在吗')
+  unmount()
+})
+
+test('replies arriving while the page is in the background are only marked read once it is visible again', async () => {
+  const calls = setup({ messages: [message(1), message(2, { senderType: 'agent' })] })
+  const { unmount } = await mount()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  const reads = () => calls.filter(call => call.path.endsWith('/read')).map(call => call.body)
+  assert.deepEqual(reads(), [{ seq: 2 }])
+  let hidden = true
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') })
+  try {
+    FakeEventSource.instances[0].emit('update', { type: 'message.created', message: message(3, { senderType: 'agent' }) })
+    await sleep(350)
+    assert.deepEqual(reads(), [{ seq: 2 }], 'a panel left open in a background tab does not count as read')
+    hidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+    await settle()
+    assert.deepEqual(reads(), [{ seq: 2 }, { seq: 3 }], 'coming back to the page marks the reply read')
+  } finally {
+    delete document.visibilityState
+  }
   unmount()
 })
 
@@ -269,6 +333,37 @@ test('sending is idempotent on retry, starts a new round after the conversation 
   unmount()
 })
 
+test('when opening a new round fails, the typed message stays as a failed message and retry reopens the round', async () => {
+  let openFails = false
+  const calls = setup({ respond: call => {
+    if (call.method === 'POST' && call.path.endsWith('/conversations') && openFails) { openFails = false; throw failure(500, 'INTERNAL') }
+  } })
+  const { unmount, container } = await mount()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  const { state, retry } = cs.useCustomerService()
+  state.conversation = { ...state.conversation, status: 'closed' }
+  openFails = true
+  const textarea = container.querySelector('[data-cs-panel] textarea')
+  textarea.value = '会话结束后再问一句'; textarea.dispatchEvent(new Event('input'))
+  await settle()
+  container.querySelector('[data-cs-panel] form').dispatchEvent(new Event('submit'))
+  await settle()
+  const pending = container.querySelector('[data-cs-pending]')
+  assert.match(pending.textContent, /会话结束后再问一句/)
+  assert.match(pending.textContent, /发送失败/)
+  assert.equal(calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages')).length, 0)
+
+  assert.equal(await retry(state.pending[0].clientMessageId), true)
+  await settle()
+  assert.equal(calls.filter(call => call.path.endsWith('/conversations')).length, 3, 'retry opens the new round again')
+  const posts = calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'))
+  assert.deepEqual(posts.map(call => call.body.body), ['会话结束后再问一句'])
+  assert.equal(state.pending.length, 0)
+  assertNoNode(container.querySelector('[data-cs-pending]'), 'the delivered message leaves the pending list')
+  unmount()
+})
+
 test('a stream silent for 45 seconds is dropped and reconnected; pings keep it alive', async t => {
   setup()
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
@@ -292,6 +387,83 @@ test('a stream silent for 45 seconds is dropped and reconnected; pings keep it a
   await flush()
   assert.equal(FakeEventSource.instances.length, 2, 'reconnects after the first backoff')
   closePanel()
+})
+
+test('translations finished while disconnected are recalibrated on reconnect and on reopening', async t => {
+  const pending = { locale: 'en', status: 'pending', body: null }
+  let items = [message(1), message(2, { senderType: 'agent', body: '稍等', translation: { locale: 'en', status: 'done', body: 'Wait' } }),
+    message(3, { senderType: 'agent', body: '您好', translation: pending }), message(4)]
+  const calls = setup({ current: conversation({ status: 'active' }), respond: call => (call.path.endsWith('/messages') && call.method === 'GET'
+    ? { items: items.filter(item => call.query.after === undefined || item.seq > call.query.after), hasMore: false } : undefined) })
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)) }
+  await cs.openWith(undefined, 'floating')
+  await flush()
+  const { state, closePanel } = cs.useCustomerService()
+  const translation = id => state.messages.find(item => item.id === id).translation
+  FakeEventSource.instances[0].emit('open')
+  await flush()
+  assert.equal(translation('m3').status, 'pending')
+
+  // 断线期间翻译完成：SSE 按 seq 补发拿不到，重连后必须重取
+  FakeEventSource.instances[0].onerror()
+  items = items.map(item => (item.seq === 3 ? { ...item, translation: { locale: 'en', status: 'done', body: 'Hello' } } : item))
+  t.mock.timers.tick(3000)
+  await flush()
+  assert.equal(FakeEventSource.instances.length, 2)
+  assert.match(FakeEventSource.instances[1].url, /after=4$/, 'the stream still resumes after the last known seq')
+  FakeEventSource.instances[1].emit('open')
+  await flush()
+  assert.deepEqual(translation('m3'), { locale: 'en', status: 'done', body: 'Hello' })
+  assert.equal(calls.filter(call => call.method === 'GET' && call.path.endsWith('/messages')).at(-1).query.after, 2, 'refetches from the earliest pending translation')
+
+  // 面板关闭期间失败的译文：重新打开（已加载过）也要校准
+  items = [...items, message(5, { senderType: 'agent', translation: pending })]
+  FakeEventSource.instances[1].emit('update', { type: 'message.created', message: items[4] })
+  closePanel()
+  items = items.map(item => (item.seq === 5 ? { ...item, translation: { locale: 'en', status: 'failed', body: null } } : item))
+  await cs.openWith(undefined, 'floating')
+  await flush()
+  assert.equal(translation('m5').status, 'failed')
+  assert.equal(calls.filter(call => call.method === 'GET' && call.path.endsWith('/messages')).at(-1).query.after, 4)
+  closePanel()
+})
+
+test('a backlog larger than one page built up while disconnected is fetched page by page until caught up', async t => {
+  let items = [message(1), message(2)]
+  const calls = setup({ current: conversation({ status: 'active' }), respond: call => {
+    if (!call.path.endsWith('/messages') || call.method !== 'GET') return undefined
+    const after = call.query.after ?? 0
+    const rest = items.filter(item => item.seq > after)
+    return { items: rest.slice(0, call.query.limit), hasMore: rest.length > call.query.limit }
+  } })
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)) }
+  await cs.openWith(undefined, 'floating')
+  await flush()
+  const { state, closePanel } = cs.useCustomerService()
+  FakeEventSource.instances[0].emit('open')
+  await flush()
+
+  // 断线期间积压 250 条：超过单页上限（SSE 补发同样有上限），重连后要逐页追平
+  FakeEventSource.instances[0].onerror()
+  items = Array.from({ length: 252 }, (_, index) => message(index + 1))
+  t.mock.timers.tick(3000)
+  await flush()
+  const before = calls.length
+  FakeEventSource.instances[1].emit('open')
+  await flush()
+  assert.deepEqual(state.messages.map(item => item.seq), items.map(item => item.seq), 'no gaps and no duplicates')
+  assert.deepEqual(calls.slice(before).filter(call => call.method === 'GET' && call.path.endsWith('/messages')).map(call => call.query.after), [2, 102, 202])
+  closePanel()
+})
+
+test('a late pending copy never downgrades a finished translation', () => {
+  const done = message(3, { senderType: 'agent', translation: { locale: 'en', status: 'done', body: 'Hello' } })
+  const [merged] = timeline.mergeMessages([done], [message(3, { senderType: 'agent', body: 'edited', translation: { locale: 'en', status: 'pending', body: null } })])
+  assert.deepEqual([merged.body, merged.translation.status], ['edited', 'done'])
+  assert.equal(timeline.syncAfter([message(1), done, message(4, { translation: { locale: 'en', status: 'pending', body: null } }), message(6)]), 3)
+  assert.equal(timeline.syncAfter([message(1), done]), 3)
 })
 
 test('?cs=open from reply emails opens the panel and removes the query; the launcher shows unread replies', async () => {
@@ -428,4 +600,75 @@ test('the project detail registers its project: the panel offers "send this proj
   assert.deepEqual(calls.filter(call => call.path.endsWith('/conversations')).at(-1).body, { entryPoint: 'my_project' })
   assert.match(container.textContent, /发送太频繁/)
   unmount()
+})
+
+test('responses started before logout and an account switch never restore the previous account', async () => {
+  const conversationB = '22222222-2222-4222-8222-222222222222'
+  const held = []
+  const hold = data => new Promise(resolve => held.push(() => resolve(data)))
+  let account = 'A'
+  const calls = setup({ loggedIn: true, respond: call => {
+    if (account === 'B') {
+      if (call.path.endsWith('/conversations')) return { conversation: conversation({ id: conversationB, conversationNo: 'CS-00000002' }), contexts: [], agentsOnline: false }
+      if (call.path.endsWith('/messages') && call.method === 'GET') return { items: [message(1, { id: 'b1', conversationId: conversationB, body: 'from B' })], hasMore: false }
+      return
+    }
+    if (call.path.endsWith('/messages') && call.method === 'GET') return hold({ items: [message(5, { senderType: 'agent', body: 'from A' })], hasMore: true })
+    if (call.path.endsWith('/conversations/current')) return hold({ conversation: conversation(), contexts: [], unreadCount: 7, agentsOnline: true })
+  } })
+  const { state } = cs.useCustomerService()
+  const openingA = cs.openWith(undefined, 'floating')
+  const refreshingA = cs.refreshCurrent()
+  await settle()
+  assert.equal(held.length, 2, 'A history and current-conversation requests are in flight')
+
+  globalThis.__cs.auth = { isLoggedIn: false, currentUser: null }
+  cs.resetCustomerService()
+  account = 'B'
+  globalThis.__cs.auth = { isLoggedIn: true, currentUser: { email: 'b@example.com' } }
+  await cs.handleCustomerServiceLogin()
+  await cs.openWith(undefined, 'floating')
+
+  for (const release of held) release()
+  await openingA
+  await assert.rejects(refreshingA)
+  await settle()
+  assert.equal(state.conversation.id, conversationB)
+  assert.deepEqual(state.messages.map(item => item.body), ['from B'])
+  assert.deepEqual([state.hasMore, state.unreadCount, state.agentsOnline, state.busy, state.notice], [false, 0, false, false, ''])
+  assert.deepEqual(FakeEventSource.instances.map(source => [source.closed, source.url.includes(conversationB)]), [[false, true]], 'only B is connected')
+  assert.equal(calls.filter(call => call.path.endsWith('/read')).length, 0, 'the agent reply of A is never marked read')
+})
+
+test('after logout, a response from the previous account leaves the state cleared and opens no stream', async () => {
+  let release
+  const calls = setup({ loggedIn: true, respond: call => {
+    if (call.path.endsWith('/messages') && call.method === 'GET') return new Promise(resolve => { release = () => resolve({ items: [message(1, { senderType: 'agent' })], hasMore: true }) })
+  } })
+  const { state } = cs.useCustomerService()
+  const opening = cs.openWith(undefined, 'floating')
+  await settle()
+  cs.resetCustomerService()
+  release()
+  await opening
+  await settle()
+  assert.deepEqual([state.open, state.conversation, state.messages.length, state.loaded, state.unreadCount, state.connection, state.busy, state.notice],
+    [false, null, 0, false, 0, 'idle', false, ''])
+  assert.equal(FakeEventSource.instances.length, 0)
+  assert.equal(calls.some(call => call.path.endsWith('/events-ticket')), false)
+})
+
+test('a stream ticket requested before an account switch does not open a second stream for the merged conversation', async () => {
+  let releaseTicket
+  setup({ loggedIn: true, respond: call => {
+    if (call.path.endsWith('/events-ticket') && !releaseTicket) return new Promise(resolve => { releaseTicket = () => resolve({ ticket: 'ticket-stale' }) })
+  } })
+  await cs.openWith(undefined, 'floating')
+  await cs.handleCustomerServiceLogin()
+  // 访客会话合并到账号后，新身份打开的仍是同一个会话 ID
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  releaseTicket()
+  await settle()
+  assert.deepEqual(FakeEventSource.instances.map(source => source.url.match(/ticket=([^&]+)/)[1]), ['ticket-1'])
 })

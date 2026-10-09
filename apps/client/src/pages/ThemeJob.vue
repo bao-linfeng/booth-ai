@@ -12,6 +12,7 @@ import ImagePreviewDialog from '@/components/ImagePreviewDialog.vue'
 import MainLayout from '@/layouts/MainLayout.vue'
 import { cn } from '@/lib/utils'
 import { useAsyncJob } from '@/composables/useAsyncJob'
+import { useSignedUrlRenewal } from '@/composables/useSignedUrlRenewal'
 import { createThemeJobEventsTicket, getThemeJob, openThemeJobEvents, saveThemeSelection, type ThemeJob } from '@/services/api/theme-jobs'
 import { failureReasonText, phaseText as getPhaseText, getThemeJobStatusLabels } from '@/features/theme-jobs/labels'
 import { setPageContext } from '@/features/customer-service/useCustomerService'
@@ -19,7 +20,7 @@ import { setPageContext } from '@/features/customer-service/useCustomerService'
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
-const themeJobStatusLabels = getThemeJobStatusLabels(t)
+const themeJobStatusLabels = computed(() => getThemeJobStatusLabels(t))
 const jobId = route.params.jobId as string
 
 const jobData = ref<ThemeJob | null>(null)
@@ -37,6 +38,9 @@ const isPending = computed(() => {
   return ['pending', 'queued', 'running', 'settling'].includes(jobData.value.status)
 })
 
+// 结果图为 15 分钟预签名链接：任务结束后不再轮询，停留过久时由图片加载失败或页面重新可见触发重新读取换新链接
+const imageLinks = useSignedUrlRenewal(() => asyncJob.refresh(), 900_000)
+
 const asyncJob = useAsyncJob<ThemeJob>({
   fetch: getThemeJob,
   createEventsTicket: createThemeJobEventsTicket,
@@ -48,6 +52,7 @@ const asyncJob = useAsyncJob<ThemeJob>({
       data.selection = jobData.value.selection
     }
     jobData.value = data
+    imageLinks.markFresh()
   },
   onError: (_error, initial) => {
     console.error('Failed to load theme job', _error)
@@ -147,12 +152,14 @@ watch([() => jobData.value?.schemeCode, themedContext], ([schemeCode, themed]) =
 
 function continueWithSelection(destination: 'quote' | 'artwork') {
   if (!canContinue.value || !jobData.value) return
-  void router.push({ path: `/schemes/${encodeURIComponent(jobData.value.schemeCode)}/${destination}`, query: { themeJobId: jobId } })
+  // 带上任务来源检索：询价页只采用这一次检索的需求，避免同一方案在其他检索中的条件被串入
+  const searchId = jobData.value.searchId
+  void router.push({ path: `/schemes/${encodeURIComponent(jobData.value.schemeCode)}/${destination}`, query: { themeJobId: jobId, ...(searchId ? { searchId } : {}) } })
 }
 
 const statusText = computed(() => {
   if (!jobData.value) return t('common.loading')
-  return themeJobStatusLabels[jobData.value.status]
+  return themeJobStatusLabels.value[jobData.value.status]
 })
 
 const phaseText = computed(() => getPhaseText(jobData.value, t))
@@ -267,7 +274,7 @@ const failureReason = computed(() => failureReasonText(jobData.value?.failure?.r
                 <Badge v-else variant="secondary">{{ t('themeJob.previewOnly') }}</Badge>
               </div>
               <button v-if="activeResult" type="button" class="aspect-video w-full overflow-hidden rounded-md bg-image-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" :aria-label="t('themeJob.enlargeAriaLabel', { n: activeResultIndex + 1 })" @click="imagePreviewOpen = true">
-                <img :src="activeResult.previewUrl" :alt="t('themeJob.imageAlt', { n: activeResultIndex + 1 })" class="h-full w-full object-contain" />
+                <img :src="activeResult.previewUrl" :alt="t('themeJob.imageAlt', { n: activeResultIndex + 1 })" class="h-full w-full object-contain" @error="imageLinks.onImageError" />
               </button>
               <div class="grid grid-cols-2 gap-3 sm:grid-cols-4" role="group" :aria-label="t('themeJob.navAriaLabel')">
                 <button
@@ -278,7 +285,7 @@ const failureReason = computed(() => failureReasonText(jobData.value?.failure?.r
                   :class="cn('min-w-0 overflow-hidden rounded-lg border bg-background text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background', activeResultIndex === index ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50')"
                   @click="previewResultId = result.resultId"
                 >
-                  <img :src="result.previewUrl" alt="" class="aspect-video w-full bg-muted/40 object-contain" />
+                  <img :src="result.previewUrl" alt="" class="aspect-video w-full bg-muted/40 object-contain" @error="imageLinks.onImageError" />
                   <span class="flex flex-wrap items-center justify-between gap-1 p-2 text-xs">
                     <span>{{ t('themeJob.thumbnailLabel', { n: index + 1 }) }}</span>
                     <span v-if="result.resultId === selectedResultId && !selectionUncertain" class="flex items-center gap-1 text-success"><CheckCircle2 class="size-3" />{{ t('themeJob.thumbnailSelected') }}</span>
@@ -302,7 +309,7 @@ const failureReason = computed(() => failureReasonText(jobData.value?.failure?.r
               </div>
               <details class="border-t py-5">
                 <summary class="flex cursor-pointer items-center gap-2 rounded-sm text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ImageIcon class="size-4" />{{ t('themeJob.compareTitle') }}</summary>
-                <img :src="jobData.original.previewUrl" :alt="t('themeJob.compareOriginalAlt')" class="mt-4 aspect-video w-full rounded-lg bg-muted/40 object-contain" />
+                <img :src="jobData.original.previewUrl" :alt="t('themeJob.compareOriginalAlt')" class="mt-4 aspect-video w-full rounded-lg bg-muted/40 object-contain" @error="imageLinks.onImageError" />
               </details>
             </section>
 
@@ -316,7 +323,7 @@ const failureReason = computed(() => failureReasonText(jobData.value?.failure?.r
                 <p>{{ t('themeJob.pendingDesc') }}</p>
               </div>
               <div v-else-if="selectedResult" class="space-y-3">
-                <img :src="selectedResult.previewUrl" :alt="t('themeJob.imageAlt', { n: selectedResultIndex + 1 })" class="aspect-video w-full rounded-lg border bg-muted/40 object-contain" />
+                <img :src="selectedResult.previewUrl" :alt="t('themeJob.imageAlt', { n: selectedResultIndex + 1 })" class="aspect-video w-full rounded-lg border bg-muted/40 object-contain" @error="imageLinks.onImageError" />
                 <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span class="flex items-center gap-1.5 font-medium text-success"><CheckCircle2 class="size-4" />{{ t('themeJob.selectedN', { n: selectedResultIndex + 1 }) }}</span>
                   <Button v-if="activeResult?.resultId !== selectedResultId" variant="ghost" size="sm" @click="previewResultId = selectedResultId ?? null">{{ t('themeJob.previewSelected') }}</Button>
@@ -351,6 +358,7 @@ const failureReason = computed(() => failureReasonText(jobData.value?.failure?.r
       :alt="t('themeJob.imageAlt', { n: activeResultIndex + 1 })"
       :title="t('themeJob.imageAltFull', { n: activeResultIndex + 1 })"
       :description="t('themeJob.imageAltTotal', { total: jobData?.results.length ?? 0 })"
+      @image-error="imageLinks.onImageError"
     />
   </MainLayout>
 </template>

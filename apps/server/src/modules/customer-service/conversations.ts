@@ -34,7 +34,8 @@ export async function announce(pool: Db, redis: Redis, conversationId: string, c
   for (const message of await loadMessages(pool, change.messageIds ?? [])) {
     const dto = toCustomerMessage(message);
     if (dto) await publishCustomer(redis, conversationId, { type: 'message.created', message: dto });
-    await publishAgents(redis, { type: 'message.created', conversationId, status: row.status, agentAdminId: row.agentAdminId, seq: Number(message.seq) });
+    await publishAgents(redis, { type: 'message.created', conversationId, status: row.status, agentAdminId: row.agentAdminId, seq: Number(message.seq),
+      senderType: message.senderType, kind: message.kind });
   }
   if (change.conversationChanged) await publishCustomer(redis, conversationId, { type: 'conversation.updated', conversation: conversation.customer });
   if (change.agentEvent) {

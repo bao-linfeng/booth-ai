@@ -66,7 +66,7 @@ const listQuerySchema = {
   type: 'object', additionalProperties: false,
   properties: {
     page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
-    code: { type: 'string', minLength: 1 }, name: { type: 'string', minLength: 1 }, styleId: { type: 'string', format: 'uuid' },
+    keyword: { type: 'string', minLength: 1 }, code: { type: 'string', minLength: 1 }, name: { type: 'string', minLength: 1 }, styleId: { type: 'string', format: 'uuid' },
     industryId: { type: 'string', format: 'uuid' }, productSystemId: { type: 'string', format: 'uuid' },
     publishStatus: { type: 'string', enum: ['draft', 'published', 'unpublished'] },
     verificationStatus: { type: 'string', enum: ['unverified', 'verified', 'failed'] },
@@ -92,6 +92,7 @@ function listOptions(query: SchemeQuery): ListSchemesOptions {
   return {
     page: query.page ?? 1,
     pageSize: query.pageSize ?? 20,
+    ...(query.keyword?.trim() ? { keyword: query.keyword.trim() } : {}),
     ...(query.code ? { code: query.code.trim() } : {}),
     ...(query.name ? { name: query.name.trim() } : {}),
     ...(query.styleId ? { styleId: query.styleId } : {}),

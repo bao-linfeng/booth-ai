@@ -50,6 +50,8 @@ export interface SchemeRecord {
 export interface SchemeListParams {
   page?: number;
   pageSize?: number;
+  /** 编号或名称包含该关键词 */
+  keyword?: string;
   code?: string;
   name?: string;
   styleId?: string;
@@ -93,8 +95,9 @@ export interface CreateSchemeInput {
   source?: null | string;
 }
 
-export interface UpdateSchemeInput
-  extends Partial<Omit<CreateSchemeInput, 'code'>> {
+export interface UpdateSchemeInput extends Partial<
+  Omit<CreateSchemeInput, 'code'>
+> {
   editRevision: number;
 }
 
@@ -132,29 +135,81 @@ export async function getSchemeOptionsApi() {
 }
 
 export async function deleteSchemeApi(code: string) {
-  return requestClient.delete<void>(
+  return requestClient.delete<null>(
     `/v1/admin/schemes/${encodeURIComponent(code)}`,
   );
 }
 
+/** 预览行解析后的关键字段（尺寸为毫米，字典字段为条目 id，对应标签见 dictionaryLabels）。 */
+export interface ImportPreviewRowData {
+  parentCode: null | string;
+  lengthMm: null | number;
+  widthMm: null | number;
+  heightMm: null | number;
+  areaM2: null | number;
+  openingCount: null | number;
+}
+
+export type ImportDictionaryField =
+  | 'budgetTierId'
+  | 'featureIds'
+  | 'industryIds'
+  | 'productSystemId'
+  | 'styleId'
+  | 'zoneIds';
+
+/** 导入覆盖可写入的方案字段 */
+export type ImportChangedField =
+  | 'areaM2'
+  | 'budgetTierId'
+  | 'description'
+  | 'featureIds'
+  | 'heightMm'
+  | 'industryIds'
+  | 'keywords'
+  | 'lengthMm'
+  | 'name'
+  | 'notes'
+  | 'openingCount'
+  | 'parentCode'
+  | 'productSystemId'
+  | 'styleId'
+  | 'widthMm'
+  | 'zoneIds';
+
+/** rowId 在单次导入内唯一；sheetName + rowNumber 定位原文件中的工作表与行。 */
 export interface ImportPreviewRow {
+  rowId: number;
+  sheetName: string;
   rowNumber: number;
   code: string;
   name: string;
-  status: 'duplicate' | 'error' | 'valid';
+  /** duplicate：已存在且有变更；unchanged：已存在且与当前方案一致，提交时不写入 */
+  status: 'duplicate' | 'error' | 'unchanged' | 'valid';
   reason?: string;
+  data?: ImportPreviewRowData;
+  dictionaryLabels?: Partial<Record<ImportDictionaryField, string[]>>;
+  /** 仅已存在的方案：当前是否已发布，文件相对当前方案变化的字段及其中将被清空的字段 */
+  published?: boolean;
+  changedFields?: ImportChangedField[];
+  clearedFields?: ImportChangedField[];
 }
 
 export interface ImportPreviewSummary {
   total: number;
   valid: number;
   duplicate: number;
+  unchanged: number;
   error: number;
   skipped: number;
+  /** 覆盖更新时将从已发布退回草稿的方案数 */
+  unpublish: number;
 }
 
 export interface ImportPreviewResult {
   importId: string;
+  /** 预览失效时间（ISO 8601），过期后须重新上传预览 */
+  expiresAt: string;
   rows: ImportPreviewRow[];
   summary: ImportPreviewSummary;
 }
@@ -162,8 +217,24 @@ export interface ImportPreviewResult {
 export interface ImportCommitResult {
   created: number;
   updated: number;
+  /** 与当前方案一致而未写入的行（旧结果可能缺省） */
+  unchanged?: number;
   dictionaryItemsCreated: number;
-  failed: { rowNumber: number; code: string; reason: string }[];
+  failed: {
+    code: string;
+    reason: string;
+    rowId: number;
+    rowNumber: number;
+    sheetName: string;
+  }[];
+}
+
+/** 下载与当前解析规则、启用字典一致的方案导入模板 */
+export async function downloadImportTemplateApi() {
+  return requestClient.get<Blob>('/v1/admin/scheme-imports/template', {
+    responseType: 'blob',
+    responseReturn: 'body',
+  });
 }
 
 export async function previewImportApi(file: File) {

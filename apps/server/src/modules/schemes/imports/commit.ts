@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { transaction } from '../../../infra/database.js';
+import { domainError } from '../../../lib/errors.js';
 import { validateSchemeDictionaryIds } from '../dictionary-ids.js';
+import { findSchemesByCodes } from '../service.js';
 import { ensureSelectionSizes } from '../../selection/sizes.js';
+import { importRowChanges, onlyNotesChanged } from './changes.js';
 import type { CommitImportOptions, CommitImportResult, ImportPreviewRow, ImportRow } from './types.js';
 import { importRowFromJson, validateImportedSize } from './validation.js';
 
@@ -45,17 +48,19 @@ const updateSql = `
   RETURNING id
 `;
 
-type RowOutcome = { kind: 'created' | 'updated' } | { kind: 'failed'; reason: string };
+// 仅改内部备注：与手动编辑一致，不递增修订、不重置核验、不下架
+const notesSql = `
+  UPDATE schemes SET notes = $2, updated_by = $3, updated_at = now()
+  WHERE code = $1 AND revision = $4
+`;
+
+type RowOutcome = { kind: 'created' | 'updated' | 'unchanged' } | { kind: 'failed'; reason: string };
 
 interface ImportRecord {
   preview: unknown;
   status: string;
   commit_request_hash: string | null;
   committed_result: CommitImportResult | null;
-}
-
-function badRequest(message: string): Error & { statusCode: number } {
-  return Object.assign(new Error(message), { statusCode: 400 });
 }
 
 function mapDbError(error: unknown): string {
@@ -69,6 +74,10 @@ function mapDbError(error: unknown): string {
 
 function failureReason(error: unknown): string {
   return error instanceof Error && 'statusCode' in error && error.statusCode === 400 ? error.message : mapDbError(error);
+}
+
+function failedSource(row: ImportPreviewRow): Omit<CommitImportResult['failed'][number], 'reason'> {
+  return { rowId: row.rowId, sheetName: row.sheetName, rowNumber: row.rowNumber, code: row.code };
 }
 
 /** insert / update 共用的 $1–$17 业务字段，其后依次追加各自的审计与版本参数。 */
@@ -91,28 +100,46 @@ async function lockPendingImport(client: pg.PoolClient, importId: string, reques
     FOR UPDATE
   `, [importId]);
   const record = imported.rows[0];
-  if (!record) throw badRequest('Import preview not found or has expired');
+  if (!record) throw domainError('IMPORT_PREVIEW_EXPIRED', 410);
   if (record.status === 'committed') {
     if (record.commit_request_hash === requestHash && record.committed_result) return { replay: record.committed_result };
-    throw Object.assign(new Error('Idempotency conflict: same importId with different options'), { statusCode: 409 });
+    throw domainError('IMPORT_ALREADY_COMMITTED', 409);
   }
-  if (record.status !== 'pending') throw badRequest('Import preview not found or has expired');
-  if (!Array.isArray(record.preview)) throw badRequest('Import preview is invalid');
+  if (record.status !== 'pending') throw domainError('IMPORT_PREVIEW_EXPIRED', 410);
+  if (!Array.isArray(record.preview)) throw domainError('IMPORT_PREVIEW_INVALID', 400);
   return { preview: record.preview };
 }
 
-/** 待写入的行：仅 valid / duplicate，受 selectedRows 与重复策略过滤。 */
-function rowsToCommit(preview: unknown[], options: CommitImportOptions): (ImportPreviewRow & { data: ImportRow })[] {
-  const selectedRows = options.selectedRows && options.selectedRows.length > 0 ? new Set(options.selectedRows) : null;
+/** 待写入的行：仅 valid / duplicate，受 selectedRowIds 与重复策略过滤；预览时已无差异的行只计数不写入。 */
+function rowsToCommit(preview: unknown[], options: CommitImportOptions): { rows: (ImportPreviewRow & { data: ImportRow })[]; unchanged: number } {
+  const selectedRowIds = options.selectedRowIds && options.selectedRowIds.length > 0 ? new Set(options.selectedRowIds) : null;
   const rows: (ImportPreviewRow & { data: ImportRow })[] = [];
+  let unchanged = 0;
   for (const stored of preview) {
     const row = importRowFromJson(stored);
-    if (!row || !row.data || (row.status !== 'valid' && row.status !== 'duplicate')) continue;
-    if (selectedRows !== null && !selectedRows.has(row.rowNumber)) continue;
+    if (!row || !row.data || row.status === 'error') continue;
+    if (selectedRowIds !== null && !selectedRowIds.has(row.rowId)) continue;
+    if (row.status === 'unchanged') {
+      unchanged += 1;
+      continue;
+    }
     if (row.status === 'duplicate' && options.duplicateStrategy === 'skip') continue;
     rows.push({ ...row, data: row.data });
   }
-  return rows;
+  return { rows, unchanged };
+}
+
+/** 覆盖已有方案：锁定后按预览版本校验，再与当前内容比较，无差异不写入，仅改备注不触发下架。 */
+async function overwriteRow(client: pg.PoolClient, adminId: string | null, row: ImportPreviewRow & { data: ImportRow }): Promise<RowOutcome> {
+  if (row.snapshotRevision == null) return { kind: 'failed', reason: '预览数据缺少版本信息' };
+  const [current] = await findSchemesByCodes(client, [row.code], true);
+  if (!current || current.editRevision !== row.snapshotRevision) return { kind: 'failed', reason: '方案已被他人修改，请重新导入' };
+  const { changedFields } = importRowChanges(current, row.data);
+  if (changedFields.length === 0) return { kind: 'unchanged' };
+  const updated = onlyNotesChanged(changedFields)
+    ? await client.query(notesSql, [row.code, row.data.notes, adminId, row.snapshotRevision])
+    : await client.query(updateSql, [...schemeValues(row.data), adminId, row.snapshotRevision]);
+  return updated.rowCount === 0 ? { kind: 'failed', reason: '方案已被他人修改，请重新导入' } : { kind: 'updated' };
 }
 
 async function writeRow(client: pg.PoolClient, adminId: string | null, row: ImportPreviewRow & { data: ImportRow }): Promise<RowOutcome> {
@@ -122,34 +149,33 @@ async function writeRow(client: pg.PoolClient, adminId: string | null, row: Impo
     await client.query(insertSql, [...schemeValues(row.data), adminId, adminId]);
     return { kind: 'created' };
   }
-  if (row.snapshotRevision == null) return { kind: 'failed', reason: '预览数据缺少版本信息' };
-  const updated = await client.query(updateSql, [...schemeValues(row.data), adminId, row.snapshotRevision]);
-  return updated.rowCount === 0 ? { kind: 'failed', reason: '方案已被他人修改，请重新导入' } : { kind: 'updated' };
+  return overwriteRow(client, adminId, row);
 }
 
 export async function commitImport(pool: pg.Pool, adminId: string | null, importId: string, options: CommitImportOptions): Promise<CommitImportResult> {
   return transaction(pool, async client => {
-    const requestHash = createHash('sha256').update(JSON.stringify([importId, options.duplicateStrategy, options.selectedRows ?? null])).digest('hex');
+    const requestHash = createHash('sha256').update(JSON.stringify([importId, options.duplicateStrategy, options.selectedRowIds ?? null])).digest('hex');
     const locked = await lockPendingImport(client, importId, requestHash);
     if ('replay' in locked) return locked.replay;
 
-    const result: CommitImportResult = { created: 0, updated: 0, dictionaryItemsCreated: 0, failed: [] };
+    const { rows, unchanged } = rowsToCommit(locked.preview, options);
+    const result: CommitImportResult = { created: 0, updated: 0, unchanged, dictionaryItemsCreated: 0, failed: [] };
     const committedRows: ImportRow[] = [];
     // 每行独立 SAVEPOINT：单行失败只回滚该行，整批仍在同一事务内提交。
-    for (const row of rowsToCommit(locked.preview, options)) {
+    for (const row of rows) {
       await client.query('SAVEPOINT row_save');
       try {
         const outcome = await writeRow(client, adminId, row);
         await client.query('RELEASE SAVEPOINT row_save');
         if (outcome.kind === 'failed') {
-          result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: outcome.reason });
+          result.failed.push({ ...failedSource(row), reason: outcome.reason });
           continue;
         }
         result[outcome.kind] += 1;
-        committedRows.push(row.data);
+        if (outcome.kind !== 'unchanged') committedRows.push(row.data);
       } catch (error) {
         await client.query('ROLLBACK TO SAVEPOINT row_save');
-        result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: failureReason(error) });
+        result.failed.push({ ...failedSource(row), reason: failureReason(error) });
       }
     }
     result.dictionaryItemsCreated = await ensureSelectionSizes(client, committedRows);

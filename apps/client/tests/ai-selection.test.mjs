@@ -9,7 +9,7 @@ import ts from 'typescript'
 import { createServer, transformWithEsbuild } from 'vite'
 
 const window = new Window({ url: 'http://localhost/' })
-for (const name of ['window', 'document', 'navigator', 'history', 'sessionStorage', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+for (const name of ['window', 'document', 'navigator', 'history', 'sessionStorage', 'localStorage', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   Object.defineProperty(globalThis, name, { configurable: true, value: name === 'window' ? window : ['getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame'].includes(name) ? window[name].bind(window) : window[name] })
 }
 Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', { configurable: true, value() {} })
@@ -88,7 +88,7 @@ function matchResponse(body, status) {
     attemptId: body.attemptId, searchId: 'search-1',
   }
 }
-async function mount({ restore = false, status = 'matched', schemeImages } = {}) {
+async function mount({ restore = false, status = 'matched', schemeImages, parsed = {} } = {}) {
   if (!restore) sessionStorage.clear()
   const calls = []
   globalThis.__aiSelection = {
@@ -98,7 +98,7 @@ async function mount({ restore = false, status = 'matched', schemeImages } = {})
       calls.push(call)
       if (path.startsWith('/api/v1/client/catalog/options')) return { code: 0, data: structuredClone(catalog) }
       if (path === '/api/v1/client/requirements/parse') return { code: 0, data: {
-        status: 'ready', requirement: call.options.body.form, parser: 'rules', degraded: false,
+        status: 'ready', requirement: { ...call.options.body.form, ...parsed }, parser: 'rules', degraded: false,
         fieldSources: {}, overrides: [], clarifications: [], unhandledText: [], warnings: [],
         attemptId: call.options.body.attemptId, parseId: 'parse-1',
       } }
@@ -420,5 +420,88 @@ test('height is a primary field: validated, not counted as a more condition, and
     assert.equal(posts(mounted)[0].options.body.requirement.maxHeightMm, 4250)
     assertEditor(mounted.container, false)
     assert.match(mounted.container.querySelector('[aria-label="当前需求摘要"]').textContent, /限高 4.25 m/)
+  } finally { await mounted.close() }
+})
+
+for (const [name, cleared] of [['backspacing to empty', ''], ['leaving only spaces', '   ']]) {
+  test(`${name} after a parsed description matches by the form without an empty parse or the old parse record`, async () => {
+    const mounted = await mount()
+    try {
+      await selectSize(mounted.container, '6x3')
+      await input(mounted.container, '#requirement-text', '科技展台，希望有洽谈区')
+      await click(mounted.container, '匹配方案')
+      assert.equal(posts(mounted).length, 2)
+      await click(mounted.container, '修改需求')
+      await input(mounted.container, '#requirement-text', cleared)
+      await click(mounted.container, '重新匹配方案')
+      assert.deepEqual(posts(mounted).map(call => call.path), ['/api/v1/client/requirements/parse', '/api/v1/client/scheme-matches', '/api/v1/client/scheme-matches'])
+      const body = posts(mounted)[2].options.body
+      assert.equal(body.mode, 'filtered')
+      assert.equal('parseId' in body, false)
+      assert.equal(body.inputContext.textProvided, false)
+      assert.match(mounted.container.textContent, /为您找到的空间方案/)
+    } finally { await mounted.close() }
+  })
+}
+
+test('the clear-description button drops the old parse record from the next search', async () => {
+  const mounted = await mount()
+  try {
+    await selectSize(mounted.container, '6x3')
+    await input(mounted.container, '#requirement-text', '科技展台，希望有洽谈区')
+    await click(mounted.container, '匹配方案')
+    await click(mounted.container, '修改需求')
+    await click(mounted.container, '清空描述')
+    await click(mounted.container, '重新匹配方案')
+    assert.equal(posts(mounted).length, 3)
+    const body = posts(mounted)[2].options.body
+    assert.equal('parseId' in body, false)
+    assert.equal(body.inputContext.textProvided, false)
+  } finally { await mounted.close() }
+})
+
+test('a session saved under a previous visitor is not restored after the visitor ID rotates', async () => {
+  let mounted = await mount()
+  try {
+    await selectSize(mounted.container, '6x3')
+    await click(mounted.container, '匹配方案')
+    assert.ok(saved())
+    await mounted.close()
+    localStorage.setItem('booth-ai:visitor-id', 'v_rotated_after_logout_0001')
+    mounted = await mount({ restore: true })
+    assertEditor(mounted.container, true)
+    assert.doesNotMatch(mounted.container.textContent, /为您找到的空间方案|SC-6030/)
+    assert.equal(posts(mounted).length, 0)
+    assert.equal(sessionStorage.getItem(sessionKey), null)
+  } finally { await mounted.close() }
+})
+
+test('a visitor change while the page stays open starts a new attempt instead of reusing the old IDs', async () => {
+  const mounted = await mount()
+  try {
+    await selectSize(mounted.container, '6x3')
+    await input(mounted.container, '#requirement-text', '科技展台，希望有洽谈区')
+    await click(mounted.container, '匹配方案')
+    const first = posts(mounted)[1].options.body
+    localStorage.setItem('booth-ai:visitor-id', 'v_changed_in_another_tab_01')
+    await click(mounted.container, '修改需求')
+    await selectSize(mounted.container, '6x4')
+    await click(mounted.container, '重新匹配方案')
+    const next = posts(mounted).at(-1).options.body
+    assert.equal(next.mode, 'filtered')
+    assert.notEqual(next.attemptId, first.attemptId)
+    assert.equal('parseId' in next, false)
+    assert.equal(saved().visitorId, 'v_changed_in_another_tab_01')
+  } finally { await mounted.close() }
+})
+
+test('a custom size parsed from the description is shown in the size select instead of the unrestricted placeholder', async () => {
+  const mounted = await mount({ parsed: { lengthMm: 7000, widthMm: 4500, areaM2: 31.5 } })
+  try {
+    assert.match(mounted.container.querySelector('[aria-label="方案尺寸"]').textContent, /不限/)
+    await input(mounted.container, '#requirement-text', '7米乘4.5米的展台')
+    await click(mounted.container, '匹配方案')
+    await click(mounted.container, '修改需求')
+    assert.match(mounted.container.querySelector('[aria-label="方案尺寸"]').textContent, /自定义 7 × 4\.5 m/)
   } finally { await mounted.close() }
 })

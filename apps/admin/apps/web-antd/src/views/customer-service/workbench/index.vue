@@ -51,8 +51,11 @@ const detail = ref<ConversationDetail | null>(null);
 const panelEvent = ref<null | { event: WorkbenchEvent; version: number }>(null);
 const transferRef = ref<InstanceType<typeof TransferModal>>();
 let eventVersion = 0;
+/** 列表请求版本：只采用最后一次请求的响应，快速切换页签或翻页时旧响应不会覆盖新页面 */
+let listVersion = 0;
 
 async function loadList() {
+  const version = ++listVersion;
   listLoading.value = true;
   try {
     const result = await listConversationsApi({
@@ -60,11 +63,12 @@ async function loadList() {
       pageSize: PAGE_SIZE,
       tab: tab.value,
     });
+    if (version !== listVersion) return;
     items.value = result.items;
     total.value = result.total;
     store.counts = result.counts;
   } finally {
-    listLoading.value = false;
+    if (version === listVersion) listLoading.value = false;
   }
 }
 
@@ -115,10 +119,15 @@ watch(page, () => void loadList());
 let unsubscribe: (() => void) | undefined;
 onMounted(() => {
   refreshAll();
-  // 事件只含 ID：列表防抖重拉；当前会话的事件交给对话面板增量拉取
+  // 事件只含 ID：列表防抖重拉；当前会话的事件交给对话面板增量拉取。
+  // ready 只在重连或降级轮询时转发，表示可能漏了事件：列表、详情、消息全部校准
   unsubscribe = store.subscribe((event) => {
-    if (event.type === 'ready') return;
     refreshList();
+    if (event.type === 'ready') {
+      refreshDetail();
+      panelEvent.value = { event, version: ++eventVersion };
+      return;
+    }
     if (event.conversationId === selectedId.value) {
       panelEvent.value = { event, version: ++eventVersion };
       if (

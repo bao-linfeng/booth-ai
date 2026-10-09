@@ -1,9 +1,11 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { login as loginUser, logout } from '@/services/api/auth'
+import { login as loginUser, logout as logoutUser } from '@/services/api/auth'
 import { fetchCurrentUser } from '@/services/api/user'
 import { useI18n } from 'vue-i18n'
+
+let loggingOut: Promise<void> | null = null
 
 export function useAuth() {
   const router = useRouter()
@@ -40,10 +42,15 @@ export function useAuth() {
     }
   }
 
+  // 防重入：多次点击或多个组件同时触发时只撤销一次服务端会话、只清理并跳转一次
   async function logout() {
-    try { await logout() } catch {}
-    authStore.clearAuth()
-    await router.push('/auth/sign-in')
+    if (loggingOut) return loggingOut
+    loggingOut = (async () => {
+      try { await logoutUser() } catch {}
+      authStore.clearAuth()
+      await router.push('/auth/sign-in')
+    })().finally(() => { loggingOut = null })
+    return loggingOut
   }
 
   async function restoreSession() {

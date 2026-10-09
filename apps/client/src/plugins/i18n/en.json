@@ -328,7 +328,8 @@
     "fieldKeywords": "Keywords",
     "validationRange": "Please enter a value between 0.001 and 1000 m.",
     "validationDecimal": "Use up to three decimal places (millimetre precision).",
-    "validationArea": "Please enter an area greater than 0 and no more than 1,000,000."
+    "validationArea": "Please enter an area greater than 0 and no more than 1,000,000.",
+    "customSize": "Custom {length} × {width} m"
   },
   "schemeCard": {
     "matchDirect": "Ready to use",
@@ -543,7 +544,8 @@
     "errorNetworkConfirm": "Task creation has not yet been confirmed. Please retry confirmation; the same request will be reused to avoid duplicate tasks. Your input remains on this page.",
     "errorMaskUnavailable": "No editable area is available for this view. Choose another original image.",
     "errorTemplateUnavailable": "This style is currently unavailable. Adjust your visual preferences.",
-    "errorBlocked": "These settings cannot be generated right now. Adjust your preferences or try again later."
+    "errorBlocked": "These settings cannot be generated right now. Adjust your preferences or try again later.",
+    "pendingRestored": "Your last submission has not been confirmed yet, so its settings have been restored. Generating now confirms the original request without creating a duplicate task or reserving credits again."
   },
   "themeJob": {
     "back": "Back",
@@ -617,7 +619,9 @@
     "phaseGenerating": "AI is generating",
     "failureInsufficientCredits": "Insufficient credits",
     "failureProviderError": "AI provider is temporarily unavailable",
-    "failureInternalError": "Internal system error"
+    "failureInternalError": "Internal system error",
+    "failureGenerationFailed": "Generation did not succeed. You can adjust the settings and generate again.",
+    "failureGeneric": "Generation did not succeed. Please try again later."
   },
   "artworkJob": {
     "pageTitle": "Theme / Four-sided artwork / Delivery",
@@ -698,7 +702,11 @@
     "statusSubmitting": "Generating",
     "statusGenerated": "Checking and storing",
     "statusSucceeded": "Accepted",
-    "statusFailed": "Not accepted"
+    "statusFailed": "Not accepted",
+    "offerChanged": "The price has been updated. Please review the new cost and confirm again.",
+    "offerRenewed": "The previous quote expired and a new one was obtained at the same price. Please confirm again.",
+    "errorOfferFailed": "Failed to get the price. Please refresh and try again later.",
+    "errorServiceUnavailable": "The artwork generation service is temporarily unavailable. Please try again later."
   },
   "quoteRequest": {
     "backToSelection": "Back to solution finder",

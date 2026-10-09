@@ -12,6 +12,7 @@ import type { Config } from './config.js';
 import { createStorage } from './infra/storage.js';
 import { registerAdminModule } from './http/admin/index.js';
 import { registerClientModule } from './http/client/index.js';
+import { defaultUploadMaxBytes } from './http/uploads.js';
 
 export interface HealthDependencies {
   database: () => Promise<unknown>;
@@ -44,7 +45,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
   });
   await app.register(cors, { origin: config.corsOrigins, credentials: true });
   await app.register(helmet);
-  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+  await app.register(multipart, { limits: { fileSize: defaultUploadMaxBytes } });
   await app.register(swagger, {
     openapi: {
       info: { title: 'Booth AI API', version: '0.1.0', description: '服务端基础设施接口；业务与既有账户接口待后续接入。' },
@@ -57,11 +58,11 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
   });
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500;
-    // Error messages can include upstream credentials; only emit stable diagnostic codes.
+    // Error messages can include upstream credentials; only emit stable diagnostic codes and details built by domain code.
     request.log[status >= 500 ? 'error' : 'warn']({ code: error.code ?? 'REQUEST_ERROR', statusCode: status }, 'request failed');
-    const reason = (error as FastifyError & { reason?: string }).reason;
+    const { reason, details } = error as FastifyError & { reason?: string; details?: unknown };
     const assignmentUnavailable = status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE';
-    reply.code(status).send({ error: { code: error.validation ? 'VALIDATION_ERROR' : assignmentUnavailable ? 'REQUEST_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR', ...(reason && (status < 500 || assignmentUnavailable) ? { reason } : {}), message: assignmentUnavailable ? 'Request acceptance is temporarily unavailable' : status >= 500 ? 'Internal server error' : 'Invalid request', requestId: request.id } });
+    reply.code(status).send({ error: { code: error.validation ? 'VALIDATION_ERROR' : assignmentUnavailable ? 'REQUEST_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR', ...(reason && (status < 500 || assignmentUnavailable) ? { reason } : {}), ...(reason && details !== undefined && status < 500 ? { details } : {}), message: assignmentUnavailable ? 'Request acceptance is temporarily unavailable' : status >= 500 ? 'Internal server error' : 'Invalid request', requestId: request.id } });
   });
   app.setNotFoundHandler((request, reply) => reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found', requestId: request.id } }));
 

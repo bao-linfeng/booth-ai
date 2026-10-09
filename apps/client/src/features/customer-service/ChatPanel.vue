@@ -16,6 +16,8 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const { state, closePanel, send, sendOffline, retry, loadOlder } = useCustomerService()
 const offlineSent = ref(false)
+/** 输入框与留言表单共用的草稿：坐席在线状态推送可能随时切换两者 */
+const draft = ref('')
 const rtl = computed(() => appLocale.value === 'ar')
 
 const open = computed({
@@ -69,6 +71,7 @@ async function submitOffline(body: string, email: string) {
       />
       <OfflineForm
         v-if="offlineMode"
+        v-model="draft"
         :default-email="state.conversation?.contactEmail ?? auth.currentUser?.email ?? ''"
         :require-email="!auth.isLoggedIn"
         :sent="offlineSent"
@@ -76,7 +79,7 @@ async function submitOffline(body: string, email: string) {
       >
         <template #tools><SendContextButton /></template>
       </OfflineForm>
-      <Composer v-else :disabled="state.busy" @send="send">
+      <Composer v-else v-model="draft" :disabled="state.busy" @send="send">
         <template #tools><SendContextButton /></template>
       </Composer>
     </SheetContent>

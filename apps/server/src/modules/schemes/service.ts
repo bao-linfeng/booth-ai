@@ -30,6 +30,8 @@ export interface SchemeInput {
 export interface ListSchemesOptions {
   page: number;
   pageSize: number;
+  /** 编号或名称包含该关键词 */
+  keyword?: string;
   code?: string;
   name?: string;
   styleId?: string;
@@ -131,8 +133,8 @@ function comparable(value: unknown): unknown {
   return value;
 }
 
-/** 返回与当前记录实际不同的输入字段；面积由长宽推导时不单独比较。 */
-function changedInputKeys(current: SchemeRow, input: SchemeInput): (keyof SchemeInput)[] {
+/** 返回与当前记录实际不同的输入字段；面积由长宽推导时不单独比较。手动编辑与导入覆盖共用。 */
+export function changedSchemeFields(current: Omit<SchemeRecord, 'createdAt' | 'updatedAt'>, input: SchemeInput): (keyof SchemeInput)[] {
   const changed: (keyof SchemeInput)[] = [];
   for (const key of Object.keys(columnByInput) as (keyof SchemeInput)[]) {
     if (key === 'code' || key === 'areaM2' || !hasInput(input, key)) continue;
@@ -155,6 +157,11 @@ function validateDimensions(input: SchemeInput): void {
   }
 }
 
+/** 按字面包含匹配的 ILIKE 模式：转义用户输入里的 `%`、`_` 与反斜杠。 */
+function containsPattern(text: string): string {
+  return `%${text.replace(/[\\%_]/g, '\\$&')}%`;
+}
+
 export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): Promise<{ data: SchemeRecord[]; total: number; page: number; pageSize: number }> {
   const conditions: string[] = [];
   const values: (string | string[])[] = [];
@@ -162,8 +169,12 @@ export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): P
     values.push(value);
     conditions.push(condition.replace('?', `$${values.length}`));
   };
-  if (options.code) add('code ILIKE ?', `%${options.code}%`);
-  if (options.name) add('name ILIKE ?', `%${options.name}%`);
+  if (options.keyword) {
+    values.push(containsPattern(options.keyword));
+    conditions.push(`(code ILIKE $${values.length} OR name ILIKE $${values.length})`);
+  }
+  if (options.code) add('code ILIKE ?', containsPattern(options.code));
+  if (options.name) add('name ILIKE ?', containsPattern(options.name));
   if (options.styleId) add('style_id = ?::uuid', options.styleId);
   if (options.industryId) add('?::uuid = ANY(industry_ids)', options.industryId);
   if (options.productSystemId) add('product_system_id = ?::uuid', options.productSystemId);
@@ -189,6 +200,14 @@ export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): P
     pool.query<{ total: string }>(`SELECT count(*)::text AS total FROM schemes${clause}`, values),
   ]);
   return { data: records.rows.map(toSchemeRecord), total: Number(count.rows[0]?.total ?? 0), page: options.page, pageSize: options.pageSize };
+}
+
+/** 按编号批量读取方案；lock 为 true 时须在事务内调用，按编号顺序加行锁。 */
+export async function findSchemesByCodes(client: pg.Pool | pg.PoolClient, codes: string[], lock = false): Promise<SchemeRecord[]> {
+  if (codes.length === 0) return [];
+  const result = await client.query<SchemeRow>(
+    `SELECT ${schemeColumns} FROM schemes WHERE code = ANY($1::text[]) ORDER BY code${lock ? ' FOR UPDATE' : ''}`, [codes]);
+  return result.rows.map(toSchemeRecord);
 }
 
 export async function getScheme(pool: pg.Pool, code: string): Promise<SchemeRecord> {
@@ -272,7 +291,7 @@ async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: st
     if (lengthMm !== null && lengthMm !== undefined && widthMm !== null && widthMm !== undefined &&
       Math.abs(input.areaM2 - lengthMm * widthMm / 1_000_000) > 0.000001) throw requestError('Area conflicts with dimensions', 400);
   }
-  const changed = changedInputKeys(current, input);
+  const changed = changedSchemeFields(current, input);
   if (changed.length === 0) return toSchemeRecord(current);
   // 仅内部备注变更不影响匹配、资产与交付：不递增修订、不使审核失效、不下架
   const notesOnly = changed.every(key => key === 'notes');

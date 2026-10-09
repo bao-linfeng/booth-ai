@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { isRenderingAspect } from '../assets/image-spec.js';
 
 type DbClient = pg.Pool | pg.PoolClient;
 
@@ -143,7 +144,7 @@ export function evaluateReadiness(data: SchemeReadinessData): SchemeReadiness {
     const objectKeysUnique = new Set(images.map(i => i.objectKey)).size === 3;
     const pairingValid = images.every(image =>
       image.widthPx && image.heightPx &&
-      image.widthPx * 9 === image.heightPx * 16 &&
+      isRenderingAspect(image.widthPx, image.heightPx) &&
       imageMimeRe.test(image.mimeType ?? '') &&
       masks.filter(mask =>
         mask.relatedAssetId === image.id &&

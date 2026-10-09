@@ -61,6 +61,8 @@ export type CustomerEvent =
   | { type: 'conversation.updated'; conversation: ConversationDto }
   | { type: 'read'; agentReadSeq: number }
   | { type: 'ready'; conversation: ConversationDto | null }
+  /** 服务端每次心跳（15 秒）推送的坐席在线状态 */
+  | { type: 'presence'; agentsOnline: boolean }
 
 export interface OpenResult { conversation: ConversationDto; contexts: ContextDto[]; agentsOnline: boolean }
 export interface CurrentResult { conversation: ConversationDto | null; contexts: ContextDto[]; unreadCount: number; agentsOnline: boolean }

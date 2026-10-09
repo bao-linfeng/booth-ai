@@ -1,9 +1,10 @@
+import { getVisitorId } from '@/lib/visitor-id'
 import type { MatchResponse, ParseResponse, Requirement, SelectionState } from './types'
 
 // 智选会话（sessionStorage）的唯一读写入口：AISelection 经 useSelectionSession 保存/恢复，报价页经 handoff.ts 取交接数据。
 // 结构变更时只需在此处升级版本号，读写双方自动保持一致。
 const selectionSessionKey = 'booth-ai:ai-selection'
-const selectionSessionVersion = 4
+const selectionSessionVersion = 5
 
 export type PersistedSelection = {
   version: typeof selectionSessionVersion
@@ -16,6 +17,8 @@ export type PersistedSelection = {
   parsedRequirement: Requirement | null
   liveMatchData: MatchResponse | null
   attemptId: string
+  /** attemptId/parseId/searchId 所属的访客；与当前访客不一致（退出、令牌失效后访客 ID 已轮换）时整个会话作废 */
+  visitorId: string
   parseId: string | null
   searchId: string | null
   imagesExpiresAt: number
@@ -95,7 +98,7 @@ function isSelectionState(value: unknown): value is SelectionState {
 
 function isPersistedSelection(value: unknown): value is PersistedSelection {
   if (!isRecord(value) || value.version !== selectionSessionVersion || !isRequirement(value.requirement) || !isSelectionState(value.state)) return false
-  if (typeof value.text !== 'string' || typeof value.snapshot !== 'string' || typeof value.attemptId !== 'string') return false
+  if (typeof value.text !== 'string' || typeof value.snapshot !== 'string' || typeof value.attemptId !== 'string' || typeof value.visitorId !== 'string') return false
   if (value.parseResult !== null && !isParseResponse(value.parseResult)) return false
   if (value.parsedText !== null && typeof value.parsedText !== 'string') return false
   if (value.parsedRequirement !== null && !isRequirement(value.parsedRequirement)) return false
@@ -114,7 +117,7 @@ export function readSelectionSession(): PersistedSelection | null {
     const raw = sessionStorage.getItem(selectionSessionKey)
     if (!raw) return null
     const value: unknown = JSON.parse(raw)
-    if (!isPersistedSelection(value)) {
+    if (!isPersistedSelection(value) || value.visitorId !== getVisitorId()) {
       sessionStorage.removeItem(selectionSessionKey)
       return null
     }

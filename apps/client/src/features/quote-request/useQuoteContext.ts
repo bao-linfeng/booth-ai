@@ -21,6 +21,8 @@ export function useQuoteContext(code: string, enabled: boolean, status: { error:
   const themePreview = ref('')
   const standardPreview = ref('')
   const artworkJobId = ref<string>()
+  /** 主题任务的来源检索：undefined 表示尚未读到主题任务，null 表示任务不来自智选检索 */
+  const themeSearchId = ref<string | null>()
   const loading = ref(true)
 
   async function load() {
@@ -29,6 +31,7 @@ export function useQuoteContext(code: string, enabled: boolean, status: { error:
     status.error.value = ''
     theme.value = undefined
     artworkJobId.value = undefined
+    themeSearchId.value = undefined
     try {
       context.value = await getQuoteContext(code)
       void getSchemeImages(code).then(images => { standardPreview.value = images[0]?.url ?? '' }).catch(() => { standardPreview.value = '' })
@@ -44,6 +47,7 @@ export function useQuoteContext(code: string, enabled: boolean, status: { error:
         const result = job.results.find(result => result.resultId === job.selection.resultId)
         if (job.schemeCode !== code || !result) throw new Error(t('quoteRequest.errorThemeUnavailable'))
         theme.value = { themeJobId: jobId, resultId: result.resultId, selectionRevision: job.selection.revision }
+        themeSearchId.value = job.searchId ?? null
         themePreview.value = result.previewUrl
         if (typeof route.query.artworkJobId === 'string') {
           const artwork = await getArtworkJob(route.query.artworkJobId)
@@ -63,5 +67,5 @@ export function useQuoteContext(code: string, enabled: boolean, status: { error:
   }
 
   onMounted(load)
-  return { context, theme, themePreview, standardPreview, artworkJobId, loading, refresh }
+  return { context, theme, themeSearchId, themePreview, standardPreview, artworkJobId, loading, refresh }
 }

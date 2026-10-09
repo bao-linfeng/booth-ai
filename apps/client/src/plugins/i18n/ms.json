@@ -310,7 +310,8 @@
     "validationRange": "Masukkan nilai antara 0.001–1000 meter.",
     "validationDecimal": "Maksimum tiga tempat perpuluhan (ketepatan milimeter).",
     "validationArea": "Masukkan luas melebihi 0 dan tidak melebihi 1,000,000.",
-    "boothSpaceSelectLabel": "Dimensi pameran"
+    "boothSpaceSelectLabel": "Dimensi pameran",
+    "customSize": "Tersuai {length} × {width} m"
   },
   "schemeCard": {
     "matchDirect": "Boleh digunakan terus",
@@ -525,7 +526,8 @@
     "errorNetworkConfirm": "Penciptaan tugas belum dapat disahkan. Sahkan sekali lagi; permintaan sama akan digunakan untuk mengelakkan pendua. Maklumat anda kekal pada halaman ini.",
     "errorMaskUnavailable": "Tiada kawasan boleh sunting untuk pandangan ini. Pilih imej asal yang lain.",
     "errorTemplateUnavailable": "Gaya ini tidak tersedia buat sementara. Laraskan pilihan visual anda.",
-    "errorBlocked": "Tetapan ini tidak dapat dijana sekarang. Laraskan pilihan atau cuba lagi kemudian."
+    "errorBlocked": "Tetapan ini tidak dapat dijana sekarang. Laraskan pilihan atau cuba lagi kemudian.",
+    "pendingRestored": "Penghantaran terakhir anda belum disahkan, jadi tetapannya telah dipulihkan. Menjana akan mengesahkan permintaan asal tanpa mencipta tugasan pendua atau menempah mata semula."
   },
   "themeJob": {
     "back": "Kembali",
@@ -599,7 +601,9 @@
     "failureProviderError": "Penyedia AI tidak tersedia buat sementara",
     "failureInternalError": "Ralat sistem dalaman",
     "statusSucceeded": "Penjanaan selesai",
-    "previewThumbnailAriaLabel": "Pratonton paparan {n}"
+    "previewThumbnailAriaLabel": "Pratonton paparan {n}",
+    "failureGenerationFailed": "Penjanaan tidak berjaya. Anda boleh melaraskan tetapan dan menjana semula.",
+    "failureGeneric": "Penjanaan tidak berjaya. Sila cuba lagi kemudian."
   },
   "artworkJob": {
     "pageTitle": "Tema / Bahan Empat Sisi / Serahan",
@@ -680,7 +684,11 @@
     "statusSubmitting": "Generating",
     "statusGenerated": "Checking and storing",
     "statusSucceeded": "Accepted",
-    "statusFailed": "Not accepted"
+    "statusFailed": "Not accepted",
+    "offerChanged": "Harga telah dikemas kini. Sila semak kos baharu dan sahkan semula.",
+    "offerRenewed": "Sebut harga sebelumnya telah tamat tempoh dan sebut harga baharu pada harga yang sama telah diperoleh. Sila sahkan semula.",
+    "errorOfferFailed": "Gagal mendapatkan harga. Sila muat semula dan cuba lagi kemudian.",
+    "errorServiceUnavailable": "Perkhidmatan penjanaan bahan tidak tersedia buat sementara waktu. Sila cuba lagi kemudian."
   },
   "quoteRequest": {
     "backToSelection": "Kembali ke Pilihan Pintar",

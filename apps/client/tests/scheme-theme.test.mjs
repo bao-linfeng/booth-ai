@@ -53,6 +53,9 @@ const server = await createServer({
 after(async () => { delete globalThis.__schemeTheme; await server.close(); await window.happyDOM.close() })
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: SchemeTheme } = await server.ssrLoadModule('/src/pages/SchemeTheme.vue')
+const { writeSelectionSession } = await server.ssrLoadModule('/src/features/selection/session.ts')
+const { emptyRequirement } = await server.ssrLoadModule('/src/features/selection/types.ts')
+const { getVisitorId } = await server.ssrLoadModule('/src/lib/visitor-id.ts')
 
 const endpoints = { scheme: '/api/v1/client/schemes/SC-6030', catalog: '/api/v1/client/catalog/options', models: '/api/v1/client/theme-models', offer: '/api/v1/client/theme-offers', job: '/api/v1/client/theme-jobs' }
 const detail = {
@@ -79,7 +82,8 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-async function mount({ path = '/schemes/SC-6030/theme?searchId=search-42', loggedIn = true, handlers = {}, waitForOffer = true } = {}) {
+async function mount({ path = '/schemes/SC-6030/theme?searchId=search-42', loggedIn = true, handlers = {}, waitForOffer = true, user = null, keepStorage = false } = {}) {
+  if (!keepStorage) sessionStorage.clear()
   const calls = []
   const defaults = {
     [endpoints.scheme]: async () => detail,
@@ -90,7 +94,7 @@ async function mount({ path = '/schemes/SC-6030/theme?searchId=search-42', logge
     ...handlers,
   }
   globalThis.__schemeTheme = {
-    auth: { isLoggedIn: loggedIn },
+    auth: { isLoggedIn: loggedIn, currentUser: user },
     fetchBalance: async () => { calls.push({ path: 'credits' }) },
     apiFetch: async (path, options) => {
       const body = options?.body
@@ -482,6 +486,74 @@ for (const reason of ['OFFER_EXPIRED', 'OFFER_STALE']) {
     } finally { await mounted.close() }
   })
 }
+
+function selectionSession(searchId, requirement) {
+  writeSelectionSession({ requirement: { ...emptyRequirement(), ...requirement }, text: '', state: 'idle', snapshot: '', parseResult: null, parsedText: null,
+    parsedRequirement: null, liveMatchData: null, attemptId: 'attempt-1', visitorId: getVisitorId(), parseId: null, searchId, imagesExpiresAt: 0, activeImageByCode: {} })
+}
+
+test('industry and style default to those confirmed in the same AI selection search', async () => {
+  selectionSession('search-42', { industryIds: ['industry-unknown', 'industry-energy'], styleIds: ['style-natural'] })
+  const mounted = await mount({ keepStorage: true })
+  try {
+    assert.deepEqual(callsTo(mounted, endpoints.offer)[0].body.input, { ...initialParameters.input, industryId: 'industry-energy', styleId: 'style-natural' })
+  } finally { await mounted.close() }
+})
+
+test('preferences from a different AI selection search are ignored', async () => {
+  selectionSession('search-other', { industryIds: ['industry-energy'], styleIds: ['style-natural'] })
+  const mounted = await mount({ keepStorage: true })
+  try {
+    assert.deepEqual(callsTo(mounted, endpoints.offer)[0].body, initialParameters)
+  } finally { await mounted.close() }
+})
+
+test('an unconfirmed submission survives a reload, restores its parameters and the retry reuses the original request key', async () => {
+  const user = { id: 'user-1' }
+  let mounted = await mount({ user, handlers: { [endpoints.job]: () => { throw new Error('Connection lost') } } })
+  let first
+  try {
+    input(mounted.container.querySelector('#theme-keywords'), '品牌科技')
+    button(mounted.container, '2 张').click()
+    await debounce()
+    const dialog = await openConfirmation(mounted)
+    button(dialog, '确认生成').click()
+    await settle()
+    first = callsTo(mounted, endpoints.job)[0].body
+    assert.equal(first.requestedCount, 2)
+  } finally { await mounted.close() }
+
+  mounted = await mount({ user, keepStorage: true, handlers: { [endpoints.job]: async () => ({ jobId: 'job-recovered', status: 'queued', pollAfterMs: 1000 }) } })
+  try {
+    assert.equal(mounted.container.querySelector('#theme-keywords').value, '品牌科技')
+    assert.match(mounted.container.querySelector('[role="alert"]').textContent, /上次提交尚未确认结果/)
+    button(mounted.container, '继续确认本次生成').click()
+    await settle()
+    const dialog = document.querySelector('[role="dialog"]')
+    assert.ok(dialog)
+    button(dialog, '重试确认生成').click()
+    await settle()
+    assert.deepEqual(callsTo(mounted, endpoints.job)[0].body, first)
+    assert.equal(mounted.router.currentRoute.value.path, '/theme-jobs/job-recovered')
+    assert.equal(sessionStorage.getItem('booth:theme-request:user-1:SC-6030:search-42'), null)
+  } finally { await mounted.close() }
+})
+
+test('a submission the server rejected is not restored after a reload', async () => {
+  const user = { id: 'user-1' }
+  let mounted = await mount({ user, handlers: { [endpoints.job]: () => { throw { data: { error: {} }, response: { status: 402 } } } } })
+  try {
+    const dialog = await openConfirmation(mounted)
+    button(dialog, '确认生成').click()
+    await settle()
+    assert.equal(sessionStorage.getItem('booth:theme-request:user-1:SC-6030:search-42'), null)
+  } finally { await mounted.close() }
+  mounted = await mount({ user, keepStorage: true })
+  try {
+    assert.doesNotMatch(mounted.container.textContent, /上次提交尚未确认结果/)
+    assert.ok(button(mounted.container, '确认积分并生成'))
+  } finally { await mounted.close() }
+})
 
 test('unauthenticated login preserves the complete redirect and makes no offer/model/credits/job requests', async () => {
   const mounted = await mount({ loggedIn: false, waitForOffer: false })

@@ -328,7 +328,8 @@
     "validationRange": "Inserisci un valore tra 0,001 e 1000 m.",
     "validationDecimal": "Massimo 3 decimali (precisione al mm).",
     "validationArea": "Inserisci una superficie maggiore di 0 e non superiore a 1.000.000.",
-    "boothSpaceSelectLabel": "Dimensioni dello stand"
+    "boothSpaceSelectLabel": "Dimensioni dello stand",
+    "customSize": "Personalizzato {length} × {width} m"
   },
   "schemeCard": {
     "matchDirect": "Utilizzabile direttamente",
@@ -543,7 +544,8 @@
     "errorNetworkConfirm": "Stato attività non confermato. Riprova per evitare duplicati. Dati salvati.",
     "errorMaskUnavailable": "Nessuna area modificabile disponibile per questa vista. Scegli un altro originale.",
     "errorTemplateUnavailable": "Questo stile non è al momento disponibile. Modifica le preferenze visive.",
-    "errorBlocked": "Queste impostazioni non possono essere generate ora. Modifica le preferenze o riprova più tardi."
+    "errorBlocked": "Queste impostazioni non possono essere generate ora. Modifica le preferenze o riprova più tardi.",
+    "pendingRestored": "L'ultimo invio non è ancora confermato, quindi le impostazioni sono state ripristinate. Generando confermerai la richiesta originale senza creare attività duplicate né riservare di nuovo crediti."
   },
   "themeJob": {
     "back": "Indietro",
@@ -617,7 +619,9 @@
     "failureProviderError": "Fornitore AI temporaneamente non disponibile",
     "failureInternalError": "Errore interno del sistema",
     "statusSucceeded": "Generazione completata",
-    "previewThumbnailAriaLabel": "Anteprima del rendering {n}"
+    "previewThumbnailAriaLabel": "Anteprima del rendering {n}",
+    "failureGenerationFailed": "La generazione non è riuscita. Puoi modificare le impostazioni e generare di nuovo.",
+    "failureGeneric": "La generazione non è riuscita. Riprova più tardi."
   },
   "artworkJob": {
     "pageTitle": "Tema / Materiali 4 lati / Consegna",
@@ -698,7 +702,11 @@
     "statusSubmitting": "Generating",
     "statusGenerated": "Checking and storing",
     "statusSucceeded": "Accepted",
-    "statusFailed": "Not accepted"
+    "statusFailed": "Not accepted",
+    "offerChanged": "Il prezzo è stato aggiornato. Verifica il nuovo costo e conferma di nuovo.",
+    "offerRenewed": "Il preventivo precedente è scaduto; ne è stato ottenuto uno nuovo allo stesso prezzo. Conferma di nuovo.",
+    "errorOfferFailed": "Impossibile ottenere il prezzo. Aggiorna e riprova più tardi.",
+    "errorServiceUnavailable": "Il servizio di generazione dei materiali è temporaneamente non disponibile. Riprova più tardi."
   },
   "quoteRequest": {
     "backToSelection": "Torna alla selezione",

@@ -28,12 +28,31 @@ export function canonicalLocale(locale: string): string {
   catch { throw Object.assign(new Error('Invalid language code'), { statusCode: 400 }); }
 }
 
-export function resolveDictionaryTerms<T extends DictionaryNames & { id: string }>(items: T[], terms: string[]): string[] {
+/** 归一化词条 → 命中的条目 id；同一批词条反复解析时复用，避免逐次遍历全部条目。 */
+export type DictionaryTermIndex = Map<string, Set<string>>;
+
+export function indexDictionaryTerms<T extends DictionaryNames & { id: string }>(items: T[]): DictionaryTermIndex {
+  const index: DictionaryTermIndex = new Map();
+  for (const item of items) {
+    for (const term of dictionaryTerms(item)) {
+      const normalized = normalizeDictionaryTerm(term);
+      const ids = index.get(normalized) ?? new Set<string>();
+      ids.add(item.id);
+      index.set(normalized, ids);
+    }
+  }
+  return index;
+}
+
+export function resolveIndexedTerms(index: DictionaryTermIndex, terms: string[]): string[] {
   return [...new Set(terms.map(term => {
-    const normalized = normalizeDictionaryTerm(term);
-    const matches = items.filter(item => dictionaryTerms(item).some(value => normalizeDictionaryTerm(value) === normalized));
+    const matches = [...index.get(normalizeDictionaryTerm(term)) ?? []];
     if (matches.length !== 1) throw Object.assign(new Error(matches.length
       ? `标签存在多个候选，请确认：${term}` : `未映射的标签：${term}`), { statusCode: 400 });
-    return matches[0]!.id;
+    return matches[0]!;
   }))];
+}
+
+export function resolveDictionaryTerms<T extends DictionaryNames & { id: string }>(items: T[], terms: string[]): string[] {
+  return resolveIndexedTerms(indexDictionaryTerms(items), terms);
 }

@@ -17,7 +17,7 @@ import { message } from 'ant-design-vue';
 
 import { useAuthStore } from '#/store';
 
-import { REASON_MESSAGES } from './reason-messages';
+import { reasonMessage } from './reason-messages';
 
 const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
 
@@ -102,7 +102,7 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       // 服务端 4xx 只返回通用 message，具体原因在 error.reason
       const reason: string | undefined = responseData?.error?.reason;
       const errorMessage =
-        (reason && REASON_MESSAGES[reason]) ||
+        reasonMessage(reason, responseData?.error?.details) ||
         responseData?.error?.message ||
         responseData?.message ||
         '';

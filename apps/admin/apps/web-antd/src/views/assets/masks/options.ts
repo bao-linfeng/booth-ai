@@ -1,32 +1,6 @@
-import type { Ref } from 'vue';
-
 import type { AssetType } from '#/api/core/assets';
 
 import { listAssetsApi } from '#/api/core/assets';
-
-export const createFormOptions = (schemeSearchConfig: {
-  options: Ref<{ label: string; value: string }[]>;
-  loading: Ref<boolean>;
-  onSearch: (value: string) => void;
-}) => ({
-  schema: [
-    {
-      component: 'Select' as const,
-      fieldName: 'schemeCode',
-      label: '归属方案',
-      componentProps: {
-        options: schemeSearchConfig.options,
-        loading: schemeSearchConfig.loading,
-        showSearch: true,
-        filterOption: false,
-        allowClear: true,
-        placeholder: '搜索方案编号或名称',
-        onSearch: schemeSearchConfig.onSearch,
-      },
-    },
-  ],
-  showCollapseButton: false,
-});
 
 export const createGridOptions = (assetType: AssetType) => ({
   showOverflow: 'tooltip' as const,
@@ -39,6 +13,12 @@ export const createGridOptions = (assetType: AssetType) => ({
       title: '排序',
       width: 100,
       slots: { default: 'sortOrder' },
+    },
+    {
+      field: 'relatedAssetId',
+      title: '配对状态',
+      width: 100,
+      slots: { default: 'pairing' },
     },
     { field: 'schemeCode', title: '方案编号', width: 140 },
     { field: 'schemeName', title: '所属方案', minWidth: 160 },
@@ -57,7 +37,7 @@ export const createGridOptions = (assetType: AssetType) => ({
     {
       field: 'action',
       title: '操作',
-      width: 220,
+      width: 260,
       fixed: 'right' as const,
       slots: { default: 'action' },
     },

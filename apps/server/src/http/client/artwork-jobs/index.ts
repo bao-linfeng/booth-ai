@@ -23,7 +23,7 @@ export async function registerArtworkJobRoutes(app: FastifyInstance, pool: pg.Po
   app.get<{ Params: { jobId: string }; Querystring: { ticket: string } }>('/artwork-jobs/:jobId/events', { config: { authentication: 'events', eventTicketPrefix: 'artwork' }, schema: artworkEventsSchema }, async (request, reply) => {
     const userId = clientUserId(request);
     await ownedArtworkJob(pool, userId, request.params.jobId);
-    await streamArtworkJobEvents(pool, redis, request.params.jobId, userId, reply);
+    await streamArtworkJobEvents(pool, redis, request.params.jobId, requirePrincipal(request, 'client'), reply);
   });
   app.post<{ Body: ArtworkContext }>('/artwork-offers', { preHandler: rateLimit(redis, 'generation'), schema: artworkOfferSchema }, async (request, reply) => {
     reply.header('Cache-Control', 'private, no-store');

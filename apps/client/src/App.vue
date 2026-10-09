@@ -3,6 +3,7 @@ import { watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, RouterView } from 'vue-router'
 import ChatLauncher from '@/features/customer-service/ChatLauncher.vue'
+import { pageKey } from '@/router/page-key'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -14,7 +15,9 @@ watchEffect(() => {
 </script>
 
 <template>
-  <RouterView />
+  <RouterView v-slot="{ Component, route: viewRoute }">
+    <component :is="Component" :key="pageKey(viewRoute)" />
+  </RouterView>
   <!-- 在线客服悬浮按钮与面板全局常驻（含首页与回复邮件的 ?cs=open 落地页），登录页不显示 -->
   <ChatLauncher v-if="!route.path.startsWith('/auth')" />
 </template>

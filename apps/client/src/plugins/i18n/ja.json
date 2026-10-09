@@ -328,7 +328,8 @@
     "validationRange": "0.001〜1000mの値を入力してください。",
     "validationDecimal": "小数点以下3桁まで（ミリ単位）。",
     "validationArea": "0より大きく1,000,000以下の面積を入力してください。",
-    "boothSpaceSelectLabel": "ブースの寸法"
+    "boothSpaceSelectLabel": "ブースの寸法",
+    "customSize": "カスタム {length} × {width} m"
   },
   "schemeCard": {
     "matchDirect": "直接採用可",
@@ -543,7 +544,8 @@
     "errorNetworkConfirm": "タスクの作成が確認できませんでした。同じリクエストを再利用するため再試行してください。入力内容は保持されています。",
     "errorMaskUnavailable": "この視点には編集可能な領域がありません。別の元画像を選択してください。",
     "errorTemplateUnavailable": "このスタイルは現在利用できません。視覚設定を変更してください。",
-    "errorBlocked": "現在の条件では生成できません。設定を変更するか、しばらくしてから再試行してください。"
+    "errorBlocked": "現在の条件では生成できません。設定を変更するか、しばらくしてから再試行してください。",
+    "pendingRestored": "前回の送信結果がまだ確認できていないため、設定を復元しました。生成すると元のリクエストとして確認され、タスクの重複作成やポイントの再予約は行われません。"
   },
   "themeJob": {
     "back": "戻る",
@@ -617,7 +619,9 @@
     "failureProviderError": "AIプロバイダーは一時的に利用できません",
     "failureInternalError": "システム内部エラー",
     "statusSucceeded": "生成完了",
-    "previewThumbnailAriaLabel": "レンダリング {n} をプレビュー"
+    "previewThumbnailAriaLabel": "レンダリング {n} をプレビュー",
+    "failureGenerationFailed": "生成に失敗しました。設定を調整して再生成できます。",
+    "failureGeneric": "生成に失敗しました。しばらくしてから再試行してください。"
   },
   "artworkJob": {
     "pageTitle": "テーマ / 四面素材 / 納品",
@@ -698,7 +702,11 @@
     "statusSubmitting": "Generating",
     "statusGenerated": "Checking and storing",
     "statusSucceeded": "Accepted",
-    "statusFailed": "Not accepted"
+    "statusFailed": "Not accepted",
+    "offerChanged": "料金が更新されました。新しい費用を確認してから、もう一度確定してください。",
+    "offerRenewed": "前回の見積もりの有効期限が切れたため、同じ料金で新しい見積もりを取得しました。もう一度確定してください。",
+    "errorOfferFailed": "料金を取得できませんでした。更新して、しばらくしてから再試行してください。",
+    "errorServiceUnavailable": "四面素材の生成サービスは一時的に利用できません。しばらくしてから再試行してください。"
   },
   "quoteRequest": {
     "backToSelection": "AI選定に戻る",

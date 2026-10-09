@@ -6,12 +6,12 @@ import type { createStorage } from '../../../infra/storage.js';
 import { themeContextObjectKey } from '../../../modules/customer-service/contexts.js';
 import { currentConversation, openConversation, ownedConversation, sendContext } from '../../../modules/customer-service/conversations.js';
 import { notFound, type ContextInput, type EntryPoint, type Subject } from '../../../modules/customer-service/domain.js';
-import { cancelReplyNotices } from '../../../modules/customer-service/emails.js';
 import { conversationChannel } from '../../../modules/customer-service/events.js';
 import { customerMessagesAfter, listCustomerMessages, markCustomerRead, postCustomerMessage, type CustomerMessageInput } from '../../../modules/customer-service/messages.js';
-import { touchCustomer } from '../../../modules/customer-service/presence.js';
+import { agentsOnline, touchCustomer } from '../../../modules/customer-service/presence.js';
 import { issueVisitor, mergeVisitor, resolveVisitor, touchVisitor, visitorActive } from '../../../modules/customer-service/visitors.js';
 import { loadConversation } from '../../../modules/customer-service/store.js';
+import { revalidatePrincipal, type Principal } from '../../../modules/identity/principal.js';
 import { clientUserId, issueEventTicket, requirePrincipal } from '../../authentication.js';
 import { requestMessageLocale } from '../../locale.js';
 import { enforceRateLimit, rateLimit } from '../../rate-limits.js';
@@ -24,6 +24,23 @@ import { requireSubject } from './subject.js';
 import { clearVisitorCookie, setVisitorCookie, visitorToken } from './visitor-cookie.js';
 
 type ConversationParams = { conversationId: string };
+
+/**
+ * 客户流心跳：登录客户按建立时的令牌复核 Session，访客复核令牌仍有效；失效返回 false 断流。
+ * 有效时续期客户在线，并推送坐席在线状态（presence），面板常开时也能在一个心跳内切换排队与留言模式。
+ */
+export async function customerStreamHeartbeat(pool: pg.Pool, redis: Redis, conversationId: string, subject: Subject, principal: Principal | null,
+  send: (event: { type: 'presence'; agentsOnline: boolean }) => void): Promise<boolean> {
+  if (subject.kind === 'user') {
+    if (!principal || !await revalidatePrincipal(pool, redis, principal)) return false;
+  } else {
+    await touchVisitor(pool, subject.visitorId);
+    if (!await visitorActive(pool, subject.visitorId)) return false;
+  }
+  await touchCustomer(redis, conversationId);
+  send({ type: 'presence', agentsOnline: await agentsOnline(redis) });
+  return true;
+}
 
 // 在线客服客户端接口（开发计划 §6.2）。访客以 HttpOnly Cookie 中的令牌识别（见 visitor-cookie.ts），登录身份优先。
 export async function registerClientCustomerServiceRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis,
@@ -47,10 +64,12 @@ export async function registerClientCustomerServiceRoutes(app: FastifyInstance, 
 
     scope.post('/visitors/merge', { schema: visitorMergeSchema }, async (request, reply) => {
       const userId = clientUserId(request);
-      const visitorId = await resolveVisitor(pool, visitorToken(request));
-      // 合并后令牌即失效，无论是否有可合并的会话都清除 Cookie
-      clearVisitorCookie(reply, secureCookie);
-      return { code: 0, data: { mergedConversations: visitorId ? await mergeVisitor(pool, redis, userId, visitorId) : 0 } };
+      const token = visitorToken(request);
+      const visitorId = await resolveVisitor(pool, token);
+      const mergedConversations = visitorId ? await mergeVisitor(pool, redis, userId, visitorId) : 0;
+      // 合并成功或令牌已失效（已合并、已删除）后才清除 Cookie；合并失败时保留，前端可凭原令牌重试
+      if (token) clearVisitorCookie(reply, secureCookie);
+      return { code: 0, data: { mergedConversations } };
     });
 
     scope.post<{ Body: { context?: ContextInput; entryPoint: EntryPoint } }>('/conversations', { schema: openConversationSchema }, async (request, reply) => {
@@ -114,19 +133,14 @@ export async function registerClientCustomerServiceRoutes(app: FastifyInstance, 
       await ownedConversation(pool, subject, conversationId);
       await streamEvents(redis, reply, {
         channels: [conversationChannel(conversationId)],
-        // 客户上线：取消待发的回复提醒并标记在线
-        onOpen: async () => { await touchCustomer(redis, conversationId); await cancelReplyNotices(pool, conversationId); },
+        // 客户上线只标记在线；连上不等于读到，待发的回复提醒由已读接口取消
+        onOpen: async () => { await touchCustomer(redis, conversationId); },
         replay: async () => {
           const messages = await customerMessagesAfter(pool, conversationId, request.query.after ?? 0);
           const conversation = await loadConversation(pool, conversationId);
           return [...messages.map(message => ({ type: 'message.created', message })), { type: 'ready', conversation: conversation?.customer ?? null }];
         },
-        onHeartbeat: async () => {
-          await touchCustomer(redis, conversationId);
-          if (subject.kind === 'user') return true;
-          await touchVisitor(pool, subject.visitorId);
-          return visitorActive(pool, subject.visitorId);
-        },
+        onHeartbeat: send => customerStreamHeartbeat(pool, redis, conversationId, subject, request.principal, send),
       });
     });
 

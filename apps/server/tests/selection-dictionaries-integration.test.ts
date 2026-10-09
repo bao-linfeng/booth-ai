@@ -3,10 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
 import pg from 'pg';
-import { createScheme, updateScheme } from '../src/modules/schemes/service.js';
+import { createScheme, listSchemes, updateScheme } from '../src/modules/schemes/service.js';
 import { previewImport } from '../src/modules/schemes/imports/preview.js';
 import { commitImport } from '../src/modules/schemes/imports/commit.js';
-import { validateImportRow } from '../src/modules/schemes/imports/validation.js';
+import { loadImportDictionaries, validateImportRow } from '../src/modules/schemes/imports/validation.js';
 import { parseWorkbook } from '../src/modules/schemes/imports/workbook.js';
 import { createDictionaryItem, deleteDictionaryItem, updateDictionaryItem } from '../src/modules/selection/dictionaries.js';
 import { loadCatalog } from '../src/modules/selection/repository.js';
@@ -51,11 +51,28 @@ test('size migration, Excel import, transactional CRUD and dictionary language p
   assert.equal((await sizeValues()).length, 5);
   assert.deepEqual(await commitImport(pool, adminId, preview.importId, { duplicateStrategy: 'skip' }), imported);
   const repeated = await previewImport(pool, adminId, buffer, 'template.xlsx');
-  assert.equal(repeated.summary.duplicate, 48);
+  assert.deepEqual([repeated.summary.duplicate, repeated.summary.unchanged, repeated.summary.unpublish], [0, 48, 0]);
   assert.equal((await commitImport(pool, adminId, repeated.importId, { duplicateStrategy: 'skip' })).dictionaryItemsCreated, 0);
+  // 内容一致的覆盖不写入；仅备注变化时写入备注但不递增修订、不下架
+  const sample = repeated.rows[0]!.code;
+  await pool.query("UPDATE schemes SET publish_status='published', notes='内部备注' WHERE code=$1", [sample]);
+  const revisions = async () => (await pool.query<{ code: string; revision: number }>('SELECT code, revision FROM schemes ORDER BY code')).rows;
+  const beforeOverwrite = await revisions();
+  const overwrite = await previewImport(pool, adminId, buffer, 'template.xlsx');
+  assert.deepEqual([overwrite.summary.duplicate, overwrite.summary.unchanged, overwrite.summary.unpublish], [1, 47, 0]);
+  assert.deepEqual(overwrite.rows.find(row => row.code === sample)?.clearedFields, ['notes']);
+  const overwritten = await commitImport(pool, adminId, overwrite.importId, { duplicateStrategy: 'update' });
+  assert.deepEqual([overwritten.updated, overwritten.unchanged, overwritten.failed.length], [1, 47, 0]);
+  assert.deepEqual(await revisions(), beforeOverwrite);
+  assert.deepEqual((await pool.query('SELECT publish_status, notes FROM schemes WHERE code=$1', [sample])).rows[0], { publish_status: 'published', notes: null });
 
   const manual = await createScheme(pool, adminId, { code: 'MANUAL', name: '手动新增', lengthMm: 3000, widthMm: 6000, heightMm: 4200, openingCount: 2 });
   assert.ok((await sizeValues()).includes('3000-6000-4200'));
+  const keywordCodes = async (keyword: string) =>
+    (await listSchemes(pool, { page: 1, pageSize: 100, keyword })).data.map(item => item.code).filter(code => code === 'MANUAL');
+  assert.deepEqual(await keywordCodes('manu'), ['MANUAL']);
+  assert.deepEqual(await keywordCodes('手动'), ['MANUAL']);
+  assert.deepEqual(await keywordCodes('n_a'), []);
   const edited = await updateScheme(pool, manual.code, adminId, { heightMm: 4300 }, manual.editRevision);
   assert.equal(edited.heightMm, 4300);
   assert.ok((await sizeValues()).includes('3000-6000-4300'));
@@ -77,14 +94,15 @@ test('size migration, Excel import, transactional CRUD and dictionary language p
   const updated = await updateDictionaryItem(pool, modern.id, { labels: { en: 'Modern minimalist', ja: 'モダン・ミニマル' },
     aliases: [{ locale: 'en', text: 'simple modern' }, { locale: 'ja', text: 'シンプルモダン' }] }, modern.dictionaryId);
   assert.equal(updated.labels.ja, 'モダン・ミニマル');
-  const source = (await parseWorkbook(buffer)).find(row => row.code)!;
+  const source = (await parseWorkbook(buffer)).find(row => row.data.code)!.data;
   for (const style of ['现代简约', 'MODERN MINIMALIST', 'モダン・ミニマル', 'ＳＩＭＰＬＥ ＭＯＤＥＲＮ', 'シンプルモダン']) {
-    assert.equal((await validateImportRow(pool, { ...source, styleId: style })).styleId, modern.id);
+    assert.equal(validateImportRow(await loadImportDictionaries(pool), { ...source, styleId: style }).styleId, modern.id);
   }
   const duplicate = await createDictionaryItem(pool, modern.dictionaryId, { itemValue: 'ambiguous', itemLabel: '其他风格', aliases: [{ locale: 'en', text: 'simple modern' }] });
-  await assert.rejects(validateImportRow(pool, { ...source, styleId: 'simple modern' }), { statusCode: 400 });
+  const dictionaries = await loadImportDictionaries(pool);
+  assert.throws(() => validateImportRow(dictionaries, { ...source, styleId: 'simple modern' }), { statusCode: 400 });
   await updateDictionaryItem(pool, duplicate.id, { enabled: false }, modern.dictionaryId);
-  assert.equal((await validateImportRow(pool, { ...source, styleId: 'simple modern' })).styleId, modern.id);
+  assert.equal(validateImportRow(await loadImportDictionaries(pool), { ...source, styleId: 'simple modern' }).styleId, modern.id);
 
   const sizeId = (await pool.query<{ id: string }>("SELECT id FROM dictionary_items WHERE item_value='6000-3000-4500'")).rows[0]!.id;
   assert.equal((await loadCatalog(pool)).boothSpaces.length, 0);

@@ -97,7 +97,7 @@ export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Pro
   };
   if (options.type) add('sa.type = ?', options.type);
   if (options.allowedTypes) add('sa.type = ANY(?::text[])', options.allowedTypes);
-  if (options.schemeCode) add('s.code ILIKE ?', `%${options.schemeCode}%`);
+  if (options.schemeCode) add('s.code = ?', options.schemeCode);
   if (options.schemeName) add('s.name ILIKE ?', `%${options.schemeName}%`);
   const where = `WHERE ${conditions.join(' AND ')}`;
   const offset = (options.page - 1) * options.pageSize;
@@ -143,4 +143,20 @@ export async function getAssetVersion(pool: pg.Pool, assetId: string, versionId:
   const row = result.rows[0];
   if (!row) throw Object.assign(new Error('Asset version not found'), { statusCode: 404 });
   return toAssetVersion(row);
+}
+
+export interface MaskPairingCandidate {
+  rendering: SchemeAsset;
+  /** 已配对该效果图的活动蒙版；同一效果图只能配对一个蒙版 */
+  pairedMask: SchemeAsset | null;
+}
+
+/** 蒙版上传与改配时的效果图候选，按排序列出并附带已占用的蒙版。 */
+export async function listMaskPairingCandidates(pool: pg.Pool, schemeCode: string): Promise<MaskPairingCandidate[]> {
+  const [renderings, masks] = await Promise.all([
+    listSchemeAssets(pool, schemeCode, 'rendering'),
+    listSchemeAssets(pool, schemeCode, 'mask'),
+  ]);
+  const maskByRendering = new Map(masks.filter(mask => mask.relatedAssetId).map(mask => [mask.relatedAssetId, mask]));
+  return renderings.map(rendering => ({ rendering, pairedMask: maskByRendering.get(rendering.id) ?? null }));
 }
