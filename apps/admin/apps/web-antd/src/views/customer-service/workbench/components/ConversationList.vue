@@ -7,7 +7,7 @@ import type {
 
 import { computed, onBeforeUnmount, ref } from 'vue';
 
-import { Badge, Empty, Pagination, Tabs, Tag } from 'ant-design-vue';
+import { Badge, Empty, Pagination, Tag } from 'ant-design-vue';
 
 import {
   CS_LOCALE_LABELS,
@@ -73,28 +73,38 @@ const statusColors = {
   <div
     class="flex h-full min-h-0 flex-col rounded-md border border-border bg-card"
   >
-    <!-- antd Tabs 的样式重置会覆盖其自身的 padding，内边距放在外层 -->
-    <div class="px-3">
-      <Tabs
-        :active-key="tab"
-        centered
-        size="small"
-        :tab-bar-gutter="20"
-        @change="(key) => emit('update:tab', key as ConversationTab)"
+    <!-- 不用 antd Tabs：栏宽放不下全部标签时它会折叠并滚走当前项，这里平铺并均分留白 -->
+    <div class="flex border-b border-border px-2" role="tablist">
+      <button
+        v-for="item in tabs"
+        :key="item.key"
+        type="button"
+        role="tab"
+        :aria-selected="item.key === tab"
+        class="group relative flex-auto whitespace-nowrap pb-2.5 pt-3 text-center text-sm"
+        @click="emit('update:tab', item.key)"
       >
-        <Tabs.TabPane v-for="item in tabs" :key="item.key">
-          <template #tab>
-            <Badge
-              :count="item.count ?? 0"
-              :number-style="badgeStyle"
-              :offset="[6, 0]"
-              size="small"
-            >
-              {{ item.label }}
-            </Badge>
-          </template>
-        </Tabs.TabPane>
-      </Tabs>
+        <Badge
+          :count="item.count ?? 0"
+          :number-style="badgeStyle"
+          :offset="[4, 0]"
+          size="small"
+        >
+          <!-- Badge 会重置文字颜色，颜色需写在内层 -->
+          <span
+            class="transition-colors group-hover:text-primary"
+            :class="
+              item.key === tab ? 'font-medium text-primary' : 'text-foreground'
+            "
+          >
+            {{ item.label }}
+          </span>
+        </Badge>
+        <span
+          v-if="item.key === tab"
+          class="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary"
+        ></span>
+      </button>
     </div>
     <div
       class="min-h-0 flex-1 overflow-y-auto"

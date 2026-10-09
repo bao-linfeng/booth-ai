@@ -168,7 +168,7 @@ async function togglePresence(online: boolean) {
       <ConversationList
         v-model:page="page"
         v-model:tab="tab"
-        class="w-80 shrink-0"
+        class="w-[22rem] shrink-0"
         :counts="store.counts"
         :items="items"
         :loading="listLoading"
