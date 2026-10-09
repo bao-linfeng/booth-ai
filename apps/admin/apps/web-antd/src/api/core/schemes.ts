@@ -140,6 +140,24 @@ export async function deleteSchemeApi(code: string) {
   );
 }
 
+/** 预览行解析后的关键字段（尺寸为毫米，字典字段为条目 id，对应标签见 dictionaryLabels）。 */
+export interface ImportPreviewRowData {
+  parentCode: null | string;
+  lengthMm: null | number;
+  widthMm: null | number;
+  heightMm: null | number;
+  areaM2: null | number;
+  openingCount: null | number;
+}
+
+export type ImportDictionaryField =
+  | 'budgetTierId'
+  | 'featureIds'
+  | 'industryIds'
+  | 'productSystemId'
+  | 'styleId'
+  | 'zoneIds';
+
 /** rowId 在单次导入内唯一；sheetName + rowNumber 定位原文件中的工作表与行。 */
 export interface ImportPreviewRow {
   rowId: number;
@@ -149,6 +167,8 @@ export interface ImportPreviewRow {
   name: string;
   status: 'duplicate' | 'error' | 'valid';
   reason?: string;
+  data?: ImportPreviewRowData;
+  dictionaryLabels?: Partial<Record<ImportDictionaryField, string[]>>;
 }
 
 export interface ImportPreviewSummary {
@@ -161,6 +181,8 @@ export interface ImportPreviewSummary {
 
 export interface ImportPreviewResult {
   importId: string;
+  /** 预览失效时间（ISO 8601），过期后须重新上传预览 */
+  expiresAt: string;
   rows: ImportPreviewRow[];
   summary: ImportPreviewSummary;
 }
@@ -176,6 +198,14 @@ export interface ImportCommitResult {
     rowNumber: number;
     sheetName: string;
   }[];
+}
+
+/** 下载与当前解析规则、启用字典一致的方案导入模板 */
+export async function downloadImportTemplateApi() {
+  return requestClient.get<Blob>('/v1/admin/scheme-imports/template', {
+    responseType: 'blob',
+    responseReturn: 'body',
+  });
 }
 
 export async function previewImportApi(file: File) {
