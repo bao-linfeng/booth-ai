@@ -4,6 +4,7 @@ import type { MatchingSummary, ProjectDetail } from '#/api/core/projects';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useAccess } from '@vben/access';
 import { Page } from '@vben/common-ui';
 import { formatDateTime, openWindow } from '@vben/utils';
 
@@ -13,6 +14,8 @@ import {
   Card,
   Descriptions,
   DescriptionsItem,
+  Image,
+  ImagePreviewGroup,
   Tag,
   Timeline,
   TimelineItem,
@@ -28,12 +31,17 @@ import {
 import CustomerServiceCard from './CustomerServiceCard.vue';
 import OperationModal from './OperationModal.vue';
 import {
+  entryPointLabels,
   eventSummary,
+  isImageAsset,
   matchTypeLabels,
+  materialStatusLabels,
   requirementSummary,
+  scopeLabels,
 } from './presentation';
 import QuotationEditor from './QuotationEditor.vue';
 const route = useRoute();
+const { hasAccessByCodes } = useAccess();
 const router = useRouter();
 const project = ref<ProjectDetail>();
 const loading = ref(false);
@@ -43,14 +51,38 @@ const terminal = computed(
   () =>
     project.value && ['closed', 'lost', 'won'].includes(project.value.status),
 );
-const assets = computed(() => [
-  ...(project.value?.schemeSnapshot?.renderings ?? []),
-  ...(project.value?.schemeSnapshot?.selectedTheme
-    ? [project.value.schemeSnapshot.selectedTheme.asset]
-    : []),
-  ...(project.value?.materials.drawings?.assets ?? []),
-  ...(project.value?.materials.artworks?.assets ?? []),
-]);
+const assetGroups = computed(() => {
+  const theme = project.value?.schemeSnapshot?.selectedTheme;
+  return [
+    {
+      label: '效果图',
+      assets: project.value?.schemeSnapshot?.renderings ?? [],
+    },
+    { label: 'AI 换主题结果', assets: theme ? [theme.asset] : [] },
+    { label: '图纸', assets: project.value?.materials.drawings?.assets ?? [] },
+    { label: '素材', assets: project.value?.materials.artworks?.assets ?? [] },
+  ]
+    .filter((group) => group.assets.length > 0)
+    .map((group) => ({
+      label: group.label,
+      images: group.assets.filter((asset) => isImageAsset(asset)),
+      files: group.assets.filter((asset) => !isImageAsset(asset)),
+    }));
+});
+/** 图片资料的签名地址，按 versionId 索引；取址失败的图片退回下载按钮。 */
+const imageUrls = ref<Record<string, string>>({});
+let imageLoad = 0;
+const downloadOnly = (group: (typeof assetGroups.value)[number]) => [
+  ...group.images.filter((asset) => !imageUrls.value[asset.versionId]),
+  ...group.files,
+];
+const scopeText = computed(() =>
+  project.value?.request.scopeCodes
+    ?.map((code) => scopeLabels[code] ?? code)
+    .join('、'),
+);
+const materialStatus = (status?: string) =>
+  materialStatusLabels[status ?? 'missing'] ?? status;
 const matchTypeColors: Record<MatchingSummary['matchType'], string> = {
   direct: 'green',
   reference: 'orange',
@@ -95,6 +127,27 @@ async function load() {
   } finally {
     loading.value = false;
   }
+  if (project.value) await loadImageUrls(project.value.projectId);
+}
+async function loadImageUrls(projectId: string) {
+  const current = ++imageLoad;
+  imageUrls.value = {};
+  if (!hasAccessByCodes(['projects.asset-download'])) return;
+  const images = assetGroups.value.flatMap((group) => group.images);
+  const entries = await Promise.all(
+    images.map(async (asset) => {
+      try {
+        const result = await assetDownloadApi(projectId, asset.versionId);
+        return [asset.versionId, result.downloadUrl] as const;
+      } catch {
+        return undefined;
+      }
+    }),
+  );
+  if (current !== imageLoad) return;
+  imageUrls.value = Object.fromEntries(
+    entries.filter((entry) => entry !== undefined),
+  );
 }
 async function download(version: string) {
   if (!project.value) return;
@@ -159,7 +212,13 @@ onMounted(load);
             {{
               project.sourceType === 'quote_request' ? '报价申请' : '人工需求'
             }}
-            / {{ project.request.entryPoint }}
+            <template v-if="project.request.entryPoint">
+              /
+              {{
+                entryPointLabels[project.request.entryPoint] ??
+                project.request.entryPoint
+              }}
+            </template>
           </DescriptionsItem>
           <DescriptionsItem label="项目修订">
             {{ project.revision }}
@@ -195,8 +254,13 @@ onMounted(load);
             {{ project.request.materialBudget?.amount }}
           </DescriptionsItem>
           <DescriptionsItem label="需求范围">
-            {{ project.request.scopeCodes?.join('、') }}
-            {{ project.request.scopeNotes }}
+            {{ scopeText || '—' }}
+            <div
+              v-if="project.request.scopeNotes"
+              class="whitespace-pre-wrap text-muted-foreground"
+            >
+              范围说明：{{ project.request.scopeNotes }}
+            </div>
           </DescriptionsItem>
           <DescriptionsItem label="已关联方案">
             {{ project.schemeCode ?? '未关联' }} /
@@ -262,25 +326,58 @@ onMounted(load);
             {{ project.request.notes ?? '—' }}
           </DescriptionsItem>
           <DescriptionsItem label="资料快照">
-            清单 {{ project.materials.bom?.status ?? 'missing' }} / 图纸
-            {{ project.materials.drawings?.status ?? 'missing' }} / 素材
-            {{ project.materials.artworks?.status ?? 'missing' }}
+            清单{{ materialStatus(project.materials.bom?.status) }} / 图纸{{
+              materialStatus(project.materials.drawings?.status)
+            }}
+            / 素材{{ materialStatus(project.materials.artworks?.status) }}
           </DescriptionsItem>
           <DescriptionsItem label="客户公开结果">
             {{ project.publicResult ?? '尚未发布' }}
           </DescriptionsItem>
         </Descriptions>
-        <div class="mt-4 flex flex-wrap gap-2">
-          <Button
-            v-for="asset in assets"
-            :key="asset.versionId"
-            size="small"
-            @click="download(asset.versionId)"
-            v-access:code="['projects.asset-download']"
+        <section
+          v-for="group in assetGroups"
+          :key="group.label"
+          class="mt-4"
+          :data-asset-group="group.label"
+        >
+          <h4 class="mb-2 text-sm font-medium">{{ group.label }}</h4>
+          <ImagePreviewGroup>
+            <div class="flex flex-wrap gap-3">
+              <template v-for="asset in group.images" :key="asset.versionId">
+                <figure v-if="imageUrls[asset.versionId]" class="m-0 w-40">
+                  <Image
+                    :src="imageUrls[asset.versionId]"
+                    :alt="asset.name"
+                    :width="160"
+                    :height="110"
+                    class="asset-thumb"
+                  />
+                  <figcaption
+                    class="mt-1 truncate text-xs text-muted-foreground"
+                    :title="asset.name"
+                  >
+                    {{ asset.name }}
+                  </figcaption>
+                </figure>
+              </template>
+            </div>
+          </ImagePreviewGroup>
+          <div
+            v-if="downloadOnly(group).length"
+            class="mt-2 flex flex-wrap gap-2"
           >
-            固定资料：{{ asset.name }}
-          </Button>
-        </div>
+            <Button
+              v-for="asset in downloadOnly(group)"
+              :key="asset.versionId"
+              size="small"
+              @click="download(asset.versionId)"
+              v-access:code="['projects.asset-download']"
+            >
+              下载：{{ asset.name }}
+            </Button>
+          </div>
+        </section>
       </Card>
       <QuotationEditor :project="project" @reload="load" />
       <CustomerServiceCard :project-id="project.projectId" />
@@ -316,3 +413,10 @@ onMounted(load);
     <OperationModal ref="operation" @reload="load" />
   </Page>
 </template>
+<style scoped>
+.asset-thumb :deep(.ant-image-img) {
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+}
+</style>

@@ -5,7 +5,7 @@ import type {
   WorkbenchEvent,
 } from '#/api/core/customer-service';
 
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -14,6 +14,7 @@ import { formatDateTime } from '@vben/utils';
 import {
   Button,
   Empty,
+  Image,
   Input,
   Modal,
   Radio,
@@ -32,8 +33,10 @@ import {
   markReadApi,
   postMessageApi,
   releaseConversationApi,
+  schemeCardCoverUrl,
   STATUS_LABELS,
 } from '#/api/core/customer-service';
+import { statusLabels as projectStatusLabels } from '#/api/core/projects';
 
 import {
   maxSeq,
@@ -52,6 +55,8 @@ const props = defineProps<{
   supervise: boolean;
 }>();
 const emit = defineEmits<{ changed: []; transfer: [] }>();
+/** 封面加载失败（方案已下架、无效果图或换主题图已不可用）的图片地址，这些卡片改显示图标 */
+const brokenCovers = reactive(new Set<string>());
 
 interface Pending {
   body: string;
@@ -345,7 +350,19 @@ function toggle(id: string) {
             class="mx-auto flex max-w-[90%] items-start gap-3 rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2 text-sm"
           >
             <template v-if="item.context.kind === 'scheme'">
+              <!-- 封面小图点击放大（换主题卡片为发送时选定的效果图）；方案下架或无图时退回图标 -->
+              <Image
+                v-if="!brokenCovers.has(schemeCardCoverUrl(item.context))"
+                :src="schemeCardCoverUrl(item.context)"
+                :alt="`${item.context.snapshot.schemeCode} ${item.context.snapshot.themeResultId ? 'AI 换主题效果图' : '效果图'}`"
+                :width="80"
+                :height="45"
+                class="shrink-0 rounded-md border border-border object-cover"
+                data-cs-scheme-cover
+                @error="brokenCovers.add(schemeCardCoverUrl(item.context))"
+              />
               <IconifyIcon
+                v-else
                 icon="lucide:box"
                 class="mt-0.5 size-4 shrink-0 text-muted-foreground"
                 aria-hidden="true"
@@ -356,6 +373,9 @@ function toggle(id: string) {
                   <span class="font-mono">{{
                     item.context.snapshot.schemeCode
                   }}</span>
+                  <template v-if="item.context.snapshot.themeResultId">
+                    · <span data-cs-themed>AI 换主题效果</span>
+                  </template>
                 </p>
                 <p
                   class="truncate font-medium"
@@ -400,7 +420,10 @@ function toggle(id: string) {
                 </p>
                 <p class="text-xs text-muted-foreground">
                   {{ item.context.snapshot.city }} ·
-                  {{ item.context.snapshot.status }}
+                  {{
+                    projectStatusLabels[item.context.snapshot.status] ??
+                    item.context.snapshot.status
+                  }}
                 </p>
               </div>
             </template>

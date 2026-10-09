@@ -73,7 +73,7 @@ export async function loadEmailContent(db: Db, email: CsEmail): Promise<EmailCon
       AND ${offline ? "m.kind='offline'" : "m.sender_type='agent' AND m.kind='text'"} ORDER BY m.seq`, [email.conversationId, email.afterSeq, email.locale])).rows;
   const info = (await db.query<{ username: string | null; visitor: boolean; contactEmail: string | null; contexts: string[] }>(
     `SELECT u.username, c.visitor_id IS NOT NULL AS visitor, c.contact_email AS "contactEmail",
-       ARRAY(SELECT CASE WHEN x.kind='scheme' THEN x.ref || ' ' || (x.snapshot->>'name') ELSE x.snapshot->>'projectNo' END
+       ARRAY(SELECT CASE WHEN x.kind='scheme' THEN (x.snapshot->>'schemeCode') || ' ' || (x.snapshot->>'name') ELSE x.snapshot->>'projectNo' END
              FROM cs_conversation_contexts x WHERE x.conversation_id=c.id ORDER BY x.created_at) AS contexts
      FROM cs_conversations c LEFT JOIN users u ON u.id=c.customer_user_id WHERE c.id=$1`, [email.conversationId])).rows[0];
   return { lines: offline ? rows : rows.slice(-3), total: rows.length, customer: info?.username ?? null, visitor: info?.visitor ?? true,

@@ -7,7 +7,7 @@ import { loadConfig } from '../src/config.js';
 import { createSession, encryptJwt } from '../src/infra/session.js';
 import { requeueAgentConversations } from '../src/modules/customer-service/agents.js';
 import {
-  claimConversation, closeConversation, getConversationDetail, listConversations, openConversation, releaseConversation, transferConversation,
+  claimConversation, closeConversation, getConversationDetail, listConversations, openConversation, releaseConversation, sendContext, transferConversation,
 } from '../src/modules/customer-service/conversations.js';
 import type { Subject } from '../src/modules/customer-service/domain.js';
 import { listAdminMessages, listCustomerMessages, markCustomerRead, postAgentMessage, postCustomerMessage } from '../src/modules/customer-service/messages.js';
@@ -16,12 +16,19 @@ import { runRetention } from '../src/modules/customer-service/retention.js';
 import { updateSettings } from '../src/modules/customer-service/settings.js';
 import { issueVisitor, mergeVisitor, resolveVisitor } from '../src/modules/customer-service/visitors.js';
 import { seedAiModel } from './ai-fixtures.js';
-import { csTestPool, csTestRedis, seedAdmin, seedProject, seedScheme, seedUser } from './cs-fixtures.js';
+import { themeContextObjectKey } from '../src/modules/customer-service/contexts.js';
+import { csTestPool, csTestRedis, seedAdmin, seedProject, seedScheme, seedThemeJob, seedUser } from './cs-fixtures.js';
 
 const enabled = { skip: !process.env.CS_TEST_DATABASE_URL || !process.env.CS_TEST_REDIS_URL };
 const text = (body: string) => ({ clientMessageId: randomUUID(), body, kind: 'text' as const });
+const testConfig = () => loadConfig({
+  NODE_ENV: 'test', LOG_LEVEL: 'silent', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',
+  S3_ENDPOINT: 'http://localhost:9000', S3_PUBLIC_ENDPOINT: 'http://localhost:19000', S3_BUCKET: 'test',
+  S3_ACCESS_KEY: 'test-only', S3_SECRET_KEY: 'test-only', CORS_ORIGINS: 'http://localhost:5173',
+  SESSION_SECRET: 'test-session-secret-must-be-at-least-32-bytes', AI_MODEL_ENCRYPTION_KEY: 'a'.repeat(64), EXTERNAL_API_URL: 'https://api.example.test',
+});
 
-test('opening is idempotent per subject and context, never touches projects, and isolates other subjects (CS02/CS03/CS04/CS09)', enabled, async t => {
+test('opening is idempotent per subject, appends a card per context, never touches projects, and isolates other subjects (CS02/CS03/CS04/CS09)', enabled, async t => {
   const pool = await csTestPool(t);
   const redis = csTestRedis(t);
   const assignee = await seedAdmin(pool, ['projects.read', 'projects.follow-up']);
@@ -50,7 +57,9 @@ test('opening is idempotent per subject and context, never touches projects, and
   const project = again.contexts[0]!;
   assert.equal(project.kind === 'project' && project.snapshot.exhibitionName, 'IFA');
   assert.ok(!JSON.stringify(again.contexts).includes('secret-budget') && !JSON.stringify(again.contexts).includes('buyer@example.com'));
-  assert.equal((await pool.query("SELECT count(*)::int AS n FROM cs_messages WHERE kind='context'")).rows[0].n, 2);
+  // 每次带上下文打开都追加一张卡片（10 次项目 + 2 次方案），上下文记录按会话去重
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM cs_messages WHERE kind='context'")).rows[0].n, 12);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM cs_conversation_contexts')).rows[0].n, 2);
   assert.equal((await pool.query("SELECT count(*)::int AS n FROM cs_conversations WHERE status<>'closed'")).rows[0].n, 1);
   assert.equal(await projectEvents(), eventsBefore);
   assert.deepEqual((await pool.query('SELECT id, customer_user_id, visitor_id, updated_at FROM projects ORDER BY id')).rows, projectsBefore);
@@ -75,6 +84,83 @@ test('opening is idempotent per subject and context, never touches projects, and
     assert.ok(!error?.message.includes(own.conversation.id) && !error?.message.includes(conversationId));
   }
   assert.deepEqual((await listCustomerMessages(pool, b, { limit: 30 })).items, []);
+});
+
+test('context cards are resent on demand, reuse the snapshot record and only go to the subject\'s open conversation', enabled, async t => {
+  const pool = await csTestPool(t);
+  const redis = csTestRedis(t);
+  await seedScheme(pool, 'S-RESEND');
+  await seedScheme(pool, 'S-RESEND-DRAFT', 'draft');
+  const subject: Subject = { kind: 'user', userId: await seedUser(pool) };
+  const outsider: Subject = { kind: 'user', userId: await seedUser(pool) };
+  const input = { context: { kind: 'scheme' as const, schemeCode: 'S-RESEND' }, entryPoint: 'scheme_detail' as const };
+  const opened = await openConversation(pool, redis, subject, input, 'en');
+  const conversationId = opened.conversation.id;
+
+  const first = await sendContext(pool, redis, subject, conversationId, input, 'en');
+  const second = await sendContext(pool, redis, subject, conversationId, input, 'en');
+  assert.notEqual(first.message.id, second.message.id);
+  assert.deepEqual([first.message.kind, first.message.context?.id, second.message.context?.id], ['context', opened.contexts[0]!.id, opened.contexts[0]!.id]);
+  assert.equal(second.message.context?.kind === 'scheme' && second.message.context.snapshot.schemeCode, 'S-RESEND');
+  assert.deepEqual((await listCustomerMessages(pool, subject, { limit: 30 })).items.map(item => item.kind), ['context', 'context', 'context']);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM cs_conversation_contexts WHERE conversation_id=$1', [conversationId])).rows[0].n, 1);
+
+  await assert.rejects(sendContext(pool, redis, outsider, conversationId, input, 'en'), { statusCode: 404, reason: 'CONVERSATION_NOT_FOUND' });
+  await assert.rejects(sendContext(pool, redis, subject, conversationId, { ...input, context: { kind: 'scheme', schemeCode: 'S-RESEND-DRAFT' } }, 'en'),
+    { statusCode: 404, reason: 'CONTEXT_NOT_FOUND' });
+  const supervisor = await seedAdmin(pool, ['customer-service.read', 'customer-service.reply', 'customer-service.supervise']);
+  await closeConversation(pool, redis, { adminId: supervisor, supervise: true }, conversationId);
+  await assert.rejects(sendContext(pool, redis, subject, conversationId, input, 'en'), { reason: 'CONVERSATION_CLOSED' });
+});
+
+test('scheme cards carry the selected theme rendering of the customer\'s own finished job and serve it by context id', enabled, async t => {
+  const pool = await csTestPool(t);
+  const redis = csTestRedis(t);
+  await seedScheme(pool, 'S-THEME');
+  await seedScheme(pool, 'S-OTHER');
+  const userId = await seedUser(pool);
+  const subject: Subject = { kind: 'user', userId };
+  const theme = await seedThemeJob(pool, userId, 'S-THEME');
+  const running = await seedThemeJob(pool, userId, 'S-THEME', 'running');
+  const foreign = await seedThemeJob(pool, await seedUser(pool), 'S-THEME');
+  const scheme = (themeJobId?: string, schemeCode = 'S-THEME') => ({ context: { kind: 'scheme' as const, schemeCode, themeJobId }, entryPoint: 'scheme_detail' as const });
+  const opened = await openConversation(pool, redis, subject, scheme(), 'en');
+  const conversationId = opened.conversation.id;
+
+  const first = (await sendContext(pool, redis, subject, conversationId, scheme(theme.jobId), 'en')).message.context!;
+  assert.equal(first.kind === 'scheme' && first.schemeCode, 'S-THEME');
+  assert.equal(first.kind === 'scheme' && first.snapshot.themeResultId, theme.results[0]!.resultId);
+  assert.notEqual(first.id, opened.contexts[0]!.id, 'a themed card does not reuse the plain scheme snapshot');
+  assert.equal(await themeContextObjectKey(pool, first.id), theme.results[0]!.objectKey);
+  await assert.rejects(themeContextObjectKey(pool, opened.contexts[0]!.id), { statusCode: 404, reason: 'CONTEXT_NOT_FOUND' });
+  await assert.rejects(themeContextObjectKey(pool, randomUUID()), { reason: 'CONTEXT_NOT_FOUND' });
+
+  // 改选后再发送：新卡片用此刻选定的那张，早先卡片的图不变
+  await pool.query('UPDATE theme_jobs SET selected_result_id=$1 WHERE id=$2', [theme.results[1]!.resultId, theme.jobId]);
+  const second = (await sendContext(pool, redis, subject, conversationId, scheme(theme.jobId), 'en')).message.context!;
+  assert.equal(second.kind === 'scheme' && second.snapshot.themeResultId, theme.results[1]!.resultId);
+  assert.equal(await themeContextObjectKey(pool, second.id), theme.results[1]!.objectKey);
+  assert.equal(await themeContextObjectKey(pool, first.id), theme.results[0]!.objectKey);
+  assert.equal((await sendContext(pool, redis, subject, conversationId, scheme(theme.jobId), 'en')).message.context!.id, second.id);
+  const summary = (await pool.query(`SELECT ARRAY(SELECT x.snapshot->>'schemeCode' FROM cs_conversation_contexts x WHERE x.conversation_id=$1) AS codes`,
+    [conversationId])).rows[0].codes;
+  assert.deepEqual(summary, ['S-THEME', 'S-THEME', 'S-THEME']);
+
+  for (const input of [scheme(foreign.jobId), scheme(running.jobId), scheme(randomUUID()), scheme(theme.jobId, 'S-OTHER')]) {
+    await assert.rejects(sendContext(pool, redis, subject, conversationId, input, 'en'), { statusCode: 404, reason: 'CONTEXT_NOT_FOUND' });
+  }
+  const visitor: Subject = { kind: 'visitor', visitorId: (await issueVisitor(pool, 'en')).visitorId };
+  await assert.rejects(openConversation(pool, redis, visitor, scheme(theme.jobId), 'en'), { reason: 'CONTEXT_NOT_FOUND' });
+
+  const app = await buildApp(testConfig(), { database: async () => {}, redis: async () => {}, storage: async () => {} },
+    { pool, redis, storage: { signDownload: async (key: string, expiresIn: number) => `http://localhost:19000/test/${key}?expires=${expiresIn}` } } as never);
+  t.after(() => app.close());
+  const cover = await app.inject({ url: `/api/v1/client/customer-service/contexts/${first.id}/theme-cover` });
+  assert.equal(cover.statusCode, 302, cover.body);
+  assert.equal(cover.headers.location, `http://localhost:19000/test/${theme.results[0]!.objectKey}?expires=300`);
+  assert.equal(cover.headers['cache-control'], 'private, max-age=240');
+  assert.equal((await app.inject({ url: `/api/v1/client/customer-service/contexts/${opened.contexts[0]!.id}/theme-cover` })).statusCode, 404);
+  assert.equal((await app.inject({ url: '/api/v1/client/customer-service/contexts/not-a-uuid/theme-cover' })).statusCode, 400);
 });
 
 test('messages replay by clientMessageId, notes never reach the customer channel and Redis outages do not lose messages (CS08/CS09/CS12)', enabled, async t => {
@@ -291,12 +377,7 @@ test('retention logically deletes six-month-old data from every listing (CS10)',
 test('HTTP: visitor tokens, isolation, rate limits and admin permissions (CS09/CS11)', enabled, async t => {
   const pool = await csTestPool(t);
   const redis = csTestRedis(t);
-  const config = loadConfig({
-    NODE_ENV: 'test', LOG_LEVEL: 'silent', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',
-    S3_ENDPOINT: 'http://localhost:9000', S3_PUBLIC_ENDPOINT: 'http://localhost:19000', S3_BUCKET: 'test',
-    S3_ACCESS_KEY: 'test-only', S3_SECRET_KEY: 'test-only', CORS_ORIGINS: 'http://localhost:5173',
-    SESSION_SECRET: 'test-session-secret-must-be-at-least-32-bytes', AI_MODEL_ENCRYPTION_KEY: 'a'.repeat(64), EXTERNAL_API_URL: 'https://api.example.test',
-  });
+  const config = testConfig();
   // 本地重复运行时清掉上一轮遗留的限流计数（标准检查每次都会清空测试 Redis 库）
   for (const key of await redis.keys('rate:client:cs*')) await redis.del(key);
   const app = await buildApp(config, { database: async () => {}, redis: async () => {}, storage: async () => {} }, { pool, redis, storage: {} } as never);
@@ -346,6 +427,10 @@ test('HTTP: visitor tokens, isolation, rate limits and admin permissions (CS09/C
       payload: text(`message ${n}`) })).statusCode);
   }
   assert.deepEqual([statuses.filter(status => status === 201).length, statuses.at(-1)], [9, 429], 'the offline attempt also counted towards the per-visitor budget');
+  const reopen = (payload: object) => app.inject({ method: 'POST', url: `${base}/conversations`, headers: a.headers, payload });
+  assert.equal((await reopen({ entryPoint: 'scheme_detail', context: { kind: 'scheme', schemeCode: 'S-ANY' } })).statusCode, 429,
+    'opening with a context appends a card and shares the message budget');
+  assert.equal((await reopen({ entryPoint: 'floating' })).statusCode, 200, 'opening without a context is not limited');
 
   const agent = await seedAdmin(pool);
   const supervisor = await seedAdmin(pool, ['customer-service.read', 'customer-service.reply', 'customer-service.supervise', 'customer-service.settings']);

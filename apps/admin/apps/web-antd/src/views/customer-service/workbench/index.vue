@@ -34,7 +34,10 @@ const { hasAccessByCodes } = useAccess();
 const canReply = hasAccessByCodes(['customer-service.reply']);
 const supervise = hasAccessByCodes(['customer-service.supervise']);
 
-const tab = ref<ConversationTab>('queue');
+// 恢复上次停留的标签；“全部”仅主管可见
+const tab = ref<ConversationTab>(
+  store.workbenchTab === 'all' && !supervise ? 'queue' : store.workbenchTab,
+);
 const page = ref(1);
 const items = ref<AdminConversation[]>([]);
 const total = ref(0);
@@ -102,7 +105,8 @@ watch(selectedId, (id) => {
   });
   void loadDetail();
 });
-watch(tab, () => {
+watch(tab, (value) => {
+  store.workbenchTab = value;
   page.value = 1;
   void loadList();
 });

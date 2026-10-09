@@ -57,6 +57,7 @@ after(async () => {
 })
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: MyProjects } = await server.ssrLoadModule('/src/pages/MyProjects.vue')
+const { pageContext } = (await server.ssrLoadModule('/src/features/customer-service/useCustomerService.ts')).useCustomerService()
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function settle() { for (let i = 0; i < 4; i++) { await nextTick(); await sleep(5) } }
@@ -209,6 +210,22 @@ test('refresh progress reloads the project and failures keep a retry action', as
   await settle()
   assertNoNode(failed.container.querySelector('[role="alert"]'), "failed.container.querySelector('[role=\"alert\"]')")
   assert.ok(failed.container.textContent.includes('最新进展'))
+  await failed.close()
+})
+
+test('the loaded detail registers its project for "send this project" in the chat panel and clears it on the list, on errors and on leave', async () => {
+  const mounted = await mount({ path: detailPath })
+  assert.deepEqual(pageContext.value, { context: { kind: 'project', projectId }, entryPoint: 'my_project', label: 'PJ-2026-0001' })
+  await mounted.router.push('/my-projects')
+  await settle()
+  assert.equal(pageContext.value, null, 'the list page has no project to send')
+  await mounted.router.push(detailPath)
+  await settle()
+  assert.equal(pageContext.value?.label, 'PJ-2026-0001')
+  await mounted.close()
+  assert.equal(pageContext.value, null, 'leaving the page clears it')
+  const failed = await mount({ path: detailPath, get: () => { throw Object.assign(new Error('nf'), { response: { status: 404 } }) } })
+  assert.equal(pageContext.value, null, 'a project that failed to load is never offered')
   await failed.close()
 })
 

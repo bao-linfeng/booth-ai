@@ -69,6 +69,7 @@ export interface Asset {
   versionId: string;
   name: string;
   filename: string;
+  mimeType?: string;
   type: string;
 }
 export interface BomItem {

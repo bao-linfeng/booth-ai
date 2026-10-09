@@ -1,4 +1,5 @@
 import type {
+  Asset,
   MatchingSummary,
   ProjectEvent,
   ProjectStatus,
@@ -37,6 +38,37 @@ export const matchTypeLabels: Record<MatchingSummary['matchType'], string> = {
   random: '随机推荐',
   unmatched: '不满足确认条件',
 };
+
+export const entryPointLabels: Record<string, string> = {
+  scheme_detail: '方案详情',
+  bill_of_materials: '物料清单',
+  theme_result: 'AI 换主题结果',
+  matching_results: '方案匹配结果',
+  su: 'SU 设计',
+};
+
+export const scopeLabels: Record<string, string> = {
+  materials: '材料采购',
+  graphics: '品牌画面',
+  transport: '运输',
+  installation: '搭建',
+  other: '其他',
+};
+
+export const materialStatusLabels: Record<string, string> = {
+  available: '已就绪',
+  pending: '待生成',
+  missing: '缺失',
+};
+
+const imageExtension = /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/i;
+
+/** 历史快照可能缺少 mimeType，此时按文件扩展名判断。 */
+export function isImageAsset(asset: Asset): boolean {
+  return asset.mimeType
+    ? asset.mimeType.startsWith('image/')
+    : imageExtension.test(asset.filename);
+}
 
 const optionFields: [string, string][] = [
   ['productSystemId', '产品体系'],

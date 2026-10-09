@@ -53,3 +53,22 @@ export async function seedProject(pool: pg.Pool, owner: { userId?: string | null
   })]);
   return id;
 }
+
+/** 本人已完成的换主题任务，两张效果图，默认选定第一张 */
+export async function seedThemeJob(pool: pg.Pool, userId: string, schemeCode: string, status = 'succeeded') {
+  const schemeId = (await pool.query<{ id: string }>('SELECT id FROM schemes WHERE code=$1', [schemeCode])).rows[0]!.id;
+  const jobId = randomUUID();
+  const results = Array.from({ length: 2 }, () => ({ resultId: randomUUID(), objectKey: `cs-tests/theme/${randomUUID()}.png` }));
+  await pool.query(`INSERT INTO theme_jobs(id,user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,status,selected_result_id,selection_revision)
+    VALUES($1,$2,$3,$4,'test',$5,'{}',2,$6,$7,1)`, [jobId, userId, schemeCode, randomUUID(), randomUUID(), status, results[0]!.resultId]);
+  for (const [index, result] of results.entries()) {
+    const assetId = randomUUID();
+    await pool.query(`INSERT INTO scheme_assets(id,scheme_id,type,name,metadata,source,owner_user_id,visibility)
+      VALUES($1,$2,'artwork','私有主题',$3,'theme_generation',$4,'private')`, [assetId, schemeId, JSON.stringify({ themeJobId: jobId }), userId]);
+    const versionId = (await pool.query<{ id: string }>(`INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum)
+      VALUES($1,$2,'theme.png','image/png',10,'theme-hash') RETURNING id`, [assetId, result.objectKey])).rows[0]!.id;
+    await pool.query('INSERT INTO theme_job_results(id,job_id,ordinal,asset_id,asset_version_id) VALUES($1,$2,$3,$4,$5)',
+      [result.resultId, jobId, index + 1, assetId, versionId]);
+  }
+  return { jobId, results };
+}

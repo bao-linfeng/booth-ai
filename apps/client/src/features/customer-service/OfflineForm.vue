@@ -34,6 +34,7 @@ function submit() {
       <Input id="cs-offline-email" v-model="email" type="email" autocomplete="email" :placeholder="t('customerService.emailPlaceholder')" :aria-invalid="emailError || undefined" />
       <p v-if="emailError" class="text-xs text-destructive">{{ t('customerService.emailInvalid') }}</p>
     </div>
+    <slot name="tools" />
     <Textarea v-model="body" :maxlength="2000" rows="3" :aria-label="t('customerService.leaveMessage')" :placeholder="t('customerService.messagePlaceholder')" />
     <Button type="submit" size="sm" class="w-full" :disabled="!body.trim()">{{ t('customerService.leaveMessage') }}</Button>
   </form>

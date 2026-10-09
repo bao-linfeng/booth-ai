@@ -95,3 +95,12 @@ export async function getSelectionScheme(pool: pg.Pool, storage: Pick<ReturnType
   ]));
   return { candidate: { ...candidate, images }, availability };
 }
+
+/** 方案封面（第一张效果图）的短时下载地址；可见性与方案详情一致，供客服卡片等长期展示的位置按需换签 */
+export async function getSchemeCoverUrl(pool: pg.Pool, storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>, code: string, expiresIn: number) {
+  const catalog = await getSelectionCatalog(pool);
+  const { candidates: [candidate] } = await selectionDependency(() => loadCandidatePool(pool, catalog, code));
+  const cover = candidate?.images.toSorted((left, right) => left.order - right.order)[0];
+  if (!cover) throw Object.assign(new Error('Scheme not visible'), { statusCode: 404 });
+  return selectionDependency(() => storage.signDownload(cover.objectKey, expiresIn));
+}

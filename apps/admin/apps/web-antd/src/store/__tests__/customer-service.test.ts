@@ -74,4 +74,14 @@ describe('customer service workbench stream', () => {
     await vi.advanceTimersByTimeAsync(3000);
     expect(state.sources).toHaveLength(2);
   });
+
+  it('remembers the workbench tab until the stream stops', () => {
+    const store = useCustomerServiceStore();
+    store.start();
+    store.workbenchTab = 'mine';
+    expect(store.workbenchTab).toBe('mine');
+    // 退出登录或失去权限时回到默认标签，避免下一位用户沿用
+    store.stop();
+    expect(store.workbenchTab).toBe('queue');
+  });
 });

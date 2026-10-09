@@ -12,7 +12,8 @@ export type EventCode = 'claimed' | 'released' | 'transferred' | 'closed' | 'mer
 export const MAX_BODY_LENGTH = 2000;
 
 export type Subject = { kind: 'user'; userId: string } | { kind: 'visitor'; visitorId: string };
-export type ContextInput = { kind: 'scheme'; schemeCode: string } | { kind: 'project'; projectId: string };
+/** themeJobId：附带本人 AI 换主题任务当前选定的效果图（只对登录用户有效） */
+export type ContextInput = { kind: 'scheme'; schemeCode: string; themeJobId?: string } | { kind: 'project'; projectId: string };
 
 export function csError(reason: string, statusCode = 409) {
   return domainError(reason, statusCode);
@@ -43,7 +44,10 @@ export function normalizeEmail(raw: string | null | undefined): string | null {
   return email;
 }
 
-export interface SchemeSnapshot { schemeCode: string; name: string; lengthMm: number | null; widthMm: number | null; openingCount: number | null }
+/** themeResultId：卡片展示的 AI 换主题效果图（发送时选定的那张），无则展示方案原图 */
+export interface SchemeSnapshot {
+  schemeCode: string; name: string; lengthMm: number | null; widthMm: number | null; openingCount: number | null; themeResultId?: string;
+}
 export interface ProjectSnapshot {
   projectNo: string; schemeCode: string | null; sourceType: 'quote_request' | 'manual_request'; status: string;
   customerType: 'individual' | 'company'; countryCode: string; city: string; exhibitionName: string; submittedAt: string;
@@ -134,7 +138,7 @@ export interface ContextRow { id: string; kind: 'scheme' | 'project'; ref: strin
 export function toContext(row: ContextRow): ContextDto {
   const base = { id: row.id, entryPoint: row.entryPoint, createdAt: iso(row.createdAt)! };
   return row.kind === 'scheme'
-    ? { ...base, kind: 'scheme', schemeCode: row.ref, snapshot: row.snapshot as SchemeSnapshot }
+    ? { ...base, kind: 'scheme', schemeCode: (row.snapshot as SchemeSnapshot).schemeCode, snapshot: row.snapshot as SchemeSnapshot }
     : { ...base, kind: 'project', projectId: row.ref, snapshot: row.snapshot as ProjectSnapshot };
 }
 

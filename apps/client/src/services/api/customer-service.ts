@@ -1,11 +1,13 @@
 import { API_BASE_URL, apiFetch } from '@/lib/api-client'
+import type { ProjectStatus } from './projects'
 
 // 在线客服客户端接口（服务端 /api/v1/client/customer-service，契约见在线客服模块开发计划 §6）
 export type CsLocale = 'zh' | 'en' | 'fr' | 'de' | 'ja' | 'ru' | 'it' | 'es' | 'ar' | 'hi' | 'pt' | 'ms'
 export type EntryPoint = 'scheme_detail' | 'quote_receipt' | 'my_project' | 'floating'
 export type ConversationStatus = 'queued' | 'active' | 'closed'
 export type EventCode = 'claimed' | 'released' | 'transferred' | 'closed' | 'merged' | 'agent_unavailable'
-export type ContextInput = { kind: 'scheme'; schemeCode: string } | { kind: 'project'; projectId: string }
+/** themeJobId：附带本人 AI 换主题任务当前选定的效果图 */
+export type ContextInput = { kind: 'scheme'; schemeCode: string; themeJobId?: string } | { kind: 'project'; projectId: string }
 
 export interface ConversationDto {
   id: string
@@ -22,9 +24,12 @@ export interface ConversationDto {
   closedAt: string | null
 }
 
-export interface SchemeSnapshot { schemeCode: string; name: string; lengthMm: number | null; widthMm: number | null; openingCount: number | null }
+/** themeResultId：卡片展示发送时选定的 AI 换主题效果图，无则展示方案原图 */
+export interface SchemeSnapshot {
+  schemeCode: string; name: string; lengthMm: number | null; widthMm: number | null; openingCount: number | null; themeResultId?: string
+}
 export interface ProjectSnapshot {
-  projectNo: string; schemeCode: string | null; sourceType: 'quote_request' | 'manual_request'; status: string
+  projectNo: string; schemeCode: string | null; sourceType: 'quote_request' | 'manual_request'; status: ProjectStatus
   customerType: 'individual' | 'company'; countryCode: string; city: string; exhibitionName: string; submittedAt: string
 }
 export type ContextDto = { id: string; entryPoint: EntryPoint; createdAt: string } &
@@ -88,6 +93,17 @@ export async function listMessages(query: { before?: number; after?: number; lim
 export async function postMessage(conversationId: string, input: { clientMessageId: string; body: string; kind: 'text' | 'offline'; contactEmail?: string }) {
   return (await apiFetch<Envelope<{ message: MessageDto; conversation: ConversationDto }>>(
     `${base}/conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', body: input })).data
+}
+
+/** 发送上下文卡片：每次都追加一条（打开会话时附带的上下文同一会话只追加一次） */
+export async function postContext(conversationId: string, entryPoint: EntryPoint, context: ContextInput) {
+  return (await apiFetch<Envelope<{ message: MessageDto; conversation: ConversationDto }>>(
+    `${base}/conversations/${encodeURIComponent(conversationId)}/contexts`, { method: 'POST', body: { entryPoint, context } })).data
+}
+
+/** 换主题方案卡片的效果图：地址固定，服务端每次 302 到新的短时签名地址，可长期放在 <img> 中 */
+export function contextThemeCoverUrl(contextId: string) {
+  return `${API_BASE_URL.replace(/\/+$/, '')}${base}/contexts/${encodeURIComponent(contextId)}/theme-cover`
 }
 
 export async function markRead(conversationId: string, seq: number): Promise<{ customerReadSeq: number }> {

@@ -1,5 +1,6 @@
 import type {
   ConversationCounts,
+  ConversationTab,
   WorkbenchEvent,
 } from '#/api/core/customer-service';
 
@@ -32,6 +33,8 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
     sessionStorage.getItem(PRESENCE_KEY) === 'away' ? 'away' : 'online',
   );
   const counts = ref<ConversationCounts>({ mine: 0, offline: 0, queue: 0 });
+  /** 工作台当前标签：页面切走会被卸载，记在常驻 store 里以便切回时恢复 */
+  const workbenchTab = ref<ConversationTab>('queue');
   /** 未查看的提醒数，标签页重新可见后清零 */
   const unseen = ref(0);
   const listeners = new Set<Listener>();
@@ -241,6 +244,7 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
     stopPolling();
     document.removeEventListener('visibilitychange', onVisibility);
     unseen.value = 0;
+    workbenchTab.value = 'queue';
   }
 
   return {
@@ -254,5 +258,6 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
     stop,
     subscribe,
     unseen,
+    workbenchTab,
   };
 });

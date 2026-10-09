@@ -1,7 +1,7 @@
-import { reactive } from 'vue'
+import { reactive, shallowRef } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import {
-  errorReason, getCurrentConversation, listMessages, markRead as markReadApi, openConversation, postMessage,
+  errorReason, getCurrentConversation, listMessages, markRead as markReadApi, openConversation, postContext, postMessage,
   type ContextDto, type ContextInput, type ConversationDto, type CustomerEvent, type EntryPoint, type MessageDto,
 } from '@/services/api/customer-service'
 import { applyTranslation, maxSeq, mergeMessages, minSeq, readTargets } from './timeline'
@@ -25,10 +25,14 @@ const state = reactive({
   agentsOnline: false,
   connection: 'idle' as ConnectionState,
   unreadCount: 0,
-  /** 一次性提示：contextUnavailable（上下文不可用）/ openFailed */
-  notice: '' as '' | 'contextUnavailable' | 'openFailed',
+  /** 一次性提示：contextUnavailable（上下文不可用）/ openFailed / rateLimited（发送太频繁） */
+  notice: '' as '' | 'contextUnavailable' | 'openFailed' | 'rateLimited',
   busy: false,
 })
+/** 当前页面可一键发给客服的上下文（方案详情页登记方案、项目详情页登记项目），离开时清除；不随会话状态重置 */
+/** label：按钮提示里显示的方案编号或项目编号 */
+export interface PageContext { context: ContextInput; entryPoint: EntryPoint; label: string }
+const pageContext = shallowRef<PageContext | null>(null)
 const readSeqs = new Map<string, number>()
 let idleTimer: ReturnType<typeof setInterval> | undefined
 let readTimer: ReturnType<typeof setTimeout> | undefined
@@ -126,14 +130,15 @@ async function openRound(entryPoint: EntryPoint, context?: ContextInput) {
   try {
     applyOpen(await withSubject(() => openConversation(entryPoint, context)))
   } catch (failure) {
-    // 上下文不存在或无权使用时仍打开面板，只是不附带上下文
-    if (!context || errorReason(failure).reason !== 'CONTEXT_NOT_FOUND') throw failure
-    state.notice = 'contextUnavailable'
+    // 上下文不存在或无权使用、或发卡片太频繁时仍打开面板，只是不附带上下文
+    const { status, reason } = errorReason(failure)
+    if (!context || (status !== 429 && reason !== 'CONTEXT_NOT_FOUND')) throw failure
+    state.notice = status === 429 ? 'rateLimited' : 'contextUnavailable'
     applyOpen(await withSubject(() => openConversation(entryPoint)))
   }
 }
 
-/** 打开面板：复用未结束会话（带新上下文时追加卡片），绝不会创建项目 */
+/** 打开面板：复用未结束会话，带上下文时每次都追加一张卡片；绝不会创建项目 */
 export async function openWith(context: ContextInput | undefined, entryPoint: EntryPoint) {
   state.open = true
   state.notice = ''
@@ -146,6 +151,41 @@ export async function openWith(context: ContextInput | undefined, entryPoint: En
     await markRead()
   } catch {
     state.notice = 'openFailed'
+  } finally {
+    state.busy = false
+  }
+}
+
+export function setPageContext(value: PageContext | null) {
+  pageContext.value = value
+}
+
+/** 用户手动把当前页面的方案或项目作为卡片发到会话，可重复发送；会话已结束时先开启新一轮再发 */
+export async function sendPageContext() {
+  const current = pageContext.value
+  if (!current || state.busy) return false
+  const post = () => withSubject(() => postContext(state.conversation!.id, current.entryPoint, current.context))
+  state.notice = ''
+  state.busy = true
+  try {
+    if (!state.conversation || state.conversation.status === 'closed') await openRound('floating')
+    let result
+    try {
+      result = await post()
+    } catch (failure) {
+      if (errorReason(failure).reason !== 'CONVERSATION_CLOSED') throw failure
+      await openRound('floating')
+      result = await post()
+    }
+    connection.open(state.conversation!.id)
+    state.conversation = result.conversation
+    if (state.loaded) addMessages([result.message])
+    else await loadLatest()
+    return true
+  } catch (failure) {
+    const { status, reason } = errorReason(failure)
+    state.notice = status === 429 ? 'rateLimited' : reason === 'CONTEXT_NOT_FOUND' ? 'contextUnavailable' : 'openFailed'
+    return false
   } finally {
     state.busy = false
   }
@@ -257,5 +297,8 @@ export async function handleCustomerServiceLogin() {
 }
 
 export function useCustomerService() {
-  return { state, openWith, closePanel, send, sendOffline, retry, loadOlder, markRead, refreshCurrent, startIdlePolling, stopIdlePolling }
+  return {
+    state, pageContext, openWith, closePanel, send, sendOffline, sendPageContext, retry, loadOlder, markRead, refreshCurrent,
+    startIdlePolling, stopIdlePolling,
+  }
 }

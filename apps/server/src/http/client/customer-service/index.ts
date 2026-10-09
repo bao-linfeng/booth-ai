@@ -2,7 +2,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { Config } from '../../../config.js';
-import { currentConversation, openConversation, ownedConversation } from '../../../modules/customer-service/conversations.js';
+import type { createStorage } from '../../../infra/storage.js';
+import { themeContextObjectKey } from '../../../modules/customer-service/contexts.js';
+import { currentConversation, openConversation, ownedConversation, sendContext } from '../../../modules/customer-service/conversations.js';
 import { notFound, type ContextInput, type EntryPoint, type Subject } from '../../../modules/customer-service/domain.js';
 import { cancelReplyNotices } from '../../../modules/customer-service/emails.js';
 import { conversationChannel } from '../../../modules/customer-service/events.js';
@@ -15,7 +17,7 @@ import { requestMessageLocale } from '../../locale.js';
 import { enforceRateLimit, rateLimit } from '../../rate-limits.js';
 import { streamEvents } from '../../sse.js';
 import {
-  currentConversationSchema, eventsSchema, messagesQuerySchema, openConversationSchema, postMessageSchema, readSchema, ticketSchema,
+  contextThemeCoverSchema, currentConversationSchema, eventsSchema, messagesQuerySchema, openConversationSchema, postMessageSchema, readSchema, sendContextSchema, ticketSchema,
   visitorIssueSchema, visitorMergeSchema,
 } from './schema.js';
 import { requireSubject } from './subject.js';
@@ -24,7 +26,8 @@ import { clearVisitorCookie, setVisitorCookie, visitorToken } from './visitor-co
 type ConversationParams = { conversationId: string };
 
 // 在线客服客户端接口（开发计划 §6.2）。访客以 HttpOnly Cookie 中的令牌识别（见 visitor-cookie.ts），登录身份优先。
-export async function registerClientCustomerServiceRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
+export async function registerClientCustomerServiceRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis,
+  storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>): Promise<void> {
   const secureCookie = config.nodeEnv === 'production';
   await app.register(async scope => {
     scope.addHook('onRequest', async (_request, reply) => { reply.header('Cache-Control', 'private, no-store'); });
@@ -52,6 +55,8 @@ export async function registerClientCustomerServiceRoutes(app: FastifyInstance, 
 
     scope.post<{ Body: { context?: ContextInput; entryPoint: EntryPoint } }>('/conversations', { schema: openConversationSchema }, async (request, reply) => {
       const subject = await requireSubject(request, pool);
+      // 带上下文时每次都会追加卡片，与消息共用限流额度；只打开面板不计入
+      if (request.body.context) await enforceMessageLimits(request, reply, subject);
       const { created, ...data } = await openConversation(pool, redis, subject, request.body, requestMessageLocale(request));
       return reply.code(created ? 201 : 200).send({ code: 0, data });
     });
@@ -66,9 +71,25 @@ export async function registerClientCustomerServiceRoutes(app: FastifyInstance, 
 
     scope.post<{ Params: ConversationParams; Body: CustomerMessageInput }>('/conversations/:conversationId/messages', { schema: postMessageSchema }, async (request, reply) => {
       const subject = await requireSubject(request, pool);
-      await enforceMessageLimits(request, reply, subject);
+      await enforceMessageLimits(request, reply, subject, request.body.kind === 'offline');
       const { created, ...data } = await postCustomerMessage(pool, redis, subject, request.params.conversationId, request.body, requestMessageLocale(request));
       return reply.code(created ? 201 : 200).send({ code: 0, data });
+    });
+
+    scope.post<{ Params: ConversationParams; Body: { context: ContextInput; entryPoint: EntryPoint } }>('/conversations/:conversationId/contexts', {
+      schema: sendContextSchema,
+    }, async (request, reply) => {
+      const subject = await requireSubject(request, pool);
+      await enforceMessageLimits(request, reply, subject);
+      const data = await sendContext(pool, redis, subject, request.params.conversationId, request.body, requestMessageLocale(request));
+      return reply.code(201).send({ code: 0, data });
+    });
+
+    // 客户与坐席的 <img> 都带不了 Bearer，凭只在会话内可见的上下文 ID 换签；浏览器缓存短于签名有效期
+    scope.get<{ Params: { contextId: string } }>('/contexts/:contextId/theme-cover', { schema: contextThemeCoverSchema }, async (request, reply) => {
+      const url = await storage.signDownload(await themeContextObjectKey(pool, request.params.contextId), 300);
+      reply.header('Cache-Control', 'private, max-age=240');
+      return reply.redirect(url, 302);
     });
 
     scope.post<{ Params: ConversationParams; Body: { seq: number } }>('/conversations/:conversationId/read', { schema: readSchema }, async request => {
@@ -115,12 +136,12 @@ export async function registerClientCustomerServiceRoutes(app: FastifyInstance, 
       throw notFound();
     }
 
-    // 登录用户每分钟 20 条；访客每分钟 10 条且同一 IP 每分钟 30 条；访客留言每小时 5 条
-    async function enforceMessageLimits(request: FastifyRequest<{ Body: CustomerMessageInput }>, reply: FastifyReply, subject: Subject) {
+    // 登录用户每分钟 20 条；访客每分钟 10 条且同一 IP 每分钟 30 条；访客留言每小时 5 条。上下文卡片与普通消息共用额度
+    async function enforceMessageLimits(request: FastifyRequest, reply: FastifyReply, subject: Subject, offline = false) {
       if (subject.kind === 'user') return enforceRateLimit(redis, request, reply, 'csUserMessage');
       await enforceRateLimit(redis, request, reply, 'csVisitorMessage');
       await enforceRateLimit(redis, request, reply, 'csIpMessage');
-      if (request.body.kind === 'offline') await enforceRateLimit(redis, request, reply, 'csOffline');
+      if (offline) await enforceRateLimit(redis, request, reply, 'csOffline');
     }
   }, { prefix: '/customer-service' });
 }

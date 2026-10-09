@@ -2,7 +2,7 @@ import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import { transaction } from '../../infra/database.js';
 import { eligibleAgent } from './agents.js';
-import { resolveContext } from './contexts.js';
+import { resolveContext, type ResolvedContext } from './contexts.js';
 import {
   conversationColumns, conversationJoins, csError, notFound, subjectCondition, subjectKey, toAdminConversation, toContext, toCustomerConversation,
   toCustomerMessage, type AdminConversationDto, type ContextDto, type ContextInput, type ContextRow, type ConversationRow, type CsLocale, type EntryPoint, type Subject,
@@ -44,7 +44,18 @@ export async function announce(pool: Db, redis: Redis, conversationId: string, c
   }
 }
 
-/** 打开或复用未结束会话；带上下文时同一会话内相同上下文只追加一次（设计 §6.1） */
+/**
+ * 追加一张上下文卡片消息：同一会话内相同上下文复用已有快照记录（冲突时做一次无变化更新以取回 id，不改写早先卡片引用的快照），
+ * 卡片消息每次都新增一条。
+ */
+async function appendContextCard(client: pg.PoolClient, conversationId: string, resolved: ResolvedContext, entryPoint: EntryPoint, locale: CsLocale) {
+  const contextId = (await client.query<{ id: string }>(`INSERT INTO cs_conversation_contexts(conversation_id,kind,ref,project_id,entry_point,customer_locale,snapshot)
+    VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (conversation_id,kind,ref) DO UPDATE SET ref=EXCLUDED.ref RETURNING id`,
+  [conversationId, resolved.kind, resolved.ref, resolved.projectId, entryPoint, locale, JSON.stringify(resolved.snapshot)])).rows[0]!.id;
+  return (await insertMessage(client, conversationId, { senderType: 'system', kind: 'context', visibility: 'public', locale, contextId })).id;
+}
+
+/** 打开或复用未结束会话；带上下文时每次都追加一张卡片（客户点“咨询客服”即发送，设计 §6.1） */
 export async function openConversation(pool: pg.Pool, redis: Redis, subject: Subject, input: { context?: ContextInput; entryPoint: EntryPoint }, locale: CsLocale) {
   const resolved = input.context ? await resolveContext(pool, subject, input.context) : null;
   const result = await transaction(pool, async client => {
@@ -57,18 +68,33 @@ export async function openConversation(pool: pg.Pool, redis: Redis, subject: Sub
       id = (await client.query<{ id: string }>(`INSERT INTO cs_conversations(${subject.kind === 'user' ? 'customer_user_id' : 'visitor_id'},customer_locale)
         VALUES($1,$2) RETURNING id`, [subjectId, locale])).rows[0]!.id;
     }
-    let messageId: string | null = null;
-    if (resolved) {
-      const context = (await client.query<{ id: string }>(`INSERT INTO cs_conversation_contexts(conversation_id,kind,ref,project_id,entry_point,customer_locale,snapshot)
-        VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (conversation_id,kind,ref) DO NOTHING RETURNING id`,
-      [id, resolved.kind, resolved.ref, resolved.projectId, input.entryPoint, locale, JSON.stringify(resolved.snapshot)])).rows[0];
-      if (context) messageId = (await insertMessage(client, id, { senderType: 'system', kind: 'context', visibility: 'public', locale, contextId: context.id })).id;
-    }
+    const messageId = resolved ? await appendContextCard(client, id, resolved, input.entryPoint, locale) : null;
     return { id, created, messageId };
   });
   if (result.messageId) await announce(pool, redis, result.id, { messageIds: [result.messageId] });
   const conversation = await loadConversation(pool, result.id);
   return { created: result.created, conversation: conversation!.customer, contexts: await loadContexts(pool, result.id), agentsOnline: await agentsOnline(redis) };
+}
+
+/**
+ * 客户手动发送上下文卡片（如客服输入框上的“发送当前方案/项目”）：每次都追加一条卡片消息，同一上下文复用已有快照记录。
+ * 只发到本人未结束的会话，已结束时返回 CONVERSATION_CLOSED，由前端开启新一轮后重发。
+ */
+export async function sendContext(pool: pg.Pool, redis: Redis, subject: Subject, conversationId: string,
+  input: { context: ContextInput; entryPoint: EntryPoint }, locale: CsLocale) {
+  const resolved = await resolveContext(pool, subject, input.context);
+  const messageId = await transaction(pool, async client => {
+    const [condition, subjectId] = subjectCondition(subject, 'c', 2);
+    const row = (await client.query<{ status: ConversationRow['status'] }>(`SELECT c.status FROM cs_conversations c
+      WHERE c.id=$1 AND ${condition} AND c.deleted_at IS NULL FOR UPDATE`, [conversationId, subjectId])).rows[0];
+    if (!row) throw notFound();
+    if (row.status === 'closed') throw csError('CONVERSATION_CLOSED');
+    return appendContextCard(client, conversationId, resolved, input.entryPoint, locale);
+  });
+  await announce(pool, redis, conversationId, { messageIds: [messageId] });
+  const [message] = await loadMessages(pool, [messageId]);
+  const conversation = await loadConversation(pool, conversationId);
+  return { message: toCustomerMessage(message!)!, conversation: conversation!.customer };
 }
 
 export async function currentConversation(pool: Db, redis: Redis, subject: Subject) {
@@ -103,7 +129,7 @@ export function visibleTo(row: Pick<ConversationRow, 'status' | 'agentAdminId'>,
 const adminExtras = `(SELECT left(m.body,100) FROM cs_messages m WHERE m.conversation_id=c.id AND m.deleted_at IS NULL AND m.kind IN ('text','offline','note')
     ORDER BY m.seq DESC LIMIT 1) AS "lastMessagePreview",
   (SELECT count(*)::int FROM cs_messages m WHERE m.conversation_id=c.id AND m.deleted_at IS NULL AND m.sender_type='customer' AND m.seq > c.agent_read_seq) AS "unreadCount",
-  ARRAY(SELECT CASE WHEN x.kind='scheme' THEN '方案 ' || x.ref ELSE '项目 ' || (x.snapshot->>'projectNo') END
+  ARRAY(SELECT CASE WHEN x.kind='scheme' THEN '方案 ' || (x.snapshot->>'schemeCode') ELSE '项目 ' || (x.snapshot->>'projectNo') END
     FROM cs_conversation_contexts x WHERE x.conversation_id=c.id ORDER BY x.created_at, x.id) AS "contextSummary"`;
 
 export type ConversationTab = 'queue' | 'mine' | 'offline' | 'all' | 'closed';

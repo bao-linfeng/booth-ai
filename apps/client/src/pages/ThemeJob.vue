@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, ArrowRight, Loader2, CheckCircle2, CircleAlert, ImageIcon } from 'lucide-vue-next'
@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { useAsyncJob } from '@/composables/useAsyncJob'
 import { createThemeJobEventsTicket, getThemeJob, openThemeJobEvents, saveThemeSelection, type ThemeJob } from '@/services/api/theme-jobs'
 import { failureReasonText, phaseText as getPhaseText, getThemeJobStatusLabels } from '@/features/theme-jobs/labels'
+import { setPageContext } from '@/features/customer-service/useCustomerService'
 
 const route = useRoute()
 const router = useRouter()
@@ -66,7 +67,10 @@ onMounted(() => {
   loading.value = true
   void asyncJob.start(jobId).finally(() => { loading.value = false })
 })
-onUnmounted(() => { disposed = true })
+onUnmounted(() => {
+  disposed = true
+  setPageContext(null)
+})
 
 const isFinished = computed(() => {
   if (!jobData.value) return false
@@ -130,6 +134,16 @@ async function handleSelectResult(resultId: string) {
     savingSelection.value = false
   }
 }
+
+// 客服输入框的“发送当前方案”：已选定效果时附带本任务（服务端取发送时选定的那张作卡片图），否则发送原方案
+const themedContext = computed(() => canSelect.value && !!selectedResult.value && !selectionUncertain.value)
+watch([() => jobData.value?.schemeCode, themedContext], ([schemeCode, themed]) => {
+  setPageContext(schemeCode ? {
+    context: { kind: 'scheme', schemeCode, ...(themed ? { themeJobId: jobId } : {}) },
+    entryPoint: 'scheme_detail',
+    label: schemeCode,
+  } : null)
+}, { immediate: true })
 
 function continueWithSelection(destination: 'quote' | 'artwork') {
   if (!canContinue.value || !jobData.value) return

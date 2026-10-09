@@ -1,3 +1,5 @@
+import type { ProjectStatus } from './projects';
+
 import { useAppConfig } from '@vben/hooks';
 
 import { requestClient } from '#/api/request';
@@ -37,12 +39,14 @@ export interface SchemeSnapshot {
   lengthMm: null | number;
   widthMm: null | number;
   openingCount: null | number;
+  /** 从换主题结果页发出的卡片：发送时选定的 AI 换主题效果图 */
+  themeResultId?: string;
 }
 export interface ProjectSnapshot {
   projectNo: string;
   schemeCode: null | string;
   sourceType: 'manual_request' | 'quote_request';
-  status: string;
+  status: ProjectStatus;
   customerType: 'company' | 'individual';
   countryCode: string;
   city: string;
@@ -321,6 +325,20 @@ export async function openWorkbenchEvents(): Promise<EventSource> {
   return new EventSource(
     `${apiURL}${base}/events?ticket=${encodeURIComponent(ticket)}`,
   );
+}
+
+/**
+ * 会话方案卡片的封面图：参展商端接口，地址固定，服务端每次 302 到短时签名地址，
+ * 因此可以直接放进 <img>（图片请求带不了 Bearer，不能走管理端接口）。
+ * 换主题卡片凭上下文 ID 取发送时选定的效果图，其余取方案第一张效果图。
+ */
+export function schemeCardCoverUrl(
+  context: Extract<ConversationContext, { kind: 'scheme' }>,
+) {
+  const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
+  return context.snapshot.themeResultId
+    ? `${apiURL}/v1/client/customer-service/contexts/${encodeURIComponent(context.id)}/theme-cover`
+    : `${apiURL}/v1/client/schemes/${encodeURIComponent(context.snapshot.schemeCode)}/cover`;
 }
 
 /** 客户显示名：登录用户为昵称或用户名，访客为“访客 · 邮箱” */

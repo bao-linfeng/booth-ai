@@ -8,15 +8,28 @@ const conversationParams = { type: 'object', required: ['conversationId'], prope
 export const visitorIssueSchema = { tags, summary: '签发访客令牌（写入 HttpOnly Cookie；已持有有效令牌时复用）' };
 export const visitorMergeSchema = { tags, summary: '登录后合并访客会话并清除访客 Cookie（需带 X-CS-Visitor 头）' };
 
-export const openConversationSchema = { tags, summary: '打开或复用未结束会话', body: {
-  type: 'object', additionalProperties: false, required: ['entryPoint'], properties: {
-    entryPoint: { type: 'string', enum: [...ENTRY_POINTS] },
-    context: { oneOf: [
-      { type: 'object', additionalProperties: false, required: ['kind', 'schemeCode'], properties: { kind: { const: 'scheme' }, schemeCode: { type: 'string', minLength: 1, maxLength: 200 } } },
-      { type: 'object', additionalProperties: false, required: ['kind', 'projectId'], properties: { kind: { const: 'project' }, projectId: uuid } },
-    ] },
-  },
+const entryPoint = { type: 'string', enum: [...ENTRY_POINTS] };
+const context = { oneOf: [
+  { type: 'object', additionalProperties: false, required: ['kind', 'schemeCode'], properties: {
+    kind: { const: 'scheme' }, schemeCode: { type: 'string', minLength: 1, maxLength: 200 },
+    // 附带本人 AI 换主题任务当前选定的效果图
+    themeJobId: uuid,
+  } },
+  { type: 'object', additionalProperties: false, required: ['kind', 'projectId'], properties: { kind: { const: 'project' }, projectId: uuid } },
+] };
+
+export const openConversationSchema = { tags, summary: '打开或复用未结束会话（带上下文时每次追加一张卡片，与消息共用限流额度）', body: {
+  type: 'object', additionalProperties: false, required: ['entryPoint'], properties: { entryPoint, context },
 } };
+
+export const sendContextSchema = { tags, summary: '发送上下文卡片（每次都追加一条，与消息共用限流额度）', params: conversationParams, body: {
+  type: 'object', additionalProperties: false, required: ['entryPoint', 'context'], properties: { entryPoint, context },
+} };
+
+export const contextThemeCoverSchema = {
+  tags, summary: '换主题方案卡片的效果图（302 跳转到短时签名地址；凭上下文 ID 访问，地址固定可长期放在 <img> 中）',
+  params: { type: 'object', required: ['contextId'], properties: { contextId: uuid } },
+};
 
 export const currentConversationSchema = { tags, summary: '当前未结束会话、未读数与坐席在线状态' };
 

@@ -33,6 +33,6 @@ export async function registerClientModule(app: FastifyInstance, config: Config,
     await registerClientSchemeAssetRoutes(client, pool, storage);
     await registerThemeModelRoutes(client, pool, redis, storage);
     await registerArtworkJobRoutes(client, pool, redis, storage);
-    await registerClientCustomerServiceRoutes(client, config, pool, redis);
+    await registerClientCustomerServiceRoutes(client, config, pool, redis, storage);
   }, { prefix: '/api/v1/client' });
 }

@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import Composer from './Composer.vue'
 import MessageList from './MessageList.vue'
 import OfflineForm from './OfflineForm.vue'
+import SendContextButton from './SendContextButton.vue'
 import { useCustomerService } from './useCustomerService'
 
 // 聊天面板：桌面端宽 400px，移动端全屏；阿拉伯语使用 RTL
@@ -72,8 +73,12 @@ async function submitOffline(body: string, email: string) {
         :require-email="!auth.isLoggedIn"
         :sent="offlineSent"
         @submit="submitOffline"
-      />
-      <Composer v-else :disabled="state.busy" @send="send" />
+      >
+        <template #tools><SendContextButton /></template>
+      </OfflineForm>
+      <Composer v-else :disabled="state.busy" @send="send">
+        <template #tools><SendContextButton /></template>
+      </Composer>
     </SheetContent>
   </Sheet>
 </template>

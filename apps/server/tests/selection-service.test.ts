@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type pg from 'pg';
 import { emptyRequirement } from '../src/modules/selection/domain.js';
-import { getSelectionCatalog, getSelectionScheme, matchSelection, parseSelection } from '../src/modules/selection/service.js';
+import { getSchemeCoverUrl, getSelectionCatalog, getSelectionScheme, matchSelection, parseSelection } from '../src/modules/selection/service.js';
 
 const identity = { visitorId: 'visitor_for_selection_test', userId: 'user-1' };
 
@@ -65,4 +65,27 @@ test('selection dependency errors preserve HTTP status semantics and invisible s
   await assert.rejects(getSelectionCatalog(rejected), error => error === expected);
   const { pool } = selectionPool();
   await assert.rejects(getSelectionScheme(pool, { signDownload: async () => 'signed' }, 'HIDDEN'), { statusCode: 404 });
+});
+
+test('scheme cover signs the first rendering by order and hides schemes outside the public pool', async () => {
+  const scheme = { id: 'scheme-1', code: 'COVER', bomVerified: true, lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: 18, openingCount: 2,
+    productSystemId: 'system-1', styleId: null, industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [] };
+  const assets = [
+    ...['model', 'checklist', 'drawing', 'artwork'].map(type => ({ id: type, schemeId: scheme.id, type, order: 0, relatedAssetId: null, objectKey: type, width: null, height: null, mime: 'application/octet-stream' })),
+    ...[2, 0, 1].flatMap(order => [
+      { id: `r${order}`, schemeId: scheme.id, type: 'rendering', order, relatedAssetId: null, objectKey: `scheme/r${order}`, width: 1600, height: 900, mime: 'image/png' },
+      { id: `m${order}`, schemeId: scheme.id, type: 'mask', order, relatedAssetId: `r${order}`, objectKey: `scheme/m${order}`, width: 1600, height: 900, mime: 'image/png' },
+    ]),
+  ];
+  const { pool: base } = selectionPool();
+  const pool = { query: async (sql: string, params: unknown[] = []) => {
+    if (sql.includes('FROM schemes s')) return { rows: params[0] === 'COVER' ? [scheme] : [] };
+    if (sql.includes('JOIN LATERAL')) return { rows: assets };
+    return base.query(sql, params);
+  } } as unknown as pg.Pool;
+  const signed: Array<[string, number]> = [];
+  const storage = { signDownload: async (key: string, expiresIn = 300) => { signed.push([key, expiresIn]); return `https://assets.example/${key}`; } };
+  assert.equal(await getSchemeCoverUrl(pool, storage, 'COVER', 300), 'https://assets.example/scheme/r0');
+  assert.deepEqual(signed, [['scheme/r0', 300]]);
+  await assert.rejects(getSchemeCoverUrl(pool, storage, 'HIDDEN', 300), { statusCode: 404 });
 });

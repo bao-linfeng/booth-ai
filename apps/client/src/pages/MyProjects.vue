@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { appLocale } from '@/plugins/i18n'
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, Loader2, MessageCircle } from 'lucide-vue-next'
-import { openWith as openCustomerService } from '@/features/customer-service/useCustomerService'
+import { openWith as openCustomerService, setPageContext } from '@/features/customer-service/useCustomerService'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,12 +13,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import MainLayout from '@/layouts/MainLayout.vue'
-import { getScopeLabel } from '@/features/projects/labels'
+import { getProjectStatusLabels, getScopeLabel } from '@/features/projects/labels'
 import { closedStatuses, dateRange, getNextSteps, joinParts, regionName, summarizeRequirement } from '@/features/projects/summary'
 import type { Catalog } from '@/features/selection/types'
 import { useAuthStore } from '@/stores/auth'
 import { getCatalogOptions } from '@/services/api/catalog'
-import { getMyProject, getMyProjects, type MyProjectDetail, type ProjectPage, type ProjectStatus } from '@/services/api/projects'
+import { getMyProject, getMyProjects, type MyProjectDetail, type ProjectPage } from '@/services/api/projects'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -34,14 +34,7 @@ const page = ref(1)
 const filters = reactive({ projectNo: '', status: '', sourceType: '', exhibitionName: '' })
 
 const date = (value: string) => new Date(value).toLocaleString(appLocale.value === 'zh' ? 'zh-CN' : appLocale.value)
-const statusLabels = computed<Record<ProjectStatus, string>>(() => ({
-  pending: t('projects.statusLabelPending'),
-  following: t('projects.statusLabelFollowing'),
-  quoted: t('projects.statusLabelQuoted'),
-  won: t('projects.statusLabelWon'),
-  lost: t('projects.statusLabelLost'),
-  closed: t('projects.statusLabelClosed'),
-}))
+const statusLabels = computed(() => getProjectStatusLabels(t))
 const nextSteps = computed(() => getNextSteps(t))
 const materialLabels = computed<Record<string, string>>(() => ({
   available: t('projects.materialAvailable'),
@@ -99,6 +92,11 @@ async function load(next = page.value) {
 function login() { void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } }) }
 onMounted(() => load())
 watch(() => route.params.projectId, () => { detail.value = undefined; list.value = undefined; void load(1) })
+// 客服输入框的“发送当前项目”：只在项目详情加载成功后登记，回到列表或离开页面时清除
+watch(() => (route.params.projectId && !error.value ? detail.value : undefined), (project) => {
+  setPageContext(project ? { context: { kind: 'project', projectId: project.projectId }, entryPoint: 'my_project', label: project.projectNo } : null)
+}, { immediate: true })
+onBeforeUnmount(() => setPageContext(null))
 </script>
 
 <template>

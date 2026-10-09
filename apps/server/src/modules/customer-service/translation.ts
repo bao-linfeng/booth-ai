@@ -67,7 +67,7 @@ interface Source { body: string; locale: CsLocale; seq: string; senderType: 'cus
 async function loadSource(db: Pick<pg.Pool, 'query'>, messageId: string, locale: CsLocale): Promise<Source | null> {
   return (await db.query<Source>(`SELECT m.body, m.locale, m.seq, m.sender_type AS "senderType", m.conversation_id AS "conversationId",
       c.customer_locale AS "customerLocale", t.status, c.agent_admin_id AS "agentAdminId", c.status AS "conversationStatus",
-      ARRAY(SELECT DISTINCT code FROM (SELECT CASE WHEN x.kind='scheme' THEN x.ref ELSE x.snapshot->>'schemeCode' END AS code
+      ARRAY(SELECT DISTINCT code FROM (SELECT x.snapshot->>'schemeCode' AS code
         FROM cs_conversation_contexts x WHERE x.conversation_id=c.id) codes WHERE code IS NOT NULL) AS "schemeCodes"
     FROM cs_message_translations t JOIN cs_messages m ON m.id=t.message_id JOIN cs_conversations c ON c.id=m.conversation_id
     WHERE t.message_id=$1 AND t.target_locale=$2 AND m.deleted_at IS NULL AND c.deleted_at IS NULL`, [messageId, locale])).rows[0] ?? null;

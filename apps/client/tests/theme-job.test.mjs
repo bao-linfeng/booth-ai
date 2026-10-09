@@ -61,6 +61,7 @@ after(async () => {
 })
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: ThemeJob } = await server.ssrLoadModule('/src/pages/ThemeJob.vue')
+const { pageContext } = (await server.ssrLoadModule('/src/features/customer-service/useCustomerService.ts')).useCustomerService()
 const jobId = '12345678-1234-1234-1234-123456789012'
 const endpoint = `/api/v1/client/theme-jobs/${jobId}`
 const quoteLabel = '使用已选定效果申请报价'
@@ -349,4 +350,37 @@ test('missing selected result cannot enable downstream actions; completed empty 
     assert.match(empty.container.textContent, /暂无可预览的效果图/)
     assert.ok(button(empty.container, '重新加载任务'))
   } finally { await empty.close() }
+})
+
+test('customer service "send scheme" attaches this task only while a selected effect is confirmed, and is cleared on leaving', async () => {
+  const plain = { context: { kind: 'scheme', schemeCode: 'SC-6030' }, entryPoint: 'scheme_detail', label: 'SC-6030' }
+  const themed = { ...plain, context: { ...plain.context, themeJobId: jobId } }
+  let mounted = await mount()
+  try {
+    assert.deepEqual(pageContext.value, plain, 'without a selection the original scheme is sent')
+    button(mounted.container, '选用此效果').click()
+    await settle()
+    assert.deepEqual(pageContext.value, themed, 'the card then uses the selected effect (resolved by the server at send time)')
+  } finally {
+    await mounted.close()
+  }
+  assert.equal(pageContext.value, null, 'leaving the page clears it')
+
+  mounted = await mount({ get: () => job({ selection: { resultId: 'result-1', revision: 1 } }), save: () => { throw new Error('network') } })
+  try {
+    assert.deepEqual(pageContext.value, themed, 'a restored selection is attached right away')
+    await preview(mounted, 2)
+    button(mounted.container, '选用此效果').click()
+    await settle()
+    assert.deepEqual(pageContext.value, plain, 'an unconfirmed selection falls back to the original scheme')
+  } finally {
+    await mounted.close()
+  }
+
+  mounted = await mount({ get: () => job({ status: 'failed', results: [], failure: { reason: 'GENERATION_FAILED', retryable: true } }) })
+  try {
+    assert.deepEqual(pageContext.value, plain, 'a failed task still offers the original scheme')
+  } finally {
+    await mounted.close()
+  }
 })

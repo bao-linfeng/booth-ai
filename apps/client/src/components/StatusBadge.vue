@@ -3,6 +3,7 @@ import { computed, type HTMLAttributes } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { cva } from 'class-variance-authority'
 import { Badge } from '@/components/ui/badge'
+import { getProjectStatusLabels } from '@/features/projects/labels'
 import { getThemeJobStatusLabels } from '@/features/theme-jobs/labels'
 import type { ProjectStatus } from '@/services/api/projects'
 import type { ThemeJob } from '@/services/api/theme-jobs'
@@ -51,14 +52,7 @@ const artworkLabels = computed<Record<ArtworkStatus, string>>(() => ({
   failed: t('artworkJob.statusFailed'),
 }))
 
-const projectLabels = computed<Record<ProjectStatus, string>>(() => ({
-  pending: t('projects.statusLabelPending'),
-  following: t('projects.statusLabelFollowing'),
-  quoted: t('projects.statusLabelQuoted'),
-  won: t('projects.statusLabelWon'),
-  lost: t('projects.statusLabelLost'),
-  closed: t('projects.statusLabelClosed'),
-}))
+const projectLabels = computed(() => getProjectStatusLabels(t))
 
 const tone = computed<Tone>(() => {
   if (props.domain === 'project') return projectTones[props.status as ProjectStatus] ?? 'muted'

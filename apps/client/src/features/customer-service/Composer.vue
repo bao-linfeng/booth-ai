@@ -29,6 +29,7 @@ function onKeydown(event: KeyboardEvent) {
 
 <template>
   <form class="space-y-2 border-t px-4 py-3" @submit.prevent="submit">
+    <slot name="tools" />
     <Textarea
       v-model="body"
       :maxlength="MAX"

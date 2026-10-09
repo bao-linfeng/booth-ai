@@ -4,7 +4,7 @@ import type { Redis } from 'ioredis';
 import type { Config } from '../../../config.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { requirementSchema } from '../../../modules/selection/domain.js';
-import { getSelectionCatalog, getSelectionScheme, matchSelection, parseSelection,
+import { getSchemeCoverUrl, getSelectionCatalog, getSelectionScheme, matchSelection, parseSelection,
   type MatchSelectionInput, type ParseSelectionInput } from '../../../modules/selection/service.js';
 import { requestMessageLocale } from '../../locale.js';
 import { getVisitorId } from './identity.js';
@@ -87,6 +87,23 @@ export async function registerSelectionRoutes(app: FastifyInstance, pool: pg.Poo
 
       request.log.info({ attemptId: data.attemptId, searchId: data.searchId }, 'selection search recorded');
       return { code: 0, data };
+    });
+
+    // 地址固定、每次重新签名，可长期放在 <img> 里（客服会话中的方案卡片）；浏览器缓存短于签名有效期
+    selection.get<{ Params: { code: string } }>('/schemes/:code/cover', {
+      schema: {
+        tags: ['AI 智选'],
+        summary: '方案封面图（302 跳转到第一张效果图的短时签名地址）',
+        params: {
+          type: 'object',
+          required: ['code'],
+          properties: { code: { type: 'string', minLength: 1, maxLength: 200 } }
+        }
+      }
+    }, async (request, reply) => {
+      const url = await getSchemeCoverUrl(pool, storage, request.params.code, 300);
+      reply.header('Cache-Control', 'private, max-age=240');
+      return reply.redirect(url, 302);
     });
 
     selection.get<{ Params: { code: string } }>('/schemes/:code', {

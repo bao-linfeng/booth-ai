@@ -117,6 +117,7 @@ async function mount() {
 
 beforeEach(() => {
   cs.resetCustomerService()
+  cs.setPageContext(null)
   localStorage.removeItem('booth-ai:cs-visitor')
   FakeEventSource.instances = []
   appLocale.value = 'zh'
@@ -303,5 +304,128 @@ test('?cs=open from reply emails opens the panel and removes the query; the laun
   assert.equal(cs.useCustomerService().state.open, true)
   assertNoNode(container.querySelector('[data-cs-unread]'), 'unread badge hidden while the panel is open')
   assert.equal(localStorage.getItem('booth-ai:cs-visitor'), null, 'signed-in users never get a visitor')
+  unmount()
+})
+
+test('the scheme registered by the page can be sent repeatedly as context cards from above the composer and the offline form', async () => {
+  const schemeContext = { id: 'ctx-1', entryPoint: 'scheme_detail', createdAt: '2026-10-08T00:00:00Z', kind: 'scheme', schemeCode: 'BS-001',
+    snapshot: { schemeCode: 'BS-001', name: '3×3 单开口', lengthMm: 3000, widthMm: 3000, openingCount: 1 } }
+  let seq = 10
+  let reject = null
+  const calls = setup({ respond: call => {
+    if (!call.path.endsWith('/contexts')) return
+    if (reject) { const failed = reject; reject = null; throw failed }
+    return { message: message(++seq, { senderType: 'system', kind: 'context', context: schemeContext }), conversation: conversation() }
+  } })
+  const { unmount, container } = await mount()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  assertNoNode(container.querySelector('[data-cs-send-context]'), 'hidden when the page has no scheme')
+
+  cs.setPageContext({ context: { kind: 'scheme', schemeCode: 'BS-001' }, entryPoint: 'scheme_detail', label: 'BS-001' })
+  await settle()
+  const form = container.querySelector('[data-cs-panel] form')
+  assert.equal(form.firstElementChild?.hasAttribute('data-cs-send-context'), true, 'the button sits above the textarea')
+  assert.equal(form.querySelector('[data-cs-send-context]').textContent.trim(), '发送当前方案')
+  const cards = () => container.querySelector('[data-cs-panel]').textContent.split('3×3 单开口').length - 1
+  for (let n = 0; n < 2; n++) {
+    container.querySelector('[data-cs-send-context]').click()
+    await settle()
+  }
+  const posts = calls.filter(call => call.path.endsWith('/contexts'))
+  assert.deepEqual(posts.map(call => [call.path, call.body]), Array.from({ length: 2 }, () =>
+    [`/api/v1/client/customer-service/conversations/${conversationId}/contexts`, { entryPoint: 'scheme_detail', context: { kind: 'scheme', schemeCode: 'BS-001' } }]))
+  assert.equal(cards(), 2, 'every click adds a card')
+  const covers = [...container.querySelectorAll('[data-cs-scheme-cover] img')].map(img => img.getAttribute('src'))
+  assert.deepEqual(covers, Array(2).fill('/api/v1/client/schemes/BS-001/cover'), 'cards use the stable cover address, never a signed URL')
+  container.querySelector('[data-cs-scheme-cover]').click()
+  await settle()
+  assert.equal([...document.body.querySelectorAll('[role="dialog"] img')].some(img => img.getAttribute('src') === '/api/v1/client/schemes/BS-001/cover'), true,
+    'clicking the thumbnail opens the preview')
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await settle()
+  container.querySelector('[data-cs-scheme-cover] img').dispatchEvent(new Event('error'))
+  await settle()
+  assert.equal(container.querySelectorAll('[data-cs-scheme-cover]').length, 1, 'a broken cover falls back to the icon')
+  assert.equal(container.querySelector('[data-cs-send-context]').disabled, false)
+  assert.equal(calls.filter(call => call.path.endsWith('/conversations')).length, 1, 'sending never re-opens with a context')
+
+  reject = failure(409, 'CONVERSATION_CLOSED')
+  assert.equal(await cs.sendPageContext(), true)
+  assert.deepEqual(calls.filter(call => call.path.endsWith('/conversations')).at(-1).body, { entryPoint: 'floating' }, 'a closed round is reopened before resending')
+  assert.equal(calls.filter(call => call.path.endsWith('/contexts')).length, 4)
+
+  reject = failure(429, 'RATE_LIMITED')
+  assert.equal(await cs.sendPageContext(), false)
+  await settle()
+  assert.match(container.textContent, /发送太频繁/)
+
+  const { state } = cs.useCustomerService()
+  state.agentsOnline = false
+  await settle()
+  const offline = container.querySelector('[data-cs-offline]')
+  assert.equal(offline.querySelector('[data-cs-send-context] + textarea') !== null, true, 'offline form: the button sits right above the textarea')
+
+  cs.setPageContext(null)
+  await settle()
+  assertNoNode(container.querySelector('[data-cs-send-context]'), 'cleared when leaving the scheme page')
+  unmount()
+})
+
+test('a card sent from the theme result page shows its selected effect through the context address and is labelled as AI themed', async () => {
+  const card = (id, extra = {}) => ({ id, entryPoint: 'scheme_detail', createdAt: '2026-10-08T00:00:00Z', kind: 'scheme', schemeCode: 'BS-001',
+    snapshot: { schemeCode: 'BS-001', name: '3×3 单开口', lengthMm: 3000, widthMm: 3000, openingCount: 1, ...extra } })
+  setup({ messages: [
+    message(1, { senderType: 'system', kind: 'context', context: card('ctx-plain') }),
+    message(2, { senderType: 'system', kind: 'context', context: card('ctx-theme', { themeResultId: 'result-1' }) }),
+  ] })
+  const { unmount, container } = await mount()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  const covers = [...container.querySelectorAll('[data-cs-scheme-cover] img')].map(img => img.getAttribute('src'))
+  assert.deepEqual(covers, ['/api/v1/client/schemes/BS-001/cover', '/api/v1/client/customer-service/contexts/ctx-theme/theme-cover'])
+  const labels = [...container.querySelectorAll('[data-cs-themed]')].map(node => node.textContent.trim())
+  assert.deepEqual(labels, ['AI 换主题效果'], 'only the themed card is labelled')
+  unmount()
+})
+
+test('the project detail registers its project: the panel offers "send this project" and every consult click opens with the project card', async () => {
+  const projectId = '33333333-3333-4333-8333-333333333333'
+  const projectContext = { id: 'ctx-p', entryPoint: 'my_project', createdAt: '2026-10-08T00:00:00Z', kind: 'project', projectId,
+    snapshot: { projectNo: 'PJ-00000076', schemeCode: null, sourceType: 'quote_request', status: 'following', exhibitionName: '常州新能源', city: '天津市' } }
+  let seq = 20
+  let limited = false
+  const calls = setup({ loggedIn: true, respond: call => {
+    if (call.path.endsWith('/conversations') && call.body.context) {
+      if (limited) throw failure(429, 'RATE_LIMITED')
+      return { conversation: conversation(), contexts: [projectContext], agentsOnline: true }
+    }
+    if (call.path.endsWith('/contexts')) return { message: message(++seq, { senderType: 'system', kind: 'context', context: projectContext }), conversation: conversation() }
+  } })
+  const { unmount, container } = await mount()
+  cs.setPageContext({ context: { kind: 'project', projectId }, entryPoint: 'my_project', label: 'PJ-00000076' })
+  for (let n = 0; n < 2; n++) await cs.openWith({ kind: 'project', projectId }, 'my_project')
+  await settle()
+  const opens = calls.filter(call => call.path.endsWith('/conversations'))
+  assert.deepEqual(opens.map(call => call.body), Array(2).fill({ entryPoint: 'my_project', context: { kind: 'project', projectId } }),
+    'each consult click carries the project so the server appends a card every time')
+
+  const button = container.querySelector('[data-cs-send-context]')
+  assert.equal(button.textContent.trim(), '发送当前项目')
+  assert.equal(button.getAttribute('title'), '项目 · PJ-00000076')
+  button.click()
+  await settle()
+  assert.deepEqual(calls.filter(call => call.path.endsWith('/contexts')).map(call => call.body), [{ entryPoint: 'my_project', context: { kind: 'project', projectId } }])
+  assert.match(container.querySelector('[data-cs-panel]').textContent, /PJ-00000076/)
+  assert.match(container.querySelector('[data-cs-panel]').textContent, /常州新能源天津市 · 跟进中/, 'the card shows the localized project status')
+  assert.doesNotMatch(container.querySelector('[data-cs-panel]').textContent, /following/)
+
+  limited = true
+  await cs.openWith({ kind: 'project', projectId }, 'my_project')
+  await settle()
+  const { state } = cs.useCustomerService()
+  assert.equal(state.open, true, 'a rate-limited card still opens the panel')
+  assert.deepEqual(calls.filter(call => call.path.endsWith('/conversations')).at(-1).body, { entryPoint: 'my_project' })
+  assert.match(container.textContent, /发送太频繁/)
   unmount()
 })
