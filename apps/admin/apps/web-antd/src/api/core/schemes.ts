@@ -140,7 +140,10 @@ export async function deleteSchemeApi(code: string) {
   );
 }
 
+/** rowId 在单次导入内唯一；sheetName + rowNumber 定位原文件中的工作表与行。 */
 export interface ImportPreviewRow {
+  rowId: number;
+  sheetName: string;
   rowNumber: number;
   code: string;
   name: string;
@@ -166,7 +169,13 @@ export interface ImportCommitResult {
   created: number;
   updated: number;
   dictionaryItemsCreated: number;
-  failed: { rowNumber: number; code: string; reason: string }[];
+  failed: {
+    code: string;
+    reason: string;
+    rowId: number;
+    rowNumber: number;
+    sheetName: string;
+  }[];
 }
 
 export async function previewImportApi(file: File) {

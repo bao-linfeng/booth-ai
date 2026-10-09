@@ -133,9 +133,9 @@ const beforeUpload = (file: File) => {
 
 function exportFailedRows() {
   if (!commitResult.value?.failed.length) return;
-  const header = '行号\t方案编号\t失败原因\n';
+  const header = '工作表\t行号\t方案编号\t失败原因\n';
   const rows = commitResult.value.failed
-    .map((r) => `${r.rowNumber}\t${r.code}\t${r.reason}`)
+    .map((r) => `${r.sheetName}\t${r.rowNumber}\t${r.code}\t${r.reason}`)
     .join('\n');
   const content = header + rows;
   const blob = new Blob([`\uFEFF${content}`], {
@@ -145,6 +145,7 @@ function exportFailedRows() {
 }
 
 const previewColumns = [
+  { title: '工作表', dataIndex: 'sheetName', width: 120, ellipsis: true },
   { title: '行号', dataIndex: 'rowNumber', width: 70 },
   { title: '方案编号', dataIndex: 'code', width: 140 },
   { title: '方案名称', dataIndex: 'name', width: 180 },
@@ -166,6 +167,7 @@ const previewColumns = [
 ];
 
 const errorColumns = [
+  { title: '工作表', dataIndex: 'sheetName', width: 120, ellipsis: true },
   { title: '行号', dataIndex: 'rowNumber', width: 70 },
   { title: '方案编号', dataIndex: 'code', width: 140 },
   { title: '失败原因', dataIndex: 'reason' },
@@ -182,7 +184,7 @@ defineExpose({ open });
         type="info"
         class="mb-4"
         message="上传说明"
-        description="请上传 .xlsx 格式的方案打标模板，第 1 行为表头，从第 2 行开始为数据行。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按有效方案自动补齐开口面数、展位长宽高和面积字典。"
+        description="请上传 .xlsx 格式的方案打标模板，每个数据工作表第 1 行为表头，从第 2 行开始为数据行（名称含“说明”“选项”的工作表不导入）。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按有效方案自动补齐开口面数、展位长宽高和面积字典。"
         show-icon
       />
       <div class="mb-3 flex justify-end">
@@ -264,7 +266,7 @@ defineExpose({ open });
         :data-source="previewResult.rows"
         size="small"
         :pagination="{ pageSize: 10, showSizeChanger: false }"
-        row-key="rowNumber"
+        row-key="rowId"
         :scroll="{ y: 320 }"
       />
     </template>
@@ -291,7 +293,7 @@ defineExpose({ open });
         :data-source="commitResult.failed"
         size="small"
         :pagination="false"
-        row-key="rowNumber"
+        row-key="rowId"
       >
         <template #title>
           <div class="flex items-center justify-between">
