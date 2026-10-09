@@ -12,6 +12,7 @@ import { customerMessagesAfter, listCustomerMessages, markCustomerRead, postCust
 import { touchCustomer } from '../../../modules/customer-service/presence.js';
 import { issueVisitor, mergeVisitor, resolveVisitor, touchVisitor, visitorActive } from '../../../modules/customer-service/visitors.js';
 import { loadConversation } from '../../../modules/customer-service/store.js';
+import { revalidatePrincipal, type Principal } from '../../../modules/identity/principal.js';
 import { clientUserId, issueEventTicket, requirePrincipal } from '../../authentication.js';
 import { requestMessageLocale } from '../../locale.js';
 import { enforceRateLimit, rateLimit } from '../../rate-limits.js';
@@ -24,6 +25,18 @@ import { requireSubject } from './subject.js';
 import { clearVisitorCookie, setVisitorCookie, visitorToken } from './visitor-cookie.js';
 
 type ConversationParams = { conversationId: string };
+
+/** 客户流心跳：登录客户按建立时的令牌复核 Session，访客复核令牌仍有效；失效返回 false 断流，有效时续期客户在线 */
+export async function customerStreamHeartbeat(pool: pg.Pool, redis: Redis, conversationId: string, subject: Subject, principal: Principal | null): Promise<boolean> {
+  if (subject.kind === 'user') {
+    if (!principal || !await revalidatePrincipal(pool, redis, principal)) return false;
+  } else {
+    await touchVisitor(pool, subject.visitorId);
+    if (!await visitorActive(pool, subject.visitorId)) return false;
+  }
+  await touchCustomer(redis, conversationId);
+  return true;
+}
 
 // 在线客服客户端接口（开发计划 §6.2）。访客以 HttpOnly Cookie 中的令牌识别（见 visitor-cookie.ts），登录身份优先。
 export async function registerClientCustomerServiceRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis,
@@ -121,12 +134,7 @@ export async function registerClientCustomerServiceRoutes(app: FastifyInstance, 
           const conversation = await loadConversation(pool, conversationId);
           return [...messages.map(message => ({ type: 'message.created', message })), { type: 'ready', conversation: conversation?.customer ?? null }];
         },
-        onHeartbeat: async () => {
-          await touchCustomer(redis, conversationId);
-          if (subject.kind === 'user') return true;
-          await touchVisitor(pool, subject.visitorId);
-          return visitorActive(pool, subject.visitorId);
-        },
+        onHeartbeat: () => customerStreamHeartbeat(pool, redis, conversationId, subject, request.principal),
       });
     });
 

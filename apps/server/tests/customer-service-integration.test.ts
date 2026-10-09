@@ -4,7 +4,9 @@ import test from 'node:test';
 import type { Redis } from 'ioredis';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { createSession, encryptJwt } from '../src/infra/session.js';
+import { workbenchStream } from '../src/http/admin/customer-service/index.js';
+import { customerStreamHeartbeat } from '../src/http/client/customer-service/index.js';
+import { createSession, destroySession, encryptJwt } from '../src/infra/session.js';
 import { requeueAgentConversations } from '../src/modules/customer-service/agents.js';
 import {
   claimConversation, closeConversation, getConversationDetail, listConversations, openConversation, releaseConversation, sendContext, transferConversation,
@@ -17,6 +19,7 @@ import { updateSettings } from '../src/modules/customer-service/settings.js';
 import { issueVisitor, mergeVisitor, resolveVisitor } from '../src/modules/customer-service/visitors.js';
 import { seedAiModel } from './ai-fixtures.js';
 import { themeContextObjectKey } from '../src/modules/customer-service/contexts.js';
+import { resolvePrincipal, revokeAccountSessions } from '../src/modules/identity/principal.js';
 import { csTestPool, csTestRedis, seedAdmin, seedProject, seedScheme, seedThemeJob, seedUser } from './cs-fixtures.js';
 
 const enabled = { skip: !process.env.CS_TEST_DATABASE_URL || !process.env.CS_TEST_REDIS_URL };
@@ -290,6 +293,82 @@ test('agents online follows presence and away state', enabled, async t => {
   assert.equal((await openConversation(pool, redis, subject, { entryPoint: 'floating' }, 'en')).agentsOnline, true);
   await redis.zadd('cs:presence', Date.now() - 1, agent);
   assert.equal((await openConversation(pool, redis, subject, { entryPoint: 'floating' }, 'en')).agentsOnline, false, 'expired heartbeats are pruned');
+});
+
+test('SSE heartbeats revalidate the login session and latest permissions, narrowing supervision without reconnecting (CS-B04)', enabled, async t => {
+  const pool = await csTestPool(t);
+  const redis = csTestRedis(t);
+  // 模拟一次新登录：Session 携带账户当前的 session_version
+  const login = async (site: 'client' | 'admin', localId: string) => {
+    const { sessionVersion } = (await pool.query(`SELECT session_version AS "sessionVersion" FROM ${site === 'client' ? 'users' : 'admins'} WHERE id=$1`,
+      [localId])).rows[0];
+    const token = await createSession(redis, { site, localId, externalUserId: 1, username: 'test', externalJwtCiphertext: encryptJwt('jwt', 'test-secret'),
+      loginSource: 'password', sessionVersion }, 3600, Math.floor(Date.now() / 1000) + 3600);
+    return resolvePrincipal(pool, redis, token, site);
+  };
+  const grant = (adminId: string, permissions: string[]) => pool.query(
+    'UPDATE admin_roles r SET permission_codes=$2 FROM admins a WHERE a.id=$1 AND r.name=ANY(a.roles)', [adminId, permissions]);
+
+  // 登录客户：登出（销毁 Session）或服务端撤销全部 Session 后，下一次心跳断流；未失效时续期客户在线
+  const customer = await seedUser(pool);
+  const subject: Subject = { kind: 'user', userId: customer };
+  const conversationId = (await openConversation(pool, redis, subject, { entryPoint: 'floating' }, 'en')).conversation.id;
+  await redis.del(`cs:customer-presence:${conversationId}`);
+  const loggedOut = await login('client', customer);
+  const revoked = await login('client', customer);
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, loggedOut), true);
+  assert.equal(await redis.exists(`cs:customer-presence:${conversationId}`), 1);
+  await destroySession(redis, loggedOut.token);
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, loggedOut), false, 'logged-out sessions stop streaming');
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, revoked), true);
+  await revokeAccountSessions(pool, 'client', customer);
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, revoked), false, 'revoked sessions stop streaming');
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, null), false);
+  const visitor: Subject = { kind: 'visitor', visitorId: (await issueVisitor(pool, 'en')).visitorId };
+  const visitorConversation = (await openConversation(pool, redis, visitor, { entryPoint: 'floating' }, 'en')).conversation.id;
+  assert.equal(await customerStreamHeartbeat(pool, redis, visitorConversation, visitor, null), true);
+  await mergeVisitor(pool, redis, await seedUser(pool), visitor.visitorId);
+  assert.equal(await customerStreamHeartbeat(pool, redis, visitorConversation, visitor, null), false, 'merged visitor tokens stop streaming');
+
+  // 主管：撤销 supervise 但保留 read + reply 后，旧流在下一次心跳后只放行自己与队列的事件；重新连接按最新权限计算
+  const supervisor = await seedAdmin(pool, ['customer-service.read', 'customer-service.reply', 'customer-service.supervise']);
+  const other = await seedAdmin(pool);
+  const event = (agentAdminId: string | null) => JSON.stringify({ type: 'queue.changed', conversationId, status: 'active', agentAdminId });
+  const supervising = workbenchStream(pool, redis, await login('admin', supervisor), true);
+  assert.deepEqual([supervising.visible(event(other)), supervising.visible(event(supervisor)), supervising.visible(event(null))], [true, true, true]);
+  await grant(supervisor, ['customer-service.read', 'customer-service.reply']);
+  assert.equal(await supervising.heartbeat(), true, 'agents keep streaming after losing supervision');
+  assert.deepEqual([supervising.visible(event(other)), supervising.visible(event(supervisor)), supervising.visible(event(null))], [false, true, true]);
+  assert.ok(await redis.zscore('cs:presence', supervisor), 'the heartbeat still renews agent presence');
+  assert.equal(workbenchStream(pool, redis, await login('admin', supervisor), true).visible(event(other)), false);
+  await grant(supervisor, ['customer-service.read', 'customer-service.reply', 'customer-service.supervise']);
+  assert.equal(await supervising.heartbeat(), true);
+  assert.equal(supervising.visible(event(other)), true, 'regranted supervision widens the scope again');
+
+  // 只读连接：撤销 Session 或失去 read 后断流
+  const reader = await seedAdmin(pool, ['customer-service.read']);
+  const readerSession = await login('admin', reader);
+  const reading = workbenchStream(pool, redis, readerSession, false);
+  assert.equal(await reading.heartbeat(), true);
+  assert.equal(await redis.zscore('cs:presence', reader), null, 'read-only connections never count as online agents');
+  await revokeAccountSessions(pool, 'admin', reader);
+  assert.equal(await reading.heartbeat(), false, 'revoked read-only sessions stop streaming');
+  const demoted = workbenchStream(pool, redis, await login('admin', reader), false);
+  await grant(reader, ['projects.read']);
+  assert.equal(await demoted.heartbeat(), false, 'losing customer-service.read stops streaming');
+
+  // 坐席：Session 失效只断流，不退回会话（可能仍在其他终端在线）；失去坐席资格时退回会话
+  await claimConversation(pool, redis, { adminId: other, supervise: false }, conversationId);
+  const otherSession = await login('admin', other);
+  await destroySession(redis, otherSession.token);
+  assert.equal(await workbenchStream(pool, redis, otherSession, true).heartbeat(), false);
+  assert.equal((await pool.query('SELECT agent_admin_id FROM cs_conversations WHERE id=$1', [conversationId])).rows[0].agent_admin_id, other);
+  const agentStream = workbenchStream(pool, redis, await login('admin', other), true);
+  await grant(other, ['customer-service.read']);
+  assert.equal(await agentStream.heartbeat(), false);
+  assert.deepEqual((await pool.query('SELECT status, agent_admin_id FROM cs_conversations WHERE id=$1', [conversationId])).rows[0],
+    { status: 'queued', agent_admin_id: null });
+  assert.equal(await redis.zscore('cs:presence', other), null);
 });
 
 test('visitor merge keeps the newer open conversation, closes the other and invalidates the token without moving projects (CS03)', enabled, async t => {
