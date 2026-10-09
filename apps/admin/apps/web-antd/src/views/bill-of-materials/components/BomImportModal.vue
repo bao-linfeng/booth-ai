@@ -37,13 +37,12 @@ const columns = [
 
 async function searchSchemes(keyword: string) {
   try {
-    schemes.value = (
-      await getSchemeListApi({
-        ...(keyword.trim() ? { code: keyword.trim() } : {}),
-        page: 1,
-        pageSize: 30,
-      })
-    ).data;
+    const res = await getSchemeListApi({
+      ...(keyword.trim() ? { keyword: keyword.trim() } : {}),
+      page: 1,
+      pageSize: 30,
+    });
+    schemes.value = res.data;
   } catch {
     message.error('获取方案失败');
   }
@@ -160,7 +159,7 @@ defineExpose({ open });
               value: scheme.code,
             }))
           "
-          placeholder="搜索并选择已有方案 code"
+          placeholder="搜索方案编号或名称"
           class="w-full"
           :disabled="!!preview || busy"
           @search="searchSchemes"

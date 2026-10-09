@@ -50,6 +50,8 @@ export interface SchemeRecord {
 export interface SchemeListParams {
   page?: number;
   pageSize?: number;
+  /** 编号或名称包含该关键词 */
+  keyword?: string;
   code?: string;
   name?: string;
   styleId?: string;
@@ -93,8 +95,9 @@ export interface CreateSchemeInput {
   source?: null | string;
 }
 
-export interface UpdateSchemeInput
-  extends Partial<Omit<CreateSchemeInput, 'code'>> {
+export interface UpdateSchemeInput extends Partial<
+  Omit<CreateSchemeInput, 'code'>
+> {
   editRevision: number;
 }
 
@@ -132,7 +135,7 @@ export async function getSchemeOptionsApi() {
 }
 
 export async function deleteSchemeApi(code: string) {
-  return requestClient.delete<void>(
+  return requestClient.delete<null>(
     `/v1/admin/schemes/${encodeURIComponent(code)}`,
   );
 }

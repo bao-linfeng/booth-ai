@@ -98,6 +98,19 @@ describe('useSchemeOptions', () => {
     ]);
   });
 
+  it('按编号或名称关键词搜索，空输入不带关键词', async () => {
+    state.getSchemeListApi.mockResolvedValue(schemes('A'));
+    const { search } = useSchemeOptions();
+
+    await search('科技展台');
+    await search();
+
+    expect(state.getSchemeListApi.mock.calls).toEqual([
+      [{ keyword: '科技展台', pageSize: 20 }],
+      [{ pageSize: 20 }],
+    ]);
+  });
+
   it('只采用最后一次搜索的响应', async () => {
     const slow = deferred<ReturnType<typeof schemes>>();
     state.getSchemeListApi

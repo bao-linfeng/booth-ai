@@ -32,7 +32,7 @@ export function readRouteSchemeCode(query: LocationQuery): string | undefined {
 }
 
 /**
- * 归属方案下拉选项：按编号关键字搜索前 20 条。
+ * 归属方案下拉选项：按编号或名称关键字搜索前 20 条。
  * `pin` 指定的方案即使不在搜索结果中也保留在选项里，已选值才能显示名称而不只是编号；
  * 只采用最后一次搜索的响应。
  */
@@ -55,7 +55,7 @@ export function useSchemeOptions() {
     loading.value = true;
     try {
       const res = await getSchemeListApi({
-        ...(keyword ? { code: keyword } : {}),
+        ...(keyword ? { keyword } : {}),
         pageSize: 20,
       });
       if (current !== sequence) return;
