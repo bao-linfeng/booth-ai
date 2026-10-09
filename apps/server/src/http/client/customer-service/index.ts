@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
+import type { Config } from '../../../config.js';
 import { currentConversation, openConversation, ownedConversation } from '../../../modules/customer-service/conversations.js';
 import { notFound, type ContextInput, type EntryPoint, type Subject } from '../../../modules/customer-service/domain.js';
 import { cancelReplyNotices } from '../../../modules/customer-service/emails.js';
@@ -18,21 +19,34 @@ import {
   visitorIssueSchema, visitorMergeSchema,
 } from './schema.js';
 import { requireSubject } from './subject.js';
+import { clearVisitorCookie, setVisitorCookie, visitorToken } from './visitor-cookie.js';
 
 type ConversationParams = { conversationId: string };
 
-// 在线客服客户端接口（开发计划 §6.2）。访客以 X-Visitor-Token 识别，登录身份优先。
-export async function registerClientCustomerServiceRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
+// 在线客服客户端接口（开发计划 §6.2）。访客以 HttpOnly Cookie 中的令牌识别（见 visitor-cookie.ts），登录身份优先。
+export async function registerClientCustomerServiceRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
+  const secureCookie = config.nodeEnv === 'production';
   await app.register(async scope => {
     scope.addHook('onRequest', async (_request, reply) => { reply.header('Cache-Control', 'private, no-store'); });
 
     scope.post('/visitors', { schema: visitorIssueSchema, preHandler: rateLimit(redis, 'csVisitorIssue') }, async (request, reply) => {
-      return reply.code(201).send({ code: 0, data: await issueVisitor(pool, requestMessageLocale(request)) });
+      // 幂等：已持有有效令牌时复用原访客并续期 Cookie，避免本地标记丢失后产生孤儿访客
+      const existingToken = visitorToken(request);
+      const existing = await resolveVisitor(pool, existingToken);
+      if (existing && existingToken) {
+        setVisitorCookie(reply, existingToken, secureCookie);
+        return reply.code(200).send({ code: 0, data: { visitorId: existing } });
+      }
+      const issued = await issueVisitor(pool, requestMessageLocale(request));
+      setVisitorCookie(reply, issued.visitorToken, secureCookie);
+      return reply.code(201).send({ code: 0, data: { visitorId: issued.visitorId } });
     });
 
-    scope.post('/visitors/merge', { schema: visitorMergeSchema }, async request => {
+    scope.post('/visitors/merge', { schema: visitorMergeSchema }, async (request, reply) => {
       const userId = clientUserId(request);
-      const visitorId = await resolveVisitor(pool, request.headers['x-visitor-token']);
+      const visitorId = await resolveVisitor(pool, visitorToken(request));
+      // 合并后令牌即失效，无论是否有可合并的会话都清除 Cookie
+      clearVisitorCookie(reply, secureCookie);
       return { code: 0, data: { mergedConversations: visitorId ? await mergeVisitor(pool, redis, userId, visitorId) : 0 } };
     });
 

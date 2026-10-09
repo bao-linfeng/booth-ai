@@ -52,23 +52,19 @@ async function injectBearerToken(options: Parameters<typeof ofetch>[1]): Promise
   return Boolean(authStore.token)
 }
 
-// 与 features/customer-service/visitor.ts 的 CS_VISITOR_TOKEN_KEY 一致；这里直接读取，避免 api-client 反向依赖业务模块
-function csVisitorToken() {
-  try { return localStorage.getItem('booth-ai:cs-visitor-token') } catch { return null }
-}
-
 /** 本地 Fastify API 客户端 */
 export const apiFetch = ofetch.create({
   baseURL: API_BASE_URL,
   timeout: API_TIMEOUT,
+  // 客服访客令牌在 HttpOnly Cookie 中，API 跨域部署时也需携带
+  credentials: 'include',
 
   onRequest: async ({ options }) => {
-    const loggedIn = await injectBearerToken(options)
+    await injectBearerToken(options)
     const headers = new Headers(options.headers as HeadersInit | undefined)
     headers.set('x-visitor-id', visitorId())
-    // 客服访客令牌只在未登录时携带（合并接口自行传入）
-    const csToken = csVisitorToken()
-    if (!loggedIn && csToken && !headers.has('X-Visitor-Token')) headers.set('X-Visitor-Token', csToken)
+    // 服务端只在带此头时读取访客 Cookie（CSRF 防护）；登录后服务端以登录身份为准，合并接口也依赖它读取 Cookie
+    headers.set('X-CS-Visitor', '1')
     headers.set('Accept-Language', appLocale.value === 'zh' ? 'zh-CN' : appLocale.value)
     options.headers = headers
   },

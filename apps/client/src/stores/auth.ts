@@ -28,7 +28,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     currentUser.value = null
     rotateVisitorId()
-    // 退出登录时清空客服会话状态；未登录时调用（如外部登录前）保留访客令牌，以便登录后合并
+    // 退出登录时清空客服会话状态；未登录时调用（如外部登录前）保留访客标记与 Cookie，以便登录后合并
     if (wasLoggedIn) void import('@/features/customer-service/useCustomerService').then(module => module.resetCustomerService()).catch(() => undefined)
   }
 

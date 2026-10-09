@@ -64,15 +64,18 @@ test('workbench events are filtered per connection unless the viewer supervises'
 test('subject resolution prefers the signed-in user, validates visitor tokens without touching the database for malformed ones', async () => {
   const queries: string[] = [];
   const pool = { query: async (sql: string) => { queries.push(sql); return sql.startsWith('SELECT id FROM cs_visitors') ? { rows: [{ id: 'v1' }], rowCount: 1 } : { rows: [], rowCount: 0 }; } } as unknown as pg.Pool;
-  const user = { principal: { site: 'client', localId: 'u1' }, headers: { 'x-visitor-token': 'a'.repeat(43) } } as unknown as FastifyRequest;
+  const user = { principal: { site: 'client', localId: 'u1' }, headers: { cookie: `booth_cs_visitor=${'a'.repeat(43)}`, 'x-cs-visitor': '1' } } as unknown as FastifyRequest;
   assert.deepEqual(await requireSubject(user, pool), { kind: 'user', userId: 'u1' });
-  assert.equal(queries.length, 0, 'the visitor header is ignored for signed-in requests');
+  assert.equal(queries.length, 0, 'the visitor cookie is ignored for signed-in requests');
   const anonymous = { principal: null, headers: {}, csVisitorId: null } as unknown as FastifyRequest;
   await assert.rejects(requireSubject(anonymous, pool), { statusCode: 401, reason: 'VISITOR_REQUIRED' });
   assert.equal(await resolveVisitor(pool, 'short'), null);
   assert.equal(await resolveVisitor(pool, ['a'.repeat(43)]), null);
   assert.equal(queries.length, 0);
-  const visitor = { principal: null, headers: { 'x-visitor-token': 'b'.repeat(43) }, csVisitorId: null } as unknown as FastifyRequest & { csVisitorId: string | null };
+  const withoutHeader = { principal: null, headers: { cookie: `other=1; booth_cs_visitor=${'b'.repeat(43)}` }, csVisitorId: null } as unknown as FastifyRequest;
+  await assert.rejects(requireSubject(withoutHeader, pool), { statusCode: 401, reason: 'VISITOR_REQUIRED' }, 'the cookie is only read with the X-CS-Visitor header');
+  assert.equal(queries.length, 0);
+  const visitor = { principal: null, headers: { cookie: `other=1; booth_cs_visitor=${'b'.repeat(43)}`, 'x-cs-visitor': '1' }, csVisitorId: null } as unknown as FastifyRequest & { csVisitorId: string | null };
   assert.deepEqual(await requireSubject(visitor, pool), { kind: 'visitor', visitorId: 'v1' });
   assert.equal(visitor.csVisitorId, 'v1', 'visitor id feeds the visitor rate-limit identity');
   assert.ok(queries[0]!.includes('merged_user_id IS NULL') && queries[0]!.includes('deleted_at IS NULL'));

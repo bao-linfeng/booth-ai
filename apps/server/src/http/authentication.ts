@@ -8,7 +8,7 @@ import { authenticationError, resolvePrincipal, type Principal } from '../module
 declare module 'fastify' {
   interface FastifyRequest {
     principal: Principal | null;
-    /** 客服访客 ID：访客事件票据或 X-Visitor-Token 鉴权后写入，不建立 principal；也用作 visitor 限流身份 */
+    /** 客服访客 ID：访客事件票据或访客 Cookie 鉴权后写入，不建立 principal；也用作 visitor 限流身份 */
     csVisitorId: string | null;
   }
   interface FastifyContextConfig {

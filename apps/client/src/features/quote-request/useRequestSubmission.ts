@@ -2,7 +2,7 @@ import { ref, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ProjectReceipt } from '@/services/api/quote-requests'
 import type { RequestDraft } from './useRequestDraft'
-import { ensureVisitorToken } from '@/features/customer-service/visitor'
+import { ensureVisitor } from '@/features/customer-service/visitor'
 
 interface SubmissionOptions<T extends { requestKey: string }> {
   draft: Pick<RequestDraft, 'receipt' | 'owner' | 'persist'>
@@ -51,8 +51,8 @@ export function useRequestSubmission<T extends { requestKey: string }>(options: 
       draft.persist()
     }
     busy.value = true
-    // 匿名提交先确保有客服访客令牌，服务端据此把项目绑定到本访客，之后可带项目咨询客服；失败不阻塞提交
-    if (!userId) await ensureVisitorToken().catch(() => null)
+    // 匿名提交先确保已签发客服访客（令牌在 Cookie 中），服务端据此把项目绑定到本访客，之后可带项目咨询客服；失败不阻塞提交
+    if (!userId) await ensureVisitor().catch(() => null)
     try { draft.receipt.value = await options.send(pending.value); pending.value = null; draft.persist() }
     catch (failure: unknown) {
       const status = (failure as { response?: { status?: number } }).response?.status

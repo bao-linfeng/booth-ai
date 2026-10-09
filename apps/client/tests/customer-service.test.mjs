@@ -88,11 +88,12 @@ function setup({ loggedIn = false, agentsOnline = true, current = conversation()
   globalThis.__cs = {
     auth: { isLoggedIn: loggedIn, currentUser: loggedIn ? { email: 'buyer@example.com' } : null },
     apiFetch: async (path, options = {}) => {
-      const call = { path, method: options.method ?? 'GET', body: options.body, query: options.query }
+      const call = { path, method: options.method ?? 'GET', body: options.body, query: options.query, headers: options.headers }
       calls.push(call)
       const custom = await respond?.(call, calls)
       if (custom !== undefined) return { code: 0, data: custom }
-      if (path.endsWith('/visitors')) return { code: 0, data: { visitorToken: `token-${++issued}`, visitorId: 'v1' } }
+      if (path.endsWith('/visitors')) return { code: 0, data: { visitorId: `v${++issued}` } }
+      if (path.endsWith('/visitors/merge')) return { code: 0, data: { mergedConversations: 1 } }
       if (path.endsWith('/conversations')) return { code: 0, data: { conversation: current, contexts: [], agentsOnline } }
       if (path.endsWith('/conversations/current')) return { code: 0, data: { conversation: current, contexts: [], unreadCount: 0, agentsOnline } }
       if (path.endsWith('/messages') && call.method === 'GET') return { code: 0, data: { items: messages, hasMore: false } }
@@ -116,7 +117,7 @@ async function mount() {
 
 beforeEach(() => {
   cs.resetCustomerService()
-  localStorage.removeItem('booth-ai:cs-visitor-token')
+  localStorage.removeItem('booth-ai:cs-visitor')
   FakeEventSource.instances = []
   appLocale.value = 'zh'
 })
@@ -138,7 +139,7 @@ test('timeline merges by id, splits rounds, prefers translations and counts unre
   assert.deepEqual([...timeline.readTargets(unread)], [[conversationId, 6]])
 })
 
-test('visitors get a lazily issued token, open with context, subscribe after the last seq and fall back when the context is unavailable', async () => {
+test('visitors are lazily issued (token stays in an HttpOnly cookie), open with context, subscribe after the last seq and fall back when the context is unavailable', async () => {
   const calls = setup({
     messages: [message(1), message(2, { senderType: 'agent' })],
     respond: call => {
@@ -148,10 +149,10 @@ test('visitors get a lazily issued token, open with context, subscribe after the
   const { unmount, container } = await mount()
   await cs.openWith({ kind: 'project', projectId: 'p-1' }, 'quote_receipt')
   await settle()
-  assert.equal(localStorage.getItem('booth-ai:cs-visitor-token'), 'token-1')
+  assert.equal(localStorage.getItem('booth-ai:cs-visitor'), '1', 'only a non-secret marker is stored locally')
   const opens = calls.filter(call => call.path.endsWith('/conversations'))
   assert.deepEqual(opens.map(call => call.body), [{ entryPoint: 'quote_receipt', context: { kind: 'project', projectId: 'p-1' } }, { entryPoint: 'quote_receipt' }])
-  assert.equal(calls.filter(call => call.path.endsWith('/visitors')).length, 1, 'concurrent calls share one issued token')
+  assert.equal(calls.filter(call => call.path.endsWith('/visitors')).length, 1, 'concurrent calls share one issue request')
   assert.match(container.textContent, /无法附带该方案或项目/)
   assert.equal(FakeEventSource.instances.length, 1)
   assert.match(FakeEventSource.instances[0].url, /\/conversations\/11111111-1111-4111-8111-111111111111\/events\?ticket=ticket-1&after=2$/)
@@ -161,16 +162,28 @@ test('visitors get a lazily issued token, open with context, subscribe after the
   unmount()
 })
 
-test('an invalidated visitor token is cleared, reissued and the request retried once', async () => {
-  localStorage.setItem('booth-ai:cs-visitor-token', 'stale-token')
+test('an invalidated visitor (merged, deleted or cookie lost) is reissued and the request retried once', async () => {
+  localStorage.setItem('booth-ai:cs-visitor', '1')
   let rejected = false
   const calls = setup({ respond: call => {
     if (call.path.endsWith('/conversations') && !rejected) { rejected = true; throw failure(401, 'VISITOR_REQUIRED') }
   } })
   await cs.openWith(undefined, 'floating')
-  assert.equal(localStorage.getItem('booth-ai:cs-visitor-token'), 'token-1')
+  assert.equal(localStorage.getItem('booth-ai:cs-visitor'), '1')
+  assert.equal(calls.filter(call => call.path.endsWith('/visitors')).length, 1, 'the marker skipped issuing until the server rejected the visitor')
   assert.equal(calls.filter(call => call.path.endsWith('/conversations')).length, 2)
   assert.equal(cs.useCustomerService().state.notice, '')
+})
+
+test('login merges the cookie-held visitor once and clears the marker; without a marker nothing is merged', async () => {
+  localStorage.setItem('booth-ai:cs-visitor', '1')
+  const calls = setup({ loggedIn: true })
+  await cs.handleCustomerServiceLogin()
+  const merges = calls.filter(call => call.path.endsWith('/visitors/merge'))
+  assert.deepEqual(merges.map(call => [call.method, call.body, call.headers]), [['POST', undefined, undefined]], 'the token is never sent from script')
+  assert.equal(localStorage.getItem('booth-ai:cs-visitor'), null)
+  await cs.handleCustomerServiceLogin()
+  assert.equal(calls.filter(call => call.path.endsWith('/visitors/merge')).length, 1)
 })
 
 test('offline mode replaces the composer, requires a visitor email and sends an offline message', async () => {
@@ -289,6 +302,6 @@ test('?cs=open from reply emails opens the panel and removes the query; the laun
   assert.deepEqual(router.currentRoute.value.query, { utm: 'mail' })
   assert.equal(cs.useCustomerService().state.open, true)
   assertNoNode(container.querySelector('[data-cs-unread]'), 'unread badge hidden while the panel is open')
-  assert.equal(localStorage.getItem('booth-ai:cs-visitor-token'), null, 'signed-in users never get a visitor token')
+  assert.equal(localStorage.getItem('booth-ai:cs-visitor'), null, 'signed-in users never get a visitor')
   unmount()
 })

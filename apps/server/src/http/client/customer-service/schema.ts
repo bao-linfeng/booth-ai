@@ -5,8 +5,8 @@ const seq = { type: 'integer', minimum: 0 };
 const tags = ['client-customer-service'];
 const conversationParams = { type: 'object', required: ['conversationId'], properties: { conversationId: uuid } };
 
-export const visitorIssueSchema = { tags, summary: '签发访客令牌' };
-export const visitorMergeSchema = { tags, summary: '登录后合并访客会话（需同时携带 X-Visitor-Token）' };
+export const visitorIssueSchema = { tags, summary: '签发访客令牌（写入 HttpOnly Cookie；已持有有效令牌时复用）' };
+export const visitorMergeSchema = { tags, summary: '登录后合并访客会话并清除访客 Cookie（需带 X-CS-Visitor 头）' };
 
 export const openConversationSchema = { tags, summary: '打开或复用未结束会话', body: {
   type: 'object', additionalProperties: false, required: ['entryPoint'], properties: {

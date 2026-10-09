@@ -10,6 +10,7 @@ import { requestMessageLocale } from '../../locale.js';
 import { createManualProject } from '../../../modules/projects/service.js';
 import type { ManualInput } from '../../../modules/projects/domain.js';
 import { resolveVisitor } from '../../../modules/customer-service/visitors.js';
+import { visitorToken } from '../customer-service/visitor-cookie.js';
 
 export async function registerClientManualRequestRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
   const excluded=new Set(['schemeCode','schemeRevision','bomRevision','drawingRevision','artworkRevision','themeSelection','requirementContext']);
@@ -20,7 +21,7 @@ export async function registerClientManualRequestRoutes(app: FastifyInstance, po
     required:[...quoteSchema.required.filter(key=>!excluded.has(key)),'originalDescription','confirmedRequirements'],properties}}},async(request,reply)=>{
       reply.header('Cache-Control','private, no-store');
       const userId=optionalClientUserId(request);
-      const visitorId=userId?null:await resolveVisitor(pool,request.headers['x-visitor-token']);
+      const visitorId=userId?null:await resolveVisitor(pool,visitorToken(request));
       const result=await createManualProject(pool,userId,request.body,requestMessageLocale(request),visitorId);
       return reply.code(result.replayed?200:201).send({code:0,data:result.receipt});
     });

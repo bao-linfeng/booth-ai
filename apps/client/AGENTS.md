@@ -28,6 +28,7 @@ node --test tests/<file>.test.mjs  # 单文件
 - 开发时 `vite.config.ts` 把 `/api` 代理到 `http://localhost:3000`（本仓库 `apps/server`）。
 - `src/lib/api-client.ts` 区分两类请求：`apiFetch` 访问本平台 API（`VITE_API_BASE_URL`，默认空串即同源走代理）；`lingtongFetch` / `lingtongPublicFetch` 访问灵通企业 API（`VITE_LINGTONG_API_URL`，默认 `https://api.lingtong.net.cn`，用于 SSO 登录等）。
 - 业务接口封装在 `src/services/api/`，页面不直接拼 HTTP 请求。
+- `apiFetch` 带 `credentials: 'include'` 并统一附加 `X-CS-Visitor: 1`：客服访客令牌只在服务端写入的 HttpOnly Cookie 中，前端只在 localStorage 记不含机密的标记 `booth-ai:cs-visitor`，不要把令牌改回脚本可读的存储。
 
 ---
 

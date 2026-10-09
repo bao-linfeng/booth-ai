@@ -304,30 +304,45 @@ test('HTTP: visitor tokens, isolation, rate limits and admin permissions (CS09/C
   const session = async (site: 'client' | 'admin', localId: string) => createSession(redis, { site, localId, externalUserId: 1, username: 'test',
     externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret), loginSource: 'password', sessionVersion: 1 }, 3600, Math.floor(Date.now() / 1000) + 3600);
   const base = '/api/v1/client/customer-service';
-  const issue = async () => (await app.inject({ method: 'POST', url: `${base}/visitors`, headers: { 'x-forwarded-for': randomUUID() } })).json().data;
+  // 访客令牌只经 HttpOnly Cookie 下发，响应体不含令牌；之后的请求回传 Cookie 并带 X-CS-Visitor 头
+  const issue = async () => {
+    const response = await app.inject({ method: 'POST', url: `${base}/visitors`, headers: { 'x-forwarded-for': randomUUID() } });
+    assert.equal(response.statusCode, 201);
+    assert.deepEqual(Object.keys(response.json().data), ['visitorId']);
+    const cookie = String(response.headers['set-cookie']);
+    assert.match(cookie, /^booth_cs_visitor=[A-Za-z0-9_-]{43}; Path=\/api\/v1\/client; Max-Age=\d+; HttpOnly; SameSite=Lax$/);
+    return { visitorId: response.json().data.visitorId as string, headers: { cookie: cookie.split(';')[0]!, 'x-cs-visitor': '1' } };
+  };
 
   assert.equal((await app.inject({ url: `${base}/conversations/current` })).json().error.reason, 'VISITOR_REQUIRED');
-  assert.equal((await app.inject({ url: `${base}/conversations/current`, headers: { 'x-visitor-token': 'x'.repeat(43) } })).statusCode, 401);
+  assert.equal((await app.inject({ url: `${base}/conversations/current`, headers: { cookie: `booth_cs_visitor=${'x'.repeat(43)}`, 'x-cs-visitor': '1' } })).statusCode, 401);
   const a = await issue();
   const b = await issue();
-  const openA = await app.inject({ method: 'POST', url: `${base}/conversations`, headers: { 'x-visitor-token': a.visitorToken }, payload: { entryPoint: 'floating' } });
+  assert.equal((await app.inject({ url: `${base}/conversations/current`, headers: { cookie: a.headers.cookie } })).json().error.reason, 'VISITOR_REQUIRED',
+    'the cookie is ignored without the X-CS-Visitor header (CSRF)');
+  assert.equal((await app.inject({ url: `${base}/conversations/current`, headers: { 'x-visitor-token': a.headers.cookie.split('=')[1]! } })).statusCode, 401,
+    'the legacy token header is no longer accepted');
+  const reissued = await app.inject({ method: 'POST', url: `${base}/visitors`, headers: { ...a.headers, 'x-forwarded-for': randomUUID() } });
+  assert.deepEqual([reissued.statusCode, reissued.json().data.visitorId], [200, a.visitorId], 'issuing with a valid cookie reuses the visitor');
+  assert.equal(String(reissued.headers['set-cookie']).split(';')[0], a.headers.cookie);
+  const openA = await app.inject({ method: 'POST', url: `${base}/conversations`, headers: a.headers, payload: { entryPoint: 'floating' } });
   assert.equal(openA.statusCode, 201, openA.body);
   assert.equal(openA.headers['cache-control'], 'private, no-store');
   const conversationId = openA.json().data.conversation.id;
-  assert.equal((await app.inject({ method: 'POST', url: `${base}/conversations`, headers: { 'x-visitor-token': a.visitorToken }, payload: { entryPoint: 'floating' } })).statusCode, 200);
-  const foreign = await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/messages`, headers: { 'x-visitor-token': b.visitorToken },
+  assert.equal((await app.inject({ method: 'POST', url: `${base}/conversations`, headers: a.headers, payload: { entryPoint: 'floating' } })).statusCode, 200);
+  const foreign = await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/messages`, headers: b.headers,
     payload: text('peek') });
   assert.equal(foreign.statusCode, 404);
   assert.ok(!foreign.body.includes(conversationId));
-  assert.equal((await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/events-ticket`, headers: { 'x-visitor-token': b.visitorToken } })).statusCode, 404);
-  const ticket = (await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/events-ticket`, headers: { 'x-visitor-token': a.visitorToken } })).json().data.ticket;
+  assert.equal((await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/events-ticket`, headers: b.headers })).statusCode, 404);
+  const ticket = (await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/events-ticket`, headers: a.headers })).json().data.ticket;
   assert.deepEqual(JSON.parse((await redis.get(`cs-events-ticket:${ticket}`))!), { subject: conversationId, visitorId: a.visitorId });
-  const offline = await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/messages`, headers: { 'x-visitor-token': a.visitorToken },
+  const offline = await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/messages`, headers: a.headers,
     payload: { ...text('leave a note'), kind: 'offline' } });
   assert.equal(offline.json().error.reason, 'CONTACT_EMAIL_REQUIRED');
   const statuses: number[] = [];
   for (let n = 0; n < 11; n++) {
-    statuses.push((await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/messages`, headers: { 'x-visitor-token': a.visitorToken },
+    statuses.push((await app.inject({ method: 'POST', url: `${base}/conversations/${conversationId}/messages`, headers: a.headers,
       payload: text(`message ${n}`) })).statusCode);
   }
   assert.deepEqual([statuses.filter(status => status === 201).length, statuses.at(-1)], [9, 429], 'the offline attempt also counted towards the per-visitor budget');
@@ -356,7 +371,18 @@ test('HTTP: visitor tokens, isolation, rate limits and admin permissions (CS09/C
     [[agent, 1], [supervisor, 0]].sort());
   const posted = await app.inject({ method: 'POST', url: `${admin}/conversations/${conversationId}/messages`, headers: agentHeaders, payload: text('hello visitor') });
   assert.equal(posted.statusCode, 201, posted.body);
-  const timeline = (await app.inject({ url: `${base}/messages?limit=100`, headers: { 'x-visitor-token': a.visitorToken } })).json().data.items;
+  const timeline = (await app.inject({ url: `${base}/messages?limit=100`, headers: a.headers })).json().data.items;
   assert.equal(timeline.at(-1).body, 'hello visitor');
-  assert.equal((await app.inject({ url: `${base}/messages?before=1&after=2`, headers: { 'x-visitor-token': a.visitorToken } })).statusCode, 400);
+  assert.equal((await app.inject({ url: `${base}/messages?before=1&after=2`, headers: a.headers })).statusCode, 400);
+
+  // 登录后合并：读取 Cookie 中的访客令牌，合并后清除 Cookie，令牌随即失效
+  const customer = await seedUser(pool);
+  const clientHeaders = { authorization: `Bearer ${await session('client', customer)}` };
+  assert.equal((await app.inject({ method: 'POST', url: `${base}/visitors/merge`, headers: { ...clientHeaders, cookie: a.headers.cookie } })).json().data.mergedConversations, 0,
+    'merge also requires the X-CS-Visitor header');
+  const merged = await app.inject({ method: 'POST', url: `${base}/visitors/merge`, headers: { ...clientHeaders, ...a.headers } });
+  assert.equal(merged.json().data.mergedConversations, 1, merged.body);
+  assert.match(String(merged.headers['set-cookie']), /^booth_cs_visitor=; Path=\/api\/v1\/client; Max-Age=0; HttpOnly; SameSite=Lax$/);
+  assert.equal((await app.inject({ url: `${base}/conversations/current`, headers: a.headers })).json().error.reason, 'VISITOR_REQUIRED');
+  assert.equal((await app.inject({ url: `${base}/conversations/current`, headers: clientHeaders })).json().data.conversation.id, conversationId);
 });

@@ -128,10 +128,13 @@ async function waitForEvent(response: Response, match: (event: Record<string, un
 async function customerServiceSmoke(api: string) {
   const client = `${api}/api/v1/client/customer-service`;
   const admin = `${api}/api/v1/admin/customer-service`;
-  const visitor = await call<{ visitorToken: string; visitorId: string }>(`${client}/visitors`, { method: 'POST' });
-  assert.equal(visitor.status, 201, 'Issue visitor token');
-  cs.visitorId = visitor.data.visitorId;
-  const visitorHeaders = { 'x-visitor-token': visitor.data.visitorToken };
+  // 访客令牌只在 HttpOnly Cookie 中下发；冒烟脚本手动回传 Cookie，并带上读取 Cookie 所需的 X-CS-Visitor 头
+  const issued = await fetch(`${client}/visitors`, { method: 'POST', signal: AbortSignal.timeout(10_000) });
+  assert.equal(issued.status, 201, 'Issue visitor token');
+  cs.visitorId = ((await issued.json()) as Envelope<{ visitorId: string }>).data.visitorId;
+  const visitorCookie = issued.headers.getSetCookie().find(value => value.startsWith('booth_cs_visitor='));
+  assert.ok(visitorCookie && visitorCookie.includes('HttpOnly'), 'Visitor cookie is HttpOnly');
+  const visitorHeaders = { cookie: visitorCookie.split(';')[0]!, 'x-cs-visitor': '1' };
   const scheme = (await database.query<{ code: string }>("SELECT code FROM schemes WHERE publish_status='published' ORDER BY code LIMIT 1")).rows[0];
   const opened = await call<{ conversation: { id: string } }>(`${client}/conversations`, { method: 'POST', headers: visitorHeaders,
     json: { entryPoint: scheme ? 'scheme_detail' : 'floating', ...(scheme ? { context: { kind: 'scheme', schemeCode: scheme.code } } : {}) } });

@@ -63,15 +63,14 @@ export interface CurrentResult { conversation: ConversationDto | null; contexts:
 const base = '/api/v1/client/customer-service'
 type Envelope<T> = { code: number; data: T }
 
-export async function issueVisitor(): Promise<{ visitorToken: string; visitorId: string }> {
-  return (await apiFetch<Envelope<{ visitorToken: string; visitorId: string }>>(`${base}/visitors`, { method: 'POST' })).data
+/** 签发访客：令牌由服务端写入 HttpOnly Cookie，响应体不含令牌 */
+export async function issueVisitor(): Promise<{ visitorId: string }> {
+  return (await apiFetch<Envelope<{ visitorId: string }>>(`${base}/visitors`, { method: 'POST' })).data
 }
 
-/** 登录后合并访客会话：需同时携带登录令牌（由请求拦截注入）与访客令牌 */
-export async function mergeVisitor(visitorToken: string): Promise<{ mergedConversations: number }> {
-  return (await apiFetch<Envelope<{ mergedConversations: number }>>(`${base}/visitors/merge`, {
-    method: 'POST', headers: { 'X-Visitor-Token': visitorToken },
-  })).data
+/** 登录后合并访客会话：登录令牌由请求拦截注入，访客令牌由浏览器随 Cookie 携带 */
+export async function mergeVisitor(): Promise<{ mergedConversations: number }> {
+  return (await apiFetch<Envelope<{ mergedConversations: number }>>(`${base}/visitors/merge`, { method: 'POST' })).data
 }
 
 export async function openConversation(entryPoint: EntryPoint, context?: ContextInput): Promise<OpenResult> {

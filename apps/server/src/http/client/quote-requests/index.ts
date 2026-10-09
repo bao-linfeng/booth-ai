@@ -10,6 +10,7 @@ import { captureScheme } from '../../../modules/projects/snapshot.js';
 import { transaction } from '../../../infra/database.js';
 import { quoteSchema } from './schema.js';
 import { resolveVisitor } from '../../../modules/customer-service/visitors.js';
+import { visitorToken } from '../customer-service/visitor-cookie.js';
 
 export async function registerQuoteRequestRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis) {
   app.get<{ Params: { code: string } }>('/schemes/:code/quote-context', {
@@ -25,7 +26,7 @@ export async function registerQuoteRequestRoutes(app: FastifyInstance, pool: pg.
     reply.header('Cache-Control','private, no-store');
     const userId = optionalClientUserId(request);
     // 匿名提交绑定客服访客（令牌缺失或无效时照常受理），供访客以项目为上下文咨询
-    const visitorId = userId ? null : await resolveVisitor(pool, request.headers['x-visitor-token']);
+    const visitorId = userId ? null : await resolveVisitor(pool, visitorToken(request));
     const result = await createQuoteRequest(pool,userId,request.body,requestMessageLocale(request),visitorId);
     return reply.code(result.replayed ? 200 : 201).send({ code: 0, data: result.receipt });
   });

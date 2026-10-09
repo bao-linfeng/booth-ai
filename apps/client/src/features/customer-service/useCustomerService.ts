@@ -6,7 +6,7 @@ import {
 } from '@/services/api/customer-service'
 import { applyTranslation, maxSeq, mergeMessages, minSeq, readTargets } from './timeline'
 import { useCustomerServiceConnection, type ConnectionState } from './useCustomerServiceConnection'
-import { clearVisitorToken, ensureVisitorToken, mergeVisitorAfterLogin, readVisitorToken } from './visitor'
+import { clearVisitor, ensureVisitor, hasVisitor, mergeVisitorAfterLogin } from './visitor'
 
 export interface PendingMessage { clientMessageId: string; body: string; kind: 'text' | 'offline'; contactEmail?: string; status: 'sending' | 'failed' }
 
@@ -37,17 +37,17 @@ function loggedIn() {
   return Boolean(useAuthStore().isLoggedIn)
 }
 
-/** 未登录时先确保有访客令牌；令牌失效（已合并、已删除）时清除后重新签发并重试一次 */
+/** 未登录时先确保已签发访客；令牌失效（已合并、已删除、Cookie 丢失）时清除标记后重新签发并重试一次 */
 async function withSubject<T>(run: () => Promise<T>): Promise<T> {
   if (loggedIn()) return run()
-  await ensureVisitorToken()
+  await ensureVisitor()
   try {
     return await run()
   } catch (failure) {
     const { status, reason } = errorReason(failure)
     if (status !== 401 || reason !== 'VISITOR_REQUIRED' || loggedIn()) throw failure
-    clearVisitorToken()
-    await ensureVisitorToken()
+    clearVisitor()
+    await ensureVisitor()
     return run()
   }
 }
@@ -228,7 +228,7 @@ export function startIdlePolling() {
   stopIdlePolling()
   const tick = () => {
     if (state.open || document.visibilityState !== 'visible') return
-    if (!loggedIn() && !readVisitorToken()) return
+    if (!loggedIn() && !hasVisitor()) return
     void refreshCurrent().catch(() => undefined)
   }
   tick()
