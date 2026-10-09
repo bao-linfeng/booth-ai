@@ -11,7 +11,8 @@ const props = defineProps<{ defaultEmail: string; requireEmail: boolean; sent: b
 const emit = defineEmits<{ submit: [body: string, email: string] }>()
 const { t } = useI18n()
 const email = ref(props.defaultEmail)
-const body = ref('')
+// 草稿由面板持有，与输入框共用：坐席在线状态变化切换模式时不丢失已输入内容
+const body = defineModel<string>({ default: '' })
 const emailError = ref(false)
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 

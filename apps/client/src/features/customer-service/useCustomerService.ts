@@ -106,6 +106,8 @@ function handleEvent(event: CustomerEvent) {
     if (!state.conversation || event.conversation.id === state.conversation.id) state.conversation = event.conversation
   } else if (event.type === 'read' && state.conversation) {
     state.conversation = { ...state.conversation, agentReadSeq: event.agentReadSeq }
+  } else if (event.type === 'presence') {
+    state.agentsOnline = event.agentsOnline
   }
 }
 

@@ -231,6 +231,28 @@ test('offline mode replaces the composer, requires a visitor email and sends an 
   unmount()
 })
 
+test('presence events from the stream heartbeat switch between offline form and composer, keeping the draft', async () => {
+  setup({ agentsOnline: false })
+  const { unmount, container } = await mount()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  const textarea = () => container.querySelector('[data-cs-panel] textarea')
+  textarea().value = '还在吗'; textarea().dispatchEvent(new Event('input'))
+  await settle()
+
+  FakeEventSource.instances[0].emit('update', { type: 'presence', agentsOnline: true })
+  await settle()
+  assertNoNode(container.querySelector('[data-cs-offline]'), 'an agent coming online replaces the offline form')
+  assert.match(container.querySelector('[data-cs-status]').textContent, /排队/)
+  assert.equal(textarea().value, '还在吗', 'the draft survives the switch')
+
+  FakeEventSource.instances[0].emit('update', { type: 'presence', agentsOnline: false })
+  await settle()
+  assert.equal(Boolean(container.querySelector('[data-cs-offline]')), true, 'all agents leaving brings the offline form back')
+  assert.equal(textarea().value, '还在吗')
+  unmount()
+})
+
 test('messages render as plain text, agent replies show translations, events and RTL layout', async () => {
   setup({ current: conversation({ status: 'active', agent: { displayName: null } }), messages: [
     message(1, { body: '<b>bold</b><img src=x onerror=alert(1)>' }),

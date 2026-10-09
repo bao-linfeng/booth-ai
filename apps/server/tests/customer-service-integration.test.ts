@@ -324,19 +324,27 @@ test('SSE heartbeats revalidate the login session and latest permissions, narrow
   await redis.del(`cs:customer-presence:${conversationId}`);
   const loggedOut = await login('client', customer);
   const revoked = await login('client', customer);
-  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, loggedOut), true);
+  // 有效心跳顺带推送坐席在线状态，面板常开时也能切换排队 / 留言模式；断流的心跳不推送
+  const sent: unknown[] = [];
+  const send = (event: unknown) => { sent.push(event); };
+  await redis.del('cs:presence');
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, loggedOut, send), true);
   assert.equal(await redis.exists(`cs:customer-presence:${conversationId}`), 1);
+  await redis.zadd('cs:presence', Date.now() + 45_000, await seedAdmin(pool));
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, loggedOut, send), true);
+  assert.deepEqual(sent, [{ type: 'presence', agentsOnline: false }, { type: 'presence', agentsOnline: true }]);
   await destroySession(redis, loggedOut.token);
-  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, loggedOut), false, 'logged-out sessions stop streaming');
-  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, revoked), true);
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, loggedOut, send), false, 'logged-out sessions stop streaming');
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, revoked, send), true);
   await revokeAccountSessions(pool, 'client', customer);
-  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, revoked), false, 'revoked sessions stop streaming');
-  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, null), false);
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, revoked, send), false, 'revoked sessions stop streaming');
+  assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, null, send), false);
+  assert.equal(sent.length, 3, 'rejected heartbeats push nothing');
   const visitor: Subject = { kind: 'visitor', visitorId: (await issueVisitor(pool, 'en')).visitorId };
   const visitorConversation = (await openConversation(pool, redis, visitor, { entryPoint: 'floating' }, 'en')).conversation.id;
-  assert.equal(await customerStreamHeartbeat(pool, redis, visitorConversation, visitor, null), true);
+  assert.equal(await customerStreamHeartbeat(pool, redis, visitorConversation, visitor, null, send), true);
   await mergeVisitor(pool, redis, await seedUser(pool), visitor.visitorId);
-  assert.equal(await customerStreamHeartbeat(pool, redis, visitorConversation, visitor, null), false, 'merged visitor tokens stop streaming');
+  assert.equal(await customerStreamHeartbeat(pool, redis, visitorConversation, visitor, null, send), false, 'merged visitor tokens stop streaming');
 
   // 主管：撤销 supervise 但保留 read + reply 后，旧流在下一次心跳后只放行自己与队列的事件；重新连接按最新权限计算
   const supervisor = await seedAdmin(pool, ['customer-service.read', 'customer-service.reply', 'customer-service.supervise']);

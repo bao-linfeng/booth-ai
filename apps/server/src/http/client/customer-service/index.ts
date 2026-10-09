@@ -9,7 +9,7 @@ import { notFound, type ContextInput, type EntryPoint, type Subject } from '../.
 import { cancelReplyNotices } from '../../../modules/customer-service/emails.js';
 import { conversationChannel } from '../../../modules/customer-service/events.js';
 import { customerMessagesAfter, listCustomerMessages, markCustomerRead, postCustomerMessage, type CustomerMessageInput } from '../../../modules/customer-service/messages.js';
-import { touchCustomer } from '../../../modules/customer-service/presence.js';
+import { agentsOnline, touchCustomer } from '../../../modules/customer-service/presence.js';
 import { issueVisitor, mergeVisitor, resolveVisitor, touchVisitor, visitorActive } from '../../../modules/customer-service/visitors.js';
 import { loadConversation } from '../../../modules/customer-service/store.js';
 import { revalidatePrincipal, type Principal } from '../../../modules/identity/principal.js';
@@ -26,8 +26,12 @@ import { clearVisitorCookie, setVisitorCookie, visitorToken } from './visitor-co
 
 type ConversationParams = { conversationId: string };
 
-/** 客户流心跳：登录客户按建立时的令牌复核 Session，访客复核令牌仍有效；失效返回 false 断流，有效时续期客户在线 */
-export async function customerStreamHeartbeat(pool: pg.Pool, redis: Redis, conversationId: string, subject: Subject, principal: Principal | null): Promise<boolean> {
+/**
+ * 客户流心跳：登录客户按建立时的令牌复核 Session，访客复核令牌仍有效；失效返回 false 断流。
+ * 有效时续期客户在线，并推送坐席在线状态（presence），面板常开时也能在一个心跳内切换排队与留言模式。
+ */
+export async function customerStreamHeartbeat(pool: pg.Pool, redis: Redis, conversationId: string, subject: Subject, principal: Principal | null,
+  send: (event: { type: 'presence'; agentsOnline: boolean }) => void): Promise<boolean> {
   if (subject.kind === 'user') {
     if (!principal || !await revalidatePrincipal(pool, redis, principal)) return false;
   } else {
@@ -35,6 +39,7 @@ export async function customerStreamHeartbeat(pool: pg.Pool, redis: Redis, conve
     if (!await visitorActive(pool, subject.visitorId)) return false;
   }
   await touchCustomer(redis, conversationId);
+  send({ type: 'presence', agentsOnline: await agentsOnline(redis) });
   return true;
 }
 
@@ -136,7 +141,7 @@ export async function registerClientCustomerServiceRoutes(app: FastifyInstance, 
           const conversation = await loadConversation(pool, conversationId);
           return [...messages.map(message => ({ type: 'message.created', message })), { type: 'ready', conversation: conversation?.customer ?? null }];
         },
-        onHeartbeat: () => customerStreamHeartbeat(pool, redis, conversationId, subject, request.principal),
+        onHeartbeat: send => customerStreamHeartbeat(pool, redis, conversationId, subject, request.principal, send),
       });
     });
 

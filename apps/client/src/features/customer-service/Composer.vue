@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { SendHorizontal } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -9,7 +8,8 @@ const MAX = 2000
 const props = defineProps<{ disabled?: boolean }>()
 const emit = defineEmits<{ send: [body: string] }>()
 const { t } = useI18n()
-const body = ref('')
+// 草稿由面板持有，与留言表单共用
+const body = defineModel<string>({ default: '' })
 
 function submit() {
   const text = body.value.trim()

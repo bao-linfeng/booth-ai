@@ -7,7 +7,7 @@ interface Handlers {
   onState: (state: ConnectionState) => void
   /** 断线期间每 5 秒调用一次，补拉消息与会话状态 */
   poll: () => Promise<void>
-  /** 每次（重新）连上后调用：重新读取坐席在线状态 */
+  /** 每次（重新）连上后调用：重新读取坐席在线状态；连接期间由服务端心跳推送 presence 事件更新 */
   onReconnected: () => void
   after: () => number
 }

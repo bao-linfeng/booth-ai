@@ -165,3 +165,20 @@ test('shared SSE runs onOpen before replay and treats heartbeat callback errors 
   // 心跳必须是浏览器可观察的具名事件（注释行不会触发任何监听），前端靠它发现被代理吞掉的断线
   assert.match((await readUntil(reader, 'event: ping\ndata: {}\n\n', text)).text, /event: ping\ndata: \{\}\n\n/);
 });
+
+test('shared SSE writes heartbeat events as updates, buffered behind the replay', { timeout: 5000 }, async t => {
+  let beats = 0;
+  const { app, address } = await setup({
+    heartbeatMs: 20,
+    // 补发期间触发的心跳事件要排在补发之后，避免客户端先收到新状态再被补发覆盖
+    replay: async () => { await new Promise(resolve => setTimeout(resolve, 60)); return [{ replay: 1 }]; },
+    onHeartbeat: async send => { beats += 1; send({ type: 'presence', beat: beats }); },
+  });
+  const abort = new AbortController();
+  t.after(async () => { abort.abort(); await app.close(); });
+  const response = await fetch(`${address}/events`, { signal: abort.signal });
+  const reader = response.body!.getReader();
+  const { text } = await readUntil(reader, '"beat":3');
+  assert.ok(text.indexOf('"replay":1') < text.indexOf('"beat":1'));
+  assert.match(text, /event: update\ndata: \{"type":"presence","beat":1\}\n\n/);
+});

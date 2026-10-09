@@ -8,8 +8,8 @@ export interface EventStreamOptions {
   replay?: () => Promise<unknown[]>;
   /** 每条 pub/sub 消息的过滤或改写；返回 null 表示丢弃 */
   filter?: (channel: string, payload: string) => string | null;
-  /** 每次心跳（写出 ping 事件）时调用；返回 false 时关闭连接，抛错视为本次跳过 */
-  onHeartbeat?: () => Promise<boolean | void>;
+  /** 每次心跳（写出 ping 事件）时调用，可用 send 推送附带事件；返回 false 时关闭连接，抛错视为本次跳过 */
+  onHeartbeat?: (send: (event: unknown) => void) => Promise<boolean | void>;
   /** 响应头写出后、补发前调用 */
   onOpen?: () => Promise<void>;
   heartbeatMs?: number;
@@ -101,13 +101,17 @@ export async function streamEvents(redis: Redis, reply: FastifyReply, options: E
   let pending: string[] | null = [];
   let heartbeat: NodeJS.Timeout | undefined;
 
+  // 补发完成前暂存，之后按序写出
+  const emit = (payload: string) => {
+    if (closed) return;
+    if (pending) pending.push(payload);
+    else response.write(write(payload));
+  };
   const member: Member = {
     deliver: (channel, message) => {
       if (closed) return;
       const payload = options.filter ? options.filter(channel, message) : message;
-      if (payload === null) return;
-      if (pending) pending.push(payload);
-      else response.write(write(payload));
+      if (payload !== null) emit(payload);
     },
     unavailable: () => {
       if (streaming) response.destroy();
@@ -142,7 +146,7 @@ export async function streamEvents(redis: Redis, reply: FastifyReply, options: E
       if (closed) return;
       // 用具名事件而不是注释：前端据此判断连接存活（代理吞掉上游断开时浏览器收不到 error）
       response.write('event: ping\ndata: {}\n\n');
-      options.onHeartbeat?.().then(alive => { if (alive === false && !closed) response.end(); }, () => undefined);
+      options.onHeartbeat?.(event => emit(JSON.stringify(event))).then(alive => { if (alive === false && !closed) response.end(); }, () => undefined);
     }, options.heartbeatMs ?? 15000);
 
     await options.onOpen?.();
