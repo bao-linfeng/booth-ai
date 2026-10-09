@@ -294,3 +294,43 @@ test('deleting a rendering together with its paired masks also requires the mask
   assert.equal(forbidden.statusCode, 403, forbidden.body);
   assert.ok(deps.events.every(sql => sql.includes('FROM scheme_baseline_assets sa')), 'forbidden requests must not write to the database');
 });
+
+test('mask pairing candidates list renderings with size, order and occupying mask, signing thumbnails only with preview permission', async t => {
+  const row = (id: string, type: 'rendering' | 'mask', sortOrder: number, relatedAssetId: string | null, version: boolean) => ({
+    id, schemeId: 'scheme-id', schemeCode: 'S-1', schemeName: '方案', type, name: `${type}-${id}`, sortOrder, relatedAssetId,
+    metadata: {}, isActive: true, revision: 4, createdAt: new Date(), updatedAt: new Date(),
+    versionId: version ? `v-${id}` : null, versionAssetId: version ? id : null, versionObjectKey: version ? `key/${id}` : null,
+    versionOriginalFilename: version ? `${id}.png` : null, versionMimeType: version ? 'image/png' : null, versionByteSize: version ? 10 : null,
+    versionChecksum: version ? 'c' : null, versionWidthPx: version ? 1600 : null, versionHeightPx: version ? 900 : null,
+    versionPageCount: null, versionCreatedAt: version ? new Date() : null,
+  });
+  const pool = { query: async (_sql: string, values: unknown[]) => ({
+    rows: values[1] === 'rendering' ? [row('r1', 'rendering', 0, null, true), row('r2', 'rendering', 1, null, false)] : [row('m1', 'mask', 0, 'r1', true)],
+  }) } as unknown as pg.Pool;
+  const signed: string[] = [];
+  const storage = { signDownload: async (key: string) => { signed.push(key); return `https://cdn.test/${key}`; } };
+  async function request(permissions: string[]) {
+    const app = Fastify();
+    t.after(() => app.close());
+    app.decorateRequest('principal', null);
+    app.addHook('onRequest', async req => { req.principal = { site: 'admin', localId: 'admin-id', permissions } as Principal; });
+    await registerAdminAssetsRoutes(app, pool, storage as unknown as ReturnType<typeof createStorage>, {} as Redis);
+    return app.inject({ method: 'GET', url: '/schemes/S-1/assets/mask-candidates' });
+  }
+
+  const full = await request(allPermissionCodes);
+  assert.equal(full.statusCode, 200, full.body);
+  assert.deepEqual(full.json().data, [
+    { id: 'r1', name: 'rendering-r1', sortOrder: 0, file: { originalFilename: 'r1.png', widthPx: 1600, heightPx: 900 },
+      thumbnailUrl: 'https://cdn.test/key/r1', pairedMask: { id: 'm1', name: 'mask-m1', revision: 4 } },
+    { id: 'r2', name: 'rendering-r2', sortOrder: 1, file: null, thumbnailUrl: null, pairedMask: null },
+  ]);
+  assert.deepEqual(signed, ['key/r1']);
+
+  const noPreview = await request(allPermissionCodes.filter(code => code !== 'assets-renderings.preview'));
+  assert.equal(noPreview.json().data[0].thumbnailUrl, null);
+  assert.equal(signed.length, 1);
+
+  const readOnly = await request(allPermissionCodes.filter(code => code !== 'assets-masks.upload' && code !== 'assets-masks.update'));
+  assert.equal(readOnly.statusCode, 403);
+});

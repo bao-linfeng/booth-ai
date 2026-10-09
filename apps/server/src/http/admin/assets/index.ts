@@ -3,9 +3,9 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { createStorage } from '../../../infra/storage.js';
 import { adminUserId, requirePrincipal } from '../../authentication.js';
-import { requireAdminPermission } from '../authorization.js';
+import { hasAdminPermission, requireAdminPermission } from '../authorization.js';
 import { assetPermissionCode } from '../../../modules/identity/permissions.js';
-import { getAsset, getAssetVersion, listAssets, listSchemeAssets } from '../../../modules/assets/queries.js';
+import { getAsset, getAssetVersion, listAssets, listMaskPairingCandidates, listSchemeAssets } from '../../../modules/assets/queries.js';
 import { deleteAsset, updateAsset } from '../../../modules/assets/service.js';
 import type { AssetType, ListAssetsOptions, UpdateAssetInput } from '../../../modules/assets/types.js';
 import { uploadAsset, uploadAssetVersion } from '../../../modules/assets/upload.js';
@@ -63,6 +63,28 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     const assets = await listSchemeAssets(pool, decodedCode(request.params as CodeParams), query.type);
     const permissions = requirePrincipal(request, 'admin').permissions;
     return { code: 0, data: assets.filter(asset => permissions.includes(assetPermissionCode(asset.type, 'read'))) };
+  });
+
+  app.get('/schemes/:code/assets/mask-candidates', {
+    schema: { tags: ['admin-assets'], summary: '蒙版上传与改配的效果图候选（尺寸、排序、缩略图与占用蒙版）', params: codeParamsSchema },
+  }, async request => {
+    const permissions = requirePrincipal(request, 'admin').permissions;
+    if (!['upload', 'update'].some(action => hasAdminPermission(permissions, assetPermissionCode('mask', action)))) {
+      requireAdminPermission(request, assetPermissionCode('mask', 'upload'));
+    }
+    // 缩略图仍按效果图预览权限签发，无预览权限时只返回文件信息
+    const canPreview = hasAdminPermission(permissions, assetPermissionCode('rendering', 'preview'));
+    const candidates = await listMaskPairingCandidates(pool, decodedCode(request.params as CodeParams));
+    const data = await Promise.all(candidates.map(async ({ rendering, pairedMask }) => {
+      const version = rendering.currentVersion;
+      return {
+        id: rendering.id, name: rendering.name, sortOrder: rendering.sortOrder,
+        file: version ? { originalFilename: version.originalFilename, widthPx: version.widthPx, heightPx: version.heightPx } : null,
+        thumbnailUrl: version && canPreview ? await storage.signDownload(version.objectKey, 600) : null,
+        pairedMask: pairedMask ? { id: pairedMask.id, name: pairedMask.name, revision: pairedMask.revision } : null,
+      };
+    }));
+    return { code: 0, data };
   });
 
   app.post('/schemes/:code/assets', {
