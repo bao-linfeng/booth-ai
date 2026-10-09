@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { ImportPreviewRow, ImportRow, ImportRowSource, ImportSummary, ParsedImportRow, PreviewImportResult } from './types.js';
-import { missingRequiredField, validateImportRow } from './validation.js';
+import { loadImportDictionaries, missingRequiredField, validateImportRow, type ImportDictionaries } from './validation.js';
 import { parseWorkbook } from './workbook.js';
 
 async function findExistingCodes(pool: pg.Pool, parsedRows: ParsedImportRow[]): Promise<Set<string>> {
@@ -14,7 +14,7 @@ async function findExistingCodes(pool: pg.Pool, parsedRows: ParsedImportRow[]): 
  * 逐行分类为 valid / duplicate / error；空行计入 skipped。
  * rowId 按解析顺序从 1 编号，跨工作表唯一；行号保留各工作表内的原始行号。
  */
-async function classifyRows(pool: pg.Pool, parsedRows: ParsedImportRow[], existingCodes: Set<string>): Promise<{ rows: ImportPreviewRow[]; summary: ImportSummary }> {
+function classifyRows(dictionaries: ImportDictionaries, parsedRows: ParsedImportRow[], existingCodes: Set<string>): { rows: ImportPreviewRow[]; summary: ImportSummary } {
   const summary: ImportSummary = { total: parsedRows.length, valid: 0, duplicate: 0, error: 0, skipped: 0 };
   const rows: ImportPreviewRow[] = [];
   const firstSeen = new Map<string, ImportRowSource>();
@@ -33,7 +33,7 @@ async function classifyRows(pool: pg.Pool, parsedRows: ParsedImportRow[], existi
     }
     let data: ImportRow;
     try {
-      data = await validateImportRow(pool, parsed);
+      data = validateImportRow(dictionaries, parsed);
     } catch (error) {
       summary.error += 1;
       rows.push({ ...source, code, name, status: 'error', reason: error instanceof Error ? error.message : '导入数据无效' });
@@ -84,7 +84,8 @@ async function savePreview(pool: pg.Pool, adminId: string | null, filename: stri
 export async function previewImport(pool: pg.Pool, adminId: string | null, buffer: Buffer, filename: string): Promise<PreviewImportResult> {
   const parsedRows = await parseWorkbook(buffer);
   const existingCodes = await findExistingCodes(pool, parsedRows);
-  const { rows, summary } = await classifyRows(pool, parsedRows, existingCodes);
+  const dictionaries = await loadImportDictionaries(pool);
+  const { rows, summary } = classifyRows(dictionaries, parsedRows, existingCodes);
   await snapshotDuplicateRevisions(pool, rows);
   const importId = await savePreview(pool, adminId, filename, rows, summary);
   return { importId, rows, summary };

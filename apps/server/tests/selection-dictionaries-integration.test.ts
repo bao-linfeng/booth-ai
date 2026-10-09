@@ -6,7 +6,7 @@ import pg from 'pg';
 import { createScheme, listSchemes, updateScheme } from '../src/modules/schemes/service.js';
 import { previewImport } from '../src/modules/schemes/imports/preview.js';
 import { commitImport } from '../src/modules/schemes/imports/commit.js';
-import { validateImportRow } from '../src/modules/schemes/imports/validation.js';
+import { loadImportDictionaries, validateImportRow } from '../src/modules/schemes/imports/validation.js';
 import { parseWorkbook } from '../src/modules/schemes/imports/workbook.js';
 import { createDictionaryItem, deleteDictionaryItem, updateDictionaryItem } from '../src/modules/selection/dictionaries.js';
 import { loadCatalog } from '../src/modules/selection/repository.js';
@@ -84,12 +84,13 @@ test('size migration, Excel import, transactional CRUD and dictionary language p
   assert.equal(updated.labels.ja, 'モダン・ミニマル');
   const source = (await parseWorkbook(buffer)).find(row => row.data.code)!.data;
   for (const style of ['现代简约', 'MODERN MINIMALIST', 'モダン・ミニマル', 'ＳＩＭＰＬＥ ＭＯＤＥＲＮ', 'シンプルモダン']) {
-    assert.equal((await validateImportRow(pool, { ...source, styleId: style })).styleId, modern.id);
+    assert.equal(validateImportRow(await loadImportDictionaries(pool), { ...source, styleId: style }).styleId, modern.id);
   }
   const duplicate = await createDictionaryItem(pool, modern.dictionaryId, { itemValue: 'ambiguous', itemLabel: '其他风格', aliases: [{ locale: 'en', text: 'simple modern' }] });
-  await assert.rejects(validateImportRow(pool, { ...source, styleId: 'simple modern' }), { statusCode: 400 });
+  const dictionaries = await loadImportDictionaries(pool);
+  assert.throws(() => validateImportRow(dictionaries, { ...source, styleId: 'simple modern' }), { statusCode: 400 });
   await updateDictionaryItem(pool, duplicate.id, { enabled: false }, modern.dictionaryId);
-  assert.equal((await validateImportRow(pool, { ...source, styleId: 'simple modern' })).styleId, modern.id);
+  assert.equal(validateImportRow(await loadImportDictionaries(pool), { ...source, styleId: 'simple modern' }).styleId, modern.id);
 
   const sizeId = (await pool.query<{ id: string }>("SELECT id FROM dictionary_items WHERE item_value='6000-3000-4500'")).rows[0]!.id;
   assert.equal((await loadCatalog(pool)).boothSpaces.length, 0);

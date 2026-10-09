@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { domainError } from '../../../lib/errors.js';
 import type { ImportRow, ParsedImportRow } from './types.js';
 
 interface XlsxLoader {
@@ -80,8 +81,15 @@ function parseRow(row: ExcelJS.Row): ImportRow {
   return parsed;
 }
 
-function parseError(): Error & { statusCode: number } {
-  return Object.assign(new Error('Failed to parse Excel file'), { statusCode: 400 });
+/** 单次导入的数据工作表与扫描行数上限（含空行，不含表头），须与管理端提示一致。 */
+export const maxImportSheets = 10;
+export const maxImportRows = 2000;
+
+/** 最后一个含值的行号；仅有格式的尾部空行不计入，避免按 rowCount 扫描到异常远的行。 */
+function lastValueRow(worksheet: ExcelJS.Worksheet): number {
+  let last = 0;
+  worksheet.eachRow((_row, rowNumber) => { last = rowNumber; });
+  return last;
 }
 
 /** 读取模板中的方案行（每个工作表从第 2 行起），保留来源工作表与原始行号；"说明"/"选项"工作表不参与导入。 */
@@ -90,13 +98,17 @@ export async function parseWorkbook(buffer: Buffer): Promise<ParsedImportRow[]> 
   try {
     await (workbook.xlsx as unknown as XlsxLoader).load(buffer);
   } catch {
-    throw parseError();
+    throw domainError('IMPORT_FILE_INVALID', 400);
   }
 
+  const sheets = workbook.worksheets.filter(worksheet => !worksheet.name.includes('说明') && !worksheet.name.includes('选项'));
+  if (sheets.length > maxImportSheets) throw domainError('IMPORT_TOO_MANY_SHEETS', 400);
+  const ranges = sheets.map(worksheet => ({ worksheet, lastRow: lastValueRow(worksheet) }));
+  if (ranges.reduce((total, { lastRow }) => total + Math.max(lastRow - 1, 0), 0) > maxImportRows) throw domainError('IMPORT_TOO_MANY_ROWS', 400);
+
   const rows: ParsedImportRow[] = [];
-  for (const worksheet of workbook.worksheets) {
-    if (worksheet.name.includes('说明') || worksheet.name.includes('选项')) continue;
-    for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+  for (const { worksheet, lastRow } of ranges) {
+    for (let rowNumber = 2; rowNumber <= lastRow; rowNumber += 1) {
       rows.push({ sheetName: worksheet.name, rowNumber, data: parseRow(worksheet.getRow(rowNumber)) });
     }
   }
