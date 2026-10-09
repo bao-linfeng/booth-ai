@@ -122,6 +122,7 @@ test('import update invalidates publication without trusting source verification
   const query = async (sql: string, params?: unknown[]) => {
     sqls.push(sql);
     if (sql.includes('SELECT preview')) return { rows: [{ preview, status: 'pending' }] };
+    if (sql.includes('FROM schemes WHERE code = ANY')) return { rows: [{ ...publishedSchemeRow(), code: 'S-1', editRevision: 1 }] };
     if (sql.includes('UPDATE schemes SET')) {
       assert.equal(params?.[16], null);
       assert.equal(params?.length, 19);

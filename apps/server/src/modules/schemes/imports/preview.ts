@@ -1,21 +1,37 @@
 import type pg from 'pg';
+import { findSchemesByCodes, type SchemeRecord } from '../service.js';
+import { importRowChanges, onlyNotesChanged } from './changes.js';
 import type { ImportPreviewRow, ImportRow, ImportRowSource, ImportSummary, ParsedImportRow, PreviewImportResult } from './types.js';
 import { importDictionaryLabels, loadImportDictionaries, missingRequiredField, validateImportRow, type ImportDictionaries } from './validation.js';
 import { parseWorkbook } from './workbook.js';
 
-async function findExistingCodes(pool: pg.Pool, parsedRows: ParsedImportRow[]): Promise<Set<string>> {
+async function findExistingSchemes(pool: pg.Pool, parsedRows: ParsedImportRow[]): Promise<Map<string, SchemeRecord>> {
   const codes = [...new Set(parsedRows.map(row => row.data.code).filter(code => code !== ''))];
-  if (codes.length === 0) return new Set();
-  const existing = await pool.query<{ code: string }>('SELECT code FROM schemes WHERE code = ANY($1::text[])', [codes]);
-  return new Set(existing.rows.map(row => row.code));
+  return new Map((await findSchemesByCodes(pool, codes)).map(scheme => [scheme.code, scheme]));
 }
 
 /**
- * 逐行分类为 valid / duplicate / error；空行计入 skipped。
+ * 已存在的编号与当前方案比较：无差异为 unchanged（提交时不写入），否则为 duplicate 并记录变化、将清空的字段；
+ * 同时记录当前版本，提交时据此做乐观并发校验。
+ */
+function existingRow(row: ImportPreviewRow & { data: ImportRow }, current: SchemeRecord, summary: ImportSummary): ImportPreviewRow {
+  const { changedFields, clearedFields } = importRowChanges(current, row.data);
+  const published = current.publishStatus === 'published';
+  if (changedFields.length === 0) {
+    summary.unchanged += 1;
+    return { ...row, status: 'unchanged', snapshotRevision: current.editRevision, published, changedFields, clearedFields };
+  }
+  summary.duplicate += 1;
+  if (published && !onlyNotesChanged(changedFields)) summary.unpublish += 1;
+  return { ...row, status: 'duplicate', snapshotRevision: current.editRevision, published, changedFields, clearedFields };
+}
+
+/**
+ * 逐行分类为 valid / duplicate / unchanged / error；空行计入 skipped。
  * rowId 按解析顺序从 1 编号，跨工作表唯一；行号保留各工作表内的原始行号。
  */
-function classifyRows(dictionaries: ImportDictionaries, parsedRows: ParsedImportRow[], existingCodes: Set<string>): { rows: ImportPreviewRow[]; summary: ImportSummary } {
-  const summary: ImportSummary = { total: parsedRows.length, valid: 0, duplicate: 0, error: 0, skipped: 0 };
+function classifyRows(dictionaries: ImportDictionaries, parsedRows: ParsedImportRow[], existing: Map<string, SchemeRecord>): { rows: ImportPreviewRow[]; summary: ImportSummary } {
+  const summary: ImportSummary = { total: parsedRows.length, valid: 0, duplicate: 0, unchanged: 0, error: 0, skipped: 0, unpublish: 0 };
   const rows: ImportPreviewRow[] = [];
   const firstSeen = new Map<string, ImportRowSource>();
   for (const [index, { sheetName, rowNumber, data: parsed }] of parsedRows.entries()) {
@@ -46,28 +62,16 @@ function classifyRows(dictionaries: ImportDictionaries, parsedRows: ParsedImport
       continue;
     }
     firstSeen.set(code, { sheetName, rowNumber });
-    if (existingCodes.has(code)) {
-      summary.duplicate += 1;
-      rows.push({ ...source, code, name, status: 'duplicate', data, dictionaryLabels: importDictionaryLabels(dictionaries, data) });
+    const row = { ...source, code, name, status: 'valid' as const, data, dictionaryLabels: importDictionaryLabels(dictionaries, data) };
+    const current = existing.get(code);
+    if (current) {
+      rows.push(existingRow(row, current, summary));
     } else {
       summary.valid += 1;
-      rows.push({ ...source, code, name, status: 'valid', data, dictionaryLabels: importDictionaryLabels(dictionaries, data) });
+      rows.push(row);
     }
   }
   return { rows, summary };
-}
-
-/** 为重复行记录当前方案版本，提交时据此做乐观并发校验。 */
-async function snapshotDuplicateRevisions(pool: pg.Pool, rows: ImportPreviewRow[]): Promise<void> {
-  const duplicateCodes = rows.filter(row => row.status === 'duplicate').map(row => row.code);
-  if (duplicateCodes.length === 0) return;
-  const revisions = await pool.query<{ code: string; revision: number }>(
-    'SELECT code, revision FROM schemes WHERE code = ANY($1::text[])', [duplicateCodes],
-  );
-  const revisionsByCode = new Map(revisions.rows.map(row => [row.code, row.revision]));
-  for (const row of rows) {
-    if (row.status === 'duplicate') row.snapshotRevision = revisionsByCode.get(row.code);
-  }
 }
 
 async function savePreview(pool: pg.Pool, adminId: string | null, filename: string, rows: ImportPreviewRow[], summary: ImportSummary): Promise<{ importId: string; expiresAt: string }> {
@@ -83,10 +87,9 @@ async function savePreview(pool: pg.Pool, adminId: string | null, filename: stri
 
 export async function previewImport(pool: pg.Pool, adminId: string | null, buffer: Buffer, filename: string): Promise<PreviewImportResult> {
   const parsedRows = await parseWorkbook(buffer);
-  const existingCodes = await findExistingCodes(pool, parsedRows);
+  const existing = await findExistingSchemes(pool, parsedRows);
   const dictionaries = await loadImportDictionaries(pool);
-  const { rows, summary } = classifyRows(dictionaries, parsedRows, existingCodes);
-  await snapshotDuplicateRevisions(pool, rows);
+  const { rows, summary } = classifyRows(dictionaries, parsedRows, existing);
   const { importId, expiresAt } = await savePreview(pool, adminId, filename, rows, summary);
   return { importId, expiresAt, rows, summary };
 }

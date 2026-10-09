@@ -40,10 +40,18 @@ export interface ParsedImportRow extends ImportRowSource {
 export interface ImportSummary {
   total: number;
   valid: number;
+  /** 已存在且文件内容与当前方案有差异的行 */
   duplicate: number;
+  /** 已存在且与当前方案完全一致、无需更新的行 */
+  unchanged: number;
   error: number;
   skipped: number;
+  /** 覆盖更新时将从已发布退回草稿的方案数（仅改备注的不计入） */
+  unpublish: number;
 }
+
+/** 导入覆盖可写入的方案字段（ImportRow 去掉编号与核验状态）。 */
+export type ImportChangedField = Exclude<keyof ImportRow, 'code' | 'verificationStatus'>;
 
 /** 字典字段映射后的中文标签，供预览核对；键与 ImportRow 的字典字段一致。 */
 export type ImportDictionaryLabels = Partial<Record<'productSystemId' | 'styleId' | 'industryIds' | 'budgetTierId' | 'zoneIds' | 'featureIds', string[]>>;
@@ -53,11 +61,15 @@ export interface ImportPreviewRow extends ImportRowSource {
   rowId: number;
   code: string;
   name: string;
-  status: 'valid' | 'duplicate' | 'error';
+  status: 'valid' | 'duplicate' | 'unchanged' | 'error';
   reason?: string;
   data?: ImportRow;
   dictionaryLabels?: ImportDictionaryLabels;
   snapshotRevision?: number;
+  /** 仅 duplicate / unchanged：当前方案是否已发布，以及文件相对当前方案变化与将清空的字段 */
+  published?: boolean;
+  changedFields?: ImportChangedField[];
+  clearedFields?: ImportChangedField[];
 }
 
 export interface PreviewImportResult {
@@ -76,6 +88,8 @@ export interface CommitImportOptions {
 export interface CommitImportResult {
   created: number;
   updated: number;
+  /** 与当前方案一致而未写入的重复行 */
+  unchanged: number;
   dictionaryItemsCreated: number;
   failed: (ImportRowSource & { rowId: number; code: string; reason: string })[];
 }

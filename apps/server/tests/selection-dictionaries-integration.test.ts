@@ -51,8 +51,20 @@ test('size migration, Excel import, transactional CRUD and dictionary language p
   assert.equal((await sizeValues()).length, 5);
   assert.deepEqual(await commitImport(pool, adminId, preview.importId, { duplicateStrategy: 'skip' }), imported);
   const repeated = await previewImport(pool, adminId, buffer, 'template.xlsx');
-  assert.equal(repeated.summary.duplicate, 48);
+  assert.deepEqual([repeated.summary.duplicate, repeated.summary.unchanged, repeated.summary.unpublish], [0, 48, 0]);
   assert.equal((await commitImport(pool, adminId, repeated.importId, { duplicateStrategy: 'skip' })).dictionaryItemsCreated, 0);
+  // 内容一致的覆盖不写入；仅备注变化时写入备注但不递增修订、不下架
+  const sample = repeated.rows[0]!.code;
+  await pool.query("UPDATE schemes SET publish_status='published', notes='内部备注' WHERE code=$1", [sample]);
+  const revisions = async () => (await pool.query<{ code: string; revision: number }>('SELECT code, revision FROM schemes ORDER BY code')).rows;
+  const beforeOverwrite = await revisions();
+  const overwrite = await previewImport(pool, adminId, buffer, 'template.xlsx');
+  assert.deepEqual([overwrite.summary.duplicate, overwrite.summary.unchanged, overwrite.summary.unpublish], [1, 47, 0]);
+  assert.deepEqual(overwrite.rows.find(row => row.code === sample)?.clearedFields, ['notes']);
+  const overwritten = await commitImport(pool, adminId, overwrite.importId, { duplicateStrategy: 'update' });
+  assert.deepEqual([overwritten.updated, overwritten.unchanged, overwritten.failed.length], [1, 47, 0]);
+  assert.deepEqual(await revisions(), beforeOverwrite);
+  assert.deepEqual((await pool.query('SELECT publish_status, notes FROM schemes WHERE code=$1', [sample])).rows[0], { publish_status: 'published', notes: null });
 
   const manual = await createScheme(pool, adminId, { code: 'MANUAL', name: '手动新增', lengthMm: 3000, widthMm: 6000, heightMm: 4200, openingCount: 2 });
   assert.ok((await sizeValues()).includes('3000-6000-4200'));
