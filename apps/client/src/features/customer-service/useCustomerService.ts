@@ -4,7 +4,7 @@ import {
   errorReason, getCurrentConversation, listMessages, markRead as markReadApi, openConversation, postContext, postMessage,
   type ContextDto, type ContextInput, type ConversationDto, type CustomerEvent, type EntryPoint, type MessageDto,
 } from '@/services/api/customer-service'
-import { applyTranslation, maxSeq, mergeMessages, minSeq, readTargets } from './timeline'
+import { applyTranslation, maxSeq, mergeMessages, minSeq, readTargets, syncAfter } from './timeline'
 import { useCustomerServiceConnection, type ConnectionState } from './useCustomerServiceConnection'
 import { clearVisitor, ensureVisitor, hasVisitor, mergeVisitorAfterLogin } from './visitor'
 
@@ -84,7 +84,11 @@ const connection = useCustomerServiceConnection({
   onState: value => { state.connection = value },
   onEvent: handleEvent,
   poll: async () => { const epoch = generation; await fetchNewer(epoch); await refresh(epoch) },
-  onReconnected: () => { void refreshCurrent().catch(() => undefined) },
+  // 重连时 SSE 只补发新 seq，断线期间完成的译文要靠 fetchNewer 重取校准；与轮询一样最后刷新，未读数以服务端为准
+  onReconnected: () => {
+    const epoch = generation
+    void fetchNewer(epoch).catch(() => undefined).then(() => refresh(epoch)).catch(() => undefined)
+  },
 })
 
 function handleEvent(event: CustomerEvent) {
@@ -100,19 +104,28 @@ function handleEvent(event: CustomerEvent) {
 }
 
 function addMessages(messages: MessageDto[]) {
+  // 重取的已有消息（校准译文、SSE 与补拉重复）不重复计入未读
+  const known = new Set(state.messages.map(message => message.id))
+  const added = messages.filter(message => !known.has(message.id))
   state.messages = mergeMessages(state.messages, messages)
   const delivered = new Set(messages.map(message => message.clientMessageId).filter(Boolean))
   state.pending = state.pending.filter(item => !delivered.has(item.clientMessageId))
-  if (messages.some(message => message.senderType === 'agent')) {
+  if (added.some(message => message.senderType === 'agent')) {
     if (state.open) scheduleMarkRead()
-    else state.unreadCount += messages.filter(message => message.senderType === 'agent').length
+    else state.unreadCount += added.filter(message => message.senderType === 'agent').length
   }
 }
 
+/** 补拉新消息；有译文未完成的消息时从最早那条起重取，顺带把断线期间完成的译文校准为 done/failed */
 async function fetchNewer(epoch: number) {
   if (!state.loaded) return
-  const page = await withSubject(epoch, () => listMessages({ after: maxSeq(state.messages), limit: 100 }))
-  addMessages(page.items)
+  let after = syncAfter(state.messages)
+  for (;;) {
+    const page = await withSubject(epoch, () => listMessages({ after, limit: 100 }))
+    addMessages(page.items)
+    if (!page.hasMore || !page.items.length) return
+    after = maxSeq(page.items)
+  }
 }
 
 async function loadLatest(epoch: number) {

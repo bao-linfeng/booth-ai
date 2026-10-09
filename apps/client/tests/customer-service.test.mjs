@@ -294,6 +294,54 @@ test('a stream silent for 45 seconds is dropped and reconnected; pings keep it a
   closePanel()
 })
 
+test('translations finished while disconnected are recalibrated on reconnect and on reopening', async t => {
+  const pending = { locale: 'en', status: 'pending', body: null }
+  let items = [message(1), message(2, { senderType: 'agent', body: '稍等', translation: { locale: 'en', status: 'done', body: 'Wait' } }),
+    message(3, { senderType: 'agent', body: '您好', translation: pending }), message(4)]
+  const calls = setup({ current: conversation({ status: 'active' }), respond: call => (call.path.endsWith('/messages') && call.method === 'GET'
+    ? { items: items.filter(item => call.query.after === undefined || item.seq > call.query.after), hasMore: false } : undefined) })
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)) }
+  await cs.openWith(undefined, 'floating')
+  await flush()
+  const { state, closePanel } = cs.useCustomerService()
+  const translation = id => state.messages.find(item => item.id === id).translation
+  FakeEventSource.instances[0].emit('open')
+  await flush()
+  assert.equal(translation('m3').status, 'pending')
+
+  // 断线期间翻译完成：SSE 按 seq 补发拿不到，重连后必须重取
+  FakeEventSource.instances[0].onerror()
+  items = items.map(item => (item.seq === 3 ? { ...item, translation: { locale: 'en', status: 'done', body: 'Hello' } } : item))
+  t.mock.timers.tick(3000)
+  await flush()
+  assert.equal(FakeEventSource.instances.length, 2)
+  assert.match(FakeEventSource.instances[1].url, /after=4$/, 'the stream still resumes after the last known seq')
+  FakeEventSource.instances[1].emit('open')
+  await flush()
+  assert.deepEqual(translation('m3'), { locale: 'en', status: 'done', body: 'Hello' })
+  assert.equal(calls.filter(call => call.method === 'GET' && call.path.endsWith('/messages')).at(-1).query.after, 2, 'refetches from the earliest pending translation')
+
+  // 面板关闭期间失败的译文：重新打开（已加载过）也要校准
+  items = [...items, message(5, { senderType: 'agent', translation: pending })]
+  FakeEventSource.instances[1].emit('update', { type: 'message.created', message: items[4] })
+  closePanel()
+  items = items.map(item => (item.seq === 5 ? { ...item, translation: { locale: 'en', status: 'failed', body: null } } : item))
+  await cs.openWith(undefined, 'floating')
+  await flush()
+  assert.equal(translation('m5').status, 'failed')
+  assert.equal(calls.filter(call => call.method === 'GET' && call.path.endsWith('/messages')).at(-1).query.after, 4)
+  closePanel()
+})
+
+test('a late pending copy never downgrades a finished translation', () => {
+  const done = message(3, { senderType: 'agent', translation: { locale: 'en', status: 'done', body: 'Hello' } })
+  const [merged] = timeline.mergeMessages([done], [message(3, { senderType: 'agent', body: 'edited', translation: { locale: 'en', status: 'pending', body: null } })])
+  assert.deepEqual([merged.body, merged.translation.status], ['edited', 'done'])
+  assert.equal(timeline.syncAfter([message(1), done, message(4, { translation: { locale: 'en', status: 'pending', body: null } }), message(6)]), 3)
+  assert.equal(timeline.syncAfter([message(1), done]), 3)
+})
+
 test('?cs=open from reply emails opens the panel and removes the query; the launcher shows unread replies', async () => {
   setup({ loggedIn: true, respond: call => (call.path.endsWith('/conversations/current') ? { conversation: conversation(), contexts: [], unreadCount: 3, agentsOnline: true } : undefined) })
   const { unmount, container, router } = await mount()

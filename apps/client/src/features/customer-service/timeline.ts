@@ -2,9 +2,14 @@ import type { MessageDto, TranslationDto } from '@/services/api/customer-service
 
 // 客服时间线纯函数：合并去重、排序、分轮、译文显示与未读计算
 
+/** 译文只会从 pending 走向 done/failed：迟到的旧响应不能把已推送的终态译文覆盖回 pending */
 export function mergeMessages(current: MessageDto[], incoming: MessageDto[]): MessageDto[] {
   const byId = new Map(current.map(message => [message.id, message]))
-  for (const message of incoming) byId.set(message.id, message)
+  for (const message of incoming) {
+    const known = byId.get(message.id)?.translation
+    const stale = message.translation?.status === 'pending' && known && known.status !== 'pending'
+    byId.set(message.id, stale ? { ...message, translation: known } : message)
+  }
   return [...byId.values()].sort((a, b) => a.seq - b.seq)
 }
 
@@ -14,6 +19,12 @@ export function applyTranslation(messages: MessageDto[], messageId: string, tran
 
 export function maxSeq(messages: MessageDto[]): number {
   return messages.reduce((max, message) => Math.max(max, message.seq), 0)
+}
+
+/** 补拉起点：有译文未完成的消息时从最早那条之前开始（翻译完成不产生新 seq，只能重取原消息），否则从已知最大 seq 开始 */
+export function syncAfter(messages: MessageDto[]): number {
+  const pending = messages.filter(message => message.translation?.status === 'pending')
+  return pending.length ? minSeq(pending)! - 1 : maxSeq(messages)
 }
 
 export function minSeq(messages: MessageDto[]): number | undefined {
