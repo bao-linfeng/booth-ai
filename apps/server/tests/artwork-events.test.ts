@@ -18,6 +18,7 @@ const channel = `artwork-job:${jobId}`;
 class Subscriber extends EventEmitter {
   status = 'connecting';
   subscribed = false;
+  released = false;
   disconnected = false;
   subscribeError = false;
 
@@ -27,6 +28,14 @@ class Subscriber extends EventEmitter {
     if (this.subscribeError) throw new Error('Subscription failed');
     this.subscribed = true;
     return 1;
+  }
+
+  async unsubscribe(value: string) {
+    assert.equal(value, channel);
+    this.subscribed = false;
+    this.released = true;
+    this.emit('unsubscribed');
+    return 0;
   }
 
   disconnect() {
@@ -127,10 +136,11 @@ test('artwork SSE syncs completion missed before connecting, preserves CORS and 
   const text = await readUntil(response.body!.getReader(), '"ready"');
   assert.match(text, /event: update\ndata: .*"succeeded"/);
   assert.equal((await app.inject({ url: `/artwork-jobs/${jobId}/events?ticket=${issued}` })).statusCode, 401);
-  const disconnected = once(subscriber, 'disconnected');
+  const released = once(subscriber, 'unsubscribed');
   abort.abort();
-  await disconnected;
-  assert.equal(subscriber.listenerCount('message'), 0);
+  await released;
+  assert.equal(subscriber.subscribed, false);
+  assert.equal(subscriber.disconnected, false, 'the shared subscriber connection outlives a single stream');
 });
 
 test('artwork SSE forwards direction and settlement changes and closes when Redis becomes unavailable', { timeout: 5000 }, async t => {
@@ -161,12 +171,13 @@ test('artwork SSE subscription failure returns HTTP error and snapshot failure c
   const response = await fetch(`${failed.address}/artwork-jobs/${jobId}/events?ticket=${await failed.ticket()}`);
   assert.equal(response.status, 500);
   assert.notEqual(response.headers.get('content-type'), 'text/event-stream');
-  assert.equal(failed.subscriber.disconnected, true);
+  assert.equal(failed.subscriber.released, true);
+  assert.equal(failed.subscriber.disconnected, false);
   const broken = await setup({ snapshotError: true });
   t.after(() => broken.app.close());
   await assert.rejects(async () => {
     const response = await fetch(`${broken.address}/artwork-jobs/${jobId}/events?ticket=${await broken.ticket()}`);
     await response.text();
   });
-  assert.equal(broken.subscriber.disconnected, true);
+  assert.equal(broken.subscriber.released, true);
 });

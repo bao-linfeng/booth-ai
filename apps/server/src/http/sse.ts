@@ -15,45 +15,116 @@ export interface EventStreamOptions {
   heartbeatMs?: number;
 }
 
+interface Member {
+  deliver: (channel: string, message: string) => void;
+  unavailable: () => void;
+}
+
+interface Hub {
+  subscriber: Redis;
+  ready: Promise<void>;
+  channels: Map<string, { members: Set<Member>; subscribed: Promise<unknown> }>;
+  members: Set<Member>;
+  closed: boolean;
+}
+
+// 进程级共享订阅器：同一 Redis 实例上的所有 SSE 共用一条订阅连接，频道按引用计数 SUBSCRIBE/UNSUBSCRIBE
+const hubs = new WeakMap<Redis, Hub>();
+
+function closeHub(redis: Redis, hub: Hub) {
+  if (hub.closed) return;
+  hub.closed = true;
+  if (hubs.get(redis) === hub) hubs.delete(redis);
+  for (const member of hub.members) member.unavailable();
+  hub.members.clear();
+  hub.channels.clear();
+  hub.subscriber.disconnect();
+}
+
+function eventHub(redis: Redis): Hub {
+  const existing = hubs.get(redis);
+  if (existing) return existing;
+  // 不自动重连：断开后关闭所有 SSE 由前端重连补发，下一条 SSE 重建订阅连接
+  const subscriber = redis.duplicate({ retryStrategy: null });
+  const hub: Hub = { subscriber, ready: waitForRedis(subscriber), channels: new Map(), members: new Set(), closed: false };
+  hubs.set(redis, hub);
+  const close = () => closeHub(redis, hub);
+  hub.ready.catch(close);
+  subscriber.on('error', close);
+  subscriber.on('end', close);
+  subscriber.on('message', (channel: string, message: string) => {
+    for (const member of hub.channels.get(channel)?.members ?? []) member.deliver(channel, message);
+  });
+  return hub;
+}
+
+async function join(hub: Hub, member: Member, channels: Set<string>): Promise<void> {
+  if (hub.closed) throw new Error('Redis subscriber closed');
+  hub.members.add(member);
+  const subscriptions = [...channels].map(channel => {
+    let entry = hub.channels.get(channel);
+    if (!entry) {
+      entry = { members: new Set(), subscribed: hub.subscriber.subscribe(channel) };
+      hub.channels.set(channel, entry);
+    }
+    entry.members.add(member);
+    return entry.subscribed;
+  });
+  await Promise.all(subscriptions);
+}
+
+function leave(hub: Hub, member: Member, channels: Set<string>) {
+  if (hub.closed || !hub.members.delete(member)) return;
+  for (const channel of channels) {
+    const entry = hub.channels.get(channel);
+    if (!entry?.members.delete(member) || entry.members.size > 0) continue;
+    hub.channels.delete(channel);
+    hub.subscriber.unsubscribe(channel).catch(() => undefined);
+  }
+}
+
+/** 进程退出时调用：断开共享订阅连接并关闭其上的所有 SSE */
+export function closeEventStreams(redis: Redis): void {
+  const hub = hubs.get(redis);
+  if (hub) closeHub(redis, hub);
+}
+
 const write = (payload: string) => `event: update\ndata: ${payload}\n\n`;
 
 /** 共用 SSE：先订阅再补发，避免两者之间的事件丢失；Redis 断开时关闭连接由前端重连补偿 */
 export async function streamEvents(redis: Redis, reply: FastifyReply, options: EventStreamOptions): Promise<void> {
   const response = reply.raw;
   const channels = new Set(options.channels);
-  const subscriber = redis.duplicate({ retryStrategy: null });
+  const hub = eventHub(redis);
   let streaming = false;
   let closed = false;
   let pending: string[] | null = [];
   let heartbeat: NodeJS.Timeout | undefined;
 
-  const onMessage = (channel: string, message: string) => {
-    if (closed || !channels.has(channel)) return;
-    const payload = options.filter ? options.filter(channel, message) : message;
-    if (payload === null) return;
-    if (pending) pending.push(payload);
-    else response.write(write(payload));
-  };
-  const onUnavailable = () => {
-    if (streaming) response.destroy();
+  const member: Member = {
+    deliver: (channel, message) => {
+      if (closed) return;
+      const payload = options.filter ? options.filter(channel, message) : message;
+      if (payload === null) return;
+      if (pending) pending.push(payload);
+      else response.write(write(payload));
+    },
+    unavailable: () => {
+      if (streaming) response.destroy();
+    },
   };
   const cleanup = () => {
     if (closed) return;
     closed = true;
     clearInterval(heartbeat);
-    subscriber.off('message', onMessage);
-    subscriber.off('error', onUnavailable);
-    subscriber.off('end', onUnavailable);
-    subscriber.disconnect();
+    leave(hub, member, channels);
   };
   response.once('close', cleanup);
-  subscriber.on('message', onMessage);
-  subscriber.on('error', onUnavailable);
-  subscriber.on('end', onUnavailable);
 
   try {
-    await waitForRedis(subscriber);
-    await subscriber.subscribe(...channels);
+    await hub.ready;
+    if (closed) return;
+    await join(hub, member, channels);
     if (closed) return;
     reply.hijack();
     for (const [name, value] of Object.entries(reply.getHeaders())) {

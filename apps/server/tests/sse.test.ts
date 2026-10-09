@@ -1,25 +1,35 @@
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import test from 'node:test';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';
-import { streamEvents, type EventStreamOptions } from '../src/http/sse.js';
+import { closeEventStreams, streamEvents, type EventStreamOptions } from '../src/http/sse.js';
 
 class Subscriber extends EventEmitter {
   status = 'connecting';
-  channels: string[] = [];
+  active = new Set<string>();
+  commands: string[] = [];
   disconnected = false;
-  async subscribe(...channels: string[]) { this.channels = channels; return channels.length; }
+  async subscribe(channel: string) { this.commands.push(`+${channel}`); this.active.add(channel); return 1; }
+  async unsubscribe(channel: string) { this.commands.push(`-${channel}`); this.active.delete(channel); this.emit('unsubscribed', channel); return 0; }
   disconnect() { this.disconnected = true; this.status = 'end'; this.emit('disconnected'); }
 }
 
-async function setup(options: Omit<EventStreamOptions, 'channels'>, channels = ['a', 'b']) {
-  const subscriber = new Subscriber();
-  const redis = { duplicate: () => { setImmediate(() => { subscriber.status = 'ready'; subscriber.emit('ready'); }); return subscriber; } } as unknown as Redis;
-  const app = Fastify();
-  app.get('/events', async (_request, reply) => streamEvents(redis, reply, { channels, ...options }));
+async function setup(options: Omit<EventStreamOptions, 'channels'> = {}) {
+  const created: Subscriber[] = [];
+  const redis = {
+    duplicate: () => {
+      const subscriber = new Subscriber();
+      created.push(subscriber);
+      setImmediate(() => { subscriber.status = 'ready'; subscriber.emit('ready'); });
+      return subscriber;
+    },
+  } as unknown as Redis;
+  const app = Fastify({ forceCloseConnections: true });
+  app.get<{ Querystring: { channels?: string } }>('/events', async (request, reply) =>
+    streamEvents(redis, reply, { channels: (request.query.channels ?? 'a,b').split(','), ...options }));
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
-  return { app, subscriber, address };
+  return { app, created, redis, address };
 }
 
 async function readUntil(reader: ReadableStreamDefaultReader<Uint8Array>, expected: string, text = '') {
@@ -31,17 +41,37 @@ async function readUntil(reader: ReadableStreamDefaultReader<Uint8Array>, expect
   return { text, done: false };
 }
 
+async function open(address: string, channels: string, t: test.TestContext) {
+  const abort = new AbortController();
+  t.after(() => abort.abort());
+  const response = await fetch(`${address}/events?channels=${channels}`, { signal: abort.signal });
+  const reader = response.body!.getReader();
+  await readUntil(reader, ': connected');
+  return { abort, reader };
+}
+
+function waitUnsubscribed(subscriber: Subscriber, count: number) {
+  const channels: string[] = [];
+  return new Promise<string[]>(resolve => {
+    const listener = (channel: string) => {
+      channels.push(channel);
+      if (channels.length < count) return;
+      subscriber.off('unsubscribed', listener);
+      resolve(channels.sort());
+    };
+    subscriber.on('unsubscribed', listener);
+  });
+}
+
 test('shared SSE subscribes all channels, replays before buffered live events and filters messages', { timeout: 5000 }, async t => {
-  let subscriber!: Subscriber;
-  const { app, subscriber: sub, address } = await setup({
+  const { app, address, created } = await setup({
     replay: async () => {
-      assert.deepEqual(subscriber.channels, ['a', 'b']);
-      subscriber.emit('message', 'a', '{"live":1}');
+      assert.deepEqual([...created[0]!.active], ['a', 'b']);
+      created[0]!.emit('message', 'a', '{"live":1}');
       return [{ replay: 1 }, { replay: 2 }];
     },
     filter: (channel, payload) => (channel === 'b' && payload.includes('drop') ? null : payload),
   });
-  subscriber = sub;
   const abort = new AbortController();
   t.after(async () => { abort.abort(); await app.close(); });
   const response = await fetch(`${address}/events`, { signal: abort.signal });
@@ -49,6 +79,7 @@ test('shared SSE subscribes all channels, replays before buffered live events an
   let { text } = await readUntil(reader, '"live":1');
   assert.ok(text.indexOf('"replay":1') < text.indexOf('"replay":2'));
   assert.ok(text.indexOf('"replay":2') < text.indexOf('"live":1'), 'live events are written after replay');
+  const subscriber = created[0]!;
   subscriber.emit('message', 'b', '{"drop":true}');
   subscriber.emit('message', 'other', '{"foreign":true}');
   subscriber.emit('message', 'b', '{"keep":true}');
@@ -56,16 +87,61 @@ test('shared SSE subscribes all channels, replays before buffered live events an
   assert.doesNotMatch(text, /drop|foreign/);
 });
 
+test('shared SSE streams reuse one Redis connection and reference-count channel subscriptions', { timeout: 5000 }, async t => {
+  const { app, created, address } = await setup();
+  t.after(() => app.close());
+  const first = await open(address, 'a,b', t);
+  const second = await open(address, 'b,c', t);
+  assert.equal(created.length, 1, 'all streams share a single subscriber connection');
+  const subscriber = created[0]!;
+  assert.deepEqual(subscriber.commands, ['+a', '+b', '+c'], 'a shared channel is subscribed once');
+
+  subscriber.emit('message', 'b', '{"shared":1}');
+  subscriber.emit('message', 'c', '{"onlySecond":1}');
+  assert.equal((await readUntil(first.reader, '"shared":1')).done, false);
+  assert.match((await readUntil(second.reader, '"onlySecond":1')).text, /"shared":1/);
+
+  let released = waitUnsubscribed(subscriber, 1);
+  first.abort.abort();
+  assert.deepEqual(await released, ['a'], 'only the channel nobody else listens to is released');
+  assert.deepEqual([...subscriber.active], ['b', 'c']);
+
+  released = waitUnsubscribed(subscriber, 2);
+  second.abort.abort();
+  assert.deepEqual(await released, ['b', 'c']);
+  assert.equal(subscriber.disconnected, false, 'the process-level connection stays open for later streams');
+  assert.equal(subscriber.listenerCount('message'), 1);
+});
+
+test('shared subscriber failure closes every stream and the next stream reconnects', { timeout: 5000 }, async t => {
+  const { app, created, redis, address } = await setup();
+  t.after(() => app.close());
+  const first = await open(address, 'a', t);
+  const second = await open(address, 'b', t);
+  created[0]!.emit('error', new Error('Redis disconnected'));
+  await assert.rejects(readUntil(first.reader, 'never-written'));
+  await assert.rejects(readUntil(second.reader, 'never-written'));
+  assert.equal(created[0]!.disconnected, true);
+
+  const third = await open(address, 'a', t);
+  assert.equal(created.length, 2);
+  assert.deepEqual(created[1]!.commands, ['+a']);
+  closeEventStreams(redis);
+  await assert.rejects(readUntil(third.reader, 'never-written'));
+  assert.equal(created[1]!.disconnected, true);
+});
+
 test('shared SSE closes the stream when the heartbeat callback reports the subscriber is no longer valid', { timeout: 5000 }, async t => {
   let beats = 0;
-  const { app, subscriber, address } = await setup({ heartbeatMs: 20, onHeartbeat: async () => { beats += 1; return beats < 2; } });
+  const { app, created, address } = await setup({ heartbeatMs: 20, onHeartbeat: async () => { beats += 1; return beats < 2; } });
   t.after(() => app.close());
-  const response = await fetch(`${address}/events`);
+  const response = await fetch(`${address}/events?channels=a`);
   const reader = response.body!.getReader();
-  const disconnected = new Promise<void>(resolve => subscriber.once('disconnected', resolve));
+  const subscriber = created[0]!;
+  const released = waitUnsubscribed(subscriber, 1);
   const { done } = await readUntil(reader, 'never-written');
   assert.equal(done, true);
-  await disconnected;
+  assert.deepEqual(await released, ['a']);
   assert.equal(beats, 2);
 });
 

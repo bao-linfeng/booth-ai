@@ -12,7 +12,7 @@
 - 生成任务 Outbox 与恢复：`src/workers/generation-outbox.ts`（主题/画稿共用分发）、`generation-recovery.ts`（恢复矩阵 `decideRecovery`）
 - 方案基线资产与用户生成素材的作用域隔离：`migrations/050_asset_scope.sql`（`scheme_baseline_assets` 视图）
 - Worker 调度隔离、健康状态、指标与项目通知投递：`src/worker.ts`、`src/workers/scheduler.ts`、`metrics.ts`、`project-notifications.ts`
-- 在线客服：`src/modules/customer-service/`（访客、会话、消息、翻译、邮件、保留期），实时通道为共用 SSE `src/http/sse.ts`；设计与落地调整见 [`docs/一期功能拆分/在线客服模块开发计划.md`](../../docs/一期功能拆分/在线客服模块开发计划.md)
+- 在线客服：`src/modules/customer-service/`（访客、会话、消息、翻译、邮件、保留期），实时通道为共用 SSE `src/http/sse.ts`（进程内所有 SSE 共用一条 Redis 订阅连接，频道按引用计数订阅）；设计与落地调整见 [`docs/一期功能拆分/在线客服模块开发计划.md`](../../docs/一期功能拆分/在线客服模块开发计划.md)
 - [`docs/一期功能拆分/AI模型接入与配置.md`](../../docs/一期功能拆分/AI模型接入与配置.md) — AI 供应商/模型/用途分配三层配置、协议注册表与适配器约定（业务代码不写供应商分支）
 
 ---

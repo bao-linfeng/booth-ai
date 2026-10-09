@@ -1,4 +1,5 @@
 import { buildApp } from './app.js';
+import { closeEventStreams } from './http/sse.js';
 import { loadConfig } from './config.js';
 import { createDatabase } from './infra/database.js';
 import { createRedis } from './infra/redis.js';
@@ -18,6 +19,7 @@ async function main() {
     storage: () => storage.check(),
   }, { pool: database, redis, storage });
   app.addHook('onClose', async () => {
+    closeEventStreams(redis);
     redis.disconnect();
     storage.close();
     await database.end();
