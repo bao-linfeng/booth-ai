@@ -44,10 +44,22 @@ async function fileSizeError(
   return maskSizeError(size, renderings.sizeOf(renderingId));
 }
 
-watch(schemeCode, (code) => {
+// 从方案详情为指定效果图补蒙版时预选该效果图（候选加载后且可选才生效）
+let pendingRenderingId: string | undefined;
+
+watch(schemeCode, async (code) => {
   formApi.setFieldValue('relatedAssetId', undefined);
-  if (code) renderings.load(code);
-  else renderings.reset();
+  const renderingId = pendingRenderingId;
+  pendingRenderingId = undefined;
+  if (!code) {
+    renderings.reset();
+    return;
+  }
+  await renderings.load(code);
+  const candidate = renderings.candidateOf(renderingId);
+  if (code === schemeCode.value && candidate && !candidate.disabled) {
+    formApi.setFieldValue('relatedAssetId', candidate.value);
+  }
 });
 
 function renderCandidate(option: RenderingCandidate) {
@@ -251,7 +263,8 @@ const [Modal, modalApi] = useVbenModal({
   },
 });
 
-function open(defaultSchemeCode?: string) {
+function open(defaultSchemeCode?: string, defaultRenderingId?: string) {
+  pendingRenderingId = defaultRenderingId;
   schemeCode.value = defaultSchemeCode;
   schemes.pin(defaultSchemeCode);
   modalApi.open();
