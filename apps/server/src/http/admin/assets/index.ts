@@ -9,7 +9,7 @@ import { getAsset, getAssetVersion, listAssets, listMaskPairingCandidates, listS
 import { deleteAsset, updateAsset } from '../../../modules/assets/service.js';
 import type { AssetType, ListAssetsOptions, UpdateAssetInput } from '../../../modules/assets/types.js';
 import { uploadAsset, uploadAssetVersion } from '../../../modules/assets/upload.js';
-import { assetTypes, parseCreateAssetFields, parseOptionalInteger, readAssetMultipart } from './multipart.js';
+import { assetTypes, parseCreateAssetFields, parseIdempotencyKey, parseOptionalInteger, readAssetMultipart } from './multipart.js';
 
 interface CodeParams { code: string; }
 interface AssetParams extends CodeParams { assetId: string; }
@@ -93,7 +93,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     const { file, fields } = await readAssetMultipart(request);
     const input = parseCreateAssetFields(decodedCode(request.params as CodeParams), fields);
     requireAdminPermission(request, assetPermissionCode(input.type, 'upload'));
-    return { code: 0, data: await uploadAsset(pool, storage, adminUserId(request), input, file) };
+    return { code: 0, data: await uploadAsset(pool, storage, adminUserId(request), input, file, parseIdempotencyKey(fields)) };
   });
 
   app.patch('/schemes/:code/assets/:assetId', {

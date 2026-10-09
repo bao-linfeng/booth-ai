@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
 import { invalidatePublication } from '../schemes/publication.js';
+import { recordAssetUploadRequest, type AssetUploadRequest } from './idempotency.js';
 import { validateAssetMetadata } from './metadata.js';
 import { ensureMaskMatchesRendering, ensureMaskRelatedAsset, ensureRelatedAsset, resolveSortOrder, retirePairedMasks, updateAssetPairing } from './pairing.js';
 import { assetVersionColumns, findAsset, getAsset, toAssetVersion, type AssetVersionRow } from './queries.js';
@@ -53,12 +54,13 @@ export async function createAsset(pool: pg.Pool, adminId: string | null, input: 
   return asset;
 }
 
-export async function createAssetWithVersion(pool: pg.Pool, adminId: string | null, input: CreateAssetInput, versionInput: UploadVersionInput): Promise<SchemeAsset> {
+export async function createAssetWithVersion(pool: pg.Pool, adminId: string | null, input: CreateAssetInput, versionInput: UploadVersionInput, uploadRequest?: AssetUploadRequest): Promise<SchemeAsset> {
   validateAssetMetadata(input.type, input.metadata);
   return transaction(pool, async client => {
     const schemeId = await lockScheme(client, input.schemeCode);
     const assetId = randomUUID();
     await insertAsset(client, adminId, schemeId, assetId, input);
+    if (uploadRequest) await recordAssetUploadRequest(client, adminId, schemeId, assetId, uploadRequest);
     if (input.type === 'mask') await ensureMaskMatchesRendering(client, input.relatedAssetId, versionInput);
     await insertVersion(client, adminId, assetId, versionInput);
     await invalidatePublication(client, schemeId, adminId);

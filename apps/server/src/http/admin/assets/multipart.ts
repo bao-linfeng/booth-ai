@@ -41,6 +41,16 @@ export async function readAssetMultipart(request: FastifyRequest): Promise<{ fil
   return { file, fields };
 }
 
+const uuidPattern = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
+/** 可选的上传幂等键（UUID）：同一上传操作重试时沿用，用户重新发起上传时更换。 */
+export function parseIdempotencyKey(fields: Record<string, string>): string | undefined {
+  const key = fields.idempotencyKey;
+  if (key === undefined || key === '') return undefined;
+  if (!uuidPattern.test(key)) throw requestError('idempotencyKey must be a valid UUID');
+  return key;
+}
+
 export function parseCreateAssetFields(schemeCode: string, fields: Record<string, string>): CreateAssetInput {
   const type = assetTypes.find(type => type === fields.type);
   const name = fields.name?.trim();
@@ -48,7 +58,7 @@ export function parseCreateAssetFields(schemeCode: string, fields: Record<string
   if (!name) throw requestError('Asset name is required');
   const sortOrder = parseOptionalInteger(fields.sortOrder, 'sortOrder');
   const relatedAssetId = fields.relatedAssetId === undefined || fields.relatedAssetId === '' ? null : fields.relatedAssetId;
-  if (relatedAssetId !== null && !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(relatedAssetId)) {
+  if (relatedAssetId !== null && !uuidPattern.test(relatedAssetId)) {
     throw requestError('relatedAssetId must be a valid UUID');
   }
   const metadata = parseMetadata(fields.metadata);

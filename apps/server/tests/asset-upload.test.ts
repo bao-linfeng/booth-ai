@@ -266,6 +266,7 @@ test('admin upload routes share multipart parsing for either field order and rej
     { url: '/schemes/S-1/assets', fields: { type: 'drawing', name: '图纸', metadata: '[]' }, files: [file], message: 'Metadata must be a JSON object' },
     { url: '/schemes/S-1/assets', fields: { type: 'artwork', name: '画稿' }, files: [file], message: 'artwork metadata.artworkKey is required' },
     { url: '/schemes/S-1/assets', fields: { type: 'mask', name: '蒙版' }, files: [file], message: 'relatedAssetId is required for mask assets' },
+    { url: '/schemes/S-1/assets', fields: { type: 'rendering', name: '效果图', idempotencyKey: 'retry-1' }, files: [file], message: 'idempotencyKey must be a valid UUID' },
     { url: versionUrl, fields: { expectedRevision: '0' }, files: [file], message: 'expectedRevision is required' },
     { url: versionUrl, fields: { expectedRevision: '1.5' }, files: [file], message: 'expectedRevision must be an integer' },
   ];
