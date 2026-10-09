@@ -34,6 +34,9 @@ export const REASON_MESSAGES: Record<string, string> = {
     '变更为已报价需填写发送依据：发送时间、发送渠道，外部报价还需填写编号或说明',
   SCHEME_ALREADY_LINKED: '项目已关联方案，无需重复确认',
   SCHEME_UNAVAILABLE: '方案不存在或尚未就绪（需已发布、清单已核验且资产齐全）',
+  // 文件上传
+  FILE_TOO_LARGE:
+    '文件超过大小上限：方案与清单导入不超过 20MB，方案资源不超过 50MB',
   // 方案资源
   IMAGE_INVALID: '图片无法识别，或文件格式与扩展名不符（支持 png、jpg、webp）',
   MASK_SIZE_MISMATCH: '蒙版像素尺寸需与配对效果图完全一致',

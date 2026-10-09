@@ -89,6 +89,8 @@ async function submit() {
     const reason = (
       error as { response?: { data?: { error?: { reason?: string } } } }
     )?.response?.data?.error?.reason;
+    // 文件过大已由请求拦截器提示
+    if (reason === 'FILE_TOO_LARGE') return;
     if (reason === 'UNSUPPORTED_BOM_TEMPLATE') message.error(templateHint, 8);
     else if (reason === 'SCHEME_CODE_MISMATCH')
       message.error('Excel 说明页的方案编号与所选方案不一致');

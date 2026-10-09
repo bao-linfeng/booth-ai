@@ -79,13 +79,15 @@ const hasBom = computed(
 const bomLocked = computed(() => bomData.value?.status === 'verified');
 const selectedProduct = ref<BomItem | null>(null);
 const productDetailVisible = ref(false);
-const selectedPricingUnit = computed(() =>
-  selectedProduct.value?.measurementKind === 'length'
-    ? 'm'
-    : selectedProduct.value?.measurementKind === 'area'
-      ? 'm²'
-      : (selectedProduct.value?.sourceUnit ?? '—'),
-);
+const pricingUnits: Record<string, string> = { area: 'm²', length: 'm' };
+const selectedPricingUnit = computed(() => {
+  const product = selectedProduct.value;
+  return (
+    (product && pricingUnits[product.measurementKind]) ??
+    product?.sourceUnit ??
+    '—'
+  );
+});
 const measurementKindLabels = computed<Record<string, string>>(() =>
   Object.fromEntries(
     measurementKinds.value.map((item) => [item.itemValue, item.itemLabel]),
@@ -102,11 +104,8 @@ async function fetchMeasurementKinds(sequence: number) {
   const dictionary = result.data.find(
     (entry) => entry.code === 'measurementKind',
   );
-  const items = dictionary
-    ? (await getDictionaryItemsApi(dictionary.id)).filter(
-        (item) => item.enabled,
-      )
-    : [];
+  const entries = dictionary ? await getDictionaryItemsApi(dictionary.id) : [];
+  const items = entries.filter((item) => item.enabled);
   if (sequence === bomRequestSequence) measurementKinds.value = items;
 }
 
@@ -167,6 +166,8 @@ async function handleBomImport() {
       bomImportResult.value = result;
       message.success('文件解析完成，请确认后提交');
     } catch (error: any) {
+      // 文件过大已由请求拦截器提示
+      if (error?.response?.data?.error?.reason === 'FILE_TOO_LARGE') return;
       message.error(error?.message || '上传失败');
     } finally {
       bomImporting.value = false;
@@ -271,13 +272,13 @@ function startItemEdit(id: string) {
   editingItems.value = true;
   bomChangeReason.value = '';
 }
+const sourceUnits = { area: 'mm²', count: '件', length: 'mm' } as const;
 function selectMeasurementKind(value: unknown) {
   if (!itemDraft.value || typeof value !== 'string') return;
   if (value !== 'count' && value !== 'length' && value !== 'area') return;
   if (itemDraft.value.measurementKind === value) return;
   itemDraft.value.measurementKind = value;
-  itemDraft.value.sourceUnit =
-    value === 'count' ? '件' : value === 'length' ? 'mm' : 'mm²';
+  itemDraft.value.sourceUnit = sourceUnits[value];
 }
 function openProductDetail(id: string) {
   const item = bomData.value?.items.find((entry) => entry.id === id);
