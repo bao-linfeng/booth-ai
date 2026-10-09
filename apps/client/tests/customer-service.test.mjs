@@ -429,6 +429,35 @@ test('translations finished while disconnected are recalibrated on reconnect and
   closePanel()
 })
 
+test('a backlog larger than one page built up while disconnected is fetched page by page until caught up', async t => {
+  let items = [message(1), message(2)]
+  const calls = setup({ current: conversation({ status: 'active' }), respond: call => {
+    if (!call.path.endsWith('/messages') || call.method !== 'GET') return undefined
+    const after = call.query.after ?? 0
+    const rest = items.filter(item => item.seq > after)
+    return { items: rest.slice(0, call.query.limit), hasMore: rest.length > call.query.limit }
+  } })
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)) }
+  await cs.openWith(undefined, 'floating')
+  await flush()
+  const { state, closePanel } = cs.useCustomerService()
+  FakeEventSource.instances[0].emit('open')
+  await flush()
+
+  // 断线期间积压 250 条：超过单页上限（SSE 补发同样有上限），重连后要逐页追平
+  FakeEventSource.instances[0].onerror()
+  items = Array.from({ length: 252 }, (_, index) => message(index + 1))
+  t.mock.timers.tick(3000)
+  await flush()
+  const before = calls.length
+  FakeEventSource.instances[1].emit('open')
+  await flush()
+  assert.deepEqual(state.messages.map(item => item.seq), items.map(item => item.seq), 'no gaps and no duplicates')
+  assert.deepEqual(calls.slice(before).filter(call => call.method === 'GET' && call.path.endsWith('/messages')).map(call => call.query.after), [2, 102, 202])
+  closePanel()
+})
+
 test('a late pending copy never downgrades a finished translation', () => {
   const done = message(3, { senderType: 'agent', translation: { locale: 'en', status: 'done', body: 'Hello' } })
   const [merged] = timeline.mergeMessages([done], [message(3, { senderType: 'agent', body: 'edited', translation: { locale: 'en', status: 'pending', body: null } })])
