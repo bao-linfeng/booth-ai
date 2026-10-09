@@ -13,11 +13,12 @@ export async function ensureAttempt(pool: pg.Pool, attemptId: string | undefined
       return existing.id;
     }
   }
-  const created = await pool.query<{ id: string }>(
-    'INSERT INTO selection_attempts(id,visitor_id,user_id) VALUES($1,$2,$3) RETURNING id',
-    [attemptId ?? randomUUID(), identity.visitorId, identity.userId],
+  // 客户端传来的 ID 可能属于其他访客（退出或换号后恢复了旧会话）：不接管他人的记录，改为新建并由响应把新 ID 交回客户端
+  const insert = (id: string) => pool.query<{ id: string }>(
+    'INSERT INTO selection_attempts(id,visitor_id,user_id) VALUES($1,$2,$3) ON CONFLICT (id) DO NOTHING RETURNING id',
+    [id, identity.visitorId, identity.userId],
   );
-  const id = created.rows[0]?.id;
+  const id = (attemptId ? (await insert(attemptId)).rows[0]?.id : undefined) ?? (await insert(randomUUID())).rows[0]?.id;
   if (!id) throw new Error('Selection attempt was not created');
   return id;
 }
