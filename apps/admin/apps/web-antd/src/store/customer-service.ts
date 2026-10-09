@@ -94,8 +94,10 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
       }
       return;
     }
+    // 只有客户发来的消息才提醒；客服回复、内部备注与系统消息不提醒，入队提醒见 applyCounts
     if (
       event.type === 'message.created' &&
+      event.senderType === 'customer' &&
       event.agentAdminId === userStore.userInfo?.userId &&
       event.status === 'active'
     ) {

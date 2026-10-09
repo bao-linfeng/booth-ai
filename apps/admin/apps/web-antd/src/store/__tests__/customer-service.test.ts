@@ -120,6 +120,37 @@ describe('customer service workbench stream', () => {
     expect(events).toEqual(['ready']);
   });
 
+  it('reminds only for customer messages in my active conversations', async () => {
+    const hidden = vi
+      .spyOn(document, 'visibilityState', 'get')
+      .mockReturnValue('hidden');
+    const store = useCustomerServiceStore();
+    store.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const [source] = state.sources;
+    if (!source) throw new Error('source missing');
+    const message = (senderType: string, kind: string) => ({
+      agentAdminId: 'agent-1',
+      conversationId: 'c1',
+      kind,
+      senderType,
+      seq: 1,
+      status: 'active',
+      type: 'message.created',
+    });
+    // 客服自己的回复、内部备注、接入等系统消息都不算客户新消息
+    for (const [senderType, kind] of [
+      ['agent', 'text'],
+      ['agent', 'note'],
+      ['system', 'event'],
+    ] as const)
+      source.emit('update', message(senderType, kind));
+    expect(store.unseen).toBe(0);
+    source.emit('update', message('customer', 'text'));
+    expect(store.unseen).toBe(1);
+    hidden.mockRestore();
+  });
+
   it('remembers the workbench tab until the stream stops', () => {
     const store = useCustomerServiceStore();
     store.start();

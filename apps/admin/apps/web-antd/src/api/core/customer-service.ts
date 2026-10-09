@@ -176,6 +176,10 @@ export type WorkbenchEvent =
   | {
       agentAdminId: null | string;
       conversationId: string;
+      /** 仅 message.created 携带：新消息的类型 */
+      kind?: AdminMessage['kind'];
+      /** 仅 message.created 携带：新消息的发送方，提醒只针对客户消息 */
+      senderType?: AdminMessage['senderType'];
       seq?: number;
       status: ConversationStatus;
       type:

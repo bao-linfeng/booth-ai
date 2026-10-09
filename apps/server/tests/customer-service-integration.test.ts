@@ -172,6 +172,11 @@ test('messages replay by clientMessageId, notes never reach the customer channel
   const agent = await seedAdmin(pool, ['customer-service.read', 'customer-service.reply'], 'Lily');
   const subject: Subject = { kind: 'visitor', visitorId: (await issueVisitor(pool, 'en')).visitorId };
   const { conversation } = await openConversation(pool, redis, subject, { entryPoint: 'floating' }, 'en');
+  const agentSubscriber = redis.duplicate();
+  t.after(() => agentSubscriber.disconnect());
+  const agentEvents: { type: string; conversationId: string; senderType?: string; kind?: string }[] = [];
+  agentSubscriber.on('message', (_channel, payload) => agentEvents.push(JSON.parse(payload)));
+  await agentSubscriber.subscribe('cs:agents');
   const input = text('hello');
   const first = await postCustomerMessage(pool, redis, subject, conversation.id, input, 'en');
   const replay = await postCustomerMessage(pool, redis, subject, conversation.id, input, 'en');
@@ -194,6 +199,9 @@ test('messages replay by clientMessageId, notes never reach the customer channel
   assert.ok(received.some(event => event.type === 'conversation.updated'));
   assert.ok(received.every(event => event.message?.kind !== 'note'));
   assert.ok(received.some(event => event.type === 'message.created' && event.message?.kind === 'text'));
+  // 工作台事件带发送者与消息类型，前端只对客户消息做新消息提醒（CS-B08）
+  assert.deepEqual(agentEvents.filter(event => event.type === 'message.created' && event.conversationId === conversation.id)
+    .map(event => [event.senderType, event.kind]), [['customer', 'text'], ['system', 'event'], ['agent', 'note'], ['agent', 'text']]);
   const timeline = await listCustomerMessages(pool, subject, { limit: 100 });
   assert.ok(timeline.items.every(item => !JSON.stringify(item).includes('internal only')));
   assert.deepEqual(timeline.items.map(item => item.kind), ['text', 'event', 'text']);
