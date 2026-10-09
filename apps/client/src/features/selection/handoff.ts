@@ -26,14 +26,16 @@ export interface ManualContact {
 
 /**
  * 报价交接：仅当当前智选会话是“已出结果且条件未改动”的按条件匹配，且目标方案在本次结果内时才返回。
- * 传入 searchId（来自详情页链路）时还必须与会话中的检索一致，避免历史检索或其他会话的条件被关联到方案。
+ * 必须带来源检索（详情页链路的 searchId 或主题任务记录的检索）且与会话中的检索一致；来源未知时不附带，
+ * 避免历史检索、直接打开的方案或其他会话的条件被关联到方案。
  */
-export function readSelectionQuoteHandoff(schemeCode: string, searchId?: string): SelectionQuoteHandoff | null {
+export function readSelectionQuoteHandoff(schemeCode: string, searchId: string | undefined): SelectionQuoteHandoff | null {
+  if (!searchId) return null
   const session = readSelectionSession()
   const match = session?.liveMatchData
   if (!session || !match || session.state !== 'results' || match.status !== 'matched' || match.mode !== 'filtered') return null
   if (session.snapshot !== selectionSnapshot(session.requirement, session.text)) return null
-  if (searchId !== undefined && session.searchId !== searchId) return null
+  if (session.searchId !== searchId) return null
   const item = match.items.find(candidate => candidate.code === schemeCode)
   if (!item) return null
   return {

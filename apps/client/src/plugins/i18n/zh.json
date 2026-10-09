@@ -806,7 +806,25 @@
     "errorAccountChanged2": "登录账户已变化，请重新确认。",
     "errorFormInvalid2": "请核对日期、预算、联系方式及登录状态，填写内容已保留。",
     "errorNetworkRetry": "暂未确认受理结果，请重试确认本次申请。",
-    "errorAssignmentUnavailable": "当前暂不可受理需求，本次申请未创建项目。填写内容已保留，您可稍后重新提交或咨询客服。"
+    "errorAssignmentUnavailable": "当前暂不可受理需求，本次申请未创建项目。填写内容已保留，您可稍后重新提交或咨询客服。",
+    "validationExhibition": "请填写展会名称。",
+    "validationCountry": "请选择国家。",
+    "validationCity": "请选择城市。",
+    "validationBudget": "请填写大于 0 的材料预算，最多 6 位小数。",
+    "validationCompany": "客户类型为企业时，请填写企业名称。",
+    "validationContactName": "请填写联系人。",
+    "validationEmail": "邮箱格式不正确。",
+    "validationPhone": "电话格式不正确，请填写 7–15 位数字，可包含 +、空格、括号或短横线。",
+    "countryLoadFailed": "国家列表加载失败。",
+    "cityLoadFailed": "城市列表加载失败。",
+    "cityEmpty": "暂无该国家的城市数据，请更换国家或咨询客服。",
+    "retryLoad": "重新加载",
+    "errorNetworkUnsaved": "暂未确认受理结果。浏览器无法保存本次提交，请不要刷新或关闭页面，用下方按钮重试确认，避免重复创建项目。",
+    "errorContextLoadFailed": "方案资料读取失败，可能是网络不稳定。填写内容已保留，请重新读取。",
+    "retryLoadContext": "重新读取方案资料",
+    "guestSubmissionUnconfirmed": "您登录前提交的申请尚未确认受理结果。若已受理且联系邮箱与当前账号一致，它会自动出现在“我的项目”中，请先查看，避免重复申请。",
+    "loginAfterConfirm": "请先用上方按钮确认本次申请的受理结果，再登录查看项目。",
+    "artworkAttached": "已附带您生成的完整四面素材，提交时随申请固定。"
   },
   "searches": {
     "pageTitle": "检索记录",
@@ -961,7 +979,8 @@
     "requirementKeywords": "关键词",
     "requirementOpenings": "{count} 面开口",
     "requirementMaxHeight": "场馆限高 {value}",
-    "dateRange": "{start} 至 {end}"
+    "dateRange": "{start} 至 {end}",
+    "unresolvedTitle": "待确认事项"
   },
   "customerService": {
     "consult": "咨询客服",

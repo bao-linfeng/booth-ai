@@ -806,7 +806,25 @@
     "errorAccountChanged2": "Le compte a changé. Reconfirmez.",
     "errorFormInvalid2": "Vérifiez les dates, le budget et les coordonnées. Vos données sont conservées.",
     "errorNetworkRetry": "Résultat non confirmé. Réessayez.",
-    "errorAssignmentUnavailable": "Les demandes ne peuvent pas être acceptées pour le moment. Aucun projet n’a été créé. Votre formulaire a été conservé ; renvoyez-le plus tard ou contactez le service client."
+    "errorAssignmentUnavailable": "Les demandes ne peuvent pas être acceptées pour le moment. Aucun projet n’a été créé. Votre formulaire a été conservé ; renvoyez-le plus tard ou contactez le service client.",
+    "validationExhibition": "Veuillez saisir le nom du salon.",
+    "validationCountry": "Veuillez choisir un pays.",
+    "validationCity": "Veuillez choisir une ville.",
+    "validationBudget": "Veuillez saisir un budget matériaux supérieur à 0, avec au plus 6 décimales.",
+    "validationCompany": "Veuillez saisir le nom de l’entreprise pour un client entreprise.",
+    "validationContactName": "Veuillez saisir le nom du contact.",
+    "validationEmail": "L’adresse e-mail n’est pas valide.",
+    "validationPhone": "Le numéro de téléphone n’est pas valide. Utilisez 7 à 15 chiffres ; +, espaces, parenthèses et tirets sont autorisés.",
+    "countryLoadFailed": "Impossible de charger la liste des pays.",
+    "cityLoadFailed": "Impossible de charger la liste des villes.",
+    "cityEmpty": "Aucune ville disponible pour ce pays. Choisissez un autre pays ou contactez le service client.",
+    "retryLoad": "Recharger",
+    "errorNetworkUnsaved": "La réception n’est pas encore confirmée. Votre navigateur n’a pas pu enregistrer cette demande : ne rafraîchissez pas et ne fermez pas la page. Utilisez le bouton ci-dessous pour réessayer la confirmation et éviter un projet en double.",
+    "errorContextLoadFailed": "Impossible de charger les données de la conception, peut-être à cause d’un réseau instable. Vos saisies sont conservées ; veuillez recharger.",
+    "retryLoadContext": "Recharger les données de la conception",
+    "guestSubmissionUnconfirmed": "La demande envoyée avant votre connexion n’est pas encore confirmée. Si elle a été acceptée et que son e-mail de contact correspond à ce compte, elle apparaît automatiquement dans « Mes projets ». Vérifiez-y d’abord pour éviter une demande en double.",
+    "loginAfterConfirm": "Confirmez d’abord le résultat de cette demande avec le bouton ci-dessus, puis connectez-vous pour voir vos projets.",
+    "artworkAttached": "Les visuels complets des quatre faces que vous avez générés sont joints et seront figés avec cette demande."
   },
   "searches": {
     "pageTitle": "Historique de recherche",
@@ -961,7 +979,8 @@
     "statusLabelQuoted": "Quoted",
     "statusLabelWon": "Won",
     "statusLabelLost": "Not won",
-    "statusLabelClosed": "Closed"
+    "statusLabelClosed": "Closed",
+    "unresolvedTitle": "Points à confirmer"
   },
   "customerService": {
     "consult": "Contacter le service client",

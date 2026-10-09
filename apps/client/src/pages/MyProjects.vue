@@ -72,31 +72,47 @@ async function loadCatalog() {
   }
 }
 
+// 每次加载递增：只有最新一次请求能写入详情、列表、错误与 loading，切换项目、翻页、换账号或离开页面后旧响应作废
+let loadSeq = 0
 async function load(next = page.value) {
-  if (!auth.isLoggedIn) return
+  const current = ++loadSeq
+  if (!auth.isLoggedIn) { loading.value = false; return }
   loading.value = true
   error.value = ''
   page.value = next
+  const projectId = route.params.projectId ? String(route.params.projectId) : null
   try {
-    if (route.params.projectId) {
-      detail.value = await getMyProject(String(route.params.projectId))
-      if (detail.value.request.confirmedRequirements) void loadCatalog()
-    } else list.value = await getMyProjects({ ...filters, page: next, pageSize })
+    if (projectId) {
+      const project = await getMyProject(projectId)
+      if (current !== loadSeq) return
+      detail.value = project
+      if (project.request.confirmedRequirements) void loadCatalog()
+    } else {
+      const projects = await getMyProjects({ ...filters, page: next, pageSize })
+      if (current === loadSeq) list.value = projects
+    }
   } catch (failure: unknown) {
+    if (current !== loadSeq) return
     const status = (failure as { response?: { status?: number } }).response?.status
     error.value = status === 404 ? t('projects.errorNotExist') : t('projects.errorLoadFailed')
   } finally {
-    loading.value = false
+    if (current === loadSeq) loading.value = false
   }
 }
+function reset() { detail.value = undefined; list.value = undefined; error.value = '' }
 function login() { void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } }) }
 onMounted(() => load())
-watch(() => route.params.projectId, () => { detail.value = undefined; list.value = undefined; void load(1) })
+watch(() => route.params.projectId, () => { reset(); void load(1) })
+// 退出或切换账号：清掉上一账号的数据，按当前身份重新读取；已登录会话只是补齐用户资料（'' → id）时不算换账号
+watch(() => (auth.isLoggedIn ? auth.currentUser?.id ?? '' : null), (id, previous) => {
+  if (previous === '' && id) return
+  reset(); void load(1)
+})
 // 客服输入框的“发送当前项目”：只在项目详情加载成功后登记，回到列表或离开页面时清除
 watch(() => (route.params.projectId && !error.value ? detail.value : undefined), (project) => {
   setPageContext(project ? { context: { kind: 'project', projectId: project.projectId }, entryPoint: 'my_project', label: project.projectNo } : null)
 }, { immediate: true })
-onBeforeUnmount(() => setPageContext(null))
+onBeforeUnmount(() => { loadSeq++; setPageContext(null) })
 </script>
 
 <template>
@@ -237,9 +253,17 @@ onBeforeUnmount(() => setPageContext(null))
                 <p v-else>{{ t('projects.requestPending') }}</p>
                 <p v-if="detail.request.scopeNotes" class="whitespace-pre-wrap break-words">{{ detail.request.scopeNotes }}</p>
               </div>
-              <div v-if="detail.request.originalDescription ?? detail.request.notes" class="space-y-2 text-sm">
-                <p class="text-muted-foreground">{{ detail.request.originalDescription ? t('projects.descriptionTitle') : t('projects.remarksTitle') }}</p>
-                <p class="whitespace-pre-wrap break-words">{{ detail.request.originalDescription ?? detail.request.notes }}</p>
+              <div v-if="detail.request.originalDescription" class="space-y-2 text-sm">
+                <p class="text-muted-foreground">{{ t('projects.descriptionTitle') }}</p>
+                <p class="whitespace-pre-wrap break-words">{{ detail.request.originalDescription }}</p>
+              </div>
+              <div v-if="detail.request.notes" class="space-y-2 text-sm">
+                <p class="text-muted-foreground">{{ t('projects.remarksTitle') }}</p>
+                <p class="whitespace-pre-wrap break-words">{{ detail.request.notes }}</p>
+              </div>
+              <div v-if="detail.request.unresolvedQuestions.length" class="space-y-2 text-sm">
+                <p class="text-muted-foreground">{{ t('projects.unresolvedTitle') }}</p>
+                <ul class="list-disc space-y-1 pl-5"><li v-for="question in detail.request.unresolvedQuestions" :key="question" class="break-words">{{ question }}</li></ul>
               </div>
               <div v-if="requirement.specs.length || requirement.groups.length" class="space-y-3 text-sm">
                 <p class="text-muted-foreground">{{ t('projects.confirmedTitle') }}</p>

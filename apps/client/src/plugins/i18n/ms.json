@@ -788,7 +788,25 @@
     "errorAccountChanged2": "Akaun log masuk telah berubah. Sahkan semula.",
     "errorFormInvalid2": "Semak tarikh, bajet, maklumat hubungan dan status log masuk. Input anda disimpan.",
     "errorNetworkRetry": "Penerimaan belum disahkan. Sahkan permohonan ini semula.",
-    "errorAssignmentUnavailable": "Permohonan tidak dapat diterima buat masa ini. Tiada projek dicipta. Maklumat borang anda telah disimpan; hantar semula kemudian atau hubungi khidmat pelanggan."
+    "errorAssignmentUnavailable": "Permohonan tidak dapat diterima buat masa ini. Tiada projek dicipta. Maklumat borang anda telah disimpan; hantar semula kemudian atau hubungi khidmat pelanggan.",
+    "validationExhibition": "Sila masukkan nama pameran.",
+    "validationCountry": "Sila pilih negara.",
+    "validationCity": "Sila pilih bandar.",
+    "validationBudget": "Sila masukkan bajet bahan lebih daripada 0, maksimum 6 tempat perpuluhan.",
+    "validationCompany": "Sila masukkan nama syarikat untuk pelanggan syarikat.",
+    "validationContactName": "Sila masukkan nama orang hubungan.",
+    "validationEmail": "Format e-mel tidak sah.",
+    "validationPhone": "Format nombor telefon tidak sah. Gunakan 7–15 digit; +, ruang, kurungan dan sempang dibenarkan.",
+    "countryLoadFailed": "Senarai negara gagal dimuatkan.",
+    "cityLoadFailed": "Senarai bandar gagal dimuatkan.",
+    "cityEmpty": "Tiada data bandar untuk negara ini. Pilih negara lain atau hubungi khidmat pelanggan.",
+    "retryLoad": "Muat semula",
+    "errorNetworkUnsaved": "Penerimaan belum disahkan. Pelayar tidak dapat menyimpan penghantaran ini, jadi jangan muat semula atau tutup halaman. Gunakan butang di bawah untuk cuba mengesahkan semula dan elakkan projek berganda.",
+    "errorContextLoadFailed": "Butiran reka bentuk gagal dimuatkan, mungkin kerana rangkaian tidak stabil. Maklumat yang diisi dikekalkan; sila muat semula.",
+    "retryLoadContext": "Muat semula butiran reka bentuk",
+    "guestSubmissionUnconfirmed": "Permohonan yang dihantar sebelum log masuk belum disahkan. Jika ia diterima dan e-mel hubungannya sepadan dengan akaun ini, ia akan muncul secara automatik dalam \"Projek saya\". Sila semak di sana dahulu untuk mengelakkan permohonan berganda.",
+    "loginAfterConfirm": "Sila sahkan keputusan permohonan ini dengan butang di atas dahulu, kemudian log masuk untuk melihat projek anda.",
+    "artworkAttached": "Bahan grafik lengkap empat sisi yang anda jana dilampirkan dan akan ditetapkan bersama permohonan ini."
   },
   "searches": {
     "pageTitle": "Sejarah Carian",
@@ -943,7 +961,8 @@
     "statusLabelQuoted": "Quoted",
     "statusLabelWon": "Won",
     "statusLabelLost": "Not won",
-    "statusLabelClosed": "Closed"
+    "statusLabelClosed": "Closed",
+    "unresolvedTitle": "Perkara untuk disahkan"
   },
   "titles": {
     "aiSelection": "Pilihan reruai AI",

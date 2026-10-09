@@ -48,8 +48,9 @@ export function useRequestSubmission<T extends { requestKey: string }>(options: 
     if (!pending.value) {
       if (!options.validate()) return
       pending.value = options.build(crypto.randomUUID())
-      draft.persist()
     }
+    // 存储不可用时仍发送：同一页面内重试复用内存中的请求键，只是刷新或离开后无法恢复，需在结果未知时明确告知
+    const saved = draft.persist()
     busy.value = true
     // 匿名提交先确保已签发客服访客（令牌在 Cookie 中），服务端据此把项目绑定到本访客，之后可带项目咨询客服；失败不阻塞提交
     if (!userId) await ensureVisitor().catch(() => null)
@@ -64,7 +65,7 @@ export function useRequestSubmission<T extends { requestKey: string }>(options: 
         pending.value = null
         if (conflict) conflict.value = status === 409
         error.value = rejectionMessage(status, reason)
-      } else { error.value = t(messages.network) }
+      } else { error.value = saved ? t(messages.network) : t('quoteRequest.errorNetworkUnsaved') }
       draft.persist()
     } finally { busy.value = false }
   }

@@ -97,7 +97,7 @@ async function mount({ path = '/my-projects', loggedIn = true, list = () => ({ i
       calls.push({ url, init })
       let data
       if (url.startsWith('/api/v1/client/me/projects?')) data = await list(url)
-      else if (url === `/api/v1/client/me/projects/${projectId}`) data = await get()
+      else if (url.startsWith('/api/v1/client/me/projects/')) data = await get(url.slice('/api/v1/client/me/projects/'.length))
       else if (url === '/api/v1/client/catalog/options') data = await options()
       else assert.fail(`Unexpected API: ${url}`)
       return { code: 0, data: structuredClone(data) }
@@ -237,4 +237,34 @@ test('unauthenticated visitors are sent to login with the current route and make
   assert.equal(mounted.router.currentRoute.value.path, '/auth/sign-in')
   assert.equal(mounted.router.currentRoute.value.query.redirect, detailPath)
   await mounted.close()
+})
+const otherProjectId = '44444444-4444-4444-4444-444444444444'
+for (const late of ['success', 'failure']) {
+  test(`a late ${late} of the previous project never overwrites the project now shown or its chat context`, async () => {
+    let releaseFirst
+    const mounted = await mount({ path: detailPath, get: id => id === projectId
+      ? new Promise((resolve, reject) => { releaseFirst = () => late === 'success' ? resolve(detail()) : reject(Object.assign(new Error('HTTP 500'), { response: { status: 500 } })) })
+      : detail({ projectId: otherProjectId, projectNo: 'PJ-2026-0002' }) })
+    try {
+      await mounted.router.push(`/my-projects/${otherProjectId}`); await settle()
+      assert.match(mounted.container.textContent, /PJ-2026-0002/)
+      releaseFirst(); await settle()
+      assert.match(mounted.container.textContent, /PJ-2026-0002/)
+      assert.doesNotMatch(mounted.container.textContent, /PJ-2026-0001/)
+      assert.doesNotMatch(mounted.container.textContent, /项目读取失败/)
+      assert.equal(pageContext.value?.label, 'PJ-2026-0002')
+    } finally { await mounted.close() }
+  })
+}
+test('detail shows the original requirement, the remarks and the questions to confirm side by side', async () => {
+  const full = detail()
+  let mounted = await mount({ path: detailPath, get: () => ({ ...full, request: { ...full.request, notes: '请在周五前回复', unresolvedQuestions: ['开口数待确认', '是否需要储物间'] } }) })
+  try {
+    for (const text of ['需求描述', '需要科技感展台', '备注', '请在周五前回复', '待确认事项', '开口数待确认', '是否需要储物间']) assert.match(mounted.container.textContent, new RegExp(text))
+  } finally { await mounted.close() }
+  mounted = await mount({ path: detailPath, get: () => ({ ...full, request: { ...full.request, originalDescription: undefined, confirmedRequirements: undefined, notes: '只有备注的历史申请' } }) })
+  try {
+    assert.match(mounted.container.textContent, /备注只有备注的历史申请/)
+    assert.doesNotMatch(mounted.container.textContent, /需求描述|待确认事项/)
+  } finally { await mounted.close() }
 })
