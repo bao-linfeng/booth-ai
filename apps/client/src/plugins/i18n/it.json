@@ -806,7 +806,25 @@
     "errorAccountChanged2": "Account cambiato. Riconferma.",
     "errorFormInvalid2": "Verifica date, budget, contatti e stato accesso. Dati salvati.",
     "errorNetworkRetry": "Risultato non confermato. Riprova.",
-    "errorAssignmentUnavailable": "Al momento non è possibile accettare richieste. Non è stato creato alcun progetto. I dati del modulo sono stati conservati; inviali di nuovo più tardi o contatta il servizio clienti."
+    "errorAssignmentUnavailable": "Al momento non è possibile accettare richieste. Non è stato creato alcun progetto. I dati del modulo sono stati conservati; inviali di nuovo più tardi o contatta il servizio clienti.",
+    "validationExhibition": "Inserisci il nome della fiera.",
+    "validationCountry": "Scegli un paese.",
+    "validationCity": "Scegli una città.",
+    "validationBudget": "Inserisci un budget materiali maggiore di 0, con al massimo 6 decimali.",
+    "validationCompany": "Per un cliente aziendale inserisci il nome dell’azienda.",
+    "validationContactName": "Inserisci il nome del referente.",
+    "validationEmail": "L’indirizzo e-mail non è valido.",
+    "validationPhone": "Il numero di telefono non è valido. Usa da 7 a 15 cifre; sono ammessi +, spazi, parentesi e trattini.",
+    "countryLoadFailed": "Impossibile caricare l’elenco dei paesi.",
+    "cityLoadFailed": "Impossibile caricare l’elenco delle città.",
+    "cityEmpty": "Nessuna città disponibile per questo paese. Scegli un altro paese o contatta l’assistenza clienti.",
+    "retryLoad": "Ricarica",
+    "errorNetworkUnsaved": "La ricezione non è ancora confermata. Il browser non ha potuto salvare questo invio: non aggiornare né chiudere la pagina. Usa il pulsante qui sotto per riprovare la conferma ed evitare progetti duplicati.",
+    "errorContextLoadFailed": "Impossibile caricare i dati del progetto, forse per una rete instabile. I dati inseriti sono conservati; ricarica.",
+    "retryLoadContext": "Ricarica i dati del progetto",
+    "guestSubmissionUnconfirmed": "La richiesta inviata prima dell’accesso non è ancora confermata. Se è stata accettata e la sua e-mail di contatto coincide con questo account, compare automaticamente in «I miei progetti». Controlla prima lì per evitare richieste duplicate.",
+    "loginAfterConfirm": "Conferma prima l’esito di questa richiesta con il pulsante sopra, poi accedi per vedere i tuoi progetti.",
+    "artworkAttached": "Le grafiche complete dei quattro lati che hai generato sono allegate e verranno fissate con questa richiesta."
   },
   "searches": {
     "pageTitle": "Cronologia ricerche",
@@ -961,7 +979,8 @@
     "statusLabelQuoted": "Quoted",
     "statusLabelWon": "Won",
     "statusLabelLost": "Not won",
-    "statusLabelClosed": "Closed"
+    "statusLabelClosed": "Closed",
+    "unresolvedTitle": "Punti da confermare"
   },
   "customerService": {
     "consult": "Contatta l’assistenza",

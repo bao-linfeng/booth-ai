@@ -56,23 +56,30 @@ const { writeManualHandoff } = await server.ssrLoadModule('/src/features/selecti
 const { getVisitorId } = await server.ssrLoadModule('/src/lib/visitor-id.ts')
 const user = { id: 'test-user', username: '测试用户', nickname: '测试用户', city: '上海', email: '', mobile: '', company: '' }
 const validForm = { exhibitionName: '上海测试展', countryCode: 'CN', city: '上海', startDate: '2026-11-01', endDate: '2026-11-04', scopeCodes: ['materials'], scopeNotes: '保留范围说明', currency: 'CNY', amount: '30000', customerType: 'individual', company: '', contactName: '王测试', email: 'test@example.com', phone: '', notes: '不能丢失的补充说明' }
-const draftKey = (manual, themeJobId = 'standard') => manual ? 'booth:manual-draft' : `booth:quote-draft:SC-6030:${themeJobId}:pending`
+const draftKey = (manual, themeJobId = 'standard', artworkJobId = 'pending') => manual ? 'booth:manual-draft' : `booth:quote-draft:SC-6030:${themeJobId}:${artworkJobId}`
 async function settle() { for (let i = 0; i < 4; i++) { await nextTick(); await new Promise(resolve => setTimeout(resolve, 5)) } }
-async function mount({ manual = false, form = {}, description = '需要科技感展台', restore = false, selection, query = '', respond, themeJob } = {}) {
+async function mount({ manual = false, form = {}, description = '需要科技感展台', restore = false, selection, query = '', respond, themeJob, artworkJob, draft = {},
+  auth = { isLoggedIn: true, currentUser: user }, context, failures = {}, dictionary } = {}) {
   if (!restore) {
     sessionStorage.clear()
-    sessionStorage.setItem(draftKey(manual, themeJob?.jobId), JSON.stringify({ owner: user.id, form: { ...validForm, ...form }, pending: null, pendingManual: null, originalDescription: description }))
+    sessionStorage.setItem(draftKey(manual, themeJob?.jobId, artworkJob?.jobId), JSON.stringify({ owner: user.id, form: { ...validForm, ...form }, pending: null, pendingManual: null, originalDescription: description, ...draft }))
     if (selection) writeSelectionSession(selection)
   }
   const calls = []
+  let contextReads = 0
   globalThis.__quoteRequest = {
-    auth: { isLoggedIn: true, currentUser: user },
-    dictionary: async path => ({ data: path.endsWith('queryCountries') ? [{ dictKey: 'CN', dictValue: '中国' }] : [{ dictKey: 'SH', dictValue: '上海' }] }),
+    auth,
+    dictionary: dictionary ?? (async path => ({ data: path.endsWith('queryCountries') ? [{ dictKey: 'CN', dictValue: '中国' }] : [{ dictKey: 'SH', dictValue: '上海' }] })),
     apiFetch: async (path, options) => {
       calls.push({ path, method: options?.method ?? 'GET', body: options?.body ? JSON.parse(JSON.stringify(options.body)) : undefined })
-      if (path.endsWith('/quote-context')) return { code: 0, data: { schemeCode: 'SC-6030', schemeRevision: 1, bomRevision: 7, drawingRevision: 1, artworkRevision: 1, materialsStatus: { bom: 'available', drawings: 'available', artworks: 'available' } } }
+      if (failures[path]) throw failures[path]
+      if (path.endsWith('/quote-context')) {
+        if (context) await context(++contextReads)
+        return { code: 0, data: { schemeCode: 'SC-6030', schemeRevision: 1, bomRevision: 7, drawingRevision: 1, artworkRevision: 1, materialsStatus: { bom: 'available', drawings: 'available', artworks: 'available' } } }
+      }
       if (path === '/api/v1/client/schemes/SC-6030') return { code: 0, data: { images: [] } }
       if (themeJob && path === `/api/v1/client/theme-jobs/${themeJob.jobId}`) return { code: 0, data: structuredClone(themeJob) }
+      if (artworkJob && path === `/api/v1/client/artwork-jobs/${artworkJob.jobId}`) return { code: 0, data: structuredClone(artworkJob) }
       assert.equal(path, manual ? '/api/v1/client/manual-requests' : '/api/v1/client/quote-requests')
       assert.equal(options.method, 'POST')
       if (respond) await respond(calls.filter(call => call.method === 'POST').length)
@@ -163,6 +170,7 @@ for (const scenario of [
   { name: 'scheme outside the results', selection: { code: 'SC-9999' }, query: '?searchId=search-1' },
   { name: 'inspiration results', selection: { mode: 'random' }, query: '?searchId=search-1' },
   { name: 'no AI selection session', query: '' },
+  { name: 'route without the source search', selection: {}, query: '?entryPoint=scheme_detail' },
 ]) {
   test(`quote: ${scenario.name} is not attached and the quote still submits`, async () => {
     const mounted = await mount({ selection: scenario.selection && selectionSession(scenario.selection), query: scenario.query })
@@ -375,5 +383,184 @@ test('manual: a pending submission is discarded instead of resent after the acco
     assert.match(mounted.container.textContent, /登录账户已变化，请重新确认。/)
     assert.equal(draftOf(true).pendingManual, null)
     assert.equal(mounted.container.querySelector('fieldset').disabled, false)
+  } finally { await mounted.close() }
+})
+const buttonByText = (container, text) => [...container.querySelectorAll('button')].find(button => button.textContent.trim() === text)
+const submitButton = container => container.querySelector('button[type="submit"]')
+// 页面代码在调用时才解析全局 sessionStorage，替换全局对象即可注入存储故障
+async function withStorage(overrides, run) {
+  const real = globalThis.sessionStorage
+  const failing = { getItem: key => real.getItem(key), setItem: (key, value) => real.setItem(key, value), removeItem: key => real.removeItem(key), clear: () => real.clear(), ...overrides }
+  Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: failing })
+  try { return await run() } finally { Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: real }) }
+}
+const storageFailure = () => { throw new Error('QuotaExceededError') }
+test('quote: storage that cannot be written does not block sending; an unconfirmed result warns and the retry reuses the in-memory request key', async () => {
+  const mounted = await mount({ respond: attempt => { if (attempt === 1) throw httpFailure(502) } })
+  try {
+    await withStorage({ setItem: storageFailure }, async () => {
+      await submit(mounted); assert.equal(posts(mounted).length, 1)
+      assert.match(mounted.container.textContent, /浏览器无法保存本次提交/)
+      await submit(mounted); assert.equal(posts(mounted).length, 2)
+      assert.equal(posts(mounted)[1].body.requestKey, posts(mounted)[0].body.requestKey)
+      assert.match(mounted.container.textContent, /申请已受理/)
+    })
+  } finally { await mounted.close() }
+})
+test('quote: unavailable storage still opens the page and validates locally', async () => {
+  sessionStorage.clear()
+  await withStorage({ getItem: storageFailure, setItem: storageFailure, removeItem: storageFailure }, async () => {
+    const mounted = await mount({ restore: true })
+    try {
+      await submit(mounted)
+      error(mounted.container, '#exhibition', 'request-exhibition-error')
+      assert.equal(posts(mounted).length, 0)
+    } finally { await mounted.close() }
+  })
+})
+test('quote: a stored draft with an invalid structure is discarded; mistyped form fields are ignored', async () => {
+  let mounted = await mount({ draft: { pending: 'broken' } })
+  try {
+    assert.equal(mounted.container.querySelector('#exhibition').value, '')
+    assert.equal(sessionStorage.getItem(draftKey(false)), null)
+    assert.equal(mounted.container.querySelector('fieldset').disabled, false)
+  } finally { await mounted.close() }
+  mounted = await mount({ form: { amount: 30000, scopeCodes: 'materials' } })
+  try {
+    assert.equal(mounted.container.querySelector('#exhibition').value, validForm.exhibitionName)
+    assert.equal(mounted.container.querySelector('#budget').value, '')
+    await submit(mounted); assert.equal(posts(mounted).length, 0)
+    error(mounted.container, '#budget', 'request-budget-error')
+  } finally { await mounted.close() }
+})
+test('quote: while an anonymous submission is unconfirmed, login is replaced by a hint until the result is confirmed', async () => {
+  localStorage.setItem('booth-ai:cs-visitor', '1')
+  const mounted = await mount({ auth: { isLoggedIn: false, currentUser: null }, draft: { owner: null }, respond: attempt => { if (attempt === 1) throw httpFailure(502) } })
+  try {
+    assert.ok(buttonByText(mounted.container, '已有账号？先登录'))
+    await submit(mounted)
+    assert.match(mounted.container.textContent, /暂未确认受理结果/)
+    assert.equal(buttonByText(mounted.container, '已有账号？先登录'), undefined)
+    assert.match(mounted.container.textContent, /请先用上方按钮确认本次申请的受理结果/)
+    await submit(mounted); assert.equal(posts(mounted).length, 2)
+    assert.equal(posts(mounted)[1].body.requestKey, posts(mounted)[0].body.requestKey)
+    assert.match(mounted.container.textContent, /申请已受理/)
+  } finally { await mounted.close(); localStorage.removeItem('booth-ai:cs-visitor') }
+})
+test('quote: after logging in, an unconfirmed anonymous submission is neither restored nor resent; the user is pointed to My projects', async () => {
+  const mounted = await mount({ draft: { owner: null, pending: { requestKey: 'guest-key', schemeCode: 'SC-6030' } } })
+  try {
+    assert.match(mounted.container.textContent, /您登录前提交的申请尚未确认受理结果/)
+    assert.ok([...mounted.container.querySelectorAll('a')].some(link => link.getAttribute('href') === '/my-projects'))
+    assert.equal(mounted.container.querySelector('#exhibition').value, '')
+    assert.equal(mounted.container.querySelector('fieldset').disabled, false)
+    assert.equal(posts(mounted).length, 0)
+  } finally { await mounted.close() }
+})
+test('quote: a failed context read offers an in-page retry and keeps the form', async () => {
+  const mounted = await mount({ context: attempt => { if (attempt === 1) throw new Error('network down') } })
+  try {
+    assert.match(mounted.container.textContent, /方案资料读取失败/)
+    assert.equal(submitButton(mounted.container).disabled, true)
+    buttonByText(mounted.container, '重新读取方案资料').click(); await settle()
+    assert.doesNotMatch(mounted.container.textContent, /方案资料读取失败/)
+    assert.equal(buttonByText(mounted.container, '重新读取方案资料'), undefined)
+    assert.equal(mounted.container.querySelector('#exhibition').value, validForm.exhibitionName)
+    await submit(mounted); assert.equal(posts(mounted).length, 1)
+    assert.match(mounted.container.textContent, /申请已受理/)
+  } finally { await mounted.close() }
+})
+for (const scenario of [
+  { name: 'an unavailable scheme', options: { context: () => { throw httpFailure(409, 'SCHEME_UNAVAILABLE') } }, message: /方案或选定效果已变化/ },
+  { name: 'a theme job that no longer exists', options: { query: '?themeJobId=theme-missing', failures: { '/api/v1/client/theme-jobs/theme-missing': httpFailure(404) } }, message: /主题结果不可用/ },
+]) {
+  test(`quote: ${scenario.name} shows its own reason without a pointless retry`, async () => {
+    const mounted = await mount(scenario.options)
+    try {
+      assert.match(mounted.container.textContent, scenario.message)
+      assert.doesNotMatch(mounted.container.textContent, /方案资料读取失败/)
+      assert.equal(buttonByText(mounted.container, '重新读取方案资料'), undefined)
+      assert.equal(submitButton(mounted.container).disabled, true)
+    } finally { await mounted.close() }
+  })
+}
+test('quote: a complete four-side artwork is shown as attached, not as pending', async () => {
+  const artworkJob = { jobId: 'artwork-1', deliveryStatus: 'ready', schemeCode: 'SC-6030', themeSelection: { themeJobId: 'theme-1', resultId: 'result-1', selectionRevision: 2 } }
+  let mounted = await mount({ themeJob: themeJob(null), artworkJob, query: '?themeJobId=theme-1&artworkJobId=artwork-1' })
+  try {
+    assert.match(mounted.container.textContent, /已附带您生成的完整四面素材/)
+    assert.doesNotMatch(mounted.container.textContent, /主题平面素材尚待补充/)
+    await submit(mounted); assert.equal(posts(mounted)[0].body.artworkJobId, 'artwork-1')
+  } finally { await mounted.close() }
+  mounted = await mount({ themeJob: themeJob(null), query: '?themeJobId=theme-1' })
+  try {
+    assert.match(mounted.container.textContent, /主题平面素材尚待补充/)
+    assert.doesNotMatch(mounted.container.textContent, /已附带您生成的完整四面素材/)
+  } finally { await mounted.close() }
+})
+for (const scenario of [
+  { name: 'zero budget', form: { amount: '0' }, field: '#budget', errorId: 'request-budget-error', fix: '30000.5', message: '请填写大于 0 的材料预算，最多 6 位小数。' },
+  { name: 'blank exhibition name', form: { exhibitionName: '   ' }, field: '#exhibition', errorId: 'request-exhibition-error', fix: '上海测试展', message: '请填写展会名称。' },
+  { name: 'blank contact name', form: { contactName: ' ' }, field: '#contact', errorId: 'request-contact-name-error', fix: '王测试', message: '请填写联系人。' },
+  { name: 'company without a name', form: { customerType: 'company', company: ' ' }, field: '#company', errorId: 'request-company-error', fix: '示例公司', message: '客户类型为企业时，请填写企业名称。' },
+  { name: 'invalid phone', form: { phone: 'call me' }, field: '#phone', errorId: 'request-contact-error', fix: '+86 (21) 5555-0000', message: '电话格式不正确，请填写 7–15 位数字，可包含 +、空格、括号或短横线。' },
+  { name: 'invalid email', form: { email: 'not-an-email' }, field: '#email', errorId: 'request-contact-error', fix: 'test@example.com', message: '邮箱格式不正确。' },
+  { name: 'missing city', form: { city: '' }, field: '#city', errorId: 'request-city-error', message: '请选择城市。' },
+]) {
+  test(`quote: ${scenario.name} is blocked locally with a focused field error`, async () => {
+    const mounted = await mount({ form: scenario.form })
+    try {
+      await submit(mounted)
+      const field = error(mounted.container, scenario.field, scenario.errorId)
+      assertSameNode(document.activeElement, field, 'document.activeElement vs field')
+      assert.equal(mounted.container.querySelector(`#${scenario.errorId}`).textContent, scenario.message)
+      assert.equal(posts(mounted).length, 0)
+      if (!scenario.fix) return
+      input(mounted.container, scenario.field, scenario.fix); await settle()
+      assertNoNode(mounted.container.querySelector(`#${scenario.errorId}`), 'field error after repair')
+      await submit(mounted); assert.equal(posts(mounted).length, 1)
+    } finally { await mounted.close() }
+  })
+}
+async function choose(container, selector, label) {
+  container.querySelector(selector).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await nextTick(); await nextTick()
+  const target = [...document.querySelectorAll('[role="option"]')].find(option => option.textContent.trim() === label)
+  assert.ok(target, `Option not found: ${label}`)
+  target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await new Promise(resolve => setTimeout(resolve, 0)); await settle()
+}
+test('quote: failed country and city lists can be reloaded in place', async () => {
+  const reads = { countries: 0, cities: 0 }
+  const mounted = await mount({ dictionary: async path => {
+    const kind = path.endsWith('queryCountries') ? 'countries' : 'cities'
+    if (++reads[kind] === 1) throw new Error('timeout')
+    return { data: kind === 'countries' ? [{ dictKey: 'CN', dictValue: '中国' }] : [{ dictKey: 'SH', dictValue: '上海' }] }
+  } })
+  try {
+    assert.match(mounted.container.textContent, /国家列表加载失败/)
+    assert.match(mounted.container.textContent, /城市列表加载失败/)
+    for (const retry of [...mounted.container.querySelectorAll('button')].filter(button => button.textContent.trim() === '重新加载')) retry.click()
+    await settle()
+    assert.doesNotMatch(mounted.container.textContent, /列表加载失败/)
+    assert.deepEqual(reads, { countries: 2, cities: 2 })
+    await submit(mounted); assert.equal(posts(mounted).length, 1)
+  } finally { await mounted.close() }
+})
+test('quote: switching country discards the late city response of the previous country', async () => {
+  let releaseChina
+  const mounted = await mount({ dictionary: async (path, options) => {
+    if (path.endsWith('queryCountries')) return { data: [{ dictKey: 'CN', dictValue: '中国' }, { dictKey: 'US', dictValue: '美国' }] }
+    if (options.query.countryCode === 'CN') return new Promise(resolve => { releaseChina = () => resolve({ data: [{ dictKey: 'SH', dictValue: '上海' }] }) })
+    return { data: [{ dictKey: 'NY', dictValue: 'New York' }] }
+  } })
+  try {
+    await choose(mounted.container, '#country', 'US · 美国')
+    releaseChina(); await settle()
+    assert.equal(mounted.container.querySelector('#city').disabled, false)
+    await choose(mounted.container, '#city', 'New York')
+    await submit(mounted); assert.equal(posts(mounted).length, 1)
+    assert.equal(posts(mounted)[0].body.exhibition.countryCode, 'US')
+    assert.equal(posts(mounted)[0].body.exhibition.city, 'New York')
   } finally { await mounted.close() }
 })

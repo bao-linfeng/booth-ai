@@ -806,7 +806,25 @@
     "errorAccountChanged2": "Cuenta cambiada. Reconfirma.",
     "errorFormInvalid2": "Verifica fechas, presupuesto, contactos y estado de sesión. Datos guardados.",
     "errorNetworkRetry": "Resultado no confirmado. Reintenta.",
-    "errorAssignmentUnavailable": "No se pueden aceptar solicitudes en este momento. No se ha creado ningún proyecto. Tus datos se han conservado; vuelve a enviarlos más tarde o contacta con atención al cliente."
+    "errorAssignmentUnavailable": "No se pueden aceptar solicitudes en este momento. No se ha creado ningún proyecto. Tus datos se han conservado; vuelve a enviarlos más tarde o contacta con atención al cliente.",
+    "validationExhibition": "Introduce el nombre de la feria.",
+    "validationCountry": "Elige un país.",
+    "validationCity": "Elige una ciudad.",
+    "validationBudget": "Introduce un presupuesto de materiales mayor que 0, con un máximo de 6 decimales.",
+    "validationCompany": "Para un cliente empresa, introduce el nombre de la empresa.",
+    "validationContactName": "Introduce el nombre de contacto.",
+    "validationEmail": "El correo electrónico no es válido.",
+    "validationPhone": "El teléfono no es válido. Usa de 7 a 15 dígitos; se permiten +, espacios, paréntesis y guiones.",
+    "countryLoadFailed": "No se pudo cargar la lista de países.",
+    "cityLoadFailed": "No se pudo cargar la lista de ciudades.",
+    "cityEmpty": "No hay ciudades disponibles para este país. Elige otro país o contacta con atención al cliente.",
+    "retryLoad": "Volver a cargar",
+    "errorNetworkUnsaved": "Aún no se ha confirmado la recepción. El navegador no pudo guardar este envío: no actualices ni cierres la página. Usa el botón de abajo para reintentar la confirmación y evitar proyectos duplicados.",
+    "errorContextLoadFailed": "No se pudieron cargar los datos del diseño, quizá por una red inestable. Tus datos se conservan; vuelve a cargar.",
+    "retryLoadContext": "Volver a cargar los datos del diseño",
+    "guestSubmissionUnconfirmed": "La solicitud que enviaste antes de iniciar sesión aún no está confirmada. Si se aceptó y su correo de contacto coincide con esta cuenta, aparece automáticamente en «Mis proyectos». Revísalo primero para evitar una solicitud duplicada.",
+    "loginAfterConfirm": "Confirma primero el resultado de esta solicitud con el botón de arriba y después inicia sesión para ver tus proyectos.",
+    "artworkAttached": "Se adjuntan los gráficos completos de las cuatro caras que generaste y quedarán fijados con esta solicitud."
   },
   "searches": {
     "pageTitle": "Historial de búsquedas",
@@ -961,7 +979,8 @@
     "statusLabelQuoted": "Quoted",
     "statusLabelWon": "Won",
     "statusLabelLost": "Not won",
-    "statusLabelClosed": "Closed"
+    "statusLabelClosed": "Closed",
+    "unresolvedTitle": "Puntos por confirmar"
   },
   "customerService": {
     "consult": "Contactar con atención al cliente",

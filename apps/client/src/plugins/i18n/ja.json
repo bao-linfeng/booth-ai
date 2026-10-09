@@ -806,7 +806,25 @@
     "errorAccountChanged2": "ログインアカウントが変更されました。再確認してください。",
     "errorFormInvalid2": "日付・予算・連絡先とログイン状態を確認してください。入力内容は保持されています。",
     "errorNetworkRetry": "受付結果が未確認です。今回の申請を再確認してください。",
-    "errorAssignmentUnavailable": "現在、申請を受け付けられません。プロジェクトは作成されていません。入力内容は保存されています。後ほど再送信するか、カスタマーサービスにお問い合わせください。"
+    "errorAssignmentUnavailable": "現在、申請を受け付けられません。プロジェクトは作成されていません。入力内容は保存されています。後ほど再送信するか、カスタマーサービスにお問い合わせください。",
+    "validationExhibition": "展示会名を入力してください。",
+    "validationCountry": "国を選択してください。",
+    "validationCity": "都市を選択してください。",
+    "validationBudget": "0 より大きい資材予算を、小数点以下 6 桁以内で入力してください。",
+    "validationCompany": "法人のお客様は会社名を入力してください。",
+    "validationContactName": "担当者名を入力してください。",
+    "validationEmail": "メールアドレスの形式が正しくありません。",
+    "validationPhone": "電話番号の形式が正しくありません。7〜15 桁の数字で入力してください（+、スペース、括弧、ハイフン可）。",
+    "countryLoadFailed": "国の一覧を読み込めませんでした。",
+    "cityLoadFailed": "都市の一覧を読み込めませんでした。",
+    "cityEmpty": "この国の都市データがありません。別の国を選ぶか、カスタマーサービスにお問い合わせください。",
+    "retryLoad": "再読み込み",
+    "errorNetworkUnsaved": "受付結果はまだ確認できていません。ブラウザがこの申請を保存できなかったため、ページを更新したり閉じたりしないでください。下のボタンで再確認すると、プロジェクトの重複作成を防げます。",
+    "errorContextLoadFailed": "デザイン資料を読み込めませんでした。ネットワークが不安定な可能性があります。入力内容は保持されています。再読み込みしてください。",
+    "retryLoadContext": "デザイン資料を再読み込み",
+    "guestSubmissionUnconfirmed": "ログイン前に送信した申請の受付結果がまだ確認できていません。受付済みで連絡先メールがこのアカウントと一致する場合、「マイプロジェクト」に自動で表示されます。重複申請を避けるため、まずそちらをご確認ください。",
+    "loginAfterConfirm": "上のボタンでこの申請の受付結果を確認してから、ログインしてプロジェクトをご覧ください。",
+    "artworkAttached": "生成した 4 面素材一式が添付され、申請とともに確定されます。"
   },
   "searches": {
     "pageTitle": "検索履歴",
@@ -961,7 +979,8 @@
     "statusLabelQuoted": "Quoted",
     "statusLabelWon": "Won",
     "statusLabelLost": "Not won",
-    "statusLabelClosed": "Closed"
+    "statusLabelClosed": "Closed",
+    "unresolvedTitle": "確認事項"
   },
   "customerService": {
     "consult": "サポートに問い合わせる",

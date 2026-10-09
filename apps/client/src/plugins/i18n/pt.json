@@ -788,7 +788,25 @@
     "errorAccountChanged2": "A conta conectada mudou. Confirme novamente.",
     "errorFormInvalid2": "Confira datas, orçamento, contato e estado de login. Seus dados foram mantidos.",
     "errorNetworkRetry": "O recebimento ainda não foi confirmado. Confirme esta solicitação novamente.",
-    "errorAssignmentUnavailable": "Não é possível aceitar solicitações no momento. Nenhum projeto foi criado. Seus dados foram mantidos; envie novamente mais tarde ou entre em contato com o atendimento ao cliente."
+    "errorAssignmentUnavailable": "Não é possível aceitar solicitações no momento. Nenhum projeto foi criado. Seus dados foram mantidos; envie novamente mais tarde ou entre em contato com o atendimento ao cliente.",
+    "validationExhibition": "Informe o nome da feira.",
+    "validationCountry": "Escolha um país.",
+    "validationCity": "Escolha uma cidade.",
+    "validationBudget": "Informe um orçamento de materiais maior que 0, com no máximo 6 casas decimais.",
+    "validationCompany": "Para cliente empresa, informe o nome da empresa.",
+    "validationContactName": "Informe o nome do contato.",
+    "validationEmail": "O e-mail não é válido.",
+    "validationPhone": "O telefone não é válido. Use de 7 a 15 dígitos; +, espaços, parênteses e hífens são permitidos.",
+    "countryLoadFailed": "Não foi possível carregar a lista de países.",
+    "cityLoadFailed": "Não foi possível carregar a lista de cidades.",
+    "cityEmpty": "Não há cidades disponíveis para este país. Escolha outro país ou fale com o atendimento.",
+    "retryLoad": "Recarregar",
+    "errorNetworkUnsaved": "O recebimento ainda não foi confirmado. O navegador não conseguiu salvar este envio; não atualize nem feche a página. Use o botão abaixo para tentar confirmar novamente e evitar projetos duplicados.",
+    "errorContextLoadFailed": "Não foi possível carregar os dados do projeto, talvez por instabilidade na rede. O que você preencheu foi mantido; recarregue.",
+    "retryLoadContext": "Recarregar dados do projeto",
+    "guestSubmissionUnconfirmed": "A solicitação enviada antes do login ainda não foi confirmada. Se ela foi aceita e o e-mail de contato corresponde a esta conta, ela aparece automaticamente em \"Meus projetos\". Verifique lá primeiro para evitar uma solicitação duplicada.",
+    "loginAfterConfirm": "Confirme primeiro o resultado desta solicitação com o botão acima e depois faça login para ver seus projetos.",
+    "artworkAttached": "As artes completas das quatro faces que você gerou estão anexadas e serão fixadas com esta solicitação."
   },
   "searches": {
     "pageTitle": "Histórico de buscas",
@@ -943,7 +961,8 @@
     "statusLabelQuoted": "Quoted",
     "statusLabelWon": "Won",
     "statusLabelLost": "Not won",
-    "statusLabelClosed": "Closed"
+    "statusLabelClosed": "Closed",
+    "unresolvedTitle": "Itens a confirmar"
   },
   "titles": {
     "aiSelection": "Seleção de estandes com IA",

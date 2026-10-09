@@ -24,7 +24,7 @@ export function toRequestPayload(form: RequestForm): RequestFormPayload {
   const phone = form.phone.trim()
   return {
     exhibition: { name: form.exhibitionName, countryCode: form.countryCode.toUpperCase(), city: form.city, startDate: form.startDate, endDate: form.endDate },
-    scopeCodes: [...form.scopeCodes], scopeNotes: form.scopeNotes, materialBudget: { currency: form.currency, amount: form.amount },
+    scopeCodes: [...form.scopeCodes], scopeNotes: form.scopeNotes, materialBudget: { currency: form.currency, amount: form.amount.trim() },
     customerType: form.customerType, company: form.company,
     contact: { name: form.contactName, ...(email ? { email } : {}), ...(phone ? { phone } : {}) }, notes: form.notes,
   }

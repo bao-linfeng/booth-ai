@@ -267,7 +267,7 @@ test('quote handoff reads the persisted filtered result, binds it to the search 
     assert.equal(handoff.requirementContext.originalDescription, '科技展台，希望有洽谈区')
     assert.deepEqual(handoff.requirementContext.confirmedRequirements, saved().requirement)
     assert.deepEqual(handoff.matchingSummary, { matchType: 'direct', differences: [], pendingConfirmations: [] })
-    assert.ok(readSelectionQuoteHandoff('SC-6030'), 'Entry without searchId still uses the current result')
+    assert.equal(readSelectionQuoteHandoff('SC-6030', undefined), null, 'Entry without the source search does not borrow the current result')
     assert.equal(readSelectionQuoteHandoff('SC-6030', 'search-old'), null)
     assert.equal(readSelectionQuoteHandoff('SC-9999', 'search-1'), null)
     await click(mounted.container, '修改需求')

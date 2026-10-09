@@ -806,7 +806,25 @@
     "errorAccountChanged2": "The logged-in account has changed. Please confirm again.",
     "errorFormInvalid2": "Check the dates, budget, contact details and login status. Your input has been saved.",
     "errorNetworkRetry": "Receipt has not yet been confirmed. Please retry confirmation of this request.",
-    "errorAssignmentUnavailable": "Requests cannot be accepted right now. No project was created. Your form has been kept; please submit it again later or contact customer service."
+    "errorAssignmentUnavailable": "Requests cannot be accepted right now. No project was created. Your form has been kept; please submit it again later or contact customer service.",
+    "validationExhibition": "Please enter the exhibition name.",
+    "validationCountry": "Please choose a country.",
+    "validationCity": "Please choose a city.",
+    "validationBudget": "Please enter a material budget greater than 0, with up to 6 decimal places.",
+    "validationCompany": "Please enter the company name for a company customer.",
+    "validationContactName": "Please enter a contact name.",
+    "validationEmail": "The email address is not valid.",
+    "validationPhone": "The phone number is not valid. Use 7–15 digits; +, spaces, parentheses and hyphens are allowed.",
+    "countryLoadFailed": "Could not load the country list.",
+    "cityLoadFailed": "Could not load the city list.",
+    "cityEmpty": "No city data is available for this country. Choose another country or contact customer service.",
+    "retryLoad": "Reload",
+    "errorNetworkUnsaved": "Receipt has not yet been confirmed. Your browser could not save this submission, so do not refresh or close the page. Use the button below to retry confirmation and avoid creating duplicate projects.",
+    "errorContextLoadFailed": "Could not load the design details, possibly due to an unstable network. Your entries are kept; please reload.",
+    "retryLoadContext": "Reload design details",
+    "guestSubmissionUnconfirmed": "The request you submitted before logging in has not been confirmed yet. If it was accepted and its contact email matches this account, it appears in \"My projects\" automatically. Please check there first to avoid a duplicate request.",
+    "loginAfterConfirm": "Please confirm the result of this request with the button above before logging in to view your projects.",
+    "artworkAttached": "The complete four-side artwork you generated is attached and will be fixed with this request."
   },
   "searches": {
     "pageTitle": "Search history",
@@ -961,7 +979,8 @@
     "requirementKeywords": "Keywords",
     "requirementOpenings": "{count} open sides",
     "requirementMaxHeight": "Venue height limit {value}",
-    "dateRange": "{start} to {end}"
+    "dateRange": "{start} to {end}",
+    "unresolvedTitle": "Items to confirm"
   },
   "customerService": {
     "consult": "Chat with us",
