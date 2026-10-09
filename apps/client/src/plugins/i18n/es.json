@@ -328,7 +328,8 @@
     "validationRange": "Introduce un valor entre 0,001 y 1000 m.",
     "validationDecimal": "Máximo 3 decimales (precisión en mm).",
     "validationArea": "Introduce una superficie mayor a 0 y no superior a 1.000.000.",
-    "boothSpaceSelectLabel": "Dimensiones del stand"
+    "boothSpaceSelectLabel": "Dimensiones del stand",
+    "customSize": "Personalizado {length} × {width} m"
   },
   "schemeCard": {
     "matchDirect": "Utilizable directamente",
@@ -543,7 +544,8 @@
     "errorNetworkConfirm": "Estado de tarea no confirmado. Reintenta para evitar duplicados. Datos guardados.",
     "errorMaskUnavailable": "No hay una zona editable para esta vista. Elige otra imagen original.",
     "errorTemplateUnavailable": "Este estilo no está disponible ahora. Ajusta tus preferencias visuales.",
-    "errorBlocked": "No se pueden generar estos ajustes ahora. Modifica tus preferencias o inténtalo más tarde."
+    "errorBlocked": "No se pueden generar estos ajustes ahora. Modifica tus preferencias o inténtalo más tarde.",
+    "pendingRestored": "Tu último envío aún no está confirmado, por lo que se restauró su configuración. Al generar se confirmará la solicitud original sin crear tareas duplicadas ni volver a reservar créditos."
   },
   "themeJob": {
     "back": "Atrás",
@@ -617,7 +619,9 @@
     "failureProviderError": "Proveedor de IA no disponible temporalmente",
     "failureInternalError": "Error interno del sistema",
     "statusSucceeded": "Generación completada",
-    "previewThumbnailAriaLabel": "Vista previa de la imagen {n}"
+    "previewThumbnailAriaLabel": "Vista previa de la imagen {n}",
+    "failureGenerationFailed": "La generación no se completó. Puedes ajustar la configuración y volver a generar.",
+    "failureGeneric": "La generación no se completó. Inténtalo de nuevo más tarde."
   },
   "artworkJob": {
     "pageTitle": "Tema / Materiales 4 lados / Entrega",
@@ -698,7 +702,11 @@
     "statusSubmitting": "Generating",
     "statusGenerated": "Checking and storing",
     "statusSucceeded": "Accepted",
-    "statusFailed": "Not accepted"
+    "statusFailed": "Not accepted",
+    "offerChanged": "El precio se ha actualizado. Revisa el nuevo coste y confirma de nuevo.",
+    "offerRenewed": "La cotización anterior caducó y se obtuvo una nueva al mismo precio. Confirma de nuevo.",
+    "errorOfferFailed": "No se pudo obtener el precio. Actualiza e inténtalo de nuevo más tarde.",
+    "errorServiceUnavailable": "El servicio de generación de materiales no está disponible temporalmente. Inténtalo de nuevo más tarde."
   },
   "quoteRequest": {
     "backToSelection": "Volver a la selección",

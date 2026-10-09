@@ -1,30 +1,12 @@
 import { ofetch } from 'ofetch'
 import { appLocale } from '@/plugins/i18n'
+import { getVisitorId } from './visitor-id'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 const LINGTONG_API_URL = import.meta.env.VITE_LINGTONG_API_URL ?? 'https://api.lingtong.net.cn'
 const API_TIMEOUT = 10000
 
-function visitorId() {
-  const key = 'booth-ai:visitor-id'
-  const existing = localStorage.getItem(key)
-  if (existing) return existing
-  const created = `v_${crypto.randomUUID().replaceAll('-', '')}`
-  localStorage.setItem(key, created)
-  return created
-}
-
-export function getVisitorId() {
-  return visitorId()
-}
-
-/** 退出登录时调用，生成新的访客 ID，防止以访客身份读取前一位登录用户的检索记录 */
-export function rotateVisitorId() {
-  const key = 'booth-ai:visitor-id'
-  const created = `v_${crypto.randomUUID().replaceAll('-', '')}`
-  localStorage.setItem(key, created)
-  return created
-}
+export { getVisitorId, rotateVisitorId } from './visitor-id'
 
 async function handleUnauthorized() {
   const [{ default: router }, { useAuthStore }, { default: pinia }] = await Promise.all([
@@ -62,7 +44,7 @@ export const apiFetch = ofetch.create({
   onRequest: async ({ options }) => {
     await injectBearerToken(options)
     const headers = new Headers(options.headers as HeadersInit | undefined)
-    headers.set('x-visitor-id', visitorId())
+    headers.set('x-visitor-id', getVisitorId())
     // 服务端只在带此头时读取访客 Cookie（CSRF 防护）；登录后服务端以登录身份为准，合并接口也依赖它读取 Cookie
     headers.set('X-CS-Visitor', '1')
     headers.set('Accept-Language', appLocale.value === 'zh' ? 'zh-CN' : appLocale.value)

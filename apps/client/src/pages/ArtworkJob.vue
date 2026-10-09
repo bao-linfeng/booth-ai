@@ -13,6 +13,7 @@ import { getDirectionLabels, getReasonLabels } from '@/features/artwork-jobs/lab
 import { getThemeJob } from '@/services/api/theme-jobs'
 import { bindProjectArtworks, getMyProject, type MyProjectDetail } from '@/services/api/projects'
 import { useAsyncJob } from '@/composables/useAsyncJob'
+import { useSignedUrlRenewal } from '@/composables/useSignedUrlRenewal'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,6 +41,25 @@ const ready = computed(() => job.value?.deliveryStatus === 'ready')
 const draftKey = computed(() => `booth:artwork-request:${auth.currentUser?.id}:${context.value?.themeJobId}:${context.value?.resultId}:${context.value?.selectionRevision}`)
 const canBind = computed(() => ready.value && project.value && !['won', 'lost', 'closed'].includes(project.value.status) && project.value.materialsStatus.artworks !== 'available')
 function statusOf(failure: unknown) { return (failure as { response?: { status?: number } }).response?.status }
+function reasonOf(failure: unknown) { return (failure as { data?: { error?: { reason?: string } } }).data?.error?.reason }
+// 提交草稿存储异常（被禁用、配额已满）不影响提交与跳转：同一页面内重试仍复用内存中的请求键，只是刷新后无法恢复
+function readDraft(key: string) { try { return sessionStorage.getItem(key) } catch { return null } }
+function writeDraft(key: string, value: ArtworkSubmission) { try { sessionStorage.setItem(key, JSON.stringify(value)) } catch { return } }
+function removeDraft(key: string) { try { sessionStorage.removeItem(key) } catch { return } }
+// 报价有效期 5 分钟；剩余不足此值时提交前先换新报价，避免提交时才被服务端以过期拒绝
+const offerRenewMarginMs = 10_000
+// 方向图与参考图为预签名链接（最短 5 分钟）：停留过久后图片加载失败或页面重新可见时换新链接
+const imageLinks = useSignedUrlRenewal(renewImages, 300_000)
+async function renewImages() {
+  if (route.params.jobId) { await fetchJob(); return }
+  const current = context.value
+  if (!current) return
+  const version = epoch
+  const theme = await getThemeJob(current.themeJobId)
+  if (!alive(version)) return
+  const selected = theme.results.find(r => r.resultId === current.resultId)
+  if (selected) { reference.value = selected.previewUrl; imageLinks.markFresh() }
+}
 function login() { void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } }) }
 function alive(version: number) { return !destroyed && version === epoch }
 const asyncJob = useAsyncJob<ArtworkJob>({
@@ -51,6 +71,7 @@ const asyncJob = useAsyncJob<ArtworkJob>({
     job.value = data
     reference.value = data.referencePreviewUrl ?? ''
     context.value = { schemeCode: data.schemeCode, ...data.themeSelection }
+    imageLinks.markFresh()
     error.value = ''
   },
   onError: failure => {
@@ -79,12 +100,13 @@ async function load() {
        if (theme.schemeCode !== route.params.code || !selected) throw new Error('Selected theme unavailable')
       context.value = { schemeCode: theme.schemeCode, themeJobId, resultId: selected.resultId, selectionRevision: theme.selection.revision }
       reference.value = selected.previewUrl
-      const saved = sessionStorage.getItem(draftKey.value)
+      imageLinks.markFresh()
+      const saved = readDraft(draftKey.value)
       if (saved) {
         try {
           const submission = JSON.parse(saved) as ArtworkSubmission
           if (submission.resultId === context.value.resultId && submission.selectionRevision === context.value.selectionRevision && submission.themeJobId === context.value.themeJobId && submission.schemeCode === context.value.schemeCode) pending.value = submission
-        } catch { sessionStorage.removeItem(draftKey.value) }
+        } catch { removeDraft(draftKey.value) }
       }
       const items = await getArtworkJobs(context.value)
       if (!alive(version)) return
@@ -112,23 +134,48 @@ async function generate() {
   if (busy.value || !context.value || (!offer.value && !pending.value) || (projectId.value && !project.value)) return
   busy.value = true; error.value = ''
   const version = epoch
+  const key = draftKey.value
   try {
     if (!pending.value) {
+      if (Date.parse(offer.value!.expiresAt) - Date.now() < offerRenewMarginMs && !await renewOffer(version, true)) return
       pending.value = { ...context.value, offerId: offer.value!.id, requestKey: crypto.randomUUID() }
-      sessionStorage.setItem(draftKey.value, JSON.stringify(pending.value))
+      writeDraft(key, pending.value)
     }
     const receipt = await createArtworkJob(pending.value)
     if (!alive(version)) return
-    sessionStorage.removeItem(draftKey.value); pending.value = undefined
+    removeDraft(key); pending.value = undefined
     await router.push({ path: `/artwork-jobs/${receipt.jobId}`, query: projectId.value ? { projectId: projectId.value } : {} })
   } catch (failure: unknown) {
     if (!alive(version)) return
     const status = statusOf(failure)
     if (status && status < 500 && ![408, 429].includes(status)) {
-      sessionStorage.removeItem(draftKey.value); pending.value = undefined; offer.value = undefined
-      error.value = status === 402 ? t('artworkJob.errorInsufficientCredits') : status === 401 ? t('artworkJob.errorAuthExpired') : t('artworkJob.errorThemeChanged')
+      // 服务端已明确拒绝，未创建任务：丢弃原请求键，按原因给出恢复路径
+      const reason = reasonOf(failure)
+      removeDraft(key); pending.value = undefined
+      if (reason === 'OFFER_EXPIRED') { await renewOffer(version, false); return }
+      offer.value = undefined
+      error.value = status === 402 ? t('artworkJob.errorInsufficientCredits') : status === 401 ? t('artworkJob.errorAuthExpired')
+        : reason === 'MODEL_UNAVAILABLE' ? t('artworkJob.errorServiceUnavailable') : t('artworkJob.errorThemeChanged')
     } else error.value = t('artworkJob.errorSubmitPending')
   } finally { busy.value = false }
+}
+/**
+ * 换新报价。beforeSubmit 为 true 时费用未变化返回 true 继续提交；费用变化则展示新费用、提示再次确认并返回 false。
+ * 提交被以过期拒绝后调用时只展示新报价，由用户再次确认。
+ */
+async function renewOffer(version: number, beforeSubmit: boolean) {
+  const previous = offer.value
+  try {
+    const fresh = await getArtworkOffer(context.value!)
+    if (!alive(version)) return false
+    offer.value = fresh
+    const changed = !previous || fresh.unitCredits !== previous.unitCredits || fresh.maxCredits !== previous.maxCredits
+    if (beforeSubmit && !changed) return true
+    error.value = changed ? t('artworkJob.offerChanged') : t('artworkJob.offerRenewed')
+  } catch (failure: unknown) {
+    if (alive(version)) error.value = statusOf(failure) === 409 ? t('artworkJob.errorThemeChanged') : t('artworkJob.errorOfferFailed')
+  }
+  return false
 }
 async function bind() {
   if (!project.value || !job.value || busy.value) return
@@ -170,7 +217,7 @@ onUnmounted(() => { destroyed = true; epoch++; asyncJob.stop() })
       <div v-if="error" role="alert" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm"><p>{{ error }}</p><Button variant="outline" :disabled="busy" @click="load"><RefreshCw class="mr-2 size-4" />{{ t('artworkJob.refreshStatus') }}</Button></div>
       <div v-if="context" class="grid items-start gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside class="space-y-6 lg:sticky lg:top-24">
-          <section class="space-y-4"><div class="flex items-center justify-between"><h2 class="text-lg font-medium">{{ t('artworkJob.themeRefTitle') }}</h2><span class="text-xs text-muted-foreground">{{ t('artworkJob.themeFixed') }}</span></div><img v-if="reference" :src="reference" :alt="t('artworkJob.themeRefDesc')" class="aspect-video w-full rounded-md bg-image-surface object-contain" /><dl class="space-y-2 text-sm"><div class="flex justify-between gap-3"><dt class="shrink-0 text-muted-foreground">{{ t('artworkJob.schemeLabel') }}</dt><dd class="break-all font-mono">{{ context.schemeCode }}</dd></div><div class="flex justify-between"><dt class="text-muted-foreground">{{ t('artworkJob.themeRevision') }}</dt><dd>{{ context.selectionRevision }}</dd></div></dl><p class="break-all font-mono text-xs text-muted-foreground">{{ context.resultId }}</p></section>
+          <section class="space-y-4"><div class="flex items-center justify-between"><h2 class="text-lg font-medium">{{ t('artworkJob.themeRefTitle') }}</h2><span class="text-xs text-muted-foreground">{{ t('artworkJob.themeFixed') }}</span></div><img v-if="reference" :src="reference" :alt="t('artworkJob.themeRefDesc')" class="aspect-video w-full rounded-md bg-image-surface object-contain" @error="imageLinks.onImageError" /><dl class="space-y-2 text-sm"><div class="flex justify-between gap-3"><dt class="shrink-0 text-muted-foreground">{{ t('artworkJob.schemeLabel') }}</dt><dd class="break-all font-mono">{{ context.schemeCode }}</dd></div><div class="flex justify-between"><dt class="text-muted-foreground">{{ t('artworkJob.themeRevision') }}</dt><dd>{{ context.selectionRevision }}</dd></div></dl><p class="break-all font-mono text-xs text-muted-foreground">{{ context.resultId }}</p></section>
           <section class="space-y-3 border-t pt-5"><h2 class="text-lg font-medium">{{ t('artworkJob.deliveryStandard') }}</h2><p class="text-sm leading-6 text-muted-foreground">{{ t('artworkJob.deliveryDesc') }}</p><p class="text-sm leading-6 text-muted-foreground">{{ t('artworkJob.deliveryNote') }}</p></section>
           <RouterLink v-if="project" :to="`/my-projects/${project.projectId}`" class="flex items-center justify-between rounded-lg border p-4 text-sm"><span>{{ t('artworkJob.projectLabel') }} {{ project.projectNo }}</span><ArrowRight class="size-4" /></RouterLink>
         </aside>
@@ -188,7 +235,7 @@ onUnmounted(() => { destroyed = true; epoch++; asyncJob.stop() })
           <div v-if="!job && history.length" class="space-y-3"><h2 class="text-sm font-medium">{{ t('artworkJob.historyTitle') }}</h2><RouterLink v-for="item in history" :key="item.jobId" :to="{ path: `/artwork-jobs/${item.jobId}`, query: projectId ? { projectId } : {} }" class="flex items-center justify-between rounded-lg border px-4 py-3 text-sm"><span class="font-mono">{{ item.jobId.slice(0, 8) }}</span><span>{{ item.deliveryStatus === 'ready' ? t('artworkJob.historyComplete') : ['pending', 'queued', 'running', 'settling'].includes(item.status) ? t('artworkJob.historyProcessing') : t('artworkJob.historyIncomplete') }}</span><ArrowRight class="size-4" /></RouterLink></div>
           <template v-if="job">
             <div class="flex flex-wrap items-center justify-between gap-4"><div><p class="text-xs text-muted-foreground">{{ t('artworkJob.resultTitle') }}</p><h2 class="mt-2 flex items-center gap-2 text-xl font-medium"><Loader2 v-if="isRunning" class="size-5 animate-spin text-primary" /><CheckCircle2 v-else-if="ready" class="size-5 text-primary" />{{ isRunning ? t('artworkJob.resultProcessing') : ready ? t('artworkJob.resultComplete') : t('artworkJob.resultIncomplete') }}</h2><p class="mt-2 text-xs text-muted-foreground">{{ t('artworkJob.processingNote') }}{{ job.jobId.slice(0, 8) }}</p></div><Button variant="outline" @click="fetchJob()"><RefreshCw class="mr-2 size-4" />{{ t('artworkJob.refresh') }}</Button></div>
-            <div class="grid gap-4 sm:grid-cols-2"><Card v-for="(item, index) in job.directions" :key="item.direction"><CardContent class="space-y-3 p-4"><div class="flex items-center justify-between"><h3 class="text-sm font-medium"><span class="mr-2 font-mono text-xs text-muted-foreground">0{{ index + 1 }}</span>{{ directionLabels[item.direction] }}</h3><StatusBadge domain="artwork" :status="item.status" /></div><div class="flex aspect-video items-center justify-center rounded-md bg-muted/40"><img v-if="item.previewUrl" :src="item.previewUrl" :alt="`${directionLabels[item.direction]}${t('artworkJob.directionImageLabel')}`" class="h-full w-full object-contain" /><Loader2 v-else-if="item.status !== 'failed'" class="size-7 animate-spin text-muted-foreground" /><p v-else class="px-5 text-center text-xs leading-6 text-muted-foreground">{{ reasonLabels[item.reason ?? ''] ?? t('artworkJob.directionFailed') }}</p></div><div class="flex items-center justify-between"><p class="text-xs text-muted-foreground">{{ item.width ? `${item.width} × ${item.height} px · PNG` : t('artworkJob.waitingFile') }}</p><Button v-if="item.assetId" variant="ghost" size="sm" :disabled="!!downloading" @click="download(item.assetId, item.direction)"><Download class="mr-1 size-3" />{{ t('artworkJob.downloadSingle') }}</Button></div></CardContent></Card></div>
+            <div class="grid gap-4 sm:grid-cols-2"><Card v-for="(item, index) in job.directions" :key="item.direction"><CardContent class="space-y-3 p-4"><div class="flex items-center justify-between"><h3 class="text-sm font-medium"><span class="mr-2 font-mono text-xs text-muted-foreground">0{{ index + 1 }}</span>{{ directionLabels[item.direction] }}</h3><StatusBadge domain="artwork" :status="item.status" /></div><div class="flex aspect-video items-center justify-center rounded-md bg-muted/40"><img v-if="item.previewUrl" :src="item.previewUrl" :alt="`${directionLabels[item.direction]}${t('artworkJob.directionImageLabel')}`" class="h-full w-full object-contain" @error="imageLinks.onImageError" /><Loader2 v-else-if="item.status !== 'failed'" class="size-7 animate-spin text-muted-foreground" /><p v-else class="px-5 text-center text-xs leading-6 text-muted-foreground">{{ reasonLabels[item.reason ?? ''] ?? t('artworkJob.directionFailed') }}</p></div><div class="flex items-center justify-between"><p class="text-xs text-muted-foreground">{{ item.width ? `${item.width} × ${item.height} px · PNG` : t('artworkJob.waitingFile') }}</p><Button v-if="item.assetId" variant="ghost" size="sm" :disabled="!!downloading" @click="download(item.assetId, item.direction)"><Download class="mr-1 size-3" />{{ t('artworkJob.downloadSingle') }}</Button></div></CardContent></Card></div>
             <Card><CardContent class="space-y-4 p-6"><div class="flex flex-wrap gap-x-6 gap-y-2 text-sm"><p>{{ t('artworkJob.creditPreoccupy', { amount: job.credits.reservedCredits }) }}</p><p>{{ t('artworkJob.creditFrozen', { amount: job.credits.heldCredits }) }}</p><p>{{ t('artworkJob.creditCharged', { amount: job.credits.chargedCredits }) }}</p><p>{{ t('artworkJob.creditReleased', { amount: job.credits.releasedCredits }) }}</p></div><p v-if="!isRunning && !ready" class="text-sm text-muted-foreground">{{ t('artworkJob.missingDirs', { dirs: job.missingDirections.map(d => directionLabels[d]).join('、') }) }}</p><div class="flex flex-wrap gap-3"><Button v-if="ready" :disabled="!!downloading" @click="download()"><Download class="mr-2 size-4" />{{ downloading === 'archive' ? t('artworkJob.zipPacking') : t('artworkJob.downloadZip') }}</Button><Button v-if="canBind" variant="outline" :disabled="busy" @click="bind"><Loader2 v-if="busy" class="mr-2 size-4 animate-spin" />{{ t('artworkJob.bindProject') }}</Button><span v-if="bound" class="flex items-center gap-2 text-sm text-primary"><CheckCircle2 class="size-4" />{{ t('artworkJob.boundProject') }}</span><Button v-if="ready && !projectId" variant="outline" as-child><RouterLink :to="{ path: `/schemes/${encodeURIComponent(job.schemeCode)}/quote`, query: { themeJobId: context.themeJobId, artworkJobId: job.jobId } }">{{ t('artworkJob.quoteWithArtwork') }}<ArrowRight class="ml-2 size-4" /></RouterLink></Button><Button v-if="!isRunning" variant="ghost" as-child><RouterLink :to="{ path: `/schemes/${encodeURIComponent(job.schemeCode)}/artwork`, query: { themeJobId: context.themeJobId, ...(projectId ? { projectId } : {}) } }">{{ t('artworkJob.regenerate') }}</RouterLink></Button></div></CardContent></Card>
           </template>
         </section>

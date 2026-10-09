@@ -1,4 +1,5 @@
 import { computed, onUnmounted, ref } from 'vue'
+import { getVisitorId } from '@/lib/visitor-id'
 import { matchSchemes, parseRequirement } from '@/services/api/selection'
 import { emptyRequirement, type MatchResponse, type ParseResponse, type Requirement, type SelectionState } from './types'
 import { selectionSnapshot, type PersistedSelection, type SelectionSessionInput } from './session'
@@ -45,6 +46,8 @@ export function useSelectionFlow(options: { enabled: () => boolean }) {
   const attemptId = ref<string>(crypto.randomUUID())
   const parseId = ref<string>()
   const searchId = ref<string>()
+  // attemptId/parseId/searchId 所属访客：访客 ID 轮换（退出、令牌失效、其他标签页换号）后不能再沿用这些 ID
+  const ownerVisitorId = ref(getVisitorId())
   const confirmedClarifications = ref<Record<number, string>>({})
   const interruptedRequest = ref(false)
   const images = useSchemeImages(matchData, options.enabled)
@@ -86,18 +89,35 @@ export function useSelectionFlow(options: { enabled: () => boolean }) {
     confirmedClarifications.value[index] = clarificationValue(item.field)
   }
 
-  function clearText() {
-    text.value = ''
+  // 描述被清空后旧解读作废：后续按表单匹配，检索不再关联旧解析记录
+  function dropParse() {
     parsedText.value = null
     parsedRequirement.value = null
     parseResult.value = null
+    parseId.value = undefined
+    confirmedClarifications.value = {}
+  }
+
+  function clearText() {
+    text.value = ''
+    dropParse()
     if (state.value === 'needs_clarification') state.value = 'idle'
+  }
+
+  function ensureOwnAttempt() {
+    const visitorId = getVisitorId()
+    if (ownerVisitorId.value === visitorId) return
+    attemptId.value = crypto.randomUUID()
+    parseId.value = undefined
+    searchId.value = undefined
+    ownerVisitorId.value = visitorId
   }
 
   function clear() {
     confirmedClarifications.value = {}
     requestSequence++
     attemptId.value = crypto.randomUUID()
+    ownerVisitorId.value = getVisitorId()
     parseId.value = undefined
     searchId.value = undefined
     requirement.value = emptyRequirement()
@@ -114,6 +134,7 @@ export function useSelectionFlow(options: { enabled: () => boolean }) {
 
   async function parse(sequence: number) {
     confirmedClarifications.value = {}
+    ensureOwnAttempt()
     state.value = 'parsing'
     try {
       const data = await parseRequirement({ attemptId: attemptId.value, text: text.value, form: requirement.value })
@@ -140,6 +161,7 @@ export function useSelectionFlow(options: { enabled: () => boolean }) {
 
   async function match(mode: 'random' | 'filtered', textProvided: boolean, sequence: number) {
     interruptedRequest.value = false
+    ensureOwnAttempt()
     state.value = 'matching'
     try {
       const data = await matchSchemes({
@@ -165,6 +187,8 @@ export function useSelectionFlow(options: { enabled: () => boolean }) {
     const sequence = ++requestSequence
     interruptedRequest.value = false
     const textProvided = !!text.value.trim()
+    // 描述被键盘删空或只剩空白：与“清空”按钮一致，不发送空文本解析，直接按表单匹配
+    if (!textProvided && parsedText.value !== null) dropParse()
     if (textChangedSinceParse.value && !await parse(sequence)) return
     if (textProvided && !parsedRequirement.value && !await parse(sequence)) return
     if (textProvided && unresolvedClarifications.value.length) {
@@ -195,6 +219,7 @@ export function useSelectionFlow(options: { enabled: () => boolean }) {
       parsedRequirement: parsedRequirement.value,
       liveMatchData: matchData.value,
       attemptId: attemptId.value,
+      visitorId: ownerVisitorId.value,
       parseId: parseId.value ?? null,
       searchId: searchId.value ?? null,
       imagesExpiresAt: images.imagesExpiresAt.value,
@@ -215,6 +240,7 @@ export function useSelectionFlow(options: { enabled: () => boolean }) {
     parsedRequirement.value = value.parsedRequirement
     matchData.value = value.liveMatchData
     attemptId.value = value.attemptId
+    ownerVisitorId.value = value.visitorId
     parseId.value = value.parseId ?? undefined
     searchId.value = value.searchId ?? undefined
     images.restore(value.imagesExpiresAt, value.activeImageByCode)

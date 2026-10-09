@@ -328,7 +328,8 @@
     "validationRange": "Bitte geben Sie einen Wert zwischen 0.001 und 1000 m ein.",
     "validationDecimal": "Verwenden Sie bis zu drei Dezimalstellen (Millimetergenauigkeit).",
     "validationArea": "Bitte geben Sie einen Bereich ein, der größer als 0 und nicht größer als 1,000,000. ist",
-    "boothSpaceSelectLabel": "Standabmessungen"
+    "boothSpaceSelectLabel": "Standabmessungen",
+    "customSize": "Individuell {length} × {width} m"
   },
   "schemeCard": {
     "matchDirect": "Gebrauchsfertig",
@@ -543,7 +544,8 @@
     "errorNetworkConfirm": "Die Aufgabenerstellung wurde noch nicht bestätigt. Bitte bestätigen Sie erneut; Dieselbe Anfrage wird wiederverwendet, um doppelte Aufgaben zu vermeiden. Ihre Eingabe bleibt auf dieser Seite.",
     "errorMaskUnavailable": "Für diese Ansicht ist kein bearbeitbarer Bereich verfügbar. Wählen Sie ein anderes Originalbild.",
     "errorTemplateUnavailable": "Dieser Stil ist derzeit nicht verfügbar. Passen Sie Ihre visuellen Präferenzen an.",
-    "errorBlocked": "Diese Einstellungen können derzeit nicht generiert werden. Passen Sie Ihre Präferenzen an oder versuchen Sie es später erneut."
+    "errorBlocked": "Diese Einstellungen können derzeit nicht generiert werden. Passen Sie Ihre Präferenzen an oder versuchen Sie es später erneut.",
+    "pendingRestored": "Ihre letzte Übermittlung ist noch nicht bestätigt; die Einstellungen wurden wiederhergestellt. Beim Generieren wird die ursprüngliche Anfrage bestätigt, ohne doppelte Aufgabe oder erneute Punktereservierung."
   },
   "themeJob": {
     "back": "Zurück",
@@ -617,7 +619,9 @@
     "failureProviderError": "KI-Anbieter vorübergehend nicht verfügbar",
     "failureInternalError": "Interner Systemfehler",
     "statusSucceeded": "Generierung abgeschlossen",
-    "previewThumbnailAriaLabel": "Rendering {n} in der Vorschau"
+    "previewThumbnailAriaLabel": "Rendering {n} in der Vorschau",
+    "failureGenerationFailed": "Die Generierung war nicht erfolgreich. Passen Sie die Einstellungen an und generieren Sie erneut.",
+    "failureGeneric": "Die Generierung war nicht erfolgreich. Bitte versuchen Sie es später erneut."
   },
   "artworkJob": {
     "pageTitle": "Thema / Vierseitiges Kunstwerk / Lieferung",
@@ -698,7 +702,11 @@
     "statusSubmitting": "Generating",
     "statusGenerated": "Checking and storing",
     "statusSucceeded": "Accepted",
-    "statusFailed": "Not accepted"
+    "statusFailed": "Not accepted",
+    "offerChanged": "Der Preis wurde aktualisiert. Bitte prüfen Sie die neuen Kosten und bestätigen Sie erneut.",
+    "offerRenewed": "Das vorherige Angebot ist abgelaufen; ein neues zum gleichen Preis wurde abgerufen. Bitte bestätigen Sie erneut.",
+    "errorOfferFailed": "Preis konnte nicht abgerufen werden. Bitte aktualisieren und später erneut versuchen.",
+    "errorServiceUnavailable": "Der Dienst zur Materialgenerierung ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut."
   },
   "quoteRequest": {
     "backToSelection": "Zurück zum Lösungsfinder",

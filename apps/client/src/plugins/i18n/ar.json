@@ -328,7 +328,8 @@
     "validationRange": "أدخل قيمة بين 0.001 و1000 متر.",
     "validationDecimal": "ثلاث منازل عشرية كحد أقصى (بدقة المليمتر).",
     "validationArea": "أدخل مساحة أكبر من 0 ولا تتجاوز 1,000,000.",
-    "boothSpaceSelectLabel": "أبعاد الجناح"
+    "boothSpaceSelectLabel": "أبعاد الجناح",
+    "customSize": "مخصص {length} × {width} م"
   },
   "schemeCard": {
     "matchDirect": "للاستخدام المباشر",
@@ -543,7 +544,8 @@
     "errorNetworkConfirm": "لم يتأكد إنشاء المهمة بعد. أعد التأكيد؛ سيُستخدم الطلب نفسه لتجنب التكرار. بياناتك محفوظة في الصفحة الحالية.",
     "errorMaskUnavailable": "لا توجد منطقة قابلة للتحرير لهذا المنظور. اختر صورة أصلية أخرى.",
     "errorTemplateUnavailable": "هذا النمط غير متاح حاليًا. عدّل تفضيلاتك البصرية.",
-    "errorBlocked": "لا يمكن إنشاء هذه الإعدادات الآن. عدّل تفضيلاتك أو حاول لاحقًا."
+    "errorBlocked": "لا يمكن إنشاء هذه الإعدادات الآن. عدّل تفضيلاتك أو حاول لاحقًا.",
+    "pendingRestored": "لم يتم تأكيد نتيجة الإرسال الأخير بعد، لذلك تمت استعادة إعداداته. سيؤكد الإنشاء الطلب الأصلي دون إنشاء مهمة مكررة أو حجز النقاط مرة أخرى."
   },
   "themeJob": {
     "back": "رجوع",
@@ -617,7 +619,9 @@
     "failureProviderError": "مزود الذكاء الاصطناعي غير متاح مؤقتًا",
     "failureInternalError": "خطأ داخلي في النظام",
     "statusSucceeded": "اكتمل الإنشاء",
-    "previewThumbnailAriaLabel": "معاينة التصيير {n}"
+    "previewThumbnailAriaLabel": "معاينة التصيير {n}",
+    "failureGenerationFailed": "لم ينجح الإنشاء. يمكنك تعديل الإعدادات والإنشاء مرة أخرى.",
+    "failureGeneric": "لم ينجح الإنشاء. يرجى المحاولة لاحقًا."
   },
   "artworkJob": {
     "pageTitle": "الهوية / مواد الجهات الأربع / التسليم",
@@ -698,7 +702,11 @@
     "statusSubmitting": "Generating",
     "statusGenerated": "Checking and storing",
     "statusSucceeded": "Accepted",
-    "statusFailed": "Not accepted"
+    "statusFailed": "Not accepted",
+    "offerChanged": "تم تحديث السعر. يرجى مراجعة التكلفة الجديدة ثم التأكيد مرة أخرى.",
+    "offerRenewed": "انتهت صلاحية عرض السعر السابق وتم الحصول على عرض جديد بالسعر نفسه. يرجى التأكيد مرة أخرى.",
+    "errorOfferFailed": "تعذر الحصول على السعر. يرجى التحديث والمحاولة لاحقًا.",
+    "errorServiceUnavailable": "خدمة إنشاء المواد غير متاحة مؤقتًا. يرجى المحاولة لاحقًا."
   },
   "quoteRequest": {
     "backToSelection": "العودة إلى الاختيار الذكي",

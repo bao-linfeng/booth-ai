@@ -15,12 +15,15 @@ import MainLayout from '@/layouts/MainLayout.vue'
 import SchemeGallery from '@/features/selection/SchemeGallery.vue'
 import { previewItems } from '@/features/selection/preview'
 import { apiFetch } from '@/lib/api-client'
+import { useSignedUrlRenewal } from '@/composables/useSignedUrlRenewal'
 import { getThemeOffer, createThemeJob, type ThemeOffer, type ThemeJobSubmission } from '@/services/api/theme-jobs'
 import { getThemeModels, type ThemeModel } from '@/services/api/theme-models'
 import type { SchemeDetail } from '@/features/selection/types'
 import { useAuthStore } from '@/stores/auth'
 import { useCredits } from '@/composables/useCredits'
 import { blockedReasonText as getBlockedReasonText } from '@/features/theme-jobs/labels'
+import { clearPendingThemeRequest, pendingThemeRequestKey, readPendingThemeRequest, writePendingThemeRequest } from '@/features/theme-jobs/pending-request'
+import { readSelectionSession } from '@/features/selection/session'
 
 const route = useRoute()
 const router = useRouter()
@@ -82,9 +85,19 @@ const blockedReasonText = computed(() => {
   if (!themeOffer.value || themeOffer.value.available) return ''
   return getBlockedReasonText(themeOffer.value.blockedReasons, t)
 })
+const pendingKey = computed(() => authStore.currentUser?.id ? pendingThemeRequestKey(authStore.currentUser.id, schemeCode, searchId) : null)
 let offerRequest = 0
 let offerTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
+
+// 方案图片为 5 分钟预签名链接：过期后按原选中的视角换新链接，不改变表单与待确认提交
+const imageLinks = useSignedUrlRenewal(renewSchemeImages, 300_000)
+async function renewSchemeImages() {
+  const res = await apiFetch<{ code: number; data: SchemeDetail }>(`/api/v1/client/schemes/${encodeURIComponent(schemeCode)}`)
+  if (res.code !== 0 || disposed) return
+  schemeData.value = res.data
+  imageLinks.markFresh()
+}
 
 async function loadScheme() {
   loadingScheme.value = true
@@ -93,12 +106,39 @@ async function loadScheme() {
     const res = await apiFetch<{ code: number; data: SchemeDetail }>(`/api/v1/client/schemes/${encodeURIComponent(schemeCode)}`)
     if (res.code !== 0) throw new Error('Scheme unavailable')
     schemeData.value = res.data
+    imageLinks.markFresh()
     if (!selectedAssetId.value) selectedAssetId.value = images.value[0]?.assetId || ''
   } catch {
     schemeError.value = true
   } finally {
     loadingScheme.value = false
   }
+}
+
+// 从同一次智选检索进入时，默认采用智选中确认的行业与风格（取目录中第一个可用项），否则取目录第一项
+function selectionPreferences() {
+  const session = searchId ? readSelectionSession() : null
+  return session?.searchId === searchId && session ? session.requirement : { industryIds: [], styleIds: [] }
+}
+
+function firstAvailable(options: CatalogOption[], preferred: string[]) {
+  return preferred.find(id => options.some(option => option.id === id)) ?? options[0].id
+}
+
+// 上次提交未确认结果（刷新或离开前未收到回执）：恢复原参数与请求键，确认时由服务端按原请求重放
+function restorePendingRequest() {
+  if (!pendingKey.value) return
+  const pending = readPendingThemeRequest(pendingKey.value, schemeCode, searchId)
+  if (!pending) return
+  const { payload } = pending
+  selectedAssetId.value = payload.sourceAssetId
+  industryId.value = payload.input.industryId
+  styleId.value = payload.input.styleId
+  brandColors.value = [...payload.input.brandColors]
+  brandKeywords.value = payload.input.brandKeywords
+  requestedCount.value = payload.requestedCount
+  confirmation.value = { payload, quote: pending.quote, attempted: true }
+  jobError.value = t('schemeTheme.pendingRestored')
 }
 
 async function loadCatalog() {
@@ -109,8 +149,9 @@ async function loadCatalog() {
     if (res.code !== 0 || !res.data.industries.length || !res.data.styles.length) throw new Error('Options unavailable')
     catalogIndustries.value = res.data.industries
     catalogStyles.value = res.data.styles
-    if (!industryId.value) industryId.value = res.data.industries[0].id
-    if (!styleId.value) styleId.value = res.data.styles[0].id
+    const preferred = selectionPreferences()
+    if (!industryId.value) industryId.value = firstAvailable(res.data.industries, preferred.industryIds)
+    if (!styleId.value) styleId.value = firstAvailable(res.data.styles, preferred.styleIds)
   } catch {
     catalogError.value = true
   } finally {
@@ -128,6 +169,7 @@ async function loadModels() {
 
 onMounted(() => {
   if (isPreview.value) { loadingScheme.value = false; return }
+  restorePendingRequest()
   void loadScheme()
   void loadCatalog()
   if (isLoggedIn.value) { void fetchBalance(); void loadModels() }
@@ -231,14 +273,19 @@ async function handleConfirm() {
   creatingJob.value = true
   jobError.value = ''
   current.attempted = true
+  const storageKey = pendingKey.value
+  if (storageKey) writePendingThemeRequest(storageKey, { payload: current.payload, quote: current.quote })
   try {
     const res = await createThemeJob(current.payload)
+    if (storageKey) clearPendingThemeRequest(storageKey)
     confirmDialogOpen.value = false
     await router.push(`/theme-jobs/${res.jobId}`)
   } catch (error: unknown) {
     const failure = error as { data?: { error?: { reason?: string } }; response?: { status?: number }; statusCode?: number }
     const reason = failure.data?.error?.reason
     const status = failure.response?.status ?? failure.statusCode
+    // 服务端明确拒绝（未创建任务）才丢弃保存的提交；网络失败、超时、限流和 5xx 结果未知，保留以便刷新后按原请求重放
+    if (storageKey && status && status < 500 && ![408, 429].includes(status)) clearPendingThemeRequest(storageKey)
     if ((reason && ['OFFER_EXPIRED', 'OFFER_STALE', 'OFFER_MISMATCH'].includes(reason)) || status === 409) {
       needsNewOffer.value = true
       jobError.value = t('schemeTheme.errorExpiredOrChanged')
@@ -290,7 +337,7 @@ function setDialogOpen(open: boolean) {
       <div v-else class="grid items-start gap-8 xl:gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section :aria-label="t('schemeTheme.canvasAriaLabel')" class="min-w-0 space-y-5 lg:sticky lg:top-24">
           <h2 class="text-sm font-medium">{{ t('schemeTheme.originalImageTitle') }}</h2>
-          <SchemeGallery v-model:active="activeImageIndex" :images="galleryImages" :code="schemeCode" :preview="isPreview" :variant="previewVariant" :disabled="creatingJob || confirmDialogOpen" />
+          <SchemeGallery v-model:active="activeImageIndex" :images="galleryImages" :code="schemeCode" :preview="isPreview" :variant="previewVariant" :disabled="creatingJob || confirmDialogOpen" @image-error="imageLinks.onImageError" />
           <div class="flex items-start gap-3 border-t pt-5">
             <Sparkles class="mt-0.5 size-4 shrink-0 text-primary" />
             <div class="space-y-2 text-sm leading-relaxed text-muted-foreground">

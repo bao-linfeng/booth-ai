@@ -30,6 +30,12 @@ const moreSummary = computed(() => {
     ...pick(catalog.productSystems, modelValue.productSystemId ? [modelValue.productSystemId] : []),
   ].join(' · ')
 })
+// 描述解析出的自定义长宽不对应标准尺寸时，下拉框显示实际尺寸而不是“不限”，避免看起来像没有填写
+const sizePlaceholder = computed(() => {
+  const { boothSpaceId, lengthMm, widthMm } = props.modelValue
+  if (boothSpaceId || !lengthMm || !widthMm) return t('requirementForm.sizePlaceholder')
+  return t('requirementForm.customSize', { length: lengthMm / 1000, width: widthMm / 1000 })
+})
 function selectSize(id: string | null) {
   const size = commonSizes.value.find(item => item.id === id)
   emit('update:modelValue', { ...props.modelValue, boothSpaceId: size?.id ?? null, lengthMm: size?.lengthMm ?? null, widthMm: size?.widthMm ?? null, areaM2: size ? size.lengthMm * size.widthMm / 1_000_000 : null })
@@ -43,7 +49,7 @@ function selectSize(id: string | null) {
     <div class="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
       <div class="min-w-0 space-y-2">
         <label class="block truncate text-sm font-medium leading-5 peer-disabled:cursor-not-allowed peer-disabled:opacity-70" :title="t('requirementForm.sizeLabel')">{{ t('requirementForm.sizeLabel') }}</label>
-        <OptionSelect :label="t('requirementForm.boothSpaceSelectLabel')" :placeholder="t('requirementForm.sizePlaceholder')" :disabled="disabled" :model-value="selectedSize" :options="commonSizes" @update:model-value="selectSize" />
+        <OptionSelect :label="t('requirementForm.boothSpaceSelectLabel')" :placeholder="sizePlaceholder" :disabled="disabled" :model-value="selectedSize" :options="commonSizes" @update:model-value="selectSize" />
       </div>
       <RequirementField v-for="field in primaryFields" :id="`requirement-${field}`" :key="field" :field="field" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />
     </div>

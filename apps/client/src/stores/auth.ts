@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { CurrentUser } from '@/services/types/user.type'
-import { rotateVisitorId } from '@/lib/api-client'
+import { rotateVisitorId } from '@/lib/visitor-id'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(null)
@@ -27,9 +27,11 @@ export const useAuthStore = defineStore('auth', () => {
     const wasLoggedIn = Boolean(token.value)
     token.value = null
     currentUser.value = null
+    // 只在登录身份失效时轮换访客 ID 并清空客服会话；未登录时调用（如外部登录前）保留访客 ID、访客标记与 Cookie，
+    // 以便登录时把匿名检索归属到账号、合并客服会话
+    if (!wasLoggedIn) return
     rotateVisitorId()
-    // 退出登录时清空客服会话状态；未登录时调用（如外部登录前）保留访客标记与 Cookie，以便登录后合并
-    if (wasLoggedIn) void import('@/features/customer-service/useCustomerService').then(module => module.resetCustomerService()).catch(() => undefined)
+    void import('@/features/customer-service/useCustomerService').then(module => module.resetCustomerService()).catch(() => undefined)
   }
 
   return {

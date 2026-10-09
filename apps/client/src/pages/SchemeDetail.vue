@@ -26,6 +26,7 @@ import SchemeGallery from "@/features/selection/SchemeGallery.vue";
 import { previewItems } from "@/features/selection/preview";
 import type { SchemeDetail } from "@/features/selection/types";
 import { apiFetch } from "@/lib/api-client";
+import { useSignedUrlRenewal } from "@/composables/useSignedUrlRenewal";
 import {
   getClientBom,
   downloadClientBom,
@@ -349,18 +350,25 @@ const themeLocation = computed(() => ({
   query: !preview.value && typeof route.query.searchId === 'string' ? { searchId: route.query.searchId } : {},
 }));
 
-onMounted(async () => {
-  if (preview.value) return;
+// 方案图片为 5 分钟预签名链接：停留过久后图片加载失败或页面重新可见时重新读取详情换新链接，续期失败不影响已展示内容
+const imageLinks = useSignedUrlRenewal(() => loadDetail(true), 300_000);
+async function loadDetail(renewal = false) {
   try {
     const res = await apiFetch<{ code: number; data: SchemeDetail }>(
       `/api/v1/client/schemes/${encodeURIComponent(route.params.code as string)}`,
     );
-    if (res.code === 0) liveData.value = res.data;
-    else errorState.value = true;
+    if (res.code === 0) {
+      liveData.value = res.data;
+      imageLinks.markFresh();
+    } else if (!renewal) errorState.value = true;
   } catch (e) {
+    if (renewal) return;
     console.error("Failed to load scheme detail", e);
     errorState.value = true;
   }
+}
+onMounted(() => {
+  if (!preview.value) void loadDetail();
 });
 </script>
 
@@ -388,7 +396,7 @@ onMounted(async () => {
       <template v-if="item">
         <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:gap-12">
           <section :aria-label="t('schemeDetail.galleryAriaLabel')" class="min-w-0">
-            <SchemeGallery :images="item.images" :code="item.code" :preview="preview" :variant="Math.max(0, previewItems.findIndex(i => i.code === item?.code))" />
+            <SchemeGallery :images="item.images" :code="item.code" :preview="preview" :variant="Math.max(0, previewItems.findIndex(i => i.code === item?.code))" @image-error="imageLinks.onImageError" />
             <p class="mt-3 text-xs leading-relaxed text-muted-foreground">{{ preview ? t('schemeDetail.galleryPreviewNote') : t('schemeDetail.galleryNote') }}</p>
           </section>
 

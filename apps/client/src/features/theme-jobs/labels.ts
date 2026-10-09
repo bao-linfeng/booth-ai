@@ -23,13 +23,14 @@ export function phaseText(job: ThemeJob | null, t: ComposerTranslation): string 
 }
 
 export function failureReasonText(reason: string | null | undefined, t: ComposerTranslation): string {
-  if (!reason) return t('common.unknown')
   const labels: Record<string, string> = {
+    GENERATION_FAILED: t('themeJob.failureGenerationFailed'),
     INSUFFICIENT_CREDITS: t('themeJob.failureInsufficientCredits'),
     PROVIDER_ERROR: t('themeJob.failureProviderError'),
     INTERNAL_ERROR: t('themeJob.failureInternalError'),
   }
-  return labels[reason] || reason
+  // 未识别的原因不直接展示内部枚举
+  return (reason && labels[reason]) || t('themeJob.failureGeneric')
 }
 
 export function blockedReasonText(reasons: string[], t: ComposerTranslation): string {
