@@ -1,24 +1,25 @@
 import type pg from 'pg';
-import type { ImportPreviewRow, ImportRow, ImportSummary, PreviewImportResult } from './types.js';
+import type { ImportPreviewRow, ImportRow, ImportRowSource, ImportSummary, ParsedImportRow, PreviewImportResult } from './types.js';
 import { missingRequiredField, validateImportRow } from './validation.js';
 import { parseWorkbook } from './workbook.js';
 
-async function findExistingCodes(pool: pg.Pool, parsedRows: ImportRow[]): Promise<Set<string>> {
-  const codes = [...new Set(parsedRows.map(row => row.code).filter(code => code !== ''))];
+async function findExistingCodes(pool: pg.Pool, parsedRows: ParsedImportRow[]): Promise<Set<string>> {
+  const codes = [...new Set(parsedRows.map(row => row.data.code).filter(code => code !== ''))];
   if (codes.length === 0) return new Set();
   const existing = await pool.query<{ code: string }>('SELECT code FROM schemes WHERE code = ANY($1::text[])', [codes]);
   return new Set(existing.rows.map(row => row.code));
 }
 
-/** 逐行分类为 valid / duplicate / error；空行计入 skipped，工作表行号从 2 起。 */
-async function classifyRows(pool: pg.Pool, parsedRows: ImportRow[], existingCodes: Set<string>): Promise<{ rows: ImportPreviewRow[]; summary: ImportSummary }> {
+/**
+ * 逐行分类为 valid / duplicate / error；空行计入 skipped。
+ * rowId 按解析顺序从 1 编号，跨工作表唯一；行号保留各工作表内的原始行号。
+ */
+async function classifyRows(pool: pg.Pool, parsedRows: ParsedImportRow[], existingCodes: Set<string>): Promise<{ rows: ImportPreviewRow[]; summary: ImportSummary }> {
   const summary: ImportSummary = { total: parsedRows.length, valid: 0, duplicate: 0, error: 0, skipped: 0 };
   const rows: ImportPreviewRow[] = [];
-  const seenCodes = new Set<string>();
-  for (let index = 0; index < parsedRows.length; index += 1) {
-    const parsed = parsedRows[index];
-    if (!parsed) continue;
-    const rowNumber = index + 2;
+  const firstSeen = new Map<string, ImportRowSource>();
+  for (const [index, { sheetName, rowNumber, data: parsed }] of parsedRows.entries()) {
+    const source = { rowId: index + 1, sheetName, rowNumber };
     const { code, name } = parsed;
     if (code === '' && name === '') {
       summary.skipped += 1;
@@ -27,7 +28,7 @@ async function classifyRows(pool: pg.Pool, parsedRows: ImportRow[], existingCode
     const missing = missingRequiredField(parsed);
     if (missing) {
       summary.error += 1;
-      rows.push({ rowNumber, code, name, status: 'error', reason: missing });
+      rows.push({ ...source, code, name, status: 'error', reason: missing });
       continue;
     }
     let data: ImportRow;
@@ -35,21 +36,22 @@ async function classifyRows(pool: pg.Pool, parsedRows: ImportRow[], existingCode
       data = await validateImportRow(pool, parsed);
     } catch (error) {
       summary.error += 1;
-      rows.push({ rowNumber, code, name, status: 'error', reason: error instanceof Error ? error.message : '导入数据无效' });
+      rows.push({ ...source, code, name, status: 'error', reason: error instanceof Error ? error.message : '导入数据无效' });
       continue;
     }
-    if (seenCodes.has(code)) {
+    const first = firstSeen.get(code);
+    if (first) {
       summary.error += 1;
-      rows.push({ rowNumber, code, name, status: 'error', reason: '文件内方案编号重复' });
+      rows.push({ ...source, code, name, status: 'error', reason: `文件内方案编号重复（首次出现于「${first.sheetName}」第 ${first.rowNumber} 行）` });
       continue;
     }
-    seenCodes.add(code);
+    firstSeen.set(code, { sheetName, rowNumber });
     if (existingCodes.has(code)) {
       summary.duplicate += 1;
-      rows.push({ rowNumber, code, name, status: 'duplicate', data });
+      rows.push({ ...source, code, name, status: 'duplicate', data });
     } else {
       summary.valid += 1;
-      rows.push({ rowNumber, code, name, status: 'valid', data });
+      rows.push({ ...source, code, name, status: 'valid', data });
     }
   }
   return { rows, summary };

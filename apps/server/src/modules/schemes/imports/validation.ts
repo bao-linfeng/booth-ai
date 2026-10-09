@@ -56,7 +56,8 @@ export function missingRequiredField(row: ImportRow): string | null {
 export function importRowFromJson(value: unknown): ImportPreviewRow | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   const row = value as Partial<ImportPreviewRow>;
-  if (typeof row.rowNumber !== 'number' || typeof row.code !== 'string' || typeof row.name !== 'string' ||
+  if (typeof row.rowId !== 'number' || typeof row.sheetName !== 'string' || typeof row.rowNumber !== 'number' ||
+    typeof row.code !== 'string' || typeof row.name !== 'string' ||
     (row.status !== 'valid' && row.status !== 'duplicate' && row.status !== 'error')) return null;
   return row as ImportPreviewRow;
 }

@@ -19,6 +19,16 @@ export interface ImportRow {
   notes: string | null;
 }
 
+/** 来源位置：工作表名称与该表内的原始行号（表头为第 1 行）。 */
+export interface ImportRowSource {
+  sheetName: string;
+  rowNumber: number;
+}
+
+export interface ParsedImportRow extends ImportRowSource {
+  data: ImportRow;
+}
+
 export interface ImportSummary {
   total: number;
   valid: number;
@@ -27,8 +37,9 @@ export interface ImportSummary {
   skipped: number;
 }
 
-export interface ImportPreviewRow {
-  rowNumber: number;
+/** rowId 在单次导入内唯一，作为提交时的选择键；sheetName + rowNumber 仅用于定位原文件。 */
+export interface ImportPreviewRow extends ImportRowSource {
+  rowId: number;
   code: string;
   name: string;
   status: 'valid' | 'duplicate' | 'error';
@@ -45,12 +56,12 @@ export interface PreviewImportResult {
 
 export interface CommitImportOptions {
   duplicateStrategy: 'skip' | 'update';
-  selectedRows?: number[];
+  selectedRowIds?: number[];
 }
 
 export interface CommitImportResult {
   created: number;
   updated: number;
   dictionaryItemsCreated: number;
-  failed: { rowNumber: number; code: string; reason: string }[];
+  failed: (ImportRowSource & { rowId: number; code: string; reason: string })[];
 }

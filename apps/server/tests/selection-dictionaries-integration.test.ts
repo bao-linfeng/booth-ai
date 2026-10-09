@@ -82,7 +82,7 @@ test('size migration, Excel import, transactional CRUD and dictionary language p
   const updated = await updateDictionaryItem(pool, modern.id, { labels: { en: 'Modern minimalist', ja: 'モダン・ミニマル' },
     aliases: [{ locale: 'en', text: 'simple modern' }, { locale: 'ja', text: 'シンプルモダン' }] }, modern.dictionaryId);
   assert.equal(updated.labels.ja, 'モダン・ミニマル');
-  const source = (await parseWorkbook(buffer)).find(row => row.code)!;
+  const source = (await parseWorkbook(buffer)).find(row => row.data.code)!.data;
   for (const style of ['现代简约', 'MODERN MINIMALIST', 'モダン・ミニマル', 'ＳＩＭＰＬＥ ＭＯＤＥＲＮ', 'シンプルモダン']) {
     assert.equal((await validateImportRow(pool, { ...source, styleId: style })).styleId, modern.id);
   }

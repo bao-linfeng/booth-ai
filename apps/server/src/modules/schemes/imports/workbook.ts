@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import type { ImportRow } from './types.js';
+import type { ImportRow, ParsedImportRow } from './types.js';
 
 interface XlsxLoader {
   load(buffer: Buffer): Promise<ExcelJS.Workbook>;
@@ -84,8 +84,8 @@ function parseError(): Error & { statusCode: number } {
   return Object.assign(new Error('Failed to parse Excel file'), { statusCode: 400 });
 }
 
-/** 读取模板中的方案行（从第 2 行起）；"说明"/"选项"工作表不参与导入。 */
-export async function parseWorkbook(buffer: Buffer): Promise<ImportRow[]> {
+/** 读取模板中的方案行（每个工作表从第 2 行起），保留来源工作表与原始行号；"说明"/"选项"工作表不参与导入。 */
+export async function parseWorkbook(buffer: Buffer): Promise<ParsedImportRow[]> {
   const workbook = new ExcelJS.Workbook();
   try {
     await (workbook.xlsx as unknown as XlsxLoader).load(buffer);
@@ -93,11 +93,11 @@ export async function parseWorkbook(buffer: Buffer): Promise<ImportRow[]> {
     throw parseError();
   }
 
-  const rows: ImportRow[] = [];
+  const rows: ParsedImportRow[] = [];
   for (const worksheet of workbook.worksheets) {
     if (worksheet.name.includes('说明') || worksheet.name.includes('选项')) continue;
     for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-      rows.push(parseRow(worksheet.getRow(rowNumber)));
+      rows.push({ sheetName: worksheet.name, rowNumber, data: parseRow(worksheet.getRow(rowNumber)) });
     }
   }
   return rows;

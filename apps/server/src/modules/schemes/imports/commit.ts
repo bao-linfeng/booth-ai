@@ -71,6 +71,10 @@ function failureReason(error: unknown): string {
   return error instanceof Error && 'statusCode' in error && error.statusCode === 400 ? error.message : mapDbError(error);
 }
 
+function failedSource(row: ImportPreviewRow): Omit<CommitImportResult['failed'][number], 'reason'> {
+  return { rowId: row.rowId, sheetName: row.sheetName, rowNumber: row.rowNumber, code: row.code };
+}
+
 /** insert / update 共用的 $1–$17 业务字段，其后依次追加各自的审计与版本参数。 */
 function schemeValues(data: ImportRow): unknown[] {
   return [
@@ -101,14 +105,14 @@ async function lockPendingImport(client: pg.PoolClient, importId: string, reques
   return { preview: record.preview };
 }
 
-/** 待写入的行：仅 valid / duplicate，受 selectedRows 与重复策略过滤。 */
+/** 待写入的行：仅 valid / duplicate，受 selectedRowIds 与重复策略过滤。 */
 function rowsToCommit(preview: unknown[], options: CommitImportOptions): (ImportPreviewRow & { data: ImportRow })[] {
-  const selectedRows = options.selectedRows && options.selectedRows.length > 0 ? new Set(options.selectedRows) : null;
+  const selectedRowIds = options.selectedRowIds && options.selectedRowIds.length > 0 ? new Set(options.selectedRowIds) : null;
   const rows: (ImportPreviewRow & { data: ImportRow })[] = [];
   for (const stored of preview) {
     const row = importRowFromJson(stored);
     if (!row || !row.data || (row.status !== 'valid' && row.status !== 'duplicate')) continue;
-    if (selectedRows !== null && !selectedRows.has(row.rowNumber)) continue;
+    if (selectedRowIds !== null && !selectedRowIds.has(row.rowId)) continue;
     if (row.status === 'duplicate' && options.duplicateStrategy === 'skip') continue;
     rows.push({ ...row, data: row.data });
   }
@@ -129,7 +133,7 @@ async function writeRow(client: pg.PoolClient, adminId: string | null, row: Impo
 
 export async function commitImport(pool: pg.Pool, adminId: string | null, importId: string, options: CommitImportOptions): Promise<CommitImportResult> {
   return transaction(pool, async client => {
-    const requestHash = createHash('sha256').update(JSON.stringify([importId, options.duplicateStrategy, options.selectedRows ?? null])).digest('hex');
+    const requestHash = createHash('sha256').update(JSON.stringify([importId, options.duplicateStrategy, options.selectedRowIds ?? null])).digest('hex');
     const locked = await lockPendingImport(client, importId, requestHash);
     if ('replay' in locked) return locked.replay;
 
@@ -142,14 +146,14 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
         const outcome = await writeRow(client, adminId, row);
         await client.query('RELEASE SAVEPOINT row_save');
         if (outcome.kind === 'failed') {
-          result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: outcome.reason });
+          result.failed.push({ ...failedSource(row), reason: outcome.reason });
           continue;
         }
         result[outcome.kind] += 1;
         committedRows.push(row.data);
       } catch (error) {
         await client.query('ROLLBACK TO SAVEPOINT row_save');
-        result.failed.push({ rowNumber: row.rowNumber, code: row.code, reason: failureReason(error) });
+        result.failed.push({ ...failedSource(row), reason: failureReason(error) });
       }
     }
     result.dictionaryItemsCreated = await ensureSelectionSizes(client, committedRows);

@@ -40,7 +40,7 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
         type: 'object', required: ['duplicateStrategy'], additionalProperties: false,
         properties: {
           duplicateStrategy: { type: 'string', enum: ['skip', 'update'] },
-          selectedRows: { type: 'array', items: { type: 'integer', minimum: 2 }, uniqueItems: true },
+          selectedRowIds: { type: 'array', items: { type: 'integer', minimum: 1 }, uniqueItems: true },
         },
       },
     },
