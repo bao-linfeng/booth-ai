@@ -23,9 +23,17 @@ export function ensureVisitor(): Promise<void> {
   return issuing
 }
 
-/** 登录后把访客会话合并到账号（服务端读取并清除 Cookie）；无论成功与否都清除本地标记（失败只记录日志） */
-export async function mergeVisitorAfterLogin() {
-  if (!hasVisitor()) return
-  clearVisitor()
-  try { await mergeVisitor() } catch (error) { console.warn('Customer service visitor merge failed', error) }
+let merging: Promise<void> | null = null
+
+/**
+ * 登录后把访客会话合并到账号（服务端读取 Cookie，合并成功或确认令牌失效后清除）。
+ * 只有请求成功才清除本地标记；失败只记录日志并保留标记，下次登录态的客服请求前再重试（服务端合并幂等）。
+ * 并发调用共享同一个请求，从不抛错。
+ */
+export function mergePendingVisitor(): Promise<void> {
+  if (!hasVisitor()) return Promise.resolve()
+  merging ??= mergeVisitor()
+    .then(() => { clearVisitor() }, (error) => { console.warn('Customer service visitor merge failed', error) })
+    .finally(() => { merging = null })
+  return merging
 }

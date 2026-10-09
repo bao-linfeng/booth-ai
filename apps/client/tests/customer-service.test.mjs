@@ -184,7 +184,26 @@ test('login merges the cookie-held visitor once and clears the marker; without a
   assert.deepEqual(merges.map(call => [call.method, call.body, call.headers]), [['POST', undefined, undefined]], 'the token is never sent from script')
   assert.equal(localStorage.getItem('booth-ai:cs-visitor'), null)
   await cs.handleCustomerServiceLogin()
+  await cs.refreshCurrent()
   assert.equal(calls.filter(call => call.path.endsWith('/visitors/merge')).length, 1)
+})
+
+test('a failed merge keeps the marker and is retried before the next signed-in request until it succeeds', async () => {
+  localStorage.setItem('booth-ai:cs-visitor', '1')
+  let failures = 1
+  const calls = setup({ loggedIn: true, respond: call => {
+    if (call.path.endsWith('/visitors/merge') && failures-- > 0) throw new TypeError('Failed to fetch')
+  } })
+  const warn = console.warn
+  console.warn = () => {}
+  try { await cs.handleCustomerServiceLogin() } finally { console.warn = warn }
+  assert.equal(localStorage.getItem('booth-ai:cs-visitor'), '1', 'the marker survives a network failure')
+  await cs.refreshCurrent()
+  const paths = calls.map(call => call.path.replace(/^.*\/customer-service/, ''))
+  assert.deepEqual(paths, ['/visitors/merge', '/visitors/merge', '/conversations/current'], 'the retry runs before loading the conversation')
+  assert.equal(localStorage.getItem('booth-ai:cs-visitor'), null)
+  await cs.refreshCurrent()
+  assert.equal(calls.filter(call => call.path.endsWith('/visitors/merge')).length, 2, 'no further merge once it succeeded')
 })
 
 test('offline mode replaces the composer, requires a visitor email and sends an offline message', async () => {

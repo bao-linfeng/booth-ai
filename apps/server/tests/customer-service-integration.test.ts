@@ -544,11 +544,30 @@ test('HTTP: visitor tokens, isolation, rate limits and admin permissions (CS09/C
   // 登录后合并：读取 Cookie 中的访客令牌，合并后清除 Cookie，令牌随即失效
   const customer = await seedUser(pool);
   const clientHeaders = { authorization: `Bearer ${await session('client', customer)}` };
-  assert.equal((await app.inject({ method: 'POST', url: `${base}/visitors/merge`, headers: { ...clientHeaders, cookie: a.headers.cookie } })).json().data.mergedConversations, 0,
-    'merge also requires the X-CS-Visitor header');
+  const withoutHeader = await app.inject({ method: 'POST', url: `${base}/visitors/merge`, headers: { ...clientHeaders, cookie: a.headers.cookie } });
+  assert.equal(withoutHeader.json().data.mergedConversations, 0, 'merge also requires the X-CS-Visitor header');
+  assert.equal(withoutHeader.headers['set-cookie'], undefined, 'an unread cookie is left alone');
+  // 合并事务失败：Cookie 保留、访客仍可访问原会话，重试后完成合并且只归属一次
+  await pool.query(`CREATE FUNCTION reject_visitor_merge() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'injected merge failure'; END $$;
+    CREATE TRIGGER reject_visitor_merge BEFORE UPDATE OF merged_user_id ON cs_visitors
+    FOR EACH ROW WHEN (NEW.id = '${a.visitorId}') EXECUTE FUNCTION reject_visitor_merge()`);
+  try {
+    const failed = await app.inject({ method: 'POST', url: `${base}/visitors/merge`, headers: { ...clientHeaders, ...a.headers } });
+    assert.equal(failed.statusCode, 500, failed.body);
+    assert.equal(failed.headers['set-cookie'], undefined, 'a failed merge keeps the visitor cookie');
+  } finally {
+    await pool.query('DROP TRIGGER reject_visitor_merge ON cs_visitors; DROP FUNCTION reject_visitor_merge()');
+  }
+  assert.equal((await app.inject({ url: `${base}/conversations/current`, headers: a.headers })).json().data.conversation.id, conversationId,
+    'the visitor still reaches its conversation after a failed merge');
   const merged = await app.inject({ method: 'POST', url: `${base}/visitors/merge`, headers: { ...clientHeaders, ...a.headers } });
   assert.equal(merged.json().data.mergedConversations, 1, merged.body);
   assert.match(String(merged.headers['set-cookie']), /^booth_cs_visitor=; Path=\/api\/v1\/client; Max-Age=0; HttpOnly; SameSite=Lax$/);
+  // 响应丢失后前端再次重试：令牌已失效，返回 0 并清除 Cookie，不会重复归属
+  const repeated = await app.inject({ method: 'POST', url: `${base}/visitors/merge`, headers: { ...clientHeaders, ...a.headers } });
+  assert.equal(repeated.json().data.mergedConversations, 0);
+  assert.match(String(repeated.headers['set-cookie']), /Max-Age=0/);
   assert.equal((await app.inject({ url: `${base}/conversations/current`, headers: a.headers })).json().error.reason, 'VISITOR_REQUIRED');
   assert.equal((await app.inject({ url: `${base}/conversations/current`, headers: clientHeaders })).json().data.conversation.id, conversationId);
 });

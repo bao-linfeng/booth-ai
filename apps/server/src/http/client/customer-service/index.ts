@@ -60,10 +60,12 @@ export async function registerClientCustomerServiceRoutes(app: FastifyInstance, 
 
     scope.post('/visitors/merge', { schema: visitorMergeSchema }, async (request, reply) => {
       const userId = clientUserId(request);
-      const visitorId = await resolveVisitor(pool, visitorToken(request));
-      // 合并后令牌即失效，无论是否有可合并的会话都清除 Cookie
-      clearVisitorCookie(reply, secureCookie);
-      return { code: 0, data: { mergedConversations: visitorId ? await mergeVisitor(pool, redis, userId, visitorId) : 0 } };
+      const token = visitorToken(request);
+      const visitorId = await resolveVisitor(pool, token);
+      const mergedConversations = visitorId ? await mergeVisitor(pool, redis, userId, visitorId) : 0;
+      // 合并成功或令牌已失效（已合并、已删除）后才清除 Cookie；合并失败时保留，前端可凭原令牌重试
+      if (token) clearVisitorCookie(reply, secureCookie);
+      return { code: 0, data: { mergedConversations } };
     });
 
     scope.post<{ Body: { context?: ContextInput; entryPoint: EntryPoint } }>('/conversations', { schema: openConversationSchema }, async (request, reply) => {

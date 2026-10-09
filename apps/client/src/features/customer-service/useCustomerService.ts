@@ -6,7 +6,7 @@ import {
 } from '@/services/api/customer-service'
 import { applyTranslation, maxSeq, mergeMessages, minSeq, readTargets, syncAfter } from './timeline'
 import { useCustomerServiceConnection, type ConnectionState } from './useCustomerServiceConnection'
-import { clearVisitor, ensureVisitor, hasVisitor, mergeVisitorAfterLogin } from './visitor'
+import { clearVisitor, ensureVisitor, hasVisitor, mergePendingVisitor } from './visitor'
 
 export interface PendingMessage { clientMessageId: string; body: string; kind: 'text' | 'offline'; contactEmail?: string; status: 'sending' | 'failed' }
 
@@ -64,9 +64,15 @@ async function request<T>(epoch: number, run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** 未登录时先确保已签发访客；令牌失效（已合并、已删除、Cookie 丢失）时清除标记后重新签发并重试一次 */
+/**
+ * 登录时先补做上次失败的访客合并（失败不阻断请求）；未登录时先确保已签发访客，
+ * 令牌失效（已合并、已删除、Cookie 丢失）时清除标记后重新签发并重试一次
+ */
 async function withSubject<T>(epoch: number, run: () => Promise<T>): Promise<T> {
-  if (loggedIn()) return request(epoch, run)
+  if (loggedIn()) {
+    await request(epoch, mergePendingVisitor)
+    return request(epoch, run)
+  }
   await request(epoch, ensureVisitor)
   try {
     return await request(epoch, run)
@@ -350,7 +356,7 @@ export function resetCustomerService() {
 /** 登录成功后：把访客会话合并到账号并重新加载 */
 export async function handleCustomerServiceLogin() {
   resetCustomerService()
-  await mergeVisitorAfterLogin()
+  await mergePendingVisitor()
 }
 
 export function useCustomerService() {
