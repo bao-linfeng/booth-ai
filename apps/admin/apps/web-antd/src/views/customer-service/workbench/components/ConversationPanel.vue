@@ -62,13 +62,21 @@ const brokenCovers = reactive(new Set<string>());
 interface Pending {
   body: string;
   clientMessageId: string;
+  conversationId: string;
   kind: 'note' | 'text';
   status: 'failed' | 'sending';
 }
 
 const userStore = useUserStore();
 const messages = ref<AdminMessage[]>([]);
-const pending = ref<Pending[]>([]);
+/** 发送队列与草稿按会话保存：切走再切回时仍能看到发送中/失败的消息并重试 */
+const outbox = reactive(new Map<string, Pending[]>());
+const drafts = new Map<string, string>();
+/**
+ * 消息窗口版本：每次切换会话递增。异步请求发出时记下版本，返回时版本不同就丢弃，
+ * 避免旧会话（或同一会话上一轮窗口）的响应写进当前面板。
+ */
+let windowVersion = 0;
 const hasMore = ref(false);
 const loading = ref(false);
 const acting = ref(false);
@@ -78,6 +86,10 @@ const expanded = ref(new Set<string>());
 const scroller = ref<HTMLElement>();
 
 const conversation = computed(() => props.detail?.conversation ?? null);
+const pending = computed(() => {
+  const id = conversation.value?.id;
+  return (id && outbox.get(id)) || [];
+});
 const isMine = computed(
   () =>
     conversation.value?.status === 'active' &&
@@ -114,22 +126,30 @@ async function reportRead() {
 
 watch(
   () => conversation.value?.id,
-  async (id) => {
+  async (id, previousId) => {
+    const version = ++windowVersion;
+    if (previousId) {
+      if (body.value) drafts.set(previousId, body.value);
+      else drafts.delete(previousId);
+    }
     messages.value = [];
-    pending.value = [];
+    hasMore.value = false;
     expanded.value = new Set();
-    body.value = '';
-    if (!id) return;
+    body.value = (id && drafts.get(id)) || '';
+    if (!id) {
+      loading.value = false;
+      return;
+    }
     loading.value = true;
     try {
       const page = await listMessagesApi(id, { limit: 30 });
-      if (conversation.value?.id !== id) return;
+      if (version !== windowVersion) return;
       messages.value = page.items;
       hasMore.value = page.hasMore;
       await scrollToBottom();
       await reportRead();
     } finally {
-      loading.value = false;
+      if (version === windowVersion) loading.value = false;
     }
   },
   { immediate: true },
@@ -142,11 +162,12 @@ watch(
 async function fetchNewer(after = maxSeq(messages.value)) {
   const id = conversation.value?.id;
   if (!id) return;
+  const version = windowVersion;
   const items = await fetchAllAfter(
     (cursor) => listMessagesApi(id, { after: cursor, limit: 100 }),
     after,
   );
-  if (conversation.value?.id !== id || items.length === 0) return;
+  if (version !== windowVersion || items.length === 0) return;
   const atBottom =
     !scroller.value ||
     scroller.value.scrollHeight -
@@ -173,10 +194,12 @@ watch(
       return;
     }
     if (event.type === 'message.translated' && event.seq) {
+      const version = windowVersion;
       const page = await listMessagesApi(id, {
         after: event.seq - 1,
         limit: 1,
       });
+      if (version !== windowVersion) return;
       messages.value = mergeMessages(messages.value, page.items);
       return;
     }
@@ -189,7 +212,10 @@ async function loadOlder() {
   const before = minSeq(messages.value);
   if (!id || before === undefined) return;
   const previousHeight = scroller.value?.scrollHeight ?? 0;
+  const version = windowVersion;
   const page = await listMessagesApi(id, { before, limit: 30 });
+  // 切换过会话（包括切走再切回）时窗口已重建，旧游标拉到的历史会留下断层
+  if (version !== windowVersion) return;
   messages.value = mergeMessages(messages.value, page.items);
   hasMore.value = page.hasMore;
   await nextTick();
@@ -198,8 +224,7 @@ async function loadOlder() {
 }
 
 async function deliver(item: Pending) {
-  const id = conversation.value?.id;
-  if (!id) return;
+  const id = item.conversationId;
   item.status = 'sending';
   try {
     const { message } = await postMessageApi(id, {
@@ -207,7 +232,11 @@ async function deliver(item: Pending) {
       clientMessageId: item.clientMessageId,
       kind: item.kind,
     });
-    pending.value = pending.value.filter((other) => other !== item);
+    const rest = (outbox.get(id) ?? []).filter((other) => other !== item);
+    if (rest.length > 0) outbox.set(id, rest);
+    else outbox.delete(id);
+    // 发送期间已切到其他会话时只出队，消息由切回后的加载或事件拉取补上
+    if (conversation.value?.id !== id) return;
     messages.value = mergeMessages(messages.value, [message]);
     await scrollToBottom();
   } catch {
@@ -217,16 +246,20 @@ async function deliver(item: Pending) {
 }
 
 async function send() {
+  const id = conversation.value?.id;
   const text = body.value.trim();
-  if (!text || !canCompose.value) return;
-  pending.value.push({
+  if (!id || !text || !canCompose.value) return;
+  if (!outbox.has(id)) outbox.set(id, []);
+  const queue = outbox.get(id);
+  queue?.push({
     body: text,
     clientMessageId: crypto.randomUUID(),
+    conversationId: id,
     kind: mode.value,
     status: 'sending',
   });
   // 取回响应式代理，后续状态变更才能触发渲染
-  const item = pending.value.at(-1);
+  const item = queue?.at(-1);
   if (!item) return;
   body.value = '';
   await scrollToBottom();
