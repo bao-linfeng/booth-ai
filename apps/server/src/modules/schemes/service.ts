@@ -30,6 +30,8 @@ export interface SchemeInput {
 export interface ListSchemesOptions {
   page: number;
   pageSize: number;
+  /** 编号或名称包含该关键词 */
+  keyword?: string;
   code?: string;
   name?: string;
   styleId?: string;
@@ -155,6 +157,11 @@ function validateDimensions(input: SchemeInput): void {
   }
 }
 
+/** 按字面包含匹配的 ILIKE 模式：转义用户输入里的 `%`、`_` 与反斜杠。 */
+function containsPattern(text: string): string {
+  return `%${text.replace(/[\\%_]/g, '\\$&')}%`;
+}
+
 export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): Promise<{ data: SchemeRecord[]; total: number; page: number; pageSize: number }> {
   const conditions: string[] = [];
   const values: (string | string[])[] = [];
@@ -162,8 +169,12 @@ export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): P
     values.push(value);
     conditions.push(condition.replace('?', `$${values.length}`));
   };
-  if (options.code) add('code ILIKE ?', `%${options.code}%`);
-  if (options.name) add('name ILIKE ?', `%${options.name}%`);
+  if (options.keyword) {
+    values.push(containsPattern(options.keyword));
+    conditions.push(`(code ILIKE $${values.length} OR name ILIKE $${values.length})`);
+  }
+  if (options.code) add('code ILIKE ?', containsPattern(options.code));
+  if (options.name) add('name ILIKE ?', containsPattern(options.name));
   if (options.styleId) add('style_id = ?::uuid', options.styleId);
   if (options.industryId) add('?::uuid = ANY(industry_ids)', options.industryId);
   if (options.productSystemId) add('product_system_id = ?::uuid', options.productSystemId);

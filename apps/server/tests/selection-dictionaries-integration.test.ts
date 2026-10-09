@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
 import pg from 'pg';
-import { createScheme, updateScheme } from '../src/modules/schemes/service.js';
+import { createScheme, listSchemes, updateScheme } from '../src/modules/schemes/service.js';
 import { previewImport } from '../src/modules/schemes/imports/preview.js';
 import { commitImport } from '../src/modules/schemes/imports/commit.js';
 import { validateImportRow } from '../src/modules/schemes/imports/validation.js';
@@ -56,6 +56,11 @@ test('size migration, Excel import, transactional CRUD and dictionary language p
 
   const manual = await createScheme(pool, adminId, { code: 'MANUAL', name: '手动新增', lengthMm: 3000, widthMm: 6000, heightMm: 4200, openingCount: 2 });
   assert.ok((await sizeValues()).includes('3000-6000-4200'));
+  const keywordCodes = async (keyword: string) =>
+    (await listSchemes(pool, { page: 1, pageSize: 100, keyword })).data.map(item => item.code).filter(code => code === 'MANUAL');
+  assert.deepEqual(await keywordCodes('manu'), ['MANUAL']);
+  assert.deepEqual(await keywordCodes('手动'), ['MANUAL']);
+  assert.deepEqual(await keywordCodes('n_a'), []);
   const edited = await updateScheme(pool, manual.code, adminId, { heightMm: 4300 }, manual.editRevision);
   assert.equal(edited.heightMm, 4300);
   assert.ok((await sizeValues()).includes('3000-6000-4300'));
