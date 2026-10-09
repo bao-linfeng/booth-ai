@@ -60,6 +60,11 @@ export interface UploadVersionInput {
   pageCount?: number | null;
 }
 
+export interface DeleteAssetOptions {
+  /** 删除效果图时一并删除其配对蒙版；未设置且存在配对蒙版时拒绝删除。 */
+  withPairedMasks?: boolean;
+}
+
 export interface UpdateAssetInput {
   name?: string;
   sortOrder?: number;

@@ -278,3 +278,19 @@ test('admin upload routes share multipart parsing for either field order and rej
     assert.ok(deps.events.every(sql => sql.includes('FROM scheme_baseline_assets sa')), 'invalid requests must not write to storage or the database');
   }
 });
+
+test('deleting a rendering together with its paired masks also requires the mask delete permission', async t => {
+  const deps = dependencies();
+  const app = Fastify();
+  t.after(() => app.close());
+  app.decorateRequest('principal', null);
+  app.addHook('onRequest', async request => {
+    request.principal = { site: 'admin', localId: 'admin-id', permissions: allPermissionCodes.filter(code => code !== 'assets-masks.delete') } as Principal;
+  });
+  await registerAdminAssetsRoutes(app, deps.pool, deps.storage as unknown as ReturnType<typeof createStorage>, {} as Redis);
+  const url = '/schemes/S-1/assets/123e4567-e89b-42d3-a456-426614174000';
+
+  const forbidden = await app.inject({ method: 'DELETE', url, payload: { expectedRevision: 1, withPairedMasks: true } });
+  assert.equal(forbidden.statusCode, 403, forbidden.body);
+  assert.ok(deps.events.every(sql => sql.includes('FROM scheme_baseline_assets sa')), 'forbidden requests must not write to the database');
+});

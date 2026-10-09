@@ -14,7 +14,7 @@ export const permissionGroups = [
   { key: 'search-analytics', label: '趋势与统计', routes: ['AiSelectionAnalytics'], actions: [['read', '查看趋势与统计']] },
   { key: 'schemes', label: '方案管理', routes: ['SchemeList', 'SchemeDetail'], actions: [['read', '查看方案与详情'], ['readiness', '检查发布条件'], ['create', '新建方案'], ['update', '编辑方案'], ['delete', '删除方案'], ['import', '批量导入方案'], ['review', '提交审核'], ['publish', '发布方案'], ['unpublish', '下架方案']] },
   { key: 'assets-renderings', label: '效果图', routes: ['AssetsRenderings'], actions: [['read', '查看效果图'], ['upload', '上传效果图'], ['replace', '替换文件'], ['update', '修改排序'], ['preview', '预览效果图'], ['delete', '删除效果图']] },
-  { key: 'assets-masks', label: '蒙版', routes: ['AssetsMasks'], actions: [['read', '查看蒙版'], ['upload', '上传蒙版'], ['replace', '替换文件'], ['update', '修改排序'], ['preview', '叠加预览'], ['download', '下载蒙版'], ['delete', '删除蒙版']] },
+  { key: 'assets-masks', label: '蒙版', routes: ['AssetsMasks'], actions: [['read', '查看蒙版'], ['upload', '上传蒙版'], ['replace', '替换文件'], ['update', '修改排序与配对'], ['preview', '叠加预览'], ['download', '下载蒙版'], ['delete', '删除蒙版']] },
   { key: 'assets-drawings', label: '报馆图', routes: ['AssetsVenueMaterials'], actions: [['read', '查看报馆图'], ['upload', '上传报馆图'], ['replace', '替换文件'], ['download', '下载报馆图'], ['delete', '删除报馆图']] },
   { key: 'assets-artworks', label: '平面素材', routes: ['AssetsArtworks'], actions: [['read', '查看平面素材'], ['upload', '上传平面素材'], ['replace', '替换文件'], ['download', '下载平面素材'], ['delete', '删除平面素材']] },
   { key: 'assets-models', label: '方案模型', routes: ['SchemeList', 'SchemeDetail'], actions: [['read', '查看模型'], ['upload', '上传模型'], ['download', '下载模型']] },

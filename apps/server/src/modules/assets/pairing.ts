@@ -49,6 +49,27 @@ export async function ensureMaskMatchesRendering(
   if (!sameImageSize(mask, rendering)) throw requestError('Mask size must match its paired rendering', 400, 'MASK_SIZE_MISMATCH');
 }
 
+/**
+ * 效果图软删除不会触发 related_asset_id 的 ON DELETE SET NULL：未确认时拒绝删除仍有活动蒙版的效果图，
+ * 确认后在同一事务内一并删除配对蒙版，避免留下指向失效效果图的活动蒙版。需在已锁定方案的事务内调用。
+ */
+export async function retirePairedMasks(client: pg.PoolClient, adminId: string | null, schemeId: string, renderingId: string, confirmed: boolean): Promise<void> {
+  if (confirmed) {
+    await client.query(`
+      UPDATE scheme_baseline_assets
+      SET is_active = false, revision = revision + 1, updated_by = $1, updated_at = now()
+      WHERE scheme_id = $2 AND type = 'mask' AND related_asset_id = $3 AND is_active = true
+    `, [adminId, schemeId, renderingId]);
+    return;
+  }
+  const paired = await client.query(`
+    SELECT 1 FROM scheme_baseline_assets
+    WHERE scheme_id = $1 AND type = 'mask' AND related_asset_id = $2 AND is_active = true
+    LIMIT 1
+  `, [schemeId, renderingId]);
+  if (paired.rowCount) throw requestError('Rendering is paired with an active mask', 409, 'RENDERING_HAS_PAIRED_MASK');
+}
+
 export async function resolveSortOrder(
   client: pg.PoolClient,
   schemeId: string,

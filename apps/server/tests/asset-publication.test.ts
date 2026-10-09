@@ -67,6 +67,7 @@ test('removing a non-model asset also retracts published schemes in the same tra
     queries.push(sql);
     if (sql.includes('FROM scheme_baseline_assets sa')) return { rows: [asset] };
     if (sql.includes('SELECT id::text AS id FROM schemes')) return { rows: [{ id: 'scheme-id' }] };
+    if (sql.includes("type = 'mask' AND related_asset_id")) return { rows: [], rowCount: 0 };
     if (sql.includes('UPDATE scheme_baseline_assets')) return { rows: [{ revision: 2 }] };
     return { rows: [], rowCount: 1 };
   };
@@ -74,6 +75,30 @@ test('removing a non-model asset also retracts published schemes in the same tra
   assert.equal(await deleteAsset(pool, null, 'S-1', 'asset-id', 1), 2);
   assert.ok(queries.some(sql => sql.includes("publish_status='draft'")));
   assert.ok(queries.includes('COMMIT'));
+});
+
+test('deleting a rendering with an active paired mask is rejected unless the pair is removed together', async () => {
+  const asset = { id: 'rendering-id', schemeId: 'scheme-id', schemeCode: 'S-1', schemeName: '方案', type: 'rendering', name: '图', sortOrder: 0, relatedAssetId: null, metadata: {}, isActive: true, revision: 1, createdAt: new Date(), updatedAt: new Date(), versionId: null };
+  function poolRecording(queries: string[]) {
+    const query = async (sql: string) => {
+      queries.push(sql);
+      if (sql.includes('FROM scheme_baseline_assets sa')) return { rows: [asset] };
+      if (sql.includes('SELECT id::text AS id FROM schemes')) return { rows: [{ id: 'scheme-id' }] };
+      if (sql.includes('UPDATE scheme_baseline_assets')) return { rows: [{ revision: 2 }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    };
+    return { query, connect: async () => ({ query, release: () => {} }) } as unknown as pg.Pool;
+  }
+
+  const rejected: string[] = [];
+  await assert.rejects(deleteAsset(poolRecording(rejected), null, 'S-1', 'rendering-id', 1), { statusCode: 409, reason: 'RENDERING_HAS_PAIRED_MASK' });
+  assert.ok(rejected.includes('ROLLBACK'));
+  assert.ok(!rejected.some(sql => sql.includes('UPDATE scheme_baseline_assets')));
+
+  const removed: string[] = [];
+  assert.equal(await deleteAsset(poolRecording(removed), null, 'S-1', 'rendering-id', 1, { withPairedMasks: true }), 2);
+  assert.ok(removed.some(sql => sql.includes('UPDATE scheme_baseline_assets') && sql.includes("type = 'mask' AND related_asset_id")));
+  assert.ok(removed.includes('COMMIT'));
 });
 
 test('changing a rendering sort order also updates its paired masks', async () => {

@@ -17,7 +17,7 @@ interface AssetsQuery extends Partial<ListAssetsOptions> {}
 interface SchemeAssetsQuery { type?: AssetType; }
 interface DownloadQuery { assetVersionId?: string; disposition?: 'attachment' | 'preview'; }
 interface UpdateBody extends UpdateAssetInput { expectedRevision: number; }
-interface DeleteBody { expectedRevision: number; }
+interface DeleteBody { expectedRevision: number; withPairedMasks?: boolean; }
 
 const assetTypeSchema = { type: 'string', enum: assetTypes };
 const codeParamsSchema = { type: 'object', required: ['code'], additionalProperties: false, properties: { code: { type: 'string', minLength: 1 } } };
@@ -101,13 +101,17 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
   });
 
   app.delete('/schemes/:code/assets/:assetId', {
-    schema: { tags: ['admin-assets'], params: assetParamsSchema, body: { type: 'object', required: ['expectedRevision'], additionalProperties: false, properties: { expectedRevision: { type: 'integer', minimum: 1 } } } },
+    schema: { tags: ['admin-assets'], params: assetParamsSchema, body: { type: 'object', required: ['expectedRevision'], additionalProperties: false, properties: {
+      expectedRevision: { type: 'integer', minimum: 1 }, withPairedMasks: { type: 'boolean' },
+    } } },
   }, async request => {
     const params = request.params as AssetParams;
-    const { expectedRevision } = request.body as DeleteBody;
+    const { expectedRevision, withPairedMasks } = request.body as DeleteBody;
     const asset = await getAsset(pool, decodedCode(params), params.assetId);
     requireAdminPermission(request, assetPermissionCode(asset.type, 'delete'));
-    return { code: 0, data: { revision: await deleteAsset(pool, adminUserId(request), decodedCode(params), params.assetId, expectedRevision) } };
+    if (withPairedMasks && asset.type === 'rendering') requireAdminPermission(request, assetPermissionCode('mask', 'delete'));
+    const revision = await deleteAsset(pool, adminUserId(request), decodedCode(params), params.assetId, expectedRevision, { withPairedMasks: withPairedMasks === true });
+    return { code: 0, data: { revision } };
   });
 
   app.get('/schemes/:code/assets/:assetId/download', {
