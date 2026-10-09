@@ -141,6 +141,8 @@ test('asset scope migration and all baseline consumers isolate generated assets 
 
   await t.test('admin baseline operations cannot list, edit, version, delete or relate private assets', async () => {
     assert.equal((await listAssets(pool, { page: 1, pageSize: 100 })).total, 10);
+    assert.equal((await listAssets(pool, { page: 1, pageSize: 100, schemeCode: code })).total, 10);
+    assert.equal((await listAssets(pool, { page: 1, pageSize: 100, schemeCode: 'ASSET' })).total, 0);
     assert.equal((await listSchemeAssets(pool, code)).length, 10);
     await assert.rejects(getAsset(pool, code, artwork.id), { statusCode: 404 });
     await assert.rejects(updateAsset(pool, admin, code, artwork.id, { name: 'changed' }, 1), { statusCode: 404 });

@@ -97,7 +97,7 @@ export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Pro
   };
   if (options.type) add('sa.type = ?', options.type);
   if (options.allowedTypes) add('sa.type = ANY(?::text[])', options.allowedTypes);
-  if (options.schemeCode) add('s.code ILIKE ?', `%${options.schemeCode}%`);
+  if (options.schemeCode) add('s.code = ?', options.schemeCode);
   if (options.schemeName) add('s.name ILIKE ?', `%${options.schemeName}%`);
   const where = `WHERE ${conditions.join(' AND ')}`;
   const offset = (options.page - 1) * options.pageSize;
