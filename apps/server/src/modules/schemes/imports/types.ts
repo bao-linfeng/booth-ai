@@ -25,6 +25,14 @@ export interface ImportRowSource {
   rowNumber: number;
 }
 
+/** 数据工作表表头与模板不一致的首个列，随 IMPORT_TEMPLATE_MISMATCH 返回。 */
+export interface ImportTemplateMismatch {
+  sheetName: string;
+  column: string;
+  expected: string;
+  actual: string;
+}
+
 export interface ParsedImportRow extends ImportRowSource {
   data: ImportRow;
 }
@@ -37,6 +45,9 @@ export interface ImportSummary {
   skipped: number;
 }
 
+/** 字典字段映射后的中文标签，供预览核对；键与 ImportRow 的字典字段一致。 */
+export type ImportDictionaryLabels = Partial<Record<'productSystemId' | 'styleId' | 'industryIds' | 'budgetTierId' | 'zoneIds' | 'featureIds', string[]>>;
+
 /** rowId 在单次导入内唯一，作为提交时的选择键；sheetName + rowNumber 仅用于定位原文件。 */
 export interface ImportPreviewRow extends ImportRowSource {
   rowId: number;
@@ -45,11 +56,14 @@ export interface ImportPreviewRow extends ImportRowSource {
   status: 'valid' | 'duplicate' | 'error';
   reason?: string;
   data?: ImportRow;
+  dictionaryLabels?: ImportDictionaryLabels;
   snapshotRevision?: number;
 }
 
 export interface PreviewImportResult {
   importId: string;
+  /** 预览失效时间（ISO 8601），过期后须重新上传预览。 */
+  expiresAt: string;
   rows: ImportPreviewRow[];
   summary: ImportSummary;
 }

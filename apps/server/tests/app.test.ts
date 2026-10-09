@@ -82,6 +82,21 @@ test('acceptance unavailable exposes only the stable business reason at 503', as
   assert.ok(!privateFailure.body.includes('private-connection-secret'));
 });
 
+test('client errors with a reason expose domain details while server errors never do', async t => {
+  const app = await buildApp(config, healthy);
+  t.after(() => app.close());
+  const details = { sheetName: '方案', column: 'F', expected: '展位长(m)', actual: '长度' };
+  app.post('/test-details', async () => { throw Object.assign(domainError('IMPORT_TEMPLATE_MISMATCH', 400), { details }); });
+  app.post('/test-internal-details', async () => { throw Object.assign(new Error('boom'), { reason: 'X', details: { secret: 'private' } }); });
+  const response = await app.inject({ method: 'POST', url: '/test-details' });
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json().error, { code: 'REQUEST_ERROR', reason: 'IMPORT_TEMPLATE_MISMATCH', details,
+    message: 'Invalid request', requestId: response.headers['x-request-id'] });
+  const internal = await app.inject({ method: 'POST', url: '/test-internal-details' });
+  assert.equal(internal.statusCode, 500);
+  assert.ok(!internal.body.includes('private'));
+});
+
 test('production does not expose development documentation', async t => {
   const app = await buildApp({ ...config, nodeEnv: 'production' }, healthy);
   t.after(() => app.close());

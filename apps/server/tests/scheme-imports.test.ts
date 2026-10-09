@@ -7,7 +7,10 @@ import type pg from 'pg';
 import { commitImport } from '../src/modules/schemes/imports/commit.js';
 import { previewImport } from '../src/modules/schemes/imports/preview.js';
 import type { ImportRow } from '../src/modules/schemes/imports/types.js';
-import { maxImportRows, maxImportSheets, parseWorkbook } from '../src/modules/schemes/imports/workbook.js';
+import { buildImportTemplate } from '../src/modules/schemes/imports/template.js';
+import { importColumns, maxImportRows, maxImportSheets, parseWorkbook } from '../src/modules/schemes/imports/workbook.js';
+
+const header = importColumns.map(column => column.header);
 
 async function templateItems() {
   const rows = await parseWorkbook(await readFile(new URL('../../../docs/source/灵通展台方案打标模板.xlsx', import.meta.url)));
@@ -15,7 +18,8 @@ async function templateItems() {
   return Object.entries(fields).flatMap(([dictionaryCode, field]) => [...new Set(rows.flatMap(row => {
     const value = row.data[field];
     return Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
-  }))].map((label, index) => ({ dictionaryCode, id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`, label, itemValue: label })));
+  }))].map(label => ({ dictionaryCode, label, itemValue: label })))
+    .map((item, index) => ({ ...item, id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}` }));
 }
 
 test('the scheme template preview stores JSON rows and summary for commit', async () => {
@@ -36,7 +40,7 @@ test('the scheme template preview stores JSON rows and summary for commit', asyn
         assert.equal(params[0], '灵通展台方案打标模板.xlsx');
         savedRows = params[1];
         savedSummary = params[2];
-        return { rows: [{ id: '00000000-0000-4000-8000-000000000002' }] };
+        return { rows: [{ id: '00000000-0000-4000-8000-000000000002', expiresAt: new Date('2026-10-09T01:00:00Z') }] };
       }
       throw new Error(`Unexpected query: ${sql}`);
     },
@@ -49,6 +53,9 @@ test('the scheme template preview stores JSON rows and summary for commit', asyn
   assert.ok(result.rows.every(row => row.status === 'valid'));
   assert.equal(result.rows[0]?.data?.lengthMm, 6000);
   assert.equal(result.rows[0]?.data?.widthMm, 3000);
+  assert.equal(result.expiresAt, '2026-10-09T01:00:00.000Z');
+  assert.deepEqual(result.rows[0]?.dictionaryLabels?.styleId, ['现代简约']);
+  assert.deepEqual(result.rows[0]?.dictionaryLabels?.zoneIds, ['接待区', '展示区', '洽谈区', '储藏间']);
   assert.equal(typeof savedRows, 'string');
   assert.deepEqual(JSON.parse(savedRows as string), result.rows);
   assert.equal(typeof savedSummary, 'string');
@@ -74,7 +81,7 @@ test('preview snapshots duplicate revisions in the stored rows', async () => {
       if (sql.includes('FROM dictionary_items')) return { rows: dictionaryItems };
       if (sql.includes('INSERT INTO scheme_imports')) {
         savedRows = params[1] as string;
-        return { rows: [{ id: '00000000-0000-4000-8000-000000000002' }] };
+        return { rows: [{ id: '00000000-0000-4000-8000-000000000002', expiresAt: new Date('2026-10-09T01:00:00Z') }] };
       }
       throw new Error(`Unexpected query: ${sql}`);
     },
@@ -102,9 +109,15 @@ test('commit replays the stored result for matching options and rejects differen
   const pool = { connect: async () => client } as unknown as pg.Pool;
 
   assert.deepEqual(await commitImport(pool, null, 'import-1', { duplicateStrategy: 'skip' }), committedResult);
-  await assert.rejects(commitImport(pool, null, 'import-1', { duplicateStrategy: 'update' }), { statusCode: 409 });
+  await assert.rejects(commitImport(pool, null, 'import-1', { duplicateStrategy: 'update' }), { statusCode: 409, reason: 'IMPORT_ALREADY_COMMITTED' });
   assert.equal(queries.filter(sql => sql.includes('UPDATE schemes')).length, 0);
   assert.ok(queries.some(sql => sql.includes('SELECT preview, status, commit_request_hash, committed_result')));
+});
+
+test('commit reports an expired or missing preview with a dedicated reason', async () => {
+  const client = { query: async () => ({ rows: [] }), release: () => {} };
+  const pool = { connect: async () => client } as unknown as pg.Pool;
+  await assert.rejects(commitImport(pool, null, 'import-1', { duplicateStrategy: 'skip' }), { statusCode: 410, reason: 'IMPORT_PREVIEW_EXPIRED' });
 });
 
 test('commit rejects duplicate rows when the preview revision is stale or missing', async () => {
@@ -189,9 +202,9 @@ async function multiSheetWorkbook(): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.addWorksheet('填写说明').addRows([['说明'], ['', 'IGNORED', '不应导入']]);
   const first = workbook.addWorksheet('华东');
-  first.addRows([['序号', '方案编号', '方案名称'], ['1', 'A-1', '方案一']]);
+  first.addRows([header, ['1', 'A-1', '方案一']]);
   const second = workbook.addWorksheet('华南');
-  second.addRows([['序号', '方案编号', '方案名称'], ['1', 'B-1', '方案二'], [], ['3', 'A-1', '重复方案'], ['4', 'B-2', '']]);
+  second.addRows([header, ['1', 'B-1', '方案二'], [], ['3', 'A-1', '重复方案'], ['4', 'B-2', '']]);
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
@@ -203,7 +216,7 @@ test('multi-sheet preview keeps each row sheet name and source row number with a
       if (sql.includes('FROM dictionary_items')) return { rows: [] };
       if (sql.includes('INSERT INTO scheme_imports')) {
         savedRows = params[1] as string;
-        return { rows: [{ id: '00000000-0000-4000-8000-000000000002' }] };
+        return { rows: [{ id: '00000000-0000-4000-8000-000000000002', expiresAt: new Date('2026-10-09T01:00:00Z') }] };
       }
       throw new Error(`Unexpected query: ${sql}`);
     },
@@ -253,19 +266,62 @@ test('commit selects rows by row id and reports failures with their source sheet
 test('workbook parsing ignores formatted trailing rows and rejects oversized sheet or row ranges', async () => {
   const formatted = new ExcelJS.Workbook();
   const sheet = formatted.addWorksheet('方案');
-  sheet.addRows([['序号', '方案编号', '方案名称'], ['1', 'A-1', '方案一']]);
+  sheet.addRows([header, ['1', 'A-1', '方案一']]);
   sheet.getRow(100000).getCell(2).style = { font: { bold: true } };
   const rows = await parseWorkbook(Buffer.from(await formatted.xlsx.writeBuffer()));
   assert.deepEqual(rows.map(row => [row.rowNumber, row.data.code]), [[2, 'A-1']]);
 
   const farRow = new ExcelJS.Workbook();
-  farRow.addWorksheet('方案').getRow(maxImportRows + 2).getCell(2).value = 'FAR';
+  const far = farRow.addWorksheet('方案');
+  far.addRow(header);
+  far.getRow(maxImportRows + 2).getCell(2).value = 'FAR';
   await assert.rejects(parseWorkbook(Buffer.from(await farRow.xlsx.writeBuffer())), { statusCode: 400, reason: 'IMPORT_TOO_MANY_ROWS' });
 
   const manySheets = new ExcelJS.Workbook();
-  for (let index = 0; index <= maxImportSheets; index += 1) manySheets.addWorksheet(`方案${index}`).addRow(['序号', '方案编号', '方案名称']);
+  for (let index = 0; index <= maxImportSheets; index += 1) manySheets.addWorksheet(`方案${index}`).addRow(header);
   manySheets.addWorksheet('填写说明');
   await assert.rejects(parseWorkbook(Buffer.from(await manySheets.xlsx.writeBuffer())), { statusCode: 400, reason: 'IMPORT_TOO_MANY_SHEETS' });
 
   await assert.rejects(parseWorkbook(Buffer.from('not a workbook')), { statusCode: 400, reason: 'IMPORT_FILE_INVALID' });
+});
+
+test('data sheets must keep the template header while blank sheets are ignored', async () => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet('Sheet1');
+  workbook.addWorksheet('方案').addRows([header, ['1', 'A-1', '方案一']]);
+  const shifted: string[] = [...header];
+  shifted[5] = ' 展位长（m） ';
+  workbook.addWorksheet('华南').addRows([shifted, ['1', 'B-1', '方案二']]);
+  assert.deepEqual((await parseWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()))).map(row => row.data.code), ['A-1', 'B-1']);
+
+  const legacy = new ExcelJS.Workbook();
+  legacy.addWorksheet('方案').addRows([header, ['1', 'A-1', '方案一']]);
+  const swapped: string[] = [...header];
+  [swapped[5], swapped[6]] = [swapped[6]!, swapped[5]!];
+  legacy.addWorksheet('其他').addRows([swapped, ['1', 'B-1', '方案二']]);
+  await assert.rejects(parseWorkbook(Buffer.from(await legacy.xlsx.writeBuffer())), {
+    statusCode: 400, reason: 'IMPORT_TEMPLATE_MISMATCH',
+    details: { sheetName: '其他', column: 'F', expected: '展位长(m)', actual: '展位宽(m)' },
+  });
+});
+
+test('the generated template round-trips through the parser and lists enabled dictionary options', async () => {
+  const pool = {
+    query: async (sql: string, params: unknown[]) => {
+      assert.match(sql, /d\.enabled AND i\.enabled/);
+      assert.ok((params[0] as string[]).includes('style'));
+      return { rows: [{ dictionaryCode: 'style', label: '现代简约' }, { dictionaryCode: 'industry', label: '服装纺织' }] };
+    },
+  } as unknown as pg.Pool;
+  const buffer = await buildImportTemplate(pool);
+  assert.deepEqual(await parseWorkbook(buffer), []);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+  assert.deepEqual(workbook.worksheets.map(sheet => sheet.name), ['方案打标', '下拉选项', '填写说明']);
+  assert.deepEqual((workbook.getWorksheet('方案打标')!.getRow(1).values as unknown[]).slice(1), header);
+  const options = workbook.getWorksheet('下拉选项')!;
+  const styleColumn = (options.getRow(1).values as unknown[]).indexOf('风格');
+  assert.deepEqual(options.getColumn(styleColumn).values.slice(1), ['风格', '现代简约']);
+  assert.equal(workbook.getWorksheet('方案打标')!.getCell('L2').dataValidation?.type, 'list');
+  assert.equal(workbook.getWorksheet('方案打标')!.getCell('M2').dataValidation, undefined);
 });

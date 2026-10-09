@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { domainError } from '../../../lib/errors.js';
-import type { ImportRow, ParsedImportRow } from './types.js';
+import type { ImportRow, ImportTemplateMismatch, ParsedImportRow } from './types.js';
 
 interface XlsxLoader {
   load(buffer: Buffer): Promise<ExcelJS.Workbook>;
@@ -54,31 +54,76 @@ function verificationStatus(value: ExcelJS.CellValue): ImportRow['verificationSt
   return 'unverified';
 }
 
+/** 模板列（自 A 列起，第 1 行为表头）：解析、表头校验与模板生成共用此表，列序即解析位置。 */
+export const importColumns = [
+  { key: 'serial', header: '序号', note: '可选，仅便于核对，不导入' },
+  { key: 'code', header: '方案编号', note: '必填，文件内不可重复；已存在的编号按预览时选择的策略覆盖或跳过' },
+  { key: 'name', header: '方案名称', note: '必填' },
+  { key: 'parentCode', header: '母方案编号', note: '可选，填写已存在的方案编号' },
+  { key: 'bomFile', header: '配套清单文件', note: '仅供记录，不导入；清单请在方案详情中按方案导入' },
+  { key: 'lengthMm', header: '展位长(m)', note: '单位米，导入时换算为毫米' },
+  { key: 'widthMm', header: '展位宽(m)', note: '单位米，导入时换算为毫米' },
+  { key: 'areaM2', header: '展位面积(㎡)', note: '可留空，按长×宽计算；填写时须与长宽一致' },
+  { key: 'heightMm', header: '展位高度(m)', note: '单位米，导入时换算为毫米' },
+  { key: 'openingCount', header: '开口面数', note: '1面～4面，或“岛式”（按 4 面）' },
+  { key: 'productSystemId', header: '产品体系', note: '单选，取值见“下拉选项”' },
+  { key: 'styleId', header: '风格', note: '单选，取值见“下拉选项”' },
+  { key: 'industryIds', header: '适用行业', note: '可多选，逗号分隔，取值见“下拉选项”' },
+  { key: 'budgetTierId', header: '预算档位', note: '单选，取值见“下拉选项”' },
+  { key: 'zoneIds', header: '功能分区', note: '可多选，逗号分隔，取值见“下拉选项”' },
+  { key: 'featureIds', header: '关键特征', note: '可多选，逗号分隔，取值见“下拉选项”' },
+  { key: 'description', header: '一句话描述', note: '可选' },
+  { key: 'keywords', header: '关键词', note: '可选，逗号分隔' },
+  { key: 'verificationStatus', header: '核验状态', note: '仅供记录；导入或覆盖后方案均为待核验' },
+  { key: 'notes', header: '备注', note: '可选，仅后台可见' },
+] as const;
+
+type ImportColumnKey = typeof importColumns[number]['key'];
+
+const columnIndex = Object.fromEntries(importColumns.map((column, index) => [column.key, index + 1])) as Record<ImportColumnKey, number>;
+
 function parseRow(row: ExcelJS.Row): ImportRow {
+  const cell = (key: ImportColumnKey) => row.getCell(columnIndex[key]).value;
   const parsed: ImportRow = {
-    code: cellText(row.getCell(2).value),
-    name: cellText(row.getCell(3).value),
-    parentCode: optionalText(row.getCell(4).value),
-    lengthMm: numericValue(row.getCell(6).value, 1000),
-    widthMm: numericValue(row.getCell(7).value, 1000),
-    areaM2: numericValue(row.getCell(8).value),
-    heightMm: numericValue(row.getCell(9).value, 1000),
-    openingCount: openingCount(row.getCell(10).value),
-    productSystemId: optionalText(row.getCell(11).value),
-    styleId: optionalText(row.getCell(12).value),
-    industryIds: listValue(row.getCell(13).value),
-    budgetTierId: optionalText(row.getCell(14).value),
-    zoneIds: listValue(row.getCell(15).value),
-    featureIds: listValue(row.getCell(16).value),
-    description: optionalText(row.getCell(17).value),
-    keywords: listValue(row.getCell(18).value),
-    verificationStatus: verificationStatus(row.getCell(19).value),
-    notes: optionalText(row.getCell(20).value),
+    code: cellText(cell('code')),
+    name: cellText(cell('name')),
+    parentCode: optionalText(cell('parentCode')),
+    lengthMm: numericValue(cell('lengthMm'), 1000),
+    widthMm: numericValue(cell('widthMm'), 1000),
+    areaM2: numericValue(cell('areaM2')),
+    heightMm: numericValue(cell('heightMm'), 1000),
+    openingCount: openingCount(cell('openingCount')),
+    productSystemId: optionalText(cell('productSystemId')),
+    styleId: optionalText(cell('styleId')),
+    industryIds: listValue(cell('industryIds')),
+    budgetTierId: optionalText(cell('budgetTierId')),
+    zoneIds: listValue(cell('zoneIds')),
+    featureIds: listValue(cell('featureIds')),
+    description: optionalText(cell('description')),
+    keywords: listValue(cell('keywords')),
+    verificationStatus: verificationStatus(cell('verificationStatus')),
+    notes: optionalText(cell('notes')),
   };
   if (parsed.areaM2 === null && parsed.lengthMm !== null && parsed.widthMm !== null) {
     parsed.areaM2 = parsed.lengthMm * parsed.widthMm / 1_000_000;
   }
   return parsed;
+}
+
+function normalizeHeader(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/gu, '');
+}
+
+/** 第 1 行逐列与模板表头比对（忽略空白与全半角差异），返回首个不一致的列。 */
+function headerMismatch(worksheet: ExcelJS.Worksheet): ImportTemplateMismatch | null {
+  const header = worksheet.getRow(1);
+  for (const [index, column] of importColumns.entries()) {
+    const actual = cellText(header.getCell(index + 1).value);
+    if (normalizeHeader(actual) !== normalizeHeader(column.header)) {
+      return { sheetName: worksheet.name, column: String.fromCharCode(65 + index), expected: column.header, actual: actual.slice(0, 50) };
+    }
+  }
+  return null;
 }
 
 /** 单次导入的数据工作表与扫描行数上限（含空行，不含表头），须与管理端提示一致。 */
@@ -92,7 +137,7 @@ function lastValueRow(worksheet: ExcelJS.Worksheet): number {
   return last;
 }
 
-/** 读取模板中的方案行（每个工作表从第 2 行起），保留来源工作表与原始行号；"说明"/"选项"工作表不参与导入。 */
+/** 读取模板中的方案行（每个工作表从第 2 行起），保留来源工作表与原始行号；"说明"/"选项"工作表不参与导入，其余工作表须与模板表头一致。 */
 export async function parseWorkbook(buffer: Buffer): Promise<ParsedImportRow[]> {
   const workbook = new ExcelJS.Workbook();
   try {
@@ -101,9 +146,16 @@ export async function parseWorkbook(buffer: Buffer): Promise<ParsedImportRow[]> 
     throw domainError('IMPORT_FILE_INVALID', 400);
   }
 
-  const sheets = workbook.worksheets.filter(worksheet => !worksheet.name.includes('说明') && !worksheet.name.includes('选项'));
-  if (sheets.length > maxImportSheets) throw domainError('IMPORT_TOO_MANY_SHEETS', 400);
-  const ranges = sheets.map(worksheet => ({ worksheet, lastRow: lastValueRow(worksheet) }));
+  // 完全没有内容的工作表（如默认的空白 Sheet）直接忽略，其余数据工作表必须使用模板表头
+  const ranges = workbook.worksheets
+    .filter(worksheet => !worksheet.name.includes('说明') && !worksheet.name.includes('选项'))
+    .map(worksheet => ({ worksheet, lastRow: lastValueRow(worksheet) }))
+    .filter(({ lastRow }) => lastRow > 0);
+  if (ranges.length > maxImportSheets) throw domainError('IMPORT_TOO_MANY_SHEETS', 400);
+  for (const { worksheet } of ranges) {
+    const mismatch = headerMismatch(worksheet);
+    if (mismatch) throw Object.assign(domainError('IMPORT_TEMPLATE_MISMATCH', 400), { details: mismatch });
+  }
   if (ranges.reduce((total, { lastRow }) => total + Math.max(lastRow - 1, 0), 0) > maxImportRows) throw domainError('IMPORT_TOO_MANY_ROWS', 400);
 
   const rows: ParsedImportRow[] = [];

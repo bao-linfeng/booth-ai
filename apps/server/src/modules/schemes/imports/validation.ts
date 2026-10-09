@@ -1,8 +1,8 @@
 import type pg from 'pg';
-import type { ImportPreviewRow, ImportRow } from './types.js';
+import type { ImportDictionaryLabels, ImportPreviewRow, ImportRow } from './types.js';
 import { indexDictionaryTerms, resolveIndexedTerms, type DictionaryAlias, type DictionaryTermIndex } from '../../selection/dictionary-language.js';
 
-const importDictionaries = {
+export const importDictionaries = {
   productSystemId: 'product_system', styleId: 'style', industryIds: 'industry',
   budgetTierId: 'budget_tier', zoneIds: 'functional_zone', featureIds: 'key_feature',
 } as const;
@@ -40,6 +40,17 @@ function resolveImportLabels(dictionaries: ImportDictionaries, row: ImportRow): 
     (result as Record<ImportDictionaryField, string | string[] | null>)[field] = Array.isArray(value) ? ids as string[] : ids[0]!;
   }
   return result;
+}
+
+/** 已解析为 id 的字典字段对应的中文标签，用于预览展示映射结果。 */
+export function importDictionaryLabels(dictionaries: ImportDictionaries, row: ImportRow): ImportDictionaryLabels {
+  const labels: ImportDictionaryLabels = {};
+  for (const field of Object.keys(importDictionaries) as ImportDictionaryField[]) {
+    const value = row[field];
+    const ids = value === null ? [] : Array.isArray(value) ? value : [value];
+    if (ids.length > 0) labels[field] = ids.map(id => dictionaries.labels.get(id) ?? id);
+  }
+  return labels;
 }
 
 export function validateImportedSize(row: ImportRow): void {

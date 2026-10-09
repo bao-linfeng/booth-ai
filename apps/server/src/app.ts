@@ -58,11 +58,11 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
   });
   app.setErrorHandler((error: FastifyError, request, reply) => {
     const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500;
-    // Error messages can include upstream credentials; only emit stable diagnostic codes.
+    // Error messages can include upstream credentials; only emit stable diagnostic codes and details built by domain code.
     request.log[status >= 500 ? 'error' : 'warn']({ code: error.code ?? 'REQUEST_ERROR', statusCode: status }, 'request failed');
-    const reason = (error as FastifyError & { reason?: string }).reason;
+    const { reason, details } = error as FastifyError & { reason?: string; details?: unknown };
     const assignmentUnavailable = status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE';
-    reply.code(status).send({ error: { code: error.validation ? 'VALIDATION_ERROR' : assignmentUnavailable ? 'REQUEST_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR', ...(reason && (status < 500 || assignmentUnavailable) ? { reason } : {}), message: assignmentUnavailable ? 'Request acceptance is temporarily unavailable' : status >= 500 ? 'Internal server error' : 'Invalid request', requestId: request.id } });
+    reply.code(status).send({ error: { code: error.validation ? 'VALIDATION_ERROR' : assignmentUnavailable ? 'REQUEST_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR', ...(reason && (status < 500 || assignmentUnavailable) ? { reason } : {}), ...(reason && details !== undefined && status < 500 ? { details } : {}), message: assignmentUnavailable ? 'Request acceptance is temporarily unavailable' : status >= 500 ? 'Internal server error' : 'Invalid request', requestId: request.id } });
   });
   app.setNotFoundHandler((request, reply) => reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found', requestId: request.id } }));
 

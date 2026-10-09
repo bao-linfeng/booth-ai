@@ -5,6 +5,7 @@ import { adminUserId } from '../../authentication.js';
 import { readUploadedFile, workbookUploadMaxBytes } from '../../uploads.js';
 import { commitImport } from '../../../modules/schemes/imports/commit.js';
 import { previewImport } from '../../../modules/schemes/imports/preview.js';
+import { buildImportTemplate } from '../../../modules/schemes/imports/template.js';
 import type { CommitImportOptions } from '../../../modules/schemes/imports/types.js';
 
 interface ImportParams {
@@ -12,6 +13,15 @@ interface ImportParams {
 }
 
 export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
+  app.get('/scheme-imports/template', {
+    schema: { tags: ['admin-scheme-imports'], summary: '下载与当前解析规则和启用字典一致的方案导入模板' },
+  }, async (_request, reply) => {
+    const file = await buildImportTemplate(pool);
+    return reply.header('Cache-Control', 'private, no-store')
+      .header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent('方案导入模板.xlsx')}`)
+      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(file);
+  });
+
   app.post('/scheme-imports', {
     schema: { tags: ['admin-scheme-imports'] },
   }, async (request, reply) => {

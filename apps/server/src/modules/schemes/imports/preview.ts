@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { ImportPreviewRow, ImportRow, ImportRowSource, ImportSummary, ParsedImportRow, PreviewImportResult } from './types.js';
-import { loadImportDictionaries, missingRequiredField, validateImportRow, type ImportDictionaries } from './validation.js';
+import { importDictionaryLabels, loadImportDictionaries, missingRequiredField, validateImportRow, type ImportDictionaries } from './validation.js';
 import { parseWorkbook } from './workbook.js';
 
 async function findExistingCodes(pool: pg.Pool, parsedRows: ParsedImportRow[]): Promise<Set<string>> {
@@ -48,10 +48,10 @@ function classifyRows(dictionaries: ImportDictionaries, parsedRows: ParsedImport
     firstSeen.set(code, { sheetName, rowNumber });
     if (existingCodes.has(code)) {
       summary.duplicate += 1;
-      rows.push({ ...source, code, name, status: 'duplicate', data });
+      rows.push({ ...source, code, name, status: 'duplicate', data, dictionaryLabels: importDictionaryLabels(dictionaries, data) });
     } else {
       summary.valid += 1;
-      rows.push({ ...source, code, name, status: 'valid', data });
+      rows.push({ ...source, code, name, status: 'valid', data, dictionaryLabels: importDictionaryLabels(dictionaries, data) });
     }
   }
   return { rows, summary };
@@ -70,15 +70,15 @@ async function snapshotDuplicateRevisions(pool: pg.Pool, rows: ImportPreviewRow[
   }
 }
 
-async function savePreview(pool: pg.Pool, adminId: string | null, filename: string, rows: ImportPreviewRow[], summary: ImportSummary): Promise<string> {
-  const inserted = await pool.query<{ id: string }>(`
+async function savePreview(pool: pg.Pool, adminId: string | null, filename: string, rows: ImportPreviewRow[], summary: ImportSummary): Promise<{ importId: string; expiresAt: string }> {
+  const inserted = await pool.query<{ id: string; expiresAt: Date }>(`
     INSERT INTO scheme_imports (source_filename, preview, summary, expires_at, created_by)
     VALUES ($1, $2, $3, now() + interval '1 hour', $4)
-    RETURNING id::text AS id
+    RETURNING id::text AS id, expires_at AS "expiresAt"
   `, [filename, JSON.stringify(rows), JSON.stringify(summary), adminId]);
-  const importId = inserted.rows[0]?.id;
-  if (!importId) throw Object.assign(new Error('Failed to create import preview'), { statusCode: 500 });
-  return importId;
+  const saved = inserted.rows[0];
+  if (!saved) throw Object.assign(new Error('Failed to create import preview'), { statusCode: 500 });
+  return { importId: saved.id, expiresAt: new Date(saved.expiresAt).toISOString() };
 }
 
 export async function previewImport(pool: pg.Pool, adminId: string | null, buffer: Buffer, filename: string): Promise<PreviewImportResult> {
@@ -87,6 +87,6 @@ export async function previewImport(pool: pg.Pool, adminId: string | null, buffe
   const dictionaries = await loadImportDictionaries(pool);
   const { rows, summary } = classifyRows(dictionaries, parsedRows, existingCodes);
   await snapshotDuplicateRevisions(pool, rows);
-  const importId = await savePreview(pool, adminId, filename, rows, summary);
-  return { importId, rows, summary };
+  const { importId, expiresAt } = await savePreview(pool, adminId, filename, rows, summary);
+  return { importId, expiresAt, rows, summary };
 }

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { transaction } from '../../../infra/database.js';
+import { domainError } from '../../../lib/errors.js';
 import { validateSchemeDictionaryIds } from '../dictionary-ids.js';
 import { ensureSelectionSizes } from '../../selection/sizes.js';
 import type { CommitImportOptions, CommitImportResult, ImportPreviewRow, ImportRow } from './types.js';
@@ -54,10 +55,6 @@ interface ImportRecord {
   committed_result: CommitImportResult | null;
 }
 
-function badRequest(message: string): Error & { statusCode: number } {
-  return Object.assign(new Error(message), { statusCode: 400 });
-}
-
 function mapDbError(error: unknown): string {
   if (error instanceof Error) {
     const msg = error.message;
@@ -95,13 +92,13 @@ async function lockPendingImport(client: pg.PoolClient, importId: string, reques
     FOR UPDATE
   `, [importId]);
   const record = imported.rows[0];
-  if (!record) throw badRequest('Import preview not found or has expired');
+  if (!record) throw domainError('IMPORT_PREVIEW_EXPIRED', 410);
   if (record.status === 'committed') {
     if (record.commit_request_hash === requestHash && record.committed_result) return { replay: record.committed_result };
-    throw Object.assign(new Error('Idempotency conflict: same importId with different options'), { statusCode: 409 });
+    throw domainError('IMPORT_ALREADY_COMMITTED', 409);
   }
-  if (record.status !== 'pending') throw badRequest('Import preview not found or has expired');
-  if (!Array.isArray(record.preview)) throw badRequest('Import preview is invalid');
+  if (record.status !== 'pending') throw domainError('IMPORT_PREVIEW_EXPIRED', 410);
+  if (!Array.isArray(record.preview)) throw domainError('IMPORT_PREVIEW_INVALID', 400);
   return { preview: record.preview };
 }
 
