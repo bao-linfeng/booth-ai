@@ -1,32 +1,6 @@
-import type { Ref } from 'vue';
-
 import type { AssetType } from '#/api/core/assets';
 
 import { listAssetsApi } from '#/api/core/assets';
-
-export const createFormOptions = (schemeSearchConfig: {
-  options: Ref<{ label: string; value: string }[]>;
-  loading: Ref<boolean>;
-  onSearch: (value: string) => void;
-}) => ({
-  schema: [
-    {
-      component: 'Select' as const,
-      fieldName: 'schemeCode',
-      label: '归属方案',
-      componentProps: {
-        options: schemeSearchConfig.options,
-        loading: schemeSearchConfig.loading,
-        showSearch: true,
-        filterOption: false,
-        allowClear: true,
-        placeholder: '搜索方案编号或名称',
-        onSearch: schemeSearchConfig.onSearch,
-      },
-    },
-  ],
-  showCollapseButton: false,
-});
 
 export const createGridOptions = (assetType: AssetType) => ({
   showOverflow: 'tooltip' as const,

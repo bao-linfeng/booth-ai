@@ -364,11 +364,10 @@ async function handleModelDownload(asset: SchemeAsset) {
 }
 
 function calculateArea() {
-  if (formData.lengthMm && formData.widthMm) {
-    formData.areaM2 = Number(
-      ((formData.lengthMm * formData.widthMm) / 1_000_000).toFixed(6),
-    );
-  } else formData.areaM2 = null;
+  formData.areaM2 =
+    formData.lengthMm && formData.widthMm
+      ? Number(((formData.lengthMm * formData.widthMm) / 1_000_000).toFixed(6))
+      : null;
 }
 
 async function handleSave() {
@@ -450,6 +449,10 @@ function handleBack() {
   router.push('/scheme/list');
 }
 
+function openSchemeAssets(path: string) {
+  router.push({ path, query: { schemeCode: currentCode.value } });
+}
+
 async function fetchReadiness() {
   if (!hasAccessByCodes(['schemes.readiness'])) return;
   if (!currentCode.value) return;
@@ -500,7 +503,9 @@ async function handleReviewSubmit() {
       notes: reviewForm.notes.trim() || null,
     });
     message.success(
-      reviewForm.decision === 'pass' ? '审核通过，可发布方案' : '审核不通过已记录',
+      reviewForm.decision === 'pass'
+        ? '审核通过，可发布方案'
+        : '审核不通过已记录',
     );
     reviewModalVisible.value = false;
     await refreshStatus();
@@ -923,7 +928,7 @@ onMounted(() => {
                 />
               </AFormItem>
             </div>
-</ATabPane>
+          </ATabPane>
 
           <ATabPane
             v-if="!isCreate && hasAccessByCodes(['assets-models.read'])"
@@ -991,9 +996,7 @@ onMounted(() => {
                 v-if="hasAccessByCodes(['assets-renderings.read'])"
                 hoverable
                 class="text-center"
-                @click="
-                  router.push(`/assets/renderings?schemeCode=${currentCode}`)
-                "
+                @click="openSchemeAssets('/assets/renderings')"
               >
                 <div class="text-muted-foreground mb-2">效果图</div>
                 <div class="text-2xl font-semibold">
@@ -1004,7 +1007,7 @@ onMounted(() => {
                 v-if="hasAccessByCodes(['assets-masks.read'])"
                 hoverable
                 class="text-center"
-                @click="router.push(`/assets/masks?schemeCode=${currentCode}`)"
+                @click="openSchemeAssets('/assets/masks')"
               >
                 <div class="text-muted-foreground mb-2">蒙版</div>
                 <div class="text-2xl font-semibold">{{ assetCounts.mask }}</div>
@@ -1013,11 +1016,7 @@ onMounted(() => {
                 v-if="hasAccessByCodes(['assets-drawings.read'])"
                 hoverable
                 class="text-center"
-                @click="
-                  router.push(
-                    `/assets/venue-materials?schemeCode=${currentCode}`,
-                  )
-                "
+                @click="openSchemeAssets('/assets/venue-materials')"
               >
                 <div class="text-muted-foreground mb-2">报馆图</div>
                 <div class="text-2xl font-semibold">
@@ -1028,9 +1027,7 @@ onMounted(() => {
                 v-if="hasAccessByCodes(['assets-artworks.read'])"
                 hoverable
                 class="text-center"
-                @click="
-                  router.push(`/assets/artworks?schemeCode=${currentCode}`)
-                "
+                @click="openSchemeAssets('/assets/artworks')"
               >
                 <div class="text-muted-foreground mb-2">平面素材</div>
                 <div class="text-2xl font-semibold">
@@ -1213,7 +1210,9 @@ onMounted(() => {
                         >
                           ✓
                         </ATag>
-                        <ATag v-else color="error" class="text-xs">需 3 张</ATag>
+                        <ATag v-else color="error" class="text-xs">
+                          需 3 张
+                        </ATag>
                       </div>
                     </div>
                     <div
@@ -1231,7 +1230,9 @@ onMounted(() => {
                         >
                           ✓
                         </ATag>
-                        <ATag v-else color="error" class="text-xs">需 3 张</ATag>
+                        <ATag v-else color="error" class="text-xs">
+                          需 3 张
+                        </ATag>
                       </div>
                     </div>
                     <div
@@ -1344,7 +1345,9 @@ onMounted(() => {
           </AFormItem>
 
           <AFormItem
-            :label="reviewForm.decision === 'pass' ? '审核意见（可选）' : '不通过原因'"
+            :label="
+              reviewForm.decision === 'pass' ? '审核意见（可选）' : '不通过原因'
+            "
             :required="reviewForm.decision === 'reject'"
           >
             <ATextarea

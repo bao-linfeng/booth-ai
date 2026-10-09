@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import type { SchemeFilterValues } from '../shared/scheme-filter';
+
 import { onMounted, ref } from 'vue';
 
 import { useAccess } from '@vben/access';
 import { Page } from '@vben/common-ui';
-import { debounce, formatDate } from '@vben/utils';
+import { formatDate } from '@vben/utils';
 
 import { Button, InputNumber, message, Modal } from 'ant-design-vue';
 
@@ -14,52 +16,49 @@ import {
   replaceAssetFileApi,
   updateAssetApi,
 } from '#/api/core/assets';
-import { getSchemeListApi } from '#/api/core/schemes';
 
+import {
+  createSchemeFilterFormOptions,
+  useRouteSchemeCode,
+  useSchemeOptions,
+} from '../shared/scheme-filter';
 import UploadModal from './components/UploadModal.vue';
-import { createFormOptions, createGridOptions } from './options';
+import { createGridOptions } from './options';
 
 const uploadModalRef = ref<InstanceType<typeof UploadModal>>();
 const { hasAccessByCodes } = useAccess();
 
-const schemeOptions = ref<{ label: string; value: string }[]>([]);
-const schemeLoading = ref(false);
-
-async function fetchSchemes(keyword?: string) {
-  schemeLoading.value = true;
-  try {
-    const res = await getSchemeListApi({
-      ...(keyword ? { code: keyword } : {}),
-      pageSize: 20,
-    });
-    schemeOptions.value = (res.data ?? []).map((item) => ({
-      label: `${item.code} - ${item.name}`,
-      value: item.code,
-    }));
-  } finally {
-    schemeLoading.value = false;
-  }
-}
-
-const handleSchemeSearch = debounce((value: string) => {
-  fetchSchemes(value || undefined);
-}, 300);
+const schemes = useSchemeOptions();
+const initialSchemeCode = useRouteSchemeCode(applySchemeFilter);
+schemes.pin(initialSchemeCode);
 
 onMounted(() => {
-  fetchSchemes();
+  schemes.search();
 });
 
-const formOptions = createFormOptions({
-  options: schemeOptions,
-  loading: schemeLoading,
-  onSearch: handleSchemeSearch,
+const formOptions = createSchemeFilterFormOptions({
+  defaultSchemeCode: initialSchemeCode,
+  loading: schemes.loading,
+  onSearch: schemes.onSearch,
+  options: schemes.options,
 });
 const gridOptions = createGridOptions('rendering');
 
 const [Grid, gridApi] = useVbenVxeGrid({ formOptions, gridOptions });
 
+async function applySchemeFilter(code: string | undefined) {
+  schemes.pin(code);
+  await gridApi.formApi.setFieldValue('schemeCode', code);
+  const values = await gridApi.formApi.getValues();
+  gridApi.formApi.setLatestSubmissionValues(values);
+  gridApi.reload(values);
+}
+
 function handleUpload() {
-  uploadModalRef.value?.open();
+  // 上传默认归属列表当前生效的筛选方案
+  const { schemeCode } =
+    gridApi.formApi.getLatestSubmissionValues() as SchemeFilterValues;
+  uploadModalRef.value?.open(schemeCode);
 }
 
 async function handlePreview(row: any) {
@@ -90,7 +89,9 @@ async function handleReplace(row: any) {
 }
 
 async function handleSortOrderChange(value: any, row: any) {
-  const num = typeof value === 'number' ? value : value ? Number(value) : null;
+  let num: null | number = null;
+  if (typeof value === 'number') num = value;
+  else if (value) num = Number(value);
   if (num === null || num === row.sortOrder || Number.isNaN(num)) return;
   try {
     await updateAssetApi(row.schemeCode, row.id, {
@@ -132,8 +133,9 @@ function handleDelete(row: any) {
           v-access:code="['assets-renderings.upload']"
           type="primary"
           @click="handleUpload"
-          >上传效果图</Button
         >
+          上传效果图
+        </Button>
       </template>
       <template #filename="{ row }">
         {{ row.currentVersion?.originalFilename || '-' }}
