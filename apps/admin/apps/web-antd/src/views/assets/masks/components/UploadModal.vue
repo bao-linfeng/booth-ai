@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import type { UploadFile } from 'ant-design-vue';
 
-import type { ImageSize } from '../../shared/image-spec';
-
 import { h, markRaw, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
@@ -11,25 +9,17 @@ import { IconifyIcon } from '@vben/icons';
 import { message, Select, Upload } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
-import { listSchemeAssetsApi, uploadAssetApi } from '#/api/core/assets';
+import { uploadAssetApi } from '#/api/core/assets';
 
-import {
-  formatImageSize,
-  maskSizeError,
-  readImageSize,
-  versionImageSize,
-} from '../../shared/image-spec';
+import { maskSizeError, readImageSize } from '../../shared/image-spec';
+import { useRenderingCandidates } from '../../shared/rendering-candidates';
 import { useSchemeOptions } from '../../shared/scheme-filter';
 
 const emit = defineEmits(['reload']);
 
 const schemeCode = ref<string | undefined>(undefined);
 const schemes = useSchemeOptions();
-const renderingOptions = ref<
-  { disabled: boolean; label: string; value: string }[]
->([]);
-const renderingSizes = new Map<string, ImageSize | null>();
-const renderingLoading = ref(false);
+const renderings = useRenderingCandidates();
 
 /** 返回文件不满足配对效果图尺寸时的原因；尚未选择效果图时不校验。 */
 async function fileSizeError(
@@ -38,34 +28,13 @@ async function fileSizeError(
 ): Promise<string | undefined> {
   const size = await readImageSize(file);
   if (!renderingId) return undefined;
-  return maskSizeError(size, renderingSizes.get(renderingId) ?? null);
-}
-
-async function fetchRenderings(code: string) {
-  renderingLoading.value = true;
-  try {
-    const assets = await listSchemeAssetsApi(code, 'rendering');
-    renderingSizes.clear();
-    renderingOptions.value = assets.map((a) => {
-      const size = versionImageSize(a.currentVersion);
-      renderingSizes.set(a.id, size);
-      return {
-        disabled: !size,
-        label: `${a.name}（${size ? formatImageSize(size) : '未上传文件'}）`,
-        value: a.id,
-      };
-    });
-  } catch {
-    renderingOptions.value = [];
-  } finally {
-    renderingLoading.value = false;
-  }
+  return maskSizeError(size, renderings.sizeOf(renderingId));
 }
 
 watch(schemeCode, (code) => {
-  renderingOptions.value = [];
   formApi.setFieldValue('relatedAssetId', undefined);
-  if (code) fetchRenderings(code);
+  if (code) renderings.load(code);
+  else renderings.reset();
 });
 
 const [Form, formApi] = useVbenForm({
@@ -82,8 +51,8 @@ const [Form, formApi] = useVbenForm({
       label: '配对效果图',
       rules: 'required',
       componentProps: () => ({
-        options: renderingOptions.value,
-        loading: renderingLoading.value,
+        options: renderings.options.value,
+        loading: renderings.loading.value,
         placeholder: '请先选择归属方案，再选择配对效果图',
         allowClear: true,
         notFoundContent: schemeCode.value
@@ -194,8 +163,7 @@ const [Modal, modalApi] = useVbenModal({
     } else {
       schemeCode.value = undefined;
       schemes.clear();
-      renderingOptions.value = [];
-      renderingSizes.clear();
+      renderings.reset();
       formApi.resetForm();
     }
   },

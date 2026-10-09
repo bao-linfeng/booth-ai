@@ -18,6 +18,8 @@ const emit = defineEmits(['reload']);
 const mask = ref<SchemeAsset>();
 const options = ref<RenderingPairOption[]>([]);
 const loading = ref(false);
+// 关闭弹窗或改为其他蒙版打开时作废进行中的加载，旧回包不能覆盖当前候选
+let loadSequence = 0;
 const renderingId = ref<string>();
 
 const [Modal, modalApi] = useVbenModal({
@@ -49,6 +51,8 @@ const [Modal, modalApi] = useVbenModal({
   },
   onOpenChange: (isOpen) => {
     if (!isOpen) {
+      loadSequence++;
+      loading.value = false;
       mask.value = undefined;
       options.value = [];
       renderingId.value = undefined;
@@ -57,8 +61,10 @@ const [Modal, modalApi] = useVbenModal({
 });
 
 async function open(row: SchemeAsset) {
+  const current = ++loadSequence;
   mask.value = row;
   renderingId.value = row.relatedAssetId ?? undefined;
+  options.value = [];
   modalApi.open();
   loading.value = true;
   try {
@@ -66,12 +72,13 @@ async function open(row: SchemeAsset) {
       listSchemeAssetsApi(row.schemeCode, 'rendering'),
       listSchemeAssetsApi(row.schemeCode, 'mask'),
     ]);
+    if (current !== loadSequence) return;
     options.value = renderingPairOptions(row, renderings, masks);
   } catch (error) {
     console.error(error);
-    options.value = [];
+    if (current === loadSequence) options.value = [];
   } finally {
-    loading.value = false;
+    if (current === loadSequence) loading.value = false;
   }
 }
 defineExpose({ open });
