@@ -8,7 +8,7 @@ import type { Subject } from '../src/modules/customer-service/domain.js';
 import { csEmailBackoffSeconds, renderCsEmail, type CsEmail, type EmailContent } from '../src/modules/customer-service/emails.js';
 import { markCustomerRead, postAgentMessage, postCustomerMessage } from '../src/modules/customer-service/messages.js';
 import { touchCustomer } from '../src/modules/customer-service/presence.js';
-import { updateSettings, getSettings } from '../src/modules/customer-service/settings.js';
+import { getSettings, offlineNotifyDelivery, settingsView, updateSettings } from '../src/modules/customer-service/settings.js';
 import { issueVisitor } from '../src/modules/customer-service/visitors.js';
 import { deliverCsEmails } from '../src/workers/cs-emails.js';
 import { csTestPool, csTestRedis, seedAdmin, seedUser } from './cs-fixtures.js';
@@ -81,6 +81,22 @@ test('outbox merges offline messages, honours the 10-minute window, cancels read
     assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 1, failed: 1 });
     assert.equal(sent.at(-1)!.text.includes('first'), false, 'later notices only carry new messages');
     assert.equal((await outbox()).filter(row => row.failed).length, 1, 'permanent failures stop retrying');
+    const failedRecipient = (await pool.query("SELECT recipient FROM cs_email_outbox WHERE failed_at IS NOT NULL")).rows[0].recipient as string;
+    const delivery = (await settingsView(pool)).offlineNotifyDelivery;
+    assert.deepEqual(delivery.map(item => item.recipient), ['ops@example.com', 'lead@example.com'], 'delivery follows the configured order');
+    for (const item of delivery) {
+      if (item.recipient === failedRecipient) assert.deepEqual([item.status, item.lastErrorCode, item.pendingCount], ['failed', 'SMTP_EENVELOPE', 0]);
+      else assert.deepEqual([item.status, item.lastErrorCode, item.lastFailedAt], ['sent', null, null]);
+    }
+    assert.deepEqual(await offlineNotifyDelivery(pool, ['nobody@example.com']), [{ recipient: 'nobody@example.com', status: 'idle', lastSentAt: null,
+      lastFailedAt: null, lastErrorCode: null, pendingCount: 0 }]);
+    await postCustomerMessage(pool, redis, visitor, conversation.id, offline('fourth'), 'en');
+    const pendingFor = (await offlineNotifyDelivery(pool, [failedRecipient]))[0]!;
+    assert.deepEqual([pendingFor.status, pendingFor.pendingCount], ['failed', 1], 'a newer pending notice does not hide the permanent failure');
+    await pool.query("UPDATE cs_email_outbox SET attempts=1, last_error_code='SMTP_ETIMEDOUT' WHERE recipient<>$1 AND sent_at IS NULL AND failed_at IS NULL", [failedRecipient]);
+    const retrying = (await offlineNotifyDelivery(pool, delivery.map(item => item.recipient).filter(recipient => recipient !== failedRecipient)))[0]!;
+    assert.deepEqual([retrying.status, retrying.lastErrorCode, retrying.pendingCount], ['retrying', 'SMTP_ETIMEDOUT', 1]);
+    await pool.query("UPDATE cs_email_outbox SET cancelled_at=now() WHERE kind='offline_notice' AND sent_at IS NULL AND failed_at IS NULL");
 
     const customer: Subject = { kind: 'user', userId: await seedUser(pool, 'Account@Example.com') };
     const chat = await openConversation(pool, redis, customer, { entryPoint: 'floating' }, 'de');

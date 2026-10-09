@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import type { CsLocale, CsSettings } from '#/api/core/customer-service';
+import type {
+  CsEmailDelivery,
+  CsLocale,
+  CsSettings,
+} from '#/api/core/customer-service';
 
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -8,7 +12,7 @@ import { useAccess } from '@vben/access';
 import { Page } from '@vben/common-ui';
 import { formatDateTime } from '@vben/utils';
 
-import { Alert, Button, Card, message } from 'ant-design-vue';
+import { Alert, Button, Card, message, Tag } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import {
@@ -25,6 +29,42 @@ type FormValues = {
 };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DELIVERY_STATUS: Record<
+  CsEmailDelivery['status'],
+  { color: string; label: string }
+> = {
+  failed: { color: 'error', label: '投递失败' },
+  idle: { color: 'default', label: '暂无邮件' },
+  pending: { color: 'processing', label: '待发送' },
+  retrying: { color: 'warning', label: '重试中' },
+  sent: { color: 'success', label: '已送达' },
+};
+
+const time = (value: null | string) => (value ? formatDateTime(value) : '—');
+
+function deliveryDetail(item: CsEmailDelivery): string {
+  switch (item.status) {
+    case 'failed': {
+      const reason =
+        item.lastErrorCode === 'SMTP_EENVELOPE'
+          ? '收件地址被拒绝，请检查邮箱是否填写正确'
+          : `多次重试仍失败（${item.lastErrorCode ?? '未知错误'}）`;
+      return `${time(item.lastFailedAt)} · ${reason}`;
+    }
+    case 'idle': {
+      return '尚未产生离线通知';
+    }
+    case 'pending': {
+      return `${item.pendingCount} 封待发送（未配置 SMTP 时会停留在队列中）`;
+    }
+    case 'retrying': {
+      return `上次失败：${item.lastErrorCode}，${item.pendingCount} 封等待重试`;
+    }
+    case 'sent': {
+      return `最近送达 ${time(item.lastSentAt)}`;
+    }
+  }
+}
 const router = useRouter();
 const { hasAccessByCodes } = useAccess();
 const editable = hasAccessByCodes(['customer-service.settings']);
@@ -174,6 +214,38 @@ onMounted(load);
         >
           保存
         </Button>
+      </div>
+      <div
+        v-if="settings?.offlineNotifyDelivery.length"
+        class="mt-6 max-w-2xl border-t pt-4"
+      >
+        <div class="mb-3 flex items-center justify-between">
+          <span class="font-medium">通知邮箱投递状态</span>
+          <Button class="h-auto p-0" type="link" @click="load">刷新</Button>
+        </div>
+        <ul class="space-y-2">
+          <li
+            v-for="item in settings.offlineNotifyDelivery"
+            :key="item.recipient"
+            class="flex items-center gap-3 text-sm"
+          >
+            <span class="w-56 truncate" :title="item.recipient">
+              {{ item.recipient }}
+            </span>
+            <Tag :color="DELIVERY_STATUS[item.status].color">
+              {{ DELIVERY_STATUS[item.status].label }}
+            </Tag>
+            <span
+              :class="
+                item.status === 'failed'
+                  ? 'text-red-500'
+                  : 'text-muted-foreground'
+              "
+            >
+              {{ deliveryDetail(item) }}
+            </span>
+          </li>
+        </ul>
       </div>
     </Card>
   </Page>

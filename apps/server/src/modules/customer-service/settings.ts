@@ -20,8 +20,39 @@ export async function getSettings(db: Pick<pg.Pool, 'query'>): Promise<CsSetting
   return toSettings(row);
 }
 
+/**
+ * 离线通知邮箱的投递状态（计划 R5）：failed 为最近一次永久失败晚于最近一次送达；retrying 为待发邮件已失败过、正在退避重试；
+ * pending 为从未送达且有待发邮件（如未配置 SMTP）；idle 为尚无邮件。lastErrorCode 只在 failed / retrying 时给出。
+ */
+export type CsEmailDeliveryStatus = 'idle' | 'pending' | 'retrying' | 'sent' | 'failed';
+export interface CsEmailDelivery {
+  recipient: string; status: CsEmailDeliveryStatus; lastSentAt: string | null; lastFailedAt: string | null; lastErrorCode: string | null; pendingCount: number;
+}
+
+export async function offlineNotifyDelivery(db: Pick<pg.Pool, 'query'>, recipients: string[]): Promise<CsEmailDelivery[]> {
+  if (recipients.length === 0) return [];
+  const rows = (await db.query<{ recipient: string; lastSentAt: Date | null; lastFailedAt: Date | null; failedCode: string | null; pendingCount: number; retryCode: string | null }>(
+    `SELECT r.recipient, s.last_sent AS "lastSentAt", f.failed_at AS "lastFailedAt", f.last_error_code AS "failedCode",
+       p.count AS "pendingCount", p.code AS "retryCode"
+     FROM unnest($1::text[]) WITH ORDINALITY AS r(recipient, ord)
+     LEFT JOIN LATERAL (SELECT max(o.sent_at) AS last_sent FROM cs_email_outbox o WHERE o.kind='offline_notice' AND o.recipient=r.recipient) s ON true
+     LEFT JOIN LATERAL (SELECT o.failed_at, o.last_error_code FROM cs_email_outbox o WHERE o.kind='offline_notice' AND o.recipient=r.recipient
+       AND o.failed_at IS NOT NULL ORDER BY o.failed_at DESC LIMIT 1) f ON true
+     LEFT JOIN LATERAL (SELECT count(*)::int AS count, (array_agg(o.last_error_code ORDER BY o.due_at) FILTER (WHERE o.last_error_code IS NOT NULL))[1] AS code
+       FROM cs_email_outbox o WHERE o.kind='offline_notice' AND o.recipient=r.recipient AND o.sent_at IS NULL AND o.cancelled_at IS NULL AND o.failed_at IS NULL) p ON true
+     ORDER BY r.ord`, [recipients])).rows;
+  return rows.map(row => {
+    const failed = row.lastFailedAt !== null && (row.lastSentAt === null || row.lastFailedAt > row.lastSentAt);
+    const status: CsEmailDeliveryStatus = failed ? 'failed' : row.retryCode ? 'retrying' : row.lastSentAt ? 'sent' : row.pendingCount > 0 ? 'pending' : 'idle';
+    return { recipient: row.recipient, status, lastSentAt: row.lastSentAt?.toISOString() ?? null, lastFailedAt: row.lastFailedAt?.toISOString() ?? null,
+      lastErrorCode: failed ? row.failedCode : status === 'retrying' ? row.retryCode : null, pendingCount: row.pendingCount };
+  });
+}
+
 export async function settingsView(db: Pick<pg.Pool, 'query'>) {
-  return { ...await getSettings(db), translationModelAssigned: (await assignedAiModels(db, 'cs_translation')).length > 0 };
+  const settings = await getSettings(db);
+  return { ...settings, translationModelAssigned: (await assignedAiModels(db, 'cs_translation')).length > 0,
+    offlineNotifyDelivery: await offlineNotifyDelivery(db, settings.offlineNotifyEmails) };
 }
 
 export async function updateSettings(pool: pg.Pool, input: CsSettingsInput, adminId: string) {

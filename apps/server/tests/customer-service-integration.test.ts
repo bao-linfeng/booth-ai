@@ -363,6 +363,8 @@ test('HTTP: visitor tokens, isolation, rate limits and admin permissions (CS09/C
   assert.equal((await app.inject({ method: 'PUT', url: `${admin}/settings`, headers: agentHeaders, payload: update })).statusCode, 403);
   const saved = await app.inject({ method: 'PUT', url: `${admin}/settings`, headers: supervisorHeaders, payload: update });
   assert.deepEqual(saved.json().data.offlineNotifyEmails, ['ops@example.com']);
+  assert.deepEqual(saved.json().data.offlineNotifyDelivery.map((item: { recipient: string; status: string }) => [item.recipient, item.status]),
+    [['ops@example.com', 'idle']]);
   assert.equal((await app.inject({ method: 'POST', url: `${admin}/conversations/${conversationId}/claim`, headers: agentHeaders })).statusCode, 200);
   assert.equal((await app.inject({ method: 'POST', url: `${admin}/conversations/${conversationId}/claim`, headers: supervisorHeaders })).json().error.reason,
     'CONVERSATION_ALREADY_CLAIMED');

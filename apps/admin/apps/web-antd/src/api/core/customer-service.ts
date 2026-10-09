@@ -146,10 +146,21 @@ export interface CsAgent {
   activeCount: number;
 }
 
+/** 离线通知邮箱投递状态；lastErrorCode 只在 failed / retrying 时有值 */
+export interface CsEmailDelivery {
+  recipient: string;
+  status: 'failed' | 'idle' | 'pending' | 'retrying' | 'sent';
+  lastSentAt: null | string;
+  lastFailedAt: null | string;
+  lastErrorCode: null | string;
+  pendingCount: number;
+}
+
 export interface CsSettings {
   translationEnabled: boolean;
   agentLocale: CsLocale;
   offlineNotifyEmails: string[];
+  offlineNotifyDelivery: CsEmailDelivery[];
   replyEmailEnabled: boolean;
   revision: number;
   translationModelAssigned: boolean;
@@ -291,7 +302,10 @@ export function getCsSettingsApi() {
 export function saveCsSettingsApi(
   input: Omit<
     CsSettings,
-    'revision' | 'translationModelAssigned' | 'updatedAt'
+    | 'offlineNotifyDelivery'
+    | 'revision'
+    | 'translationModelAssigned'
+    | 'updatedAt'
   > & {
     expectedRevision: number;
   },
