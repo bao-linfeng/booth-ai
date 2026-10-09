@@ -71,11 +71,8 @@ async function doPreview() {
       title: '批量导入方案 — 预览确认',
       confirmText: getConfirmText(),
     });
-  } catch (error: unknown) {
-    // 超限、权限等错误已由请求拦截器按原因提示，这里只补充解析失败的说明
-    const status = (error as { response?: { status?: number } })?.response
-      ?.status;
-    if (status === 400) message.error('文件解析失败，请检查格式');
+  } catch {
+    // 解析失败、超限、权限等错误已由请求拦截器按 reason 提示
   } finally {
     loading.value = false;
     modalApi.setState({ confirmLoading: false });
@@ -187,7 +184,7 @@ defineExpose({ open });
         type="info"
         class="mb-4"
         message="上传说明"
-        description="请上传 .xlsx 格式的方案打标模板，每个数据工作表第 1 行为表头，从第 2 行开始为数据行（名称含“说明”“选项”的工作表不导入）。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按有效方案自动补齐开口面数、展位长宽高和面积字典。"
+        description="请上传 .xlsx 格式的方案打标模板，每个数据工作表第 1 行为表头，从第 2 行开始为数据行（名称含“说明”“选项”的工作表不导入），单次最多 10 个数据工作表、2000 行。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按有效方案自动补齐开口面数、展位长宽高和面积字典。"
         show-icon
       />
       <div class="mb-3 flex justify-end">

@@ -37,6 +37,12 @@ export const REASON_MESSAGES: Record<string, string> = {
   // 文件上传
   FILE_TOO_LARGE:
     '文件超过大小上限：方案与清单导入不超过 20MB，方案资源不超过 50MB',
+  // 方案导入
+  IMPORT_FILE_INVALID: '文件无法解析，请确认是有效的 .xlsx 工作簿',
+  IMPORT_TOO_MANY_ROWS:
+    '数据行超过上限：单次最多 2000 行（含空行），请删除多余内容或拆分文件',
+  IMPORT_TOO_MANY_SHEETS:
+    '数据工作表超过上限：单次最多 10 个（名称含“说明”“选项”的不计入）',
   // 方案资源
   IMAGE_INVALID: '图片无法识别，或文件格式与扩展名不符（支持 png、jpg、webp）',
   MASK_SIZE_MISMATCH: '蒙版像素尺寸需与配对效果图完全一致',
