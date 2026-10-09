@@ -5,6 +5,7 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { createStorage } from '../../../infra/storage.js';
 import { adminUserId } from '../../authentication.js';
+import { readUploadedFile, workbookUploadMaxBytes } from '../../uploads.js';
 import type { Config } from '../../../config.js';
 import { bomError } from '../../../modules/schemes/bill-of-materials/errors.js';
 import { assertImportBaseline, createBomImport, createOrReplaceBomFromImport } from '../../../modules/schemes/bill-of-materials/imports.js';
@@ -37,12 +38,11 @@ export async function registerAdminBomRoutes(app: FastifyInstance, pool: pg.Pool
   });
   app.post('/schemes/:code/bill-of-materials/imports',{ schema:{tags:['admin-bill-of-materials'],params} },async (request,reply) => {
     let file: Buffer | undefined; let filename = ''; let mime = ''; let expected: number | undefined;
-    for await (const part of request.parts()) {
+    for await (const part of request.parts({ limits: { fileSize: workbookUploadMaxBytes } })) {
       if (part.type === 'file') {
         if (file || part.fieldname !== 'file') throw bomError('INVALID_INPUT',400);
         filename = basename(part.filename.replaceAll('\\','/')).replace(/[\x00-\x1f\x7f]/g,''); mime = part.mimetype.toLowerCase();
-        const chunks:Buffer[]=[]; for await (const chunk of part.file) chunks.push(chunk);
-        file = Buffer.concat(chunks);
+        file = await readUploadedFile(part);
       } else if (part.fieldname === 'expectedRevision' && expected === undefined) expected = integer(part.value);
       else throw bomError('INVALID_INPUT',400);
     }

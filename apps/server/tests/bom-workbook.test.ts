@@ -138,3 +138,10 @@ test('customer export has source columns and weight but no price values or formu
   assert.equal(sheet.getCell('G2').value, 8.56);
   assert.ok(!JSON.stringify(workbook.worksheets.map(tab => tab.getSheetValues())).includes('367.98'));
 });
+
+test('workbook size is limited at the upload boundary, not by the parser', async () => {
+  const source = Buffer.from(await sourceWorkbook().xlsx.writeBuffer());
+  const parsed = await parseBomWorkbook(Buffer.concat([source, Buffer.alloc(15 * 1024 * 1024)]), 'SCHEME');
+  assert.deepEqual(parsed.errors, []);
+  assert.equal(parsed.items.length, 3);
+});

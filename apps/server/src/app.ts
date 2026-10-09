@@ -12,6 +12,7 @@ import type { Config } from './config.js';
 import { createStorage } from './infra/storage.js';
 import { registerAdminModule } from './http/admin/index.js';
 import { registerClientModule } from './http/client/index.js';
+import { defaultUploadMaxBytes } from './http/uploads.js';
 
 export interface HealthDependencies {
   database: () => Promise<unknown>;
@@ -44,7 +45,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
   });
   await app.register(cors, { origin: config.corsOrigins, credentials: true });
   await app.register(helmet);
-  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+  await app.register(multipart, { limits: { fileSize: defaultUploadMaxBytes } });
   await app.register(swagger, {
     openapi: {
       info: { title: 'Booth AI API', version: '0.1.0', description: '服务端基础设施接口；业务与既有账户接口待后续接入。' },

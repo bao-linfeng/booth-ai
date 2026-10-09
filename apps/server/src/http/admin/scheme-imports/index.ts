@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
+import { readUploadedFile, workbookUploadMaxBytes } from '../../uploads.js';
 import { commitImport } from '../../../modules/schemes/imports/commit.js';
 import { previewImport } from '../../../modules/schemes/imports/preview.js';
 import type { CommitImportOptions } from '../../../modules/schemes/imports/types.js';
@@ -14,7 +15,7 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
   app.post('/scheme-imports', {
     schema: { tags: ['admin-scheme-imports'] },
   }, async (request, reply) => {
-    const data = await request.file();
+    const data = await request.file({ limits: { fileSize: workbookUploadMaxBytes } });
     if (!data) {
       return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'No file uploaded' } });
     }
@@ -22,11 +23,7 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
     if (!lowerFilename.endsWith('.xlsx')) {
       return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Only .xlsx files are supported' } });
     }
-    const chunks: Buffer[] = [];
-    for await (const chunk of data.file) {
-      chunks.push(chunk);
-    }
-    const buffer = Buffer.concat(chunks);
+    const buffer = await readUploadedFile(data);
     const adminId = adminUserId(request);
     const result = await previewImport(pool, adminId, buffer, data.filename);
     return { code: 0, data: result };

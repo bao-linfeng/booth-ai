@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import type { CreateAssetInput } from '../../../modules/assets/types.js';
 import type { AssetUploadFile } from '../../../modules/assets/upload.js';
+import { readUploadedFile } from '../../uploads.js';
 
 export const assetTypes = ['model', 'checklist', 'rendering', 'mask', 'drawing', 'artwork'] as const;
 
@@ -31,9 +32,7 @@ export async function readAssetMultipart(request: FastifyRequest): Promise<{ fil
   for await (const part of request.parts()) {
     if (part.type === 'file') {
       if (file) throw requestError('Only one file is allowed');
-      const chunks: Buffer[] = [];
-      for await (const chunk of part.file) chunks.push(chunk);
-      file = { buffer: Buffer.concat(chunks), originalFilename: part.filename ?? 'file', mimeType: part.mimetype };
+      file = { buffer: await readUploadedFile(part), originalFilename: part.filename ?? 'file', mimeType: part.mimetype };
     } else {
       fields[part.fieldname] = part.value as string;
     }
