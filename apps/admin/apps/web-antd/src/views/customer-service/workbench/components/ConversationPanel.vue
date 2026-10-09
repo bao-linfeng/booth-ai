@@ -5,7 +5,15 @@ import type {
   WorkbenchEvent,
 } from '#/api/core/customer-service';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -116,13 +124,26 @@ async function scrollToBottom() {
   scroller.value?.scrollTo({ top: scroller.value.scrollHeight });
 }
 
+/** 只在页面可见时上报已读：后台标签页收到的消息不算读到，切回前台时再补报 */
 async function reportRead() {
+  if (document.visibilityState !== 'visible') return;
   const current = conversation.value;
   if (!current || !props.canReply || current.status !== 'active') return;
   if (!isMine.value && !props.supervise) return;
   const seq = readTarget(messages.value, current.agentReadSeq);
   if (seq !== null) await markReadApi(current.id, seq).catch(() => undefined);
 }
+
+function reportReadWhenVisible() {
+  if (document.visibilityState === 'visible' && !loading.value)
+    void reportRead();
+}
+onMounted(() =>
+  document.addEventListener('visibilitychange', reportReadWhenVisible),
+);
+onBeforeUnmount(() =>
+  document.removeEventListener('visibilitychange', reportReadWhenVisible),
+);
 
 watch(
   () => conversation.value?.id,

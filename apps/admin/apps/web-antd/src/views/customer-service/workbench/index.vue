@@ -51,8 +51,11 @@ const detail = ref<ConversationDetail | null>(null);
 const panelEvent = ref<null | { event: WorkbenchEvent; version: number }>(null);
 const transferRef = ref<InstanceType<typeof TransferModal>>();
 let eventVersion = 0;
+/** 列表请求版本：只采用最后一次请求的响应，快速切换页签或翻页时旧响应不会覆盖新页面 */
+let listVersion = 0;
 
 async function loadList() {
+  const version = ++listVersion;
   listLoading.value = true;
   try {
     const result = await listConversationsApi({
@@ -60,11 +63,12 @@ async function loadList() {
       pageSize: PAGE_SIZE,
       tab: tab.value,
     });
+    if (version !== listVersion) return;
     items.value = result.items;
     total.value = result.total;
     store.counts = result.counts;
   } finally {
-    listLoading.value = false;
+    if (version === listVersion) listLoading.value = false;
   }
 }
 

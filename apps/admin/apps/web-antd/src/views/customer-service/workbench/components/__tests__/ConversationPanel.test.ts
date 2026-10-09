@@ -308,3 +308,45 @@ describe('conversation panel switching', () => {
     expect(textarea().value).toBe('B 的草稿');
   });
 });
+
+describe('conversation panel read reporting', () => {
+  let hidden = false;
+  beforeEach(() => {
+    hidden = false;
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() =>
+      hidden ? 'hidden' : 'visible',
+    );
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('only reports read while the page is visible and catches up when it returns', async () => {
+    await mount('A');
+    expect(api.markReadApi).toHaveBeenLastCalledWith('A', 10);
+
+    hidden = true;
+    api.markReadApi.mockClear();
+    api.listMessagesApi.mockResolvedValueOnce({
+      hasMore: false,
+      items: [message('A', 11, 'A 后台消息')],
+    });
+    state.event = {
+      event: { conversationId: 'A', type: 'message.created' } as WorkbenchEvent,
+      version: 1,
+    };
+    await flush();
+    expect(text()).toContain('A 后台消息');
+    expect(api.markReadApi).not.toHaveBeenCalled();
+
+    hidden = false;
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    expect(api.markReadApi).toHaveBeenCalledWith('A', 11);
+  });
+
+  it('does not report read for a conversation opened in a background tab', async () => {
+    hidden = true;
+    await mount('A');
+    expect(text()).toContain('A 首屏消息');
+    expect(api.markReadApi).not.toHaveBeenCalled();
+  });
+});
