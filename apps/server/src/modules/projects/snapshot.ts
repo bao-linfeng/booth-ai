@@ -3,7 +3,7 @@ import { getBom } from '../schemes/bill-of-materials/repository.js';
 import { projectError, type QuoteInput } from './domain.js';
 import { loadCandidatePool, loadCatalog } from '../selection/repository.js';
 import { matchSchemes } from '../selection/match.js';
-import { isEmpty, validateRequirement } from '../selection/domain.js';
+import { isEmpty, validateRequirement, type Requirement } from '../selection/domain.js';
 import { readyArtworkFiles } from '../generation/artwork/queries.js';
 import { loadAndEvaluate } from '../schemes/readiness.js';
 
@@ -49,10 +49,6 @@ export async function captureScheme(client: pg.PoolClient, input: Pick<QuoteInpu
   const readiness = await loadAndEvaluate(client, scheme);
   if (!readiness.canSelect) throw projectError('SCHEME_UNAVAILABLE');
 
-  // 加载候选池仅用于 requirementContext 匹配摘要
-  const catalog = await loadCatalog(client);
-  const { candidates } = await loadCandidatePool(client, catalog, scheme.code);
-
   await client.query('SELECT id FROM scheme_boms WHERE scheme_id=$1 FOR UPDATE', [scheme.id]);
   const bom = await getBom(client, scheme.code);
   if (input.bomRevision !== undefined && (bom?.status !== 'verified' || bom.revision !== input.bomRevision)) throw projectError('BOM_REVISION_CHANGED');
@@ -96,9 +92,16 @@ export async function captureScheme(client: pg.PoolClient, input: Pick<QuoteInpu
   };
   const snapshot: SchemeSnapshot = { code: scheme.code, name: scheme.name, revision: scheme.revision, lengthMm: scheme.lengthMm, widthMm: scheme.widthMm,
     heightMm: scheme.heightMm, openingCount: scheme.openingCount, selectedTheme, renderings: assets.filter(asset => asset.type === 'rendering') };
-  const requirement = input.requirementContext ? validateRequirement(input.requirementContext.confirmedRequirements,catalog) : null;
-  const match = requirement ? matchSchemes(candidates,requirement,isEmpty(requirement) ? 'random' : 'filtered',false).items[0] : null;
-  const matchingSummary = requirement ? { matchType: match?.matchType ?? 'unmatched', differences: match?.differences ?? [],
-    pendingConfirmations: match?.pendingConfirmations ?? [{ type: 'missing_field' as const, message: '该方案未满足当前确认条件，需人工重新核对适用性' }] } : null;
+  const matchingSummary = input.requirementContext ? await summarizeMatch(client, scheme.code, input.requirementContext.confirmedRequirements) : null;
   return { snapshot, materials, matchingSummary, versions: [...assets, ...generatedArtworks, ...(selectedTheme ? [selectedTheme.asset] : [])].map(asset => asset.versionId) };
+}
+
+/** requirementContext 的匹配摘要：目录与候选池只在带需求上下文时读取（报价上下文查询与无需求的提交不需要） */
+async function summarizeMatch(client: pg.PoolClient, schemeCode: string, confirmedRequirements: Requirement) {
+  const catalog = await loadCatalog(client);
+  const requirement = validateRequirement(confirmedRequirements, catalog);
+  const { candidates } = await loadCandidatePool(client, catalog, schemeCode);
+  const match = matchSchemes(candidates, requirement, isEmpty(requirement) ? 'random' : 'filtered', false).items[0];
+  return { matchType: match?.matchType ?? 'unmatched', differences: match?.differences ?? [],
+    pendingConfirmations: match?.pendingConfirmations ?? [{ type: 'missing_field' as const, message: '该方案未满足当前确认条件，需人工重新核对适用性' }] };
 }
