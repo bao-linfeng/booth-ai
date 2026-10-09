@@ -144,7 +144,7 @@ export async function postAgentMessage(pool: pg.Pool, redis: Redis, viewer: View
     if (mine) await client.query('UPDATE cs_conversations SET agent_read_seq=GREATEST(agent_read_seq,$2) WHERE id=$1', [conversationId, message.seq]);
     if (input.kind === 'text') {
       await queueTranslation(client, message.id, agentLocale, row.customerLocale);
-      await scheduleReplyNotice(client, redis, conversationId);
+      await scheduleReplyNotice(client, conversationId);
     }
     return { created: true, messageId: message.id };
   });

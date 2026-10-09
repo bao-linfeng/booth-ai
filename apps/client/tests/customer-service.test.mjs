@@ -253,6 +253,29 @@ test('presence events from the stream heartbeat switch between offline form and 
   unmount()
 })
 
+test('replies arriving while the page is in the background are only marked read once it is visible again', async () => {
+  const calls = setup({ messages: [message(1), message(2, { senderType: 'agent' })] })
+  const { unmount } = await mount()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  const reads = () => calls.filter(call => call.path.endsWith('/read')).map(call => call.body)
+  assert.deepEqual(reads(), [{ seq: 2 }])
+  let hidden = true
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') })
+  try {
+    FakeEventSource.instances[0].emit('update', { type: 'message.created', message: message(3, { senderType: 'agent' }) })
+    await sleep(350)
+    assert.deepEqual(reads(), [{ seq: 2 }], 'a panel left open in a background tab does not count as read')
+    hidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+    await settle()
+    assert.deepEqual(reads(), [{ seq: 2 }, { seq: 3 }], 'coming back to the page marks the reply read')
+  } finally {
+    delete document.visibilityState
+  }
+  unmount()
+})
+
 test('messages render as plain text, agent replies show translations, events and RTL layout', async () => {
   setup({ current: conversation({ status: 'active', agent: { displayName: null } }), messages: [
     message(1, { body: '<b>bold</b><img src=x onerror=alert(1)>' }),

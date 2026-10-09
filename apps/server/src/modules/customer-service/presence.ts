@@ -2,7 +2,7 @@ import type { Redis } from 'ioredis';
 import { errorCode, logger } from '../../infra/logger.js';
 
 // 坐席在线：工作台 SSE 存活期间每次心跳续期（ZSET score = 过期时间）；离开状态单独标记 12 小时。
-// 客户在线：客户端 SSE 存活期间续期，用于决定是否发送回复邮件。
+// 客户在线：客户端 SSE 存活期间续期；回复提醒到期时仍有未读且客户在线则顺延（不决定是否入队，也不取消）。
 export const PRESENCE_KEY = 'cs:presence';
 export const PRESENCE_TTL_MS = 45_000;
 const awayKey = (adminId: string) => `cs:agent-away:${adminId}`;
@@ -52,7 +52,7 @@ export async function touchCustomer(redis: Redis, conversationId: string): Promi
   await redis.set(customerKey(conversationId), '1', 'EX', 45);
 }
 
-/** Redis 不可用时视为不在线，回复邮件照常排队 */
+/** Redis 不可用时视为不在线，到期的回复提醒照常发送 */
 export async function customerOnline(redis: Redis, conversationId: string): Promise<boolean> {
   try {
     return (await redis.exists(customerKey(conversationId))) === 1;

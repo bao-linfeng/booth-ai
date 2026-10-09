@@ -14,7 +14,7 @@ import { deliverCsEmails } from '../src/workers/cs-emails.js';
 import { csTestPool, csTestRedis, seedAdmin, seedUser } from './cs-fixtures.js';
 
 const email = (overrides: Partial<CsEmail> = {}): CsEmail => ({ id: 'e1', conversationId: 'c1', kind: 'reply_notice', recipient: 'buyer@example.com',
-  locale: 'en', afterSeq: '0', attempts: 1, conversationNo: 'CS-00000001', deleted: false, ...overrides });
+  locale: 'en', afterSeq: '0', attempts: 1, conversationNo: 'CS-00000001', deleted: false, deferrable: true, ...overrides });
 const content = (overrides: Partial<EmailContent> = {}): EmailContent => ({ lines: [], total: 0, customer: null, visitor: true, contexts: [],
   contactEmail: 'buyer@example.com', ...overrides });
 
@@ -113,11 +113,39 @@ test('outbox merges offline messages, honours the 10-minute window, cancels read
     await markCustomerRead(pool, redis, customer, chat.conversation.id, last.message.seq);
     assert.deepEqual((await replies()).map(row => row.cancelled), [true], 'reading everything cancels the reminder');
 
-    await reply('客户在线时不排队');
+    // 客户刚关闭面板、在线标记尚未过期时坐席回复：照常入队，到期时仍在线只顺延，不取消
     await touchCustomer(redis, chat.conversation.id);
-    await reply('仍然在线');
-    assert.equal((await replies()).length, 2, 'only the reply sent while offline was queued');
-    await pool.query("UPDATE cs_email_outbox SET due_at=now() WHERE kind='reply_notice' AND sent_at IS NULL AND cancelled_at IS NULL");
+    const seen = await reply('客户在线时也排队');
+    await reply('未读的回复');
+    assert.deepEqual((await replies()).map(row => [row.sent, row.cancelled]), [[false, true], [false, false]], 'replies queue while the customer looks online');
+    const due = "UPDATE cs_email_outbox SET due_at=now() WHERE kind='reply_notice' AND sent_at IS NULL AND cancelled_at IS NULL";
+    await pool.query(due);
     assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 0, failed: 0 });
-    assert.deepEqual((await replies()).map(row => row.cancelled), [true, true], 'customers back online are not emailed');
+    const deferred = (await pool.query(`SELECT attempts, cancelled_at IS NOT NULL AS cancelled, due_at > now() AS later FROM cs_email_outbox
+      WHERE kind='reply_notice' AND sent_at IS NULL AND cancelled_at IS NULL`)).rows;
+    assert.deepEqual(deferred, [{ attempts: 0, cancelled: false, later: true }], 'online customers only postpone the reminder');
+
+    // 只读到一部分：邮件只带未读回复
+    await postCustomerMessage(pool, redis, customer, chat.conversation.id, { clientMessageId: randomUUID(), body: 'Moment', kind: 'text' }, 'de');
+    await markCustomerRead(pool, redis, customer, chat.conversation.id, seen.message.seq);
+    await redis.del(`cs:customer-presence:${chat.conversation.id}`);
+    await pool.query(due);
+    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 1, failed: 0 });
+    assert.ok(sent.at(-1)!.text.includes('未读的回复') && !sent.at(-1)!.text.includes('客户在线时也排队'), 'read replies are left out');
+
+    // 入队后客户已读到全部回复（但还有更晚的客户消息未读，没有在已读接口取消）：到期按已读游标取消
+    const read = await reply('入队后已读');
+    await postCustomerMessage(pool, redis, customer, chat.conversation.id, { clientMessageId: randomUUID(), body: 'Danke', kind: 'text' }, 'de');
+    await markCustomerRead(pool, redis, customer, chat.conversation.id, read.message.seq);
+    await pool.query(due);
+    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 0, failed: 0 });
+    assert.equal((await replies()).at(-1)!.cancelled, true, 'reminders with every reply read are cancelled at delivery');
+
+    // 一直在线但不读（页面在后台不算已读）：超过最长顺延时间后照发
+    await reply('后台页面');
+    await touchCustomer(redis, chat.conversation.id);
+    await pool.query(`UPDATE cs_email_outbox SET due_at=now(), created_at=now() - interval '31 minutes'
+      WHERE kind='reply_notice' AND sent_at IS NULL AND cancelled_at IS NULL`);
+    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 1, failed: 0 });
+    assert.match(sent.at(-1)!.text, /后台页面/);
   });

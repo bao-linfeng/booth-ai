@@ -6,7 +6,6 @@ import type { createStorage } from '../../../infra/storage.js';
 import { themeContextObjectKey } from '../../../modules/customer-service/contexts.js';
 import { currentConversation, openConversation, ownedConversation, sendContext } from '../../../modules/customer-service/conversations.js';
 import { notFound, type ContextInput, type EntryPoint, type Subject } from '../../../modules/customer-service/domain.js';
-import { cancelReplyNotices } from '../../../modules/customer-service/emails.js';
 import { conversationChannel } from '../../../modules/customer-service/events.js';
 import { customerMessagesAfter, listCustomerMessages, markCustomerRead, postCustomerMessage, type CustomerMessageInput } from '../../../modules/customer-service/messages.js';
 import { agentsOnline, touchCustomer } from '../../../modules/customer-service/presence.js';
@@ -134,8 +133,8 @@ export async function registerClientCustomerServiceRoutes(app: FastifyInstance, 
       await ownedConversation(pool, subject, conversationId);
       await streamEvents(redis, reply, {
         channels: [conversationChannel(conversationId)],
-        // 客户上线：取消待发的回复提醒并标记在线
-        onOpen: async () => { await touchCustomer(redis, conversationId); await cancelReplyNotices(pool, conversationId); },
+        // 客户上线只标记在线；连上不等于读到，待发的回复提醒由已读接口取消
+        onOpen: async () => { await touchCustomer(redis, conversationId); },
         replay: async () => {
           const messages = await customerMessagesAfter(pool, conversationId, request.query.after ?? 0);
           const conversation = await loadConversation(pool, conversationId);

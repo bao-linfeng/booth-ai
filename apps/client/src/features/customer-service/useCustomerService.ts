@@ -262,7 +262,9 @@ export function markRead() {
   return markReadFor(generation)
 }
 
+/** 只在页面可见时标记已读：面板开着但页面在后台不算读到，服务端据此照常发送回复提醒邮件；切回前台时再补标 */
 async function markReadFor(epoch: number) {
+  if (document.visibilityState !== 'visible') return
   for (const [conversationId, seq] of readTargets(state.messages)) {
     if (seq <= (readSeqs.get(conversationId) ?? 0)) continue
     try {
@@ -326,9 +328,17 @@ export function retry(clientMessageId: string) {
   return item ? deliver(generation, item) : Promise.resolve(false)
 }
 
-/** 面板关闭时每 60 秒刷新一次未读角标；页面不可见时暂停。没有登录也没有访客令牌时不发请求。 */
+function markReadWhenVisible() {
+  if (state.open && document.visibilityState === 'visible') void markRead()
+}
+
+/**
+ * 面板关闭时每 60 秒刷新一次未读角标；页面不可见时暂停。没有登录也没有访客令牌时不发请求。
+ * 同时监听页面可见性：面板开着时切回前台，补标后台期间收到的消息为已读。
+ */
 export function startIdlePolling() {
   stopIdlePolling()
+  document.addEventListener('visibilitychange', markReadWhenVisible)
   const tick = () => {
     if (state.open || document.visibilityState !== 'visible') return
     if (!loggedIn() && !hasVisitor()) return
@@ -339,6 +349,7 @@ export function startIdlePolling() {
 }
 
 export function stopIdlePolling() {
+  document.removeEventListener('visibilitychange', markReadWhenVisible)
   if (idleTimer) clearInterval(idleTimer)
   idleTimer = undefined
 }
