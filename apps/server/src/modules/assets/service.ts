@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
 import { invalidatePublication } from '../schemes/publication.js';
 import { validateAssetMetadata } from './metadata.js';
-import { ensureMaskRelatedAsset, ensureRelatedAsset, resolveSortOrder, updateAssetPairing } from './pairing.js';
+import { ensureMaskMatchesRendering, ensureMaskRelatedAsset, ensureRelatedAsset, resolveSortOrder, updateAssetPairing } from './pairing.js';
 import { assetVersionColumns, findAsset, getAsset, toAssetVersion, type AssetVersionRow } from './queries.js';
 import type { AssetVersion, CreateAssetInput, SchemeAsset, UpdateAssetInput, UploadVersionInput } from './types.js';
 
@@ -59,6 +59,7 @@ export async function createAssetWithVersion(pool: pg.Pool, adminId: string | nu
     const schemeId = await lockScheme(client, input.schemeCode);
     const assetId = randomUUID();
     await insertAsset(client, adminId, schemeId, assetId, input);
+    if (input.type === 'mask') await ensureMaskMatchesRendering(client, input.relatedAssetId, versionInput);
     await insertVersion(client, adminId, assetId, versionInput);
     await invalidatePublication(client, schemeId, adminId);
     const asset = await findAsset(client, input.schemeCode, assetId);
@@ -72,6 +73,7 @@ export async function addAssetVersion(pool: pg.Pool, adminId: string | null, sch
     const schemeId = await lockScheme(client, schemeCode);
     const asset = await getAsset(client, schemeCode, assetId);
     if (asset.revision !== expectedRevision) throw requestError('Asset revision conflict', 409);
+    if (asset.type === 'mask') await ensureMaskMatchesRendering(client, asset.relatedAssetId, versionInput);
     const version = await insertVersion(client, adminId, assetId, versionInput);
     const updated = await client.query(`
       UPDATE scheme_baseline_assets SET revision = revision + 1, updated_by = $1, updated_at = now()

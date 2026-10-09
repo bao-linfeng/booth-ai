@@ -1,8 +1,9 @@
 import type pg from 'pg';
+import { sameImageSize, type MaybeImageSize } from './image-spec.js';
 import type { AssetType, SchemeAsset, UpdateAssetInput } from './types.js';
 
-function requestError(message: string, statusCode: number): Error & { statusCode: number } {
-  return Object.assign(new Error(message), { statusCode });
+function requestError(message: string, statusCode: number, reason?: string): Error & { statusCode: number } {
+  return Object.assign(new Error(message), { statusCode }, reason ? { reason } : {});
 }
 
 export async function ensureRelatedAsset(client: pg.PoolClient, schemeId: string, relatedAssetId: string | null | undefined): Promise<void> {
@@ -27,6 +28,25 @@ export async function ensureMaskRelatedAsset(client: pg.PoolClient, schemeId: st
     LIMIT 1
   `, assetId ? [schemeId, relatedAssetId, assetId] : [schemeId, relatedAssetId]);
   if (paired.rowCount) throw requestError('This rendering is already paired with another mask', 409);
+}
+
+/** 蒙版像素尺寸必须与配对效果图的当前版本一致；需在已锁定方案的事务内调用。 */
+export async function ensureMaskMatchesRendering(
+  client: pg.PoolClient,
+  renderingId: string | null | undefined,
+  mask: MaybeImageSize,
+): Promise<void> {
+  if (!renderingId) return;
+  const result = await client.query<{ widthPx: number | null; heightPx: number | null }>(`
+    SELECT width_px AS "widthPx", height_px AS "heightPx"
+    FROM asset_versions
+    WHERE asset_id = $1
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+  `, [renderingId]);
+  const rendering = result.rows[0];
+  if (!rendering) throw requestError('Paired rendering has no uploaded file', 400, 'RENDERING_FILE_MISSING');
+  if (!sameImageSize(mask, rendering)) throw requestError('Mask size must match its paired rendering', 400, 'MASK_SIZE_MISMATCH');
 }
 
 export async function resolveSortOrder(
@@ -94,6 +114,9 @@ export async function updateAssetPairing(client: pg.PoolClient, adminId: string 
   const relatedAssetId = Object.hasOwn(input, 'relatedAssetId') ? input.relatedAssetId : asset.relatedAssetId;
   if (Object.hasOwn(input, 'relatedAssetId')) await ensureRelatedAsset(client, asset.schemeId, relatedAssetId);
   if (asset.type === 'mask') await ensureMaskRelatedAsset(client, asset.schemeId, relatedAssetId, asset.id);
+  if (asset.type === 'mask' && asset.currentVersion && relatedAssetId !== asset.relatedAssetId) {
+    await ensureMaskMatchesRendering(client, relatedAssetId, asset.currentVersion);
+  }
   if (Object.hasOwn(input, 'sortOrder') && input.sortOrder !== undefined) {
     await synchronizeSortOrder(client, adminId, asset, relatedAssetId, input.sortOrder);
   }

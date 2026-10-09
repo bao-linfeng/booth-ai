@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import sharp from 'sharp';
 import type { createStorage } from '../../infra/storage.js';
+import { isRenderingAspect } from './image-spec.js';
 import { validateAssetMetadata } from './metadata.js';
 import { getAsset } from './queries.js';
 import { addAssetVersion, createAssetWithVersion } from './service.js';
@@ -38,7 +39,10 @@ async function storeAssetUpload<T>(
   if (!file.buffer.length) throw Object.assign(new Error('File is required'), { statusCode: 400 });
   const dimensions = await imageDimensions(file);
   if ((type === 'rendering' || type === 'mask') && !dimensions) {
-    throw Object.assign(new Error('Unsupported or invalid image'), { statusCode: 400 });
+    throw Object.assign(new Error('Unsupported or invalid image'), { statusCode: 400, reason: 'IMAGE_INVALID' });
+  }
+  if (type === 'rendering' && dimensions && !isRenderingAspect(dimensions.widthPx, dimensions.heightPx)) {
+    throw Object.assign(new Error('Rendering must be exactly 16:9'), { statusCode: 400, reason: 'RENDERING_ASPECT_INVALID' });
   }
   const objectKey = `schemes/${schemeCode}/${type}/${randomUUID()}_${file.originalFilename}`;
   const version: UploadVersionInput = {

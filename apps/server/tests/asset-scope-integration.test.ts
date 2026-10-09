@@ -203,13 +203,23 @@ test('asset scope migration and all baseline consumers isolate generated assets 
     }
 
     const replacement = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'rendering', name: '新效果图', sortOrder: 7 },
-      { objectKey: 'replacement', originalFilename: 'replacement.png', mimeType: 'image/png', byteSize: 10, checksum: 'c'.repeat(64) });
+      { objectKey: 'replacement', originalFilename: 'replacement.png', mimeType: 'image/png', byteSize: 10, checksum: 'c'.repeat(64), widthPx: 1600, heightPx: 900 });
+    const smaller = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'rendering', name: '小效果图', sortOrder: 8 },
+      { objectKey: 'smaller', originalFilename: 'smaller.png', mimeType: 'image/png', byteSize: 10, checksum: 'e'.repeat(64), widthPx: 1280, heightPx: 720 });
+    const beforeMismatch = await state();
+    await assert.rejects(updateAsset(pool, admin, code, maskA, { relatedAssetId: smaller.id }, 3), { statusCode: 400, reason: 'MASK_SIZE_MISMATCH' });
+    assert.deepEqual(await state(), beforeMismatch);
     await updateAsset(pool, admin, code, maskA, { relatedAssetId: replacement.id }, 3);
     assert.equal((await getAsset(pool, code, maskA)).sortOrder, 0);
     assert.equal((await getAsset(pool, code, replacement.id)).sortOrder, 7);
+    const maskVersion = { objectKey: 'mask', originalFilename: 'mask.png', mimeType: 'image/png', byteSize: 10, checksum: 'd'.repeat(64) };
+    await assert.rejects(createAssetWithVersion(pool, admin, { schemeCode: code, type: 'mask', name: '错尺寸蒙版', relatedAssetId: renderingA },
+      { ...maskVersion, widthPx: 800, heightPx: 450 }), { statusCode: 400, reason: 'MASK_SIZE_MISMATCH' });
     const pairedMask = await createAssetWithVersion(pool, admin, { schemeCode: code, type: 'mask', name: '新蒙版', relatedAssetId: renderingA },
-      { objectKey: 'mask', originalFilename: 'mask.png', mimeType: 'image/png', byteSize: 10, checksum: 'd'.repeat(64) });
+      { ...maskVersion, widthPx: 1600, heightPx: 900 });
     assert.equal(pairedMask.sortOrder, 0);
+    await assert.rejects(addAssetVersion(pool, admin, code, pairedMask.id, { ...maskVersion, widthPx: 1280, heightPx: 720 }, pairedMask.revision),
+      { statusCode: 400, reason: 'MASK_SIZE_MISMATCH' });
   });
 
   await t.test('asset mutation services enforce metadata rules without changing rows on failure', async () => {
