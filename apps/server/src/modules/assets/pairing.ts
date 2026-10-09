@@ -123,8 +123,6 @@ async function synchronizeSortOrder(client: pg.PoolClient, adminId: string | nul
     await setPairedMasksSortOrder(client, asset.schemeId, displacedRenderingId, asset.sortOrder, adminId);
   }
   if (asset.type === 'mask') {
-    // Preserve the existing two revision increments when a mask moves its rendering.
-    await setAssetSortOrder(client, asset.schemeId, renderingId, sortOrder, adminId);
     await setAssetSortOrder(client, asset.schemeId, renderingId, sortOrder, adminId);
   } else {
     await setPairedMasksSortOrder(client, asset.schemeId, renderingId, sortOrder, adminId);

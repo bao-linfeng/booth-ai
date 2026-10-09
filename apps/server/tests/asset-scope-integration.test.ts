@@ -195,8 +195,13 @@ test('asset scope migration and all baseline consumers isolate generated assets 
     assert.deepEqual(await state(), beforeConflict);
     assert.deepEqual(await publication(), publishedState);
 
+    await assert.rejects(updateAsset(pool, admin, code, maskA, { sortOrder: 0 }, 1), { statusCode: 409 });
+    assert.deepEqual(await state(), beforeConflict);
+    assert.deepEqual(await publication(), publishedState);
+
+    // 蒙版移动时其效果图与被占位的一对各只递增一次修订
     await updateAsset(pool, admin, code, maskA, { sortOrder: 0 }, 2);
-    for (const [id, order, revision] of [[renderingA, 0, 4], [maskA, 0, 3], [renderingB, 1, 3], [maskB, 1, 3]] as const) {
+    for (const [id, order, revision] of [[renderingA, 0, 3], [maskA, 0, 3], [renderingB, 1, 3], [maskB, 1, 3]] as const) {
       const current = await getAsset(pool, code, id);
       assert.equal(current.sortOrder, order);
       assert.equal(current.revision, revision);
