@@ -2,6 +2,8 @@
 import type { ImageSize } from '../shared/image-spec';
 import type { SchemeFilterValues } from '../shared/scheme-filter';
 
+import type { SchemeAsset } from '#/api/core/assets';
+
 import { onMounted, ref } from 'vue';
 
 import { useAccess } from '@vben/access';
@@ -24,6 +26,7 @@ import {
   readImageSize,
   renderingSizeError,
 } from '../shared/image-spec';
+import { renderingDeletePlan } from '../shared/pairing';
 import {
   createSchemeFilterFormOptions,
   useRouteSchemeCode,
@@ -145,16 +148,40 @@ async function handleSortOrderChange(value: any, row: any) {
   }
 }
 
-function handleDelete(row: any) {
+async function handleDelete(row: any) {
+  let masks: SchemeAsset[] = [];
+  // 无蒙版查看权限时无法预先说明影响，存在配对蒙版时由服务端拒绝并提示
+  if (hasAccessByCodes(['assets-masks.read'])) {
+    try {
+      masks = await listSchemeAssetsApi(row.schemeCode, 'mask');
+    } catch (error) {
+      console.error(error);
+      return;
+    }
+  }
+  const plan = renderingDeletePlan(
+    row,
+    masks,
+    hasAccessByCodes(['assets-masks.delete']),
+  );
+  if (plan.blocked) {
+    Modal.warning({ title: plan.title, content: plan.content });
+    return;
+  }
   Modal.confirm({
-    title: '确认删除',
-    content: `确定要删除「${row.name}」吗？`,
+    title: plan.title,
+    content: plan.content,
     okText: '确认',
+    okType: plan.withPairedMasks ? 'danger' : 'primary',
     cancelText: '取消',
     onOk: async () => {
       try {
-        await deleteAssetApi(row.schemeCode, row.id, row.revision);
-        message.success('删除成功');
+        await deleteAssetApi(row.schemeCode, row.id, row.revision, {
+          withPairedMasks: plan.withPairedMasks,
+        });
+        message.success(
+          plan.withPairedMasks ? '已删除效果图及配对蒙版' : '删除成功',
+        );
         gridApi.reload();
       } catch (error) {
         console.error(error);

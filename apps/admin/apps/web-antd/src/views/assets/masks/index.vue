@@ -8,7 +8,7 @@ import { useAccess } from '@vben/access';
 import { Page } from '@vben/common-ui';
 import { formatDate } from '@vben/utils';
 
-import { Button, InputNumber, message, Modal } from 'ant-design-vue';
+import { Button, InputNumber, message, Modal, Tag } from 'ant-design-vue';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
@@ -30,12 +30,18 @@ import {
   useSchemeOptions,
 } from '../shared/scheme-filter';
 import MaskOverlayModal from './components/MaskOverlayModal.vue';
+import PairModal from './components/PairModal.vue';
 import UploadModal from './components/UploadModal.vue';
 import { createGridOptions } from './options';
 
 const uploadModalRef = ref<InstanceType<typeof UploadModal>>();
 const { hasAccessByCodes } = useAccess();
 const overlayModalRef = ref<InstanceType<typeof MaskOverlayModal>>();
+const pairModalRef = ref<InstanceType<typeof PairModal>>();
+// 配对需要列出同方案效果图
+const canPair = () =>
+  hasAccessByCodes(['assets-masks.update']) &&
+  hasAccessByCodes(['assets-renderings.read']);
 
 const schemes = useSchemeOptions();
 const initialSchemeCode = useRouteSchemeCode(applySchemeFilter);
@@ -72,7 +78,7 @@ function handleUpload() {
 
 async function handlePreview(row: any) {
   if (!row.relatedAssetId) {
-    message.warning('该蒙版未配对效果图，无法叠加预览');
+    message.warning('该蒙版未配对效果图，请先配对后再预览');
     return;
   }
 
@@ -81,7 +87,7 @@ async function handlePreview(row: any) {
     const renderingRow = assets.find((a: any) => a.id === row.relatedAssetId);
 
     if (!renderingRow) {
-      message.error('未找到配对的效果图数据');
+      message.error('未找到配对的效果图，请刷新列表后通过「改配」重新配对');
       return;
     }
 
@@ -165,6 +171,10 @@ async function handleDownload(row: any) {
   }
 }
 
+function handlePair(row: any) {
+  pairModalRef.value?.open(row);
+}
+
 function handleDelete(row: any) {
   Modal.confirm({
     title: '确认删除',
@@ -209,6 +219,10 @@ function handleDelete(row: any) {
           @change="(value) => handleSortOrderChange(value, row)"
         />
       </template>
+      <template #pairing="{ row }">
+        <Tag v-if="row.relatedAssetId" color="success">已配对</Tag>
+        <Tag v-else color="error">未配对</Tag>
+      </template>
       <template #createdAt="{ row }">
         {{ formatDate(row.createdAt) }}
       </template>
@@ -220,6 +234,14 @@ function handleDelete(row: any) {
           @click="handlePreview(row)"
         >
           预览
+        </Button>
+        <Button
+          v-if="canPair()"
+          type="link"
+          size="small"
+          @click="handlePair(row)"
+        >
+          {{ row.relatedAssetId ? '改配' : '配对' }}
         </Button>
         <Button
           v-access:code="['assets-masks.replace']"
@@ -250,5 +272,6 @@ function handleDelete(row: any) {
     </Grid>
     <UploadModal ref="uploadModalRef" @reload="gridApi.reload()" />
     <MaskOverlayModal ref="overlayModalRef" />
+    <PairModal ref="pairModalRef" @reload="gridApi.reload()" />
   </Page>
 </template>

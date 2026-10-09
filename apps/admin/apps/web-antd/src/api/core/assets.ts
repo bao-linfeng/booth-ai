@@ -151,16 +151,17 @@ export async function updateAssetApi(
   );
 }
 
-// 删除资产（API-096）
+// 删除资产（API-096）；删除效果图时 withPairedMasks 表示确认一并删除配对蒙版
 export async function deleteAssetApi(
   schemeCode: string,
   assetId: string,
   expectedRevision: number,
+  options: { withPairedMasks?: boolean } = {},
 ) {
   return requestClient.delete<{ revision: number }>(
     `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/assets/${assetId}`,
     {
-      data: { expectedRevision },
+      data: { expectedRevision, ...options },
     },
   );
 }
