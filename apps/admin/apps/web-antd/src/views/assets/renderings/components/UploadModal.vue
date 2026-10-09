@@ -11,6 +11,7 @@ import { message, Select, Upload } from 'ant-design-vue';
 import { useVbenForm } from '#/adapter/form';
 import { uploadAssetApi } from '#/api/core/assets';
 
+import { readImageSize, renderingSizeError } from '../../shared/image-spec';
 import { useSchemeOptions } from '../../shared/scheme-filter';
 
 const emit = defineEmits(['reload']);
@@ -41,32 +42,17 @@ const [Form, formApi] = useVbenForm({
       rules: 'selectRequired',
       componentProps: {
         accept: '.jpg,.jpeg,.png,.webp',
-        beforeUpload: (
+        beforeUpload: async (
           file: File,
         ): Promise<boolean | typeof Upload.LIST_IGNORE> => {
-          return new Promise((resolve) => {
-            const img = new Image();
-            const url = URL.createObjectURL(file);
-            img.addEventListener('load', () => {
-              URL.revokeObjectURL(url);
-              const ratio = img.width / img.height;
-              const expected = 16 / 9;
-              if (Math.abs(ratio - expected) > 0.02) {
-                message.error(
-                  `图片比例不符合要求（当前 ${img.width}×${img.height}），需为 16:9`,
-                );
-                resolve(Upload.LIST_IGNORE);
-              } else {
-                resolve(false);
-              }
-            });
-            img.addEventListener('error', () => {
-              URL.revokeObjectURL(url);
-              message.error('图片读取失败，请重新选择');
-              resolve(Upload.LIST_IGNORE);
-            });
-            img.src = url;
-          });
+          try {
+            const error = renderingSizeError(await readImageSize(file));
+            if (!error) return false;
+            message.error(error);
+          } catch (error) {
+            message.error((error as Error).message);
+          }
+          return Upload.LIST_IGNORE;
         },
         maxCount: 1,
       },
@@ -83,7 +69,7 @@ const [Form, formApi] = useVbenForm({
             h(
               'p',
               { class: 'ant-upload-hint' },
-              '建议 16:9 比例，支持 jpg, png, webp 格式',
+              '需为严格 16:9（如 1600×900），支持 jpg, png, webp 格式',
             ),
           ]),
       }),

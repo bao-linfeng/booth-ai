@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ImageSize } from '../shared/image-spec';
 import type { SchemeFilterValues } from '../shared/scheme-filter';
 
 import { onMounted, ref } from 'vue';
@@ -18,6 +19,11 @@ import {
   updateAssetApi,
 } from '#/api/core/assets';
 
+import {
+  maskSizeError,
+  readImageSize,
+  versionImageSize,
+} from '../shared/image-spec';
 import {
   createSchemeFilterFormOptions,
   useRouteSchemeCode,
@@ -93,12 +99,36 @@ async function handleReplace(row: any) {
   input.addEventListener('change', async () => {
     const file = input.files?.[0];
     if (!file) return;
+    let size: ImageSize;
     try {
+      size = await readImageSize(file);
+    } catch (error) {
+      message.error((error as Error).message);
+      return;
+    }
+    try {
+      // 未配对的蒙版没有尺寸基准，交由发布检查兜底
+      if (row.relatedAssetId) {
+        const renderings = await listSchemeAssetsApi(
+          row.schemeCode,
+          'rendering',
+        );
+        const rendering = renderings.find((a) => a.id === row.relatedAssetId);
+        const sizeError = maskSizeError(
+          size,
+          versionImageSize(rendering?.currentVersion),
+        );
+        if (sizeError) {
+          message.error(sizeError);
+          return;
+        }
+      }
       await replaceAssetFileApi(row.schemeCode, row.id, file, row.revision);
       message.success('替换成功');
       gridApi.reload();
-    } catch {
-      message.error('替换失败');
+    } catch (error) {
+      // 接口错误已由请求拦截器提示具体原因
+      console.error(error);
     }
   });
   input.click();

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { UploadFile } from 'ant-design-vue';
 
+import type { ImageSize } from '../../shared/image-spec';
+
 import { h, markRaw, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
@@ -11,23 +13,48 @@ import { message, Select, Upload } from 'ant-design-vue';
 import { useVbenForm } from '#/adapter/form';
 import { listSchemeAssetsApi, uploadAssetApi } from '#/api/core/assets';
 
+import {
+  formatImageSize,
+  maskSizeError,
+  readImageSize,
+  versionImageSize,
+} from '../../shared/image-spec';
 import { useSchemeOptions } from '../../shared/scheme-filter';
 
 const emit = defineEmits(['reload']);
 
 const schemeCode = ref<string | undefined>(undefined);
 const schemes = useSchemeOptions();
-const renderingOptions = ref<{ label: string; value: string }[]>([]);
+const renderingOptions = ref<
+  { disabled: boolean; label: string; value: string }[]
+>([]);
+const renderingSizes = new Map<string, ImageSize | null>();
 const renderingLoading = ref(false);
+
+/** 返回文件不满足配对效果图尺寸时的原因；尚未选择效果图时不校验。 */
+async function fileSizeError(
+  file: Blob,
+  renderingId: string | undefined,
+): Promise<string | undefined> {
+  const size = await readImageSize(file);
+  if (!renderingId) return undefined;
+  return maskSizeError(size, renderingSizes.get(renderingId) ?? null);
+}
 
 async function fetchRenderings(code: string) {
   renderingLoading.value = true;
   try {
     const assets = await listSchemeAssetsApi(code, 'rendering');
-    renderingOptions.value = assets.map((a) => ({
-      label: a.name,
-      value: a.id,
-    }));
+    renderingSizes.clear();
+    renderingOptions.value = assets.map((a) => {
+      const size = versionImageSize(a.currentVersion);
+      renderingSizes.set(a.id, size);
+      return {
+        disabled: !size,
+        label: `${a.name}（${size ? formatImageSize(size) : '未上传文件'}）`,
+        value: a.id,
+      };
+    });
   } catch {
     renderingOptions.value = [];
   } finally {
@@ -79,7 +106,19 @@ const [Form, formApi] = useVbenForm({
       rules: 'selectRequired',
       componentProps: {
         accept: '.png,.jpg,.jpeg,.webp',
-        beforeUpload: () => false,
+        beforeUpload: async (
+          file: File,
+        ): Promise<boolean | typeof Upload.LIST_IGNORE> => {
+          try {
+            const { relatedAssetId } = await formApi.getValues();
+            const error = await fileSizeError(file, relatedAssetId);
+            if (!error) return false;
+            message.error(error);
+          } catch (error) {
+            message.error((error as Error).message);
+          }
+          return Upload.LIST_IGNORE;
+        },
         maxCount: 1,
       },
       renderComponentContent: () => ({
@@ -92,7 +131,11 @@ const [Form, formApi] = useVbenForm({
               }),
             ]),
             h('p', { class: 'ant-upload-text' }, '点击或拖拽文件到此区域上传'),
-            h('p', { class: 'ant-upload-hint' }, '支持图片格式（PNG 推荐）'),
+            h(
+              'p',
+              { class: 'ant-upload-hint' },
+              '像素尺寸需与配对效果图一致，支持 png, jpg, webp 格式（PNG 推荐）',
+            ),
           ]),
       }),
     },
@@ -114,6 +157,17 @@ const [Modal, modalApi] = useVbenModal({
     const file = fileList?.[0]?.originFileObj;
     if (!file) {
       message.error('请选择文件');
+      return;
+    }
+    // 选文件后可能又改了配对效果图，提交前按最终配对再校验一次
+    try {
+      const error = await fileSizeError(file, values.relatedAssetId);
+      if (error) {
+        message.error(error);
+        return;
+      }
+    } catch (error) {
+      message.error((error as Error).message);
       return;
     }
 
@@ -141,6 +195,7 @@ const [Modal, modalApi] = useVbenModal({
       schemeCode.value = undefined;
       schemes.clear();
       renderingOptions.value = [];
+      renderingSizes.clear();
       formApi.resetForm();
     }
   },

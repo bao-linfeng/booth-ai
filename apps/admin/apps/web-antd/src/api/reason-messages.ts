@@ -34,6 +34,11 @@ export const REASON_MESSAGES: Record<string, string> = {
     '变更为已报价需填写发送依据：发送时间、发送渠道，外部报价还需填写编号或说明',
   SCHEME_ALREADY_LINKED: '项目已关联方案，无需重复确认',
   SCHEME_UNAVAILABLE: '方案不存在或尚未就绪（需已发布、清单已核验且资产齐全）',
+  // 方案资源
+  IMAGE_INVALID: '图片无法识别，或文件格式与扩展名不符（支持 png、jpg、webp）',
+  MASK_SIZE_MISMATCH: '蒙版像素尺寸需与配对效果图完全一致',
+  RENDERING_ASPECT_INVALID: '效果图需为严格 16:9（如 1600×900、1920×1080）',
+  RENDERING_FILE_MISSING: '配对效果图尚未上传文件，无法上传蒙版',
   // 在线客服
   AGENT_UNAVAILABLE: '目标坐席已不可用（账号停用或无回复权限）',
   CONVERSATION_ALREADY_CLAIMED: '已被其他坐席接入',
