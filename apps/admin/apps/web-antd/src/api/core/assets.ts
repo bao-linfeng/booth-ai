@@ -95,6 +95,27 @@ export async function listSchemeAssetsApi(
   );
 }
 
+/** 蒙版上传与改配的效果图候选；thumbnailUrl 仅在有效果图预览权限时返回 */
+export interface MaskPairingCandidate {
+  id: string;
+  name: string;
+  sortOrder: number;
+  file: null | {
+    heightPx: null | number;
+    originalFilename: string;
+    widthPx: null | number;
+  };
+  thumbnailUrl: null | string;
+  /** 已配对该效果图的蒙版，同一效果图只能配对一个蒙版 */
+  pairedMask: null | { id: string; name: string; revision: number };
+}
+
+export async function listMaskPairingCandidatesApi(schemeCode: string) {
+  return requestClient.get<MaskPairingCandidate[]>(
+    `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/assets/mask-candidates`,
+  );
+}
+
 // 上传资产（API-040）
 export async function uploadAssetApi(
   schemeCode: string,

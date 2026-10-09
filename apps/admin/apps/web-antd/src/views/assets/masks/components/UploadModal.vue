@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import type { UploadFile } from 'ant-design-vue';
 
-import { h, markRaw, ref, watch } from 'vue';
+import type { RenderingCandidate } from '../../shared/rendering-candidates';
 
+import { computed, h, markRaw, ref, watch } from 'vue';
+
+import { useAccess } from '@vben/access';
 import { useVbenModal } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 
-import { message, Select, Upload } from 'ant-design-vue';
+import { Alert, message, Select, Upload } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
-import { uploadAssetApi } from '#/api/core/assets';
+import { replaceAssetFileApi, uploadAssetApi } from '#/api/core/assets';
 
 import { maskSizeError, readImageSize } from '../../shared/image-spec';
 import { useRenderingCandidates } from '../../shared/rendering-candidates';
@@ -17,9 +20,17 @@ import { useSchemeOptions } from '../../shared/scheme-filter';
 
 const emit = defineEmits(['reload']);
 
+const { hasAccessByCodes } = useAccess();
 const schemeCode = ref<string | undefined>(undefined);
 const schemes = useSchemeOptions();
-const renderings = useRenderingCandidates();
+const renderings = useRenderingCandidates(() =>
+  hasAccessByCodes(['assets-masks.replace']),
+);
+const relatedAssetId = ref<string | undefined>(undefined);
+/** 选中已被占用的效果图时，改为替换该效果图现有蒙版的文件 */
+const replacing = computed(
+  () => renderings.candidateOf(relatedAssetId.value)?.pairedMask ?? null,
+);
 
 /** 返回文件不满足配对效果图尺寸时的原因；尚未选择效果图时不校验。 */
 async function fileSizeError(
@@ -37,9 +48,52 @@ watch(schemeCode, (code) => {
   else renderings.reset();
 });
 
+function renderCandidate(option: RenderingCandidate) {
+  const thumbnail = option.thumbnailUrl
+    ? h('img', {
+        alt: option.label,
+        class: 'h-9 w-16 shrink-0 rounded border border-border object-cover',
+        src: option.thumbnailUrl,
+      })
+    : h(
+        'div',
+        {
+          class:
+            'text-muted-foreground flex h-9 w-16 shrink-0 items-center justify-center rounded border border-dashed border-border text-xs',
+        },
+        option.filename ? '无预览' : '无文件',
+      );
+  const detail = [
+    option.filename,
+    option.sizeText,
+    `排序 ${option.sortOrder + 1}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return h('div', { class: 'flex items-center gap-2 py-0.5' }, [
+    thumbnail,
+    h('div', { class: 'min-w-0 flex-1 leading-tight' }, [
+      h('div', { class: 'truncate' }, option.label),
+      h('div', { class: 'text-muted-foreground truncate text-xs' }, detail),
+      h(
+        'div',
+        {
+          class: option.pairedMask
+            ? 'truncate text-xs text-orange-500'
+            : 'truncate text-xs text-green-600',
+        },
+        option.status,
+      ),
+    ]),
+  ]);
+}
+
 const [Form, formApi] = useVbenForm({
   commonConfig: {
     componentProps: { class: 'w-full' },
+  },
+  handleValuesChange: (values) => {
+    relatedAssetId.value = values.relatedAssetId;
   },
   layout: 'vertical',
   showDefaultActions: false,
@@ -55,9 +109,13 @@ const [Form, formApi] = useVbenForm({
         loading: renderings.loading.value,
         placeholder: '请先选择归属方案，再选择配对效果图',
         allowClear: true,
+        listHeight: 320,
         notFoundContent: schemeCode.value
           ? '该方案暂无效果图'
           : '请先选择归属方案',
+      }),
+      renderComponentContent: () => ({
+        option: (option: RenderingCandidate) => renderCandidate(option),
       }),
     },
     {
@@ -66,6 +124,12 @@ const [Form, formApi] = useVbenForm({
       label: '资源名称',
       rules: 'required',
       componentProps: { placeholder: '请输入资源名称' },
+      dependencies: {
+        triggerFields: ['relatedAssetId'],
+        // 替换现有蒙版文件时沿用原蒙版名称
+        if: (values) =>
+          !renderings.candidateOf(values.relatedAssetId)?.pairedMask,
+      },
     },
     {
       component: markRaw(Upload.Dragger),
@@ -140,15 +204,28 @@ const [Modal, modalApi] = useVbenModal({
       return;
     }
 
+    const pairedMask = renderings.candidateOf(
+      values.relatedAssetId,
+    )?.pairedMask;
     try {
       modalApi.setState({ confirmLoading: true });
-      await uploadAssetApi(schemeCode.value, {
-        type: 'mask',
-        name: values.name,
-        file: file as File,
-        relatedAssetId: values.relatedAssetId,
-      });
-      message.success('上传成功');
+      if (pairedMask) {
+        await replaceAssetFileApi(
+          schemeCode.value,
+          pairedMask.id,
+          file as File,
+          pairedMask.revision,
+        );
+        message.success(`已替换蒙版「${pairedMask.name}」的文件`);
+      } else {
+        await uploadAssetApi(schemeCode.value, {
+          type: 'mask',
+          name: values.name,
+          file: file as File,
+          relatedAssetId: values.relatedAssetId,
+        });
+        message.success('上传成功');
+      }
       modalApi.close();
       emit('reload');
     } catch (error) {
@@ -162,6 +239,7 @@ const [Modal, modalApi] = useVbenModal({
       schemes.search();
     } else {
       schemeCode.value = undefined;
+      relatedAssetId.value = undefined;
       schemes.clear();
       renderings.reset();
       formApi.resetForm();
@@ -178,7 +256,7 @@ defineExpose({ open });
 </script>
 
 <template>
-  <Modal class="w-[520px]" title="上传蒙版">
+  <Modal class="w-[560px]" title="上传蒙版">
     <div class="px-4 pb-2">
       <div class="mb-4">
         <label class="mb-1 block text-sm font-medium">归属方案</label>
@@ -195,6 +273,12 @@ defineExpose({ open });
         />
       </div>
       <Form />
+      <Alert
+        v-if="replacing"
+        type="warning"
+        show-icon
+        :message="`该效果图已配对蒙版「${replacing.name}」，确认后将替换该蒙版的文件，不会新建蒙版；方案需重新审核后才能发布。`"
+      />
     </div>
   </Modal>
 </template>
