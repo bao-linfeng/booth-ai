@@ -36,23 +36,46 @@ const pageContext = shallowRef<PageContext | null>(null)
 const readSeqs = new Map<string, number>()
 let idleTimer: ReturnType<typeof setInterval> | undefined
 let readTimer: ReturnType<typeof setTimeout> | undefined
+/**
+ * 身份生命周期版本：退出或切换账号时递增。每个异步流程开始时记下版本（epoch），
+ * 请求返回时版本已变就抛 StaleError，旧账号的响应和后续步骤都不能再写回状态或建立连接。
+ */
+let generation = 0
+class StaleError extends Error {}
+
+function ensureCurrent(epoch: number) {
+  if (epoch !== generation) throw new StaleError('Customer service identity changed')
+}
 
 function loggedIn() {
   return Boolean(useAuthStore().isLoggedIn)
 }
 
-/** 未登录时先确保已签发访客；令牌失效（已合并、已删除、Cookie 丢失）时清除标记后重新签发并重试一次 */
-async function withSubject<T>(run: () => Promise<T>): Promise<T> {
-  if (loggedIn()) return run()
-  await ensureVisitor()
+/** 请求前后都校验版本：期间退出或切换了账号就丢弃结果，成功和失败一样 */
+async function request<T>(epoch: number, run: () => Promise<T>): Promise<T> {
+  ensureCurrent(epoch)
   try {
-    return await run()
+    const result = await run()
+    ensureCurrent(epoch)
+    return result
+  } catch (failure) {
+    ensureCurrent(epoch)
+    throw failure
+  }
+}
+
+/** 未登录时先确保已签发访客；令牌失效（已合并、已删除、Cookie 丢失）时清除标记后重新签发并重试一次 */
+async function withSubject<T>(epoch: number, run: () => Promise<T>): Promise<T> {
+  if (loggedIn()) return request(epoch, run)
+  await request(epoch, ensureVisitor)
+  try {
+    return await request(epoch, run)
   } catch (failure) {
     const { status, reason } = errorReason(failure)
     if (status !== 401 || reason !== 'VISITOR_REQUIRED' || loggedIn()) throw failure
     clearVisitor()
-    await ensureVisitor()
-    return run()
+    await request(epoch, ensureVisitor)
+    return request(epoch, run)
   }
 }
 
@@ -60,8 +83,8 @@ const connection = useCustomerServiceConnection({
   after: () => maxSeq(state.messages.filter(message => message.conversationId === state.conversation?.id)),
   onState: value => { state.connection = value },
   onEvent: handleEvent,
-  poll: async () => { await fetchNewer(); await refreshCurrent() },
-  onReconnected: () => { void refreshCurrent() },
+  poll: async () => { const epoch = generation; await fetchNewer(epoch); await refresh(epoch) },
+  onReconnected: () => { void refreshCurrent().catch(() => undefined) },
 })
 
 function handleEvent(event: CustomerEvent) {
@@ -86,14 +109,14 @@ function addMessages(messages: MessageDto[]) {
   }
 }
 
-async function fetchNewer() {
+async function fetchNewer(epoch: number) {
   if (!state.loaded) return
-  const page = await withSubject(() => listMessages({ after: maxSeq(state.messages), limit: 100 }))
+  const page = await withSubject(epoch, () => listMessages({ after: maxSeq(state.messages), limit: 100 }))
   addMessages(page.items)
 }
 
-async function loadLatest() {
-  const page = await withSubject(() => listMessages({ limit: 30 }))
+async function loadLatest(epoch: number) {
+  const page = await withSubject(epoch, () => listMessages({ limit: 30 }))
   state.messages = mergeMessages([], page.items)
   state.hasMore = page.hasMore
   state.loaded = true
@@ -102,14 +125,24 @@ async function loadLatest() {
 export async function loadOlder() {
   const before = minSeq(state.messages)
   if (before === undefined || !state.hasMore) return
-  const page = await withSubject(() => listMessages({ before, limit: 30 }))
+  let page
+  try {
+    page = await withSubject(generation, () => listMessages({ before, limit: 30 }))
+  } catch (failure) {
+    if (failure instanceof StaleError) return
+    throw failure
+  }
   state.messages = mergeMessages(state.messages, page.items)
   state.hasMore = page.hasMore
 }
 
 /** 读取当前未结束会话、未读数与坐席在线；未结束会话消失说明本轮已结束 */
-export async function refreshCurrent() {
-  const current = await withSubject(getCurrentConversation)
+export function refreshCurrent() {
+  return refresh(generation)
+}
+
+async function refresh(epoch: number) {
+  const current = await withSubject(epoch, getCurrentConversation)
   state.unreadCount = state.open ? 0 : current.unreadCount
   state.agentsOnline = current.agentsOnline
   if (current.conversation) {
@@ -126,33 +159,34 @@ function applyOpen(result: { conversation: ConversationDto; contexts: ContextDto
   state.agentsOnline = result.agentsOnline
 }
 
-async function openRound(entryPoint: EntryPoint, context?: ContextInput) {
+async function openRound(epoch: number, entryPoint: EntryPoint, context?: ContextInput) {
   try {
-    applyOpen(await withSubject(() => openConversation(entryPoint, context)))
+    applyOpen(await withSubject(epoch, () => openConversation(entryPoint, context)))
   } catch (failure) {
     // 上下文不存在或无权使用、或发卡片太频繁时仍打开面板，只是不附带上下文
     const { status, reason } = errorReason(failure)
     if (!context || (status !== 429 && reason !== 'CONTEXT_NOT_FOUND')) throw failure
     state.notice = status === 429 ? 'rateLimited' : 'contextUnavailable'
-    applyOpen(await withSubject(() => openConversation(entryPoint)))
+    applyOpen(await withSubject(epoch, () => openConversation(entryPoint)))
   }
 }
 
 /** 打开面板：复用未结束会话，带上下文时每次都追加一张卡片；绝不会创建项目 */
 export async function openWith(context: ContextInput | undefined, entryPoint: EntryPoint) {
+  const epoch = generation
   state.open = true
   state.notice = ''
   state.busy = true
   try {
-    await openRound(entryPoint, context)
-    if (!state.loaded) await loadLatest()
-    else await fetchNewer()
+    await openRound(epoch, entryPoint, context)
+    if (!state.loaded) await loadLatest(epoch)
+    else await fetchNewer(epoch)
     connection.open(state.conversation!.id)
-    await markRead()
+    await markReadFor(epoch)
   } catch {
-    state.notice = 'openFailed'
+    if (epoch === generation) state.notice = 'openFailed'
   } finally {
-    state.busy = false
+    if (epoch === generation) state.busy = false
   }
 }
 
@@ -164,30 +198,32 @@ export function setPageContext(value: PageContext | null) {
 export async function sendPageContext() {
   const current = pageContext.value
   if (!current || state.busy) return false
-  const post = () => withSubject(() => postContext(state.conversation!.id, current.entryPoint, current.context))
+  const epoch = generation
+  const post = () => withSubject(epoch, () => postContext(state.conversation!.id, current.entryPoint, current.context))
   state.notice = ''
   state.busy = true
   try {
-    if (!state.conversation || state.conversation.status === 'closed') await openRound('floating')
+    if (!state.conversation || state.conversation.status === 'closed') await openRound(epoch, 'floating')
     let result
     try {
       result = await post()
     } catch (failure) {
       if (errorReason(failure).reason !== 'CONVERSATION_CLOSED') throw failure
-      await openRound('floating')
+      await openRound(epoch, 'floating')
       result = await post()
     }
     connection.open(state.conversation!.id)
     state.conversation = result.conversation
     if (state.loaded) addMessages([result.message])
-    else await loadLatest()
+    else await loadLatest(epoch)
     return true
   } catch (failure) {
+    if (epoch !== generation) return false
     const { status, reason } = errorReason(failure)
     state.notice = status === 429 ? 'rateLimited' : reason === 'CONTEXT_NOT_FOUND' ? 'contextUnavailable' : 'openFailed'
     return false
   } finally {
-    state.busy = false
+    if (epoch === generation) state.busy = false
   }
 }
 
@@ -201,18 +237,24 @@ function scheduleMarkRead() {
   readTimer = setTimeout(() => { void markRead() }, 300)
 }
 
-export async function markRead() {
+export function markRead() {
+  return markReadFor(generation)
+}
+
+async function markReadFor(epoch: number) {
   for (const [conversationId, seq] of readTargets(state.messages)) {
     if (seq <= (readSeqs.get(conversationId) ?? 0)) continue
     try {
-      await withSubject(() => markReadApi(conversationId, seq))
+      await withSubject(epoch, () => markReadApi(conversationId, seq))
       readSeqs.set(conversationId, seq)
-    } catch {}
+    } catch (failure) {
+      if (failure instanceof StaleError) return
+    }
   }
   state.unreadCount = 0
 }
 
-async function deliver(item: PendingMessage) {
+async function deliver(epoch: number, item: PendingMessage) {
   item.status = 'sending'
   try {
     const conversationId = state.conversation!.id
@@ -220,19 +262,20 @@ async function deliver(item: PendingMessage) {
       ...(item.contactEmail ? { contactEmail: item.contactEmail } : {}) })
     let result
     try {
-      result = await withSubject(send)
+      result = await withSubject(epoch, send)
     } catch (failure) {
       // 本轮已被结束：开启新一轮后用同一个 clientMessageId 重发（幂等键按会话区分）
       if (errorReason(failure).reason !== 'CONVERSATION_CLOSED') throw failure
-      await openRound('floating')
+      await openRound(epoch, 'floating')
       connection.open(state.conversation!.id)
-      result = await withSubject(() => postMessage(state.conversation!.id, { clientMessageId: item.clientMessageId, body: item.body, kind: item.kind,
+      result = await withSubject(epoch, () => postMessage(state.conversation!.id, { clientMessageId: item.clientMessageId, body: item.body, kind: item.kind,
         ...(item.contactEmail ? { contactEmail: item.contactEmail } : {}) }))
     }
     state.conversation = result.conversation
     addMessages([result.message])
     return true
   } catch {
+    // 版本已变时 item 已随旧的 pending 列表一起被丢弃，改它不影响当前状态
     item.status = 'failed'
     return false
   }
@@ -241,13 +284,19 @@ async function deliver(item: PendingMessage) {
 async function enqueue(body: string, kind: 'text' | 'offline', contactEmail?: string) {
   const text = body.trim()
   if (!text) return false
+  const epoch = generation
   // 会话已结束时，下一次发送先开启新一轮
   if (!state.conversation || state.conversation.status === 'closed') {
-    await openRound('floating')
+    try {
+      await openRound(epoch, 'floating')
+    } catch (failure) {
+      if (failure instanceof StaleError) return false
+      throw failure
+    }
     connection.open(state.conversation!.id)
   }
   state.pending.push({ clientMessageId: crypto.randomUUID(), body: text, kind, ...(contactEmail ? { contactEmail } : {}), status: 'sending' })
-  return deliver(state.pending.at(-1)!)
+  return deliver(epoch, state.pending.at(-1)!)
 }
 
 export function send(body: string) {
@@ -260,7 +309,7 @@ export function sendOffline(body: string, contactEmail: string) {
 
 export function retry(clientMessageId: string) {
   const item = state.pending.find(pending => pending.clientMessageId === clientMessageId)
-  return item ? deliver(item) : Promise.resolve(false)
+  return item ? deliver(generation, item) : Promise.resolve(false)
 }
 
 /** 面板关闭时每 60 秒刷新一次未读角标；页面不可见时暂停。没有登录也没有访客令牌时不发请求。 */
@@ -280,8 +329,10 @@ export function stopIdlePolling() {
   idleTimer = undefined
 }
 
-/** 退出登录或切换账号：断开连接并清空本地会话状态 */
+/** 退出登录或切换账号：让进行中的请求与定时回调失效，断开连接并清空本地会话状态 */
 export function resetCustomerService() {
+  generation++
+  clearTimeout(readTimer)
   connection.close()
   readSeqs.clear()
   Object.assign(state, {

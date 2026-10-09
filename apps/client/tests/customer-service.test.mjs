@@ -429,3 +429,74 @@ test('the project detail registers its project: the panel offers "send this proj
   assert.match(container.textContent, /发送太频繁/)
   unmount()
 })
+
+test('responses started before logout and an account switch never restore the previous account', async () => {
+  const conversationB = '22222222-2222-4222-8222-222222222222'
+  const held = []
+  const hold = data => new Promise(resolve => held.push(() => resolve(data)))
+  let account = 'A'
+  const calls = setup({ loggedIn: true, respond: call => {
+    if (account === 'B') {
+      if (call.path.endsWith('/conversations')) return { conversation: conversation({ id: conversationB, conversationNo: 'CS-00000002' }), contexts: [], agentsOnline: false }
+      if (call.path.endsWith('/messages') && call.method === 'GET') return { items: [message(1, { id: 'b1', conversationId: conversationB, body: 'from B' })], hasMore: false }
+      return
+    }
+    if (call.path.endsWith('/messages') && call.method === 'GET') return hold({ items: [message(5, { senderType: 'agent', body: 'from A' })], hasMore: true })
+    if (call.path.endsWith('/conversations/current')) return hold({ conversation: conversation(), contexts: [], unreadCount: 7, agentsOnline: true })
+  } })
+  const { state } = cs.useCustomerService()
+  const openingA = cs.openWith(undefined, 'floating')
+  const refreshingA = cs.refreshCurrent()
+  await settle()
+  assert.equal(held.length, 2, 'A history and current-conversation requests are in flight')
+
+  globalThis.__cs.auth = { isLoggedIn: false, currentUser: null }
+  cs.resetCustomerService()
+  account = 'B'
+  globalThis.__cs.auth = { isLoggedIn: true, currentUser: { email: 'b@example.com' } }
+  await cs.handleCustomerServiceLogin()
+  await cs.openWith(undefined, 'floating')
+
+  for (const release of held) release()
+  await openingA
+  await assert.rejects(refreshingA)
+  await settle()
+  assert.equal(state.conversation.id, conversationB)
+  assert.deepEqual(state.messages.map(item => item.body), ['from B'])
+  assert.deepEqual([state.hasMore, state.unreadCount, state.agentsOnline, state.busy, state.notice], [false, 0, false, false, ''])
+  assert.deepEqual(FakeEventSource.instances.map(source => [source.closed, source.url.includes(conversationB)]), [[false, true]], 'only B is connected')
+  assert.equal(calls.filter(call => call.path.endsWith('/read')).length, 0, 'the agent reply of A is never marked read')
+})
+
+test('after logout, a response from the previous account leaves the state cleared and opens no stream', async () => {
+  let release
+  const calls = setup({ loggedIn: true, respond: call => {
+    if (call.path.endsWith('/messages') && call.method === 'GET') return new Promise(resolve => { release = () => resolve({ items: [message(1, { senderType: 'agent' })], hasMore: true }) })
+  } })
+  const { state } = cs.useCustomerService()
+  const opening = cs.openWith(undefined, 'floating')
+  await settle()
+  cs.resetCustomerService()
+  release()
+  await opening
+  await settle()
+  assert.deepEqual([state.open, state.conversation, state.messages.length, state.loaded, state.unreadCount, state.connection, state.busy, state.notice],
+    [false, null, 0, false, 0, 'idle', false, ''])
+  assert.equal(FakeEventSource.instances.length, 0)
+  assert.equal(calls.some(call => call.path.endsWith('/events-ticket')), false)
+})
+
+test('a stream ticket requested before an account switch does not open a second stream for the merged conversation', async () => {
+  let releaseTicket
+  setup({ loggedIn: true, respond: call => {
+    if (call.path.endsWith('/events-ticket') && !releaseTicket) return new Promise(resolve => { releaseTicket = () => resolve({ ticket: 'ticket-stale' }) })
+  } })
+  await cs.openWith(undefined, 'floating')
+  await cs.handleCustomerServiceLogin()
+  // 访客会话合并到账号后，新身份打开的仍是同一个会话 ID
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  releaseTicket()
+  await settle()
+  assert.deepEqual(FakeEventSource.instances.map(source => source.url.match(/ticket=([^&]+)/)[1]), ['ticket-1'])
+})
