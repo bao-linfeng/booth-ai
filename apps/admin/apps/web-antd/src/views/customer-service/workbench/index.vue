@@ -115,10 +115,15 @@ watch(page, () => void loadList());
 let unsubscribe: (() => void) | undefined;
 onMounted(() => {
   refreshAll();
-  // 事件只含 ID：列表防抖重拉；当前会话的事件交给对话面板增量拉取
+  // 事件只含 ID：列表防抖重拉；当前会话的事件交给对话面板增量拉取。
+  // ready 只在重连或降级轮询时转发，表示可能漏了事件：列表、详情、消息全部校准
   unsubscribe = store.subscribe((event) => {
-    if (event.type === 'ready') return;
     refreshList();
+    if (event.type === 'ready') {
+      refreshDetail();
+      panelEvent.value = { event, version: ++eventVersion };
+      return;
+    }
     if (event.conversationId === selectedId.value) {
       panelEvent.value = { event, version: ++eventVersion };
       if (

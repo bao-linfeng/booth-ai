@@ -39,6 +39,7 @@ import {
 import { statusLabels as projectStatusLabels } from '#/api/core/projects';
 
 import {
+  fetchAllAfter,
   maxSeq,
   mergeMessages,
   minSeq,
@@ -134,32 +135,43 @@ watch(
   { immediate: true },
 );
 
-async function fetchNewer() {
+/**
+ * 增量拉取直到 hasMore=false。默认从已有最大 seq 之后拉；
+ * 校准时从已加载窗口起点重拉，顺带更新断线期间完成的译文。
+ */
+async function fetchNewer(after = maxSeq(messages.value)) {
   const id = conversation.value?.id;
   if (!id) return;
-  const page = await listMessagesApi(id, {
-    after: maxSeq(messages.value),
-    limit: 100,
-  });
-  if (conversation.value?.id !== id || page.items.length === 0) return;
+  const items = await fetchAllAfter(
+    (cursor) => listMessagesApi(id, { after: cursor, limit: 100 }),
+    after,
+  );
+  if (conversation.value?.id !== id || items.length === 0) return;
   const atBottom =
     !scroller.value ||
     scroller.value.scrollHeight -
       scroller.value.scrollTop -
       scroller.value.clientHeight <
       80;
-  messages.value = mergeMessages(messages.value, page.items);
+  messages.value = mergeMessages(messages.value, items);
   if (atBottom) await scrollToBottom();
   await reportRead();
 }
 
-// 收到事件后按 after 增量拉取；译文完成时只重取该条
+// 收到事件后按 after 增量拉取；译文完成时只重取该条；ready 表示可能漏了事件，整窗校准
 watch(
   () => props.event?.version,
   async () => {
     const id = conversation.value?.id;
     const event = props.event?.event;
-    if (!id || !event || event.type === 'ready') return;
+    if (!id || !event) return;
+    if (event.type === 'ready') {
+      // 首屏仍在加载时拿到的就是最新数据，无需校准
+      if (loading.value) return;
+      const first = minSeq(messages.value);
+      await fetchNewer(first === undefined ? 0 : first - 1);
+      return;
+    }
     if (event.type === 'message.translated' && event.seq) {
       const page = await listMessagesApi(id, {
         after: event.seq - 1,

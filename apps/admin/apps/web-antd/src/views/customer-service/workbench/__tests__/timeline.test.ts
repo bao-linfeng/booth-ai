@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { eventText } from '#/api/core/customer-service';
 
 import {
+  fetchAllAfter,
   maxSeq,
   mergeMessages,
   minSeq,
@@ -41,6 +42,18 @@ function message(
 }
 
 describe('customer service timeline', () => {
+  it('keeps paging newer messages until hasMore is false', async () => {
+    const all = [1, 2, 3, 4, 5].map((seq) => message(seq));
+    const cursors: number[] = [];
+    const items = await fetchAllAfter(async (after) => {
+      cursors.push(after);
+      const rest = all.filter((item) => item.seq > after);
+      return { hasMore: rest.length > 2, items: rest.slice(0, 2) };
+    }, 0);
+    expect(cursors).toEqual([0, 2, 4]);
+    expect(items.map((item) => item.seq)).toEqual([1, 2, 3, 4, 5]);
+  });
+
   it('merges by id, keeps the latest copy and sorts by seq', () => {
     const merged = mergeMessages(
       [message(3), message(1)],
