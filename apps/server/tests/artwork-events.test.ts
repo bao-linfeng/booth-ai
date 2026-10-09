@@ -108,6 +108,21 @@ async function readUntil(reader: ReadableStreamDefaultReader<Uint8Array>, expect
   return text;
 }
 
+// 放在第一个：启用 mock 时不能有前面用例尚未触发的 close 回调，否则它们会调用被替换的 clearInterval，漏清真实心跳定时器
+test('artwork SSE closes at the next heartbeat after the owner logs out', { timeout: 5000 }, async t => {
+  const { app, ticket, address, values } = await setup();
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const abort = new AbortController();
+  t.after(async () => { abort.abort(); await app.close(); });
+  const reader = (await fetch(`${address}/artwork-jobs/${jobId}/events?ticket=${await ticket()}`, { signal: abort.signal })).body!.getReader();
+  await readUntil(reader, '"running"');
+  t.mock.timers.tick(15_000);
+  await readUntil(reader, 'event: ping');
+  values.delete(`session:${createHash('sha256').update('owner').digest('hex').slice(0, 32)}`);
+  t.mock.timers.tick(15_000);
+  for (let next = await reader.read(); !next.done; next = await reader.read());
+});
+
 test('artwork event tickets require ownership, reject invalid and mismatched tickets, and cannot be reused', { timeout: 5000 }, async t => {
   const { app, ticket, values } = await setup();
   t.after(() => app.close());

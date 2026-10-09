@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import type { SessionSite } from '../infra/session.js';
-import { authenticationError, resolvePrincipal, type Principal } from '../modules/identity/principal.js';
+import { authenticationError, resolvePrincipal, revalidatePrincipal, type Principal } from '../modules/identity/principal.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -49,6 +49,11 @@ export function optionalClientUserId(request: FastifyRequest): string | null {
 
 export function adminUserId(request: FastifyRequest): string {
   return requirePrincipal(request, 'admin').localId;
+}
+
+/** SSE 心跳复核：按建连时的令牌重新校验登录 Session 与账户，失效时返回 false 断流 */
+export function sessionHeartbeat(pool: pg.Pool, redis: Redis, principal: Principal): () => Promise<boolean> {
+  return async () => (await revalidatePrincipal(pool, redis, principal)) !== null;
 }
 
 export function registerAuthentication(app: FastifyInstance, pool: pg.Pool, redis: Redis, site: SessionSite): void {
