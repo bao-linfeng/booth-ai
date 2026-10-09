@@ -269,6 +269,37 @@ test('sending is idempotent on retry, starts a new round after the conversation 
   unmount()
 })
 
+test('when opening a new round fails, the typed message stays as a failed message and retry reopens the round', async () => {
+  let openFails = false
+  const calls = setup({ respond: call => {
+    if (call.method === 'POST' && call.path.endsWith('/conversations') && openFails) { openFails = false; throw failure(500, 'INTERNAL') }
+  } })
+  const { unmount, container } = await mount()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  const { state, retry } = cs.useCustomerService()
+  state.conversation = { ...state.conversation, status: 'closed' }
+  openFails = true
+  const textarea = container.querySelector('[data-cs-panel] textarea')
+  textarea.value = '会话结束后再问一句'; textarea.dispatchEvent(new Event('input'))
+  await settle()
+  container.querySelector('[data-cs-panel] form').dispatchEvent(new Event('submit'))
+  await settle()
+  const pending = container.querySelector('[data-cs-pending]')
+  assert.match(pending.textContent, /会话结束后再问一句/)
+  assert.match(pending.textContent, /发送失败/)
+  assert.equal(calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages')).length, 0)
+
+  assert.equal(await retry(state.pending[0].clientMessageId), true)
+  await settle()
+  assert.equal(calls.filter(call => call.path.endsWith('/conversations')).length, 3, 'retry opens the new round again')
+  const posts = calls.filter(call => call.method === 'POST' && call.path.endsWith('/messages'))
+  assert.deepEqual(posts.map(call => call.body.body), ['会话结束后再问一句'])
+  assert.equal(state.pending.length, 0)
+  assertNoNode(container.querySelector('[data-cs-pending]'), 'the delivered message leaves the pending list')
+  unmount()
+})
+
 test('a stream silent for 45 seconds is dropped and reconnected; pings keep it alive', async t => {
   setup()
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })

@@ -269,20 +269,23 @@ async function markReadFor(epoch: number) {
 
 async function deliver(epoch: number, item: PendingMessage) {
   item.status = 'sending'
+  const post = () => withSubject(epoch, () => postMessage(state.conversation!.id, { clientMessageId: item.clientMessageId, body: item.body,
+    kind: item.kind, ...(item.contactEmail ? { contactEmail: item.contactEmail } : {}) }))
+  const reopen = async () => {
+    await openRound(epoch, 'floating')
+    connection.open(state.conversation!.id)
+  }
   try {
-    const conversationId = state.conversation!.id
-    const send = () => postMessage(conversationId, { clientMessageId: item.clientMessageId, body: item.body, kind: item.kind,
-      ...(item.contactEmail ? { contactEmail: item.contactEmail } : {}) })
+    // 会话不存在或已结束时先开启新一轮；开启失败与发送失败一样留在待发送列表中，重试时再开启
+    if (!state.conversation || state.conversation.status === 'closed') await reopen()
     let result
     try {
-      result = await withSubject(epoch, send)
+      result = await post()
     } catch (failure) {
       // 本轮已被结束：开启新一轮后用同一个 clientMessageId 重发（幂等键按会话区分）
       if (errorReason(failure).reason !== 'CONVERSATION_CLOSED') throw failure
-      await openRound(epoch, 'floating')
-      connection.open(state.conversation!.id)
-      result = await withSubject(epoch, () => postMessage(state.conversation!.id, { clientMessageId: item.clientMessageId, body: item.body, kind: item.kind,
-        ...(item.contactEmail ? { contactEmail: item.contactEmail } : {}) }))
+      await reopen()
+      result = await post()
     }
     state.conversation = result.conversation
     addMessages([result.message])
@@ -294,22 +297,12 @@ async function deliver(epoch: number, item: PendingMessage) {
   }
 }
 
-async function enqueue(body: string, kind: 'text' | 'offline', contactEmail?: string) {
+/** 先登记待发送消息再开启会话或发送，任何一步失败输入内容都保留在失败消息里可重试 */
+function enqueue(body: string, kind: 'text' | 'offline', contactEmail?: string) {
   const text = body.trim()
-  if (!text) return false
-  const epoch = generation
-  // 会话已结束时，下一次发送先开启新一轮
-  if (!state.conversation || state.conversation.status === 'closed') {
-    try {
-      await openRound(epoch, 'floating')
-    } catch (failure) {
-      if (failure instanceof StaleError) return false
-      throw failure
-    }
-    connection.open(state.conversation!.id)
-  }
+  if (!text) return Promise.resolve(false)
   state.pending.push({ clientMessageId: crypto.randomUUID(), body: text, kind, ...(contactEmail ? { contactEmail } : {}), status: 'sending' })
-  return deliver(epoch, state.pending.at(-1)!)
+  return deliver(generation, state.pending.at(-1)!)
 }
 
 export function send(body: string) {
