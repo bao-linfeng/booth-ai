@@ -34,6 +34,8 @@ import {
   formatOpeningCount,
   formatPreviewRemaining,
   importDictionaryEntries,
+  importRowNote,
+  overwriteImpact,
   previewRemainingMs,
 } from '../import-preview';
 
@@ -74,6 +76,8 @@ const remainingMs = computed(() =>
     ? previewRemainingMs(previewResult.value.expiresAt, now.value)
     : 0,
 );
+const impact = computed(() => overwriteImpact(previewResult.value?.rows ?? []));
+
 const previewExpired = computed(
   () =>
     step.value === 'preview' &&
@@ -237,18 +241,25 @@ const previewColumns = [
   {
     title: '状态',
     dataIndex: 'status',
-    width: 70,
+    width: 86,
     customRender: ({ text }: { text: string }) => {
       const map: Record<string, { color: string; label: string }> = {
         valid: { color: 'green', label: '新增' },
-        duplicate: { color: 'blue', label: '重复' },
+        duplicate: { color: 'blue', label: '有变更' },
+        unchanged: { color: 'default', label: '无需更新' },
         error: { color: 'red', label: '错误' },
       };
       const cfg = map[text] ?? { color: 'default', label: text };
       return h(Tag, { color: cfg.color }, () => cfg.label);
     },
   },
-  { title: '原因', dataIndex: 'reason', ellipsis: true },
+  {
+    title: '说明',
+    key: 'note',
+    ellipsis: true,
+    customRender: ({ record }: { record: ImportPreviewRow }) =>
+      importRowNote(record),
+  },
 ];
 
 const errorColumns = [
@@ -328,7 +339,7 @@ defineExpose({ open });
         预览有效期 1 小时，{{ formatPreviewRemaining(remainingMs) }}
       </div>
 
-      <Descriptions bordered size="small" :column="4" class="mb-4">
+      <Descriptions bordered size="small" :column="5" class="mb-4">
         <DescriptionsItem label="总行数">
           {{ previewResult.summary.total }}
         </DescriptionsItem>
@@ -337,10 +348,13 @@ defineExpose({ open });
             previewResult.summary.valid
           }}</span>
         </DescriptionsItem>
-        <DescriptionsItem label="重复">
+        <DescriptionsItem label="有变更">
           <span class="text-blue-600 font-medium">{{
             previewResult.summary.duplicate
           }}</span>
+        </DescriptionsItem>
+        <DescriptionsItem label="无需更新">
+          {{ previewResult.summary.unchanged }}
         </DescriptionsItem>
         <DescriptionsItem label="错误">
           <span class="text-red-500 font-medium">{{
@@ -353,11 +367,40 @@ defineExpose({ open });
         v-if="previewResult.summary.duplicate > 0"
         class="bg-muted/50 text-foreground mb-4 rounded border border-border px-4 py-3"
       >
-        <div class="mb-2 text-sm font-medium">重复编号处理策略：</div>
+        <div class="mb-2 text-sm font-medium">
+          已存在且有变更的方案（{{ impact.updates }} 个）处理策略：
+        </div>
         <RadioGroup v-model:value="duplicateStrategy">
           <Radio value="update">覆盖更新（用文件内容更新已有方案）</Radio>
           <Radio value="skip">跳过（保留已有方案不变）</Radio>
         </RadioGroup>
+        <Alert
+          v-if="duplicateStrategy === 'update'"
+          :type="
+            impact.unpublish > 0 || impact.clearing > 0 ? 'warning' : 'info'
+          "
+          class="mt-3"
+          show-icon
+        >
+          <template #message>
+            <div>
+              将覆盖 {{ impact.updates }} 个已有方案，仅写入有变化的字段。
+            </div>
+            <div v-if="impact.unpublish > 0">
+              其中
+              {{
+                impact.unpublish
+              }}
+              个已发布方案将退回草稿，需重新核验并通过整体审核后才能再次发布（仅改备注的不受影响）。
+            </div>
+            <div v-if="impact.clearing > 0">
+              {{
+                impact.clearing
+              }}
+              个方案的部分字段在文件中为空，覆盖后原值将被清空，具体见“说明”列。
+            </div>
+          </template>
+        </Alert>
       </div>
 
       <Table
@@ -400,6 +443,9 @@ defineExpose({ open });
         </DescriptionsItem>
         <DescriptionsItem label="更新">
           <span class="text-blue-600 font-medium">{{ commitResult.updated }} 条</span>
+        </DescriptionsItem>
+        <DescriptionsItem label="无需更新">
+          {{ commitResult.unchanged ?? 0 }} 条
         </DescriptionsItem>
         <DescriptionsItem label="失败">
           <span class="text-red-500 font-medium">{{ commitResult.failed.length }} 条</span>

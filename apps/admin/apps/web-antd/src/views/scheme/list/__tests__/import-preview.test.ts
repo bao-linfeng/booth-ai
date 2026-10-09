@@ -1,3 +1,5 @@
+import type { ImportPreviewRow } from '#/api/core/schemes';
+
 import { describe, expect, it } from 'vitest';
 
 import { reasonMessage } from '#/api/reason-messages';
@@ -7,6 +9,8 @@ import {
   formatOpeningCount,
   formatPreviewRemaining,
   importDictionaryEntries,
+  importRowNote,
+  overwriteImpact,
   previewRemainingMs,
 } from '../import-preview';
 
@@ -108,5 +112,62 @@ describe('import error reasons', () => {
     expect(new Set(messages).size).toBe(reasons.length);
     expect(reasonMessage(undefined)).toBeUndefined();
     expect(reasonMessage('UNKNOWN_REASON')).toBeUndefined();
+  });
+});
+
+function row(overrides: Partial<ImportPreviewRow>): ImportPreviewRow {
+  return {
+    code: 'S-1',
+    name: '方案',
+    rowId: 1,
+    rowNumber: 2,
+    sheetName: '方案',
+    status: 'duplicate',
+    ...overrides,
+  };
+}
+
+describe('overwrite impact', () => {
+  it('explains changed and cleared fields and whether the scheme is retracted', () => {
+    expect(
+      importRowNote(
+        row({
+          changedFields: ['name', 'parentCode'],
+          clearedFields: ['parentCode'],
+          published: true,
+        }),
+      ),
+    ).toBe('变更：名称、母方案；清空：母方案；将退回草稿');
+    expect(
+      importRowNote(
+        row({ changedFields: ['notes'], clearedFields: [], published: true }),
+      ),
+    ).toBe('变更：备注');
+    expect(importRowNote(row({ status: 'unchanged' }))).toBe(
+      '与当前方案一致，无需更新',
+    );
+    expect(
+      importRowNote(row({ reason: '未映射的标签：X', status: 'error' })),
+    ).toBe('未映射的标签：X');
+  });
+
+  it('counts overwritten, retracted and clearing schemes, ignoring notes-only and unchanged rows', () => {
+    expect(
+      overwriteImpact([
+        row({ changedFields: ['name'], clearedFields: [], published: true }),
+        row({
+          changedFields: ['notes'],
+          clearedFields: ['notes'],
+          published: true,
+        }),
+        row({
+          changedFields: ['keywords'],
+          clearedFields: ['keywords'],
+          published: false,
+        }),
+        row({ published: true, status: 'unchanged' }),
+        row({ status: 'valid' }),
+      ]),
+    ).toEqual({ clearing: 2, unpublish: 1, updates: 3 });
   });
 });

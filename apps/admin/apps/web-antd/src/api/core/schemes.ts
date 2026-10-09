@@ -158,6 +158,25 @@ export type ImportDictionaryField =
   | 'styleId'
   | 'zoneIds';
 
+/** 导入覆盖可写入的方案字段 */
+export type ImportChangedField =
+  | 'areaM2'
+  | 'budgetTierId'
+  | 'description'
+  | 'featureIds'
+  | 'heightMm'
+  | 'industryIds'
+  | 'keywords'
+  | 'lengthMm'
+  | 'name'
+  | 'notes'
+  | 'openingCount'
+  | 'parentCode'
+  | 'productSystemId'
+  | 'styleId'
+  | 'widthMm'
+  | 'zoneIds';
+
 /** rowId 在单次导入内唯一；sheetName + rowNumber 定位原文件中的工作表与行。 */
 export interface ImportPreviewRow {
   rowId: number;
@@ -165,18 +184,26 @@ export interface ImportPreviewRow {
   rowNumber: number;
   code: string;
   name: string;
-  status: 'duplicate' | 'error' | 'valid';
+  /** duplicate：已存在且有变更；unchanged：已存在且与当前方案一致，提交时不写入 */
+  status: 'duplicate' | 'error' | 'unchanged' | 'valid';
   reason?: string;
   data?: ImportPreviewRowData;
   dictionaryLabels?: Partial<Record<ImportDictionaryField, string[]>>;
+  /** 仅已存在的方案：当前是否已发布，文件相对当前方案变化的字段及其中将被清空的字段 */
+  published?: boolean;
+  changedFields?: ImportChangedField[];
+  clearedFields?: ImportChangedField[];
 }
 
 export interface ImportPreviewSummary {
   total: number;
   valid: number;
   duplicate: number;
+  unchanged: number;
   error: number;
   skipped: number;
+  /** 覆盖更新时将从已发布退回草稿的方案数 */
+  unpublish: number;
 }
 
 export interface ImportPreviewResult {
@@ -190,6 +217,8 @@ export interface ImportPreviewResult {
 export interface ImportCommitResult {
   created: number;
   updated: number;
+  /** 与当前方案一致而未写入的行（旧结果可能缺省） */
+  unchanged?: number;
   dictionaryItemsCreated: number;
   failed: {
     code: string;
