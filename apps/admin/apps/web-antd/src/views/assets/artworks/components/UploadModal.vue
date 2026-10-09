@@ -12,11 +12,13 @@ import { useVbenForm } from '#/adapter/form';
 import { uploadAssetApi } from '#/api/core/assets';
 
 import { useSchemeOptions } from '../../shared/scheme-filter';
+import { createUploadKey } from '../../shared/upload-key';
 
 const emit = defineEmits(['reload']);
 
 const schemeCode = ref<string | undefined>(undefined);
 const schemes = useSchemeOptions();
+const uploadKey = createUploadKey();
 
 const DIMENSION_UNIT_OPTIONS = [
   { label: 'mm（毫米）', value: 'mm' },
@@ -140,6 +142,7 @@ const [Modal, modalApi] = useVbenModal({
         type: 'artwork',
         name: values.name,
         file: file as File,
+        idempotencyKey: uploadKey.forFile(file as File),
         metadata: JSON.stringify(metadata),
       });
       message.success('上传成功');
@@ -153,6 +156,7 @@ const [Modal, modalApi] = useVbenModal({
   },
   onOpenChange: (isOpen) => {
     if (isOpen) {
+      uploadKey.renew();
       schemes.search();
     } else {
       schemeCode.value = undefined;

@@ -62,6 +62,8 @@ export interface UploadAssetParams {
   relatedAssetId?: string;
   metadata?: string; // JSON string
   file: File;
+  /** 本次上传操作的幂等键，重试时沿用以免重复新建 */
+  idempotencyKey?: string;
 }
 
 export interface UpdateAssetParams {
@@ -130,6 +132,8 @@ export async function uploadAssetApi(
   if (params.relatedAssetId)
     formData.append('relatedAssetId', params.relatedAssetId);
   if (params.metadata) formData.append('metadata', params.metadata);
+  if (params.idempotencyKey)
+    formData.append('idempotencyKey', params.idempotencyKey);
   return requestClient.post<SchemeAsset>(
     `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/assets`,
     formData,

@@ -13,11 +13,13 @@ import { uploadAssetApi } from '#/api/core/assets';
 
 import { readImageSize, renderingSizeError } from '../../shared/image-spec';
 import { useSchemeOptions } from '../../shared/scheme-filter';
+import { createUploadKey } from '../../shared/upload-key';
 
 const emit = defineEmits(['reload']);
 
 const schemeCode = ref<string | undefined>(undefined);
 const schemes = useSchemeOptions();
+const uploadKey = createUploadKey();
 
 const [Form, formApi] = useVbenForm({
   commonConfig: {
@@ -101,6 +103,7 @@ const [Modal, modalApi] = useVbenModal({
         type: 'rendering',
         name: values.name,
         file: file as File,
+        idempotencyKey: uploadKey.forFile(file as File),
       });
       message.success('上传成功');
       modalApi.close();
@@ -113,6 +116,7 @@ const [Modal, modalApi] = useVbenModal({
   },
   onOpenChange: (isOpen) => {
     if (isOpen) {
+      uploadKey.renew();
       schemes.search();
     } else {
       schemeCode.value = undefined;

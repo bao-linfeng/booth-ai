@@ -12,11 +12,13 @@ import { useVbenForm } from '#/adapter/form';
 import { uploadAssetApi } from '#/api/core/assets';
 
 import { useSchemeOptions } from '../../shared/scheme-filter';
+import { createUploadKey } from '../../shared/upload-key';
 
 const emit = defineEmits(['reload']);
 
 const schemeCode = ref<string | undefined>(undefined);
 const schemes = useSchemeOptions();
+const uploadKey = createUploadKey();
 
 const VIEW_CODE_OPTIONS = [
   { label: '正视图', value: 'front' },
@@ -118,6 +120,7 @@ const [Modal, modalApi] = useVbenModal({
         type: 'drawing',
         name: values.name,
         file: file as File,
+        idempotencyKey: uploadKey.forFile(file as File),
         ...(Object.keys(metadata).length > 0
           ? { metadata: JSON.stringify(metadata) }
           : {}),
@@ -133,6 +136,7 @@ const [Modal, modalApi] = useVbenModal({
   },
   onOpenChange: (isOpen) => {
     if (isOpen) {
+      uploadKey.renew();
       schemes.search();
     } else {
       schemeCode.value = undefined;

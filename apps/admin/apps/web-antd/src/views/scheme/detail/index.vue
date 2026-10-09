@@ -51,6 +51,8 @@ import {
   updateSchemeApi,
 } from '#/api/core/schemes';
 
+import { createUploadKey } from '../../assets/shared/upload-key';
+
 const AFormItem = AForm.Item;
 const ARadioGroup = ARadio.Group;
 const ATabPane = ATabs.TabPane;
@@ -182,6 +184,8 @@ const isDirty = computed(() => changedKeys.value.length > 0);
 
 const modelAssets = ref<SchemeAsset[]>([]);
 const modelUploading = ref(false);
+// 同一模型文件上传失败后重选重试沿用同一幂等键，避免响应丢失时重复新建
+const modelUploadKey = createUploadKey();
 const checklistBom = ref<BomRecord | null>(null);
 const checklistLoading = ref(false);
 let checklistRequestSequence = 0;
@@ -337,7 +341,9 @@ async function handleModelUpload() {
         type: 'model',
         name: file.name,
         file,
+        idempotencyKey: modelUploadKey.forFile(file),
       });
+      modelUploadKey.renew();
       message.success('模型上传成功');
       // 资产变更会使已发布方案下线、审核失效，需同步状态
       await Promise.all([fetchDetail(true), fetchReadiness()]);

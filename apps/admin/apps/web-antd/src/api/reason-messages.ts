@@ -57,6 +57,8 @@ export const REASON_MESSAGES: Record<string, string> = {
   RENDERING_FILE_MISSING: '配对效果图尚未上传文件，无法上传蒙版',
   RENDERING_HAS_PAIRED_MASK:
     '该效果图已配对蒙版，请确认一并删除，或先在蒙版管理中将蒙版改配其他效果图',
+  UPLOAD_KEY_CONFLICT:
+    '该上传此前已处理（可能上次提交已成功），请刷新列表确认；如需再次上传，请关闭弹窗后重新操作',
   // 在线客服
   AGENT_UNAVAILABLE: '目标坐席已不可用（账号停用或无回复权限）',
   CONVERSATION_ALREADY_CLAIMED: '已被其他坐席接入',

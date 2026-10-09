@@ -17,12 +17,14 @@ import { replaceAssetFileApi, uploadAssetApi } from '#/api/core/assets';
 import { maskSizeError, readImageSize } from '../../shared/image-spec';
 import { useRenderingCandidates } from '../../shared/rendering-candidates';
 import { useSchemeOptions } from '../../shared/scheme-filter';
+import { createUploadKey } from '../../shared/upload-key';
 
 const emit = defineEmits(['reload']);
 
 const { hasAccessByCodes } = useAccess();
 const schemeCode = ref<string | undefined>(undefined);
 const schemes = useSchemeOptions();
+const uploadKey = createUploadKey();
 const renderings = useRenderingCandidates(() =>
   hasAccessByCodes(['assets-masks.replace']),
 );
@@ -222,6 +224,7 @@ const [Modal, modalApi] = useVbenModal({
           type: 'mask',
           name: values.name,
           file: file as File,
+          idempotencyKey: uploadKey.forFile(file as File),
           relatedAssetId: values.relatedAssetId,
         });
         message.success('上传成功');
@@ -236,6 +239,7 @@ const [Modal, modalApi] = useVbenModal({
   },
   onOpenChange: (isOpen) => {
     if (isOpen) {
+      uploadKey.renew();
       schemes.search();
     } else {
       schemeCode.value = undefined;
