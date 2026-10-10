@@ -5,6 +5,7 @@ import type { createStorage } from '../../../infra/storage.js';
 import { getProvidedVisitorId } from '../selection/identity.js';
 import { listClientSearches } from '../../../modules/selection/analytics/queries.js';
 import { listSearchJobs } from '../../../modules/generation/search-jobs.js';
+import { latestVersionKeys } from '../../../modules/assets/queries.js';
 
 type SearchSnapshotItem = {
   code?: unknown;
@@ -53,13 +54,7 @@ export async function registerClientSearchRoutes(app: FastifyInstance, pool: pg.
     const snapshotItems = result.data.flatMap(search => asSnapshotItems(search.resultSnapshot));
     const jobs = userId ? await listSearchJobs(pool, storage, userId, result.data.map(search => search.id)) : null;
     const assetIds = [...new Set(snapshotItems.map(getFirstImageAssetId).filter((assetId): assetId is string => Boolean(assetId)))];
-    const versions = assetIds.length === 0 ? [] : (await pool.query<{ assetId: string; objectKey: string }>(
-      `SELECT DISTINCT ON (v.asset_id) v.asset_id::text AS "assetId",v.object_key AS "objectKey"
-       FROM asset_versions v
-       WHERE v.asset_id::text = ANY($1::text[])
-       ORDER BY v.asset_id,v.created_at DESC,v.id DESC`,
-      [assetIds],
-    )).rows;
+    const versions = await latestVersionKeys(pool, assetIds);
     const signedUrls = new Map(await Promise.all(versions.map(async version => [version.assetId, await storage.signDownload(version.objectKey, 270)] as const)));
 
     return {

@@ -77,3 +77,11 @@ export async function createQuoteRequest(pool: pg.Pool, userId: string | null, r
     return { replayed: false, receipt };
   });
 }
+
+/** 询价页加载的方案上下文：当前方案与物料修订，提交时用于比对是否发生变化 */
+export async function loadQuoteContext(pool: pg.Pool, schemeCode: string) {
+  const context = await transaction(pool, client => captureScheme(client, { schemeCode }, null));
+  return { schemeCode: context.snapshot.code, schemeRevision: context.snapshot.revision, bomRevision: context.materials.bom.revision,
+    drawingRevision: context.materials.drawings.revision, artworkRevision: context.materials.artworks.revision,
+    materialsStatus: { bom: context.materials.bom.status, drawings: context.materials.drawings.status, artworks: context.materials.artworks.status } };
+}

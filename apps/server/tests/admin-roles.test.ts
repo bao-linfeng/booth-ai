@@ -6,7 +6,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { fetchExternalRoles, fetchExternalUserDetail } from '../src/infra/external-auth.js';
 import { createSession, encryptJwt } from '../src/infra/session.js';
-import { adminRoutePermissions } from '../src/http/admin/authorization.js';
+import { adminRoutePolicies, routePermissions } from './admin-route-policies.js';
 import { accessSummary, allPermissionCodes, permissionCatalog, permissionGroups, validatePermissionCodes } from '../src/modules/identity/permissions.js';
 import { resolveAdminPermissions, updateRolePermissions } from '../src/modules/identity/roles.js';
 
@@ -42,7 +42,8 @@ test('external role list projects only id/name and rejects errors, duplicates an
   assert.deepEqual(profile.permissions, []);
 });
 
-test('permission catalog rejects unknown and orphan actions; route grants follow local permissions', () => {
+test('permission catalog rejects unknown and orphan actions; route grants follow local permissions', async () => {
+  const adminRoutePermissions = await routePermissions();
   assert.throws(() => validatePermissionCodes(['roles.write']), { statusCode: 400 });
   assert.throws(() => validatePermissionCodes(['unknown.read']), { statusCode: 400 });
   assert.throws(() => validatePermissionCodes(['bom.read']), { statusCode: 400 });
@@ -55,10 +56,11 @@ test('permission catalog rejects unknown and orphan actions; route grants follow
   assert.equal(adminRoutePermissions('POST', '/api/v1/admin/schemes/:code/publish')?.[0], 'schemes.publish');
   assert.ok(adminRoutePermissions('GET', '/api/v1/admin/schemes/:code/assets/:assetId/download')?.includes('assets-masks.read'));
   assert.equal(adminRoutePermissions('PUT', '/api/v1/admin/roles/:id/permissions')?.[0], 'roles.write');
-  assert.equal(adminRoutePermissions('GET', '/api/v1/admin/unregistered'), null);
+  assert.equal(adminRoutePermissions('GET', '/api/v1/admin/unregistered'), undefined);
 });
 
-test('page grants and business actions are independent and enforce their real dependencies', () => {
+test('page grants and business actions are independent and enforce their real dependencies', async () => {
+  const adminRoutePermissions = await routePermissions();
   assert.ok(!accessSummary(['searches.read']).routeNames.includes('AiSelectionAnalytics'));
   assert.deepEqual(accessSummary(['assets-drawings.read']).routeNames, ['Profile', 'AssetsVenueMaterials']);
   assert.ok(!accessSummary(['dashboard.read']).routeNames.includes('Workspace'));
@@ -97,7 +99,8 @@ test('page grants and business actions are independent and enforce their real de
   ]) assert.deepEqual(adminRoutePermissions(method!, `/api/v1/admin${route}`), [expected], `${method} ${route}`);
 });
 
-test('customer service permissions: supervise needs reply, routes map to the four codes and agents land on the workbench', () => {
+test('customer service permissions: supervise needs reply, routes map to the four codes and agents land on the workbench', async () => {
+  const adminRoutePermissions = await routePermissions();
   assert.throws(() => validatePermissionCodes(['customer-service.read', 'customer-service.supervise']), { statusCode: 400 });
   assert.throws(() => validatePermissionCodes(['customer-service.reply']), { statusCode: 400 });
   assert.deepEqual(validatePermissionCodes(['customer-service.supervise', 'customer-service.reply', 'customer-service.read']),
@@ -110,15 +113,15 @@ test('customer service permissions: supervise needs reply, routes map to the fou
   assert.equal(accessSummary(['dashboard.read', 'customer-service.read']).homePath, '/dashboard/analytics');
   for (const [method, route, expected] of [
     ['GET', '/conversations', 'customer-service.read'],
-    ['GET', '/conversations/:id', 'customer-service.read'],
-    ['GET', '/conversations/:id/messages', 'customer-service.read'],
-    ['POST', '/conversations/:id/claim', 'customer-service.reply'],
-    ['POST', '/conversations/:id/release', 'customer-service.reply'],
+    ['GET', '/conversations/:conversationId', 'customer-service.read'],
+    ['GET', '/conversations/:conversationId/messages', 'customer-service.read'],
+    ['POST', '/conversations/:conversationId/claim', 'customer-service.reply'],
+    ['POST', '/conversations/:conversationId/release', 'customer-service.reply'],
     ['GET', '/agents', 'customer-service.supervise'],
-    ['POST', '/conversations/:id/transfer', 'customer-service.supervise'],
-    ['POST', '/conversations/:id/close', 'customer-service.reply'],
-    ['POST', '/conversations/:id/messages', 'customer-service.reply'],
-    ['POST', '/conversations/:id/read', 'customer-service.reply'],
+    ['POST', '/conversations/:conversationId/transfer', 'customer-service.supervise'],
+    ['POST', '/conversations/:conversationId/close', 'customer-service.reply'],
+    ['POST', '/conversations/:conversationId/messages', 'customer-service.reply'],
+    ['POST', '/conversations/:conversationId/read', 'customer-service.reply'],
     ['PUT', '/presence', 'customer-service.reply'],
     ['POST', '/events-ticket', 'customer-service.read'],
     ['GET', '/events', 'customer-service.read'],
@@ -184,19 +187,20 @@ test('permission catalog exposes group key and page route names for the authoriz
   }
 });
 
-test('all registered admin business endpoints have an explicit local permission policy', async t => {
+test('every admin route declares its permissions next to the route, using catalog codes', async t => {
+  const policies = await adminRoutePolicies();
+  const undeclared = [...policies].filter(([, policy]) => !policy.public && !policy.permissions).map(([route]) => route);
+  assert.deepEqual(undeclared, [], 'non-public admin routes must declare config.permissions (unknown routes are denied)');
+  const unknown = [...policies].flatMap(([route, policy]) => policy.public ? [] : (policy.permissions ?? []).filter(code => !allPermissionCodes.includes(code)).map(code => `${route}: ${code}`));
+  assert.deepEqual(unknown, []);
+  assert.deepEqual([...policies].filter(([, policy]) => policy.public).map(([route]) => route).sort(), ['POST /api/v1/admin/auth/login', 'POST /api/v1/admin/auth/logout']);
+  // The OpenAPI document lists the same admin routes, so nothing escapes the declaration check.
   const app = await buildApp(config, healthy, { pool: {}, redis: {}, storage: {} } as never);
   t.after(() => app.close());
   const spec = (await app.inject('/openapi.json')).json<{ paths: Record<string, Record<string, unknown>> }>();
   for (const [url, methods] of Object.entries(spec.paths)) {
-    if (!url.startsWith('/api/v1/admin/') || url.includes('/auth/')) continue;
-    const route = url.replace(/\{([^}]+)\}/g, ':$1');
-    for (const method of Object.keys(methods)) {
-      if (method === 'parameters') continue;
-      const required = adminRoutePermissions(method.toUpperCase(), route);
-      assert.notEqual(required, null, `${method} ${route}`);
-      assert.ok(required?.every(code => allPermissionCodes.includes(code)), `${method} ${route}`);
-    }
+    if (!url.startsWith('/api/v1/admin/')) continue;
+    for (const method of Object.keys(methods)) assert.ok(policies.has(`${method.toUpperCase()} ${url.replace(/\{([^}]+)\}/g, ':$1')}`), `${method} ${url}`);
   }
 });
 

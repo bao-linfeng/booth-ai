@@ -4,10 +4,8 @@ import type { Redis } from 'ioredis';
 import { optionalClientUserId } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
 import { requestMessageLocale } from '../../locale.js';
-import { createQuoteRequest } from '../../../modules/projects/service.js';
+import { createQuoteRequest, loadQuoteContext } from '../../../modules/projects/service.js';
 import type { QuoteInput } from '../../../modules/projects/domain.js';
-import { captureScheme } from '../../../modules/projects/snapshot.js';
-import { transaction } from '../../../infra/database.js';
 import { quoteSchema } from './schema.js';
 import { resolveVisitor } from '../../../modules/customer-service/visitors.js';
 import { visitorToken } from '../customer-service/visitor-cookie.js';
@@ -17,10 +15,7 @@ export async function registerQuoteRequestRoutes(app: FastifyInstance, pool: pg.
     schema: { params: { type: 'object', required: ['code'], properties: { code: { type: 'string', minLength: 1, maxLength: 200 } } } },
   }, async (request,reply) => {
     reply.header('Cache-Control','private, no-store');
-    const context = await transaction(pool,client => captureScheme(client,{ schemeCode: request.params.code },null));
-    return { code: 0, data: { schemeCode: context.snapshot.code, schemeRevision: context.snapshot.revision, bomRevision: context.materials.bom.revision,
-      drawingRevision: context.materials.drawings.revision, artworkRevision: context.materials.artworks.revision,
-      materialsStatus: { bom: context.materials.bom.status, drawings: context.materials.drawings.status, artworks: context.materials.artworks.status } } };
+    return { code: 0, data: await loadQuoteContext(pool, request.params.code) };
   });
   app.post<{ Body: QuoteInput }>('/quote-requests',{ preHandler: rateLimit(redis, 'quote', 'anonymousProject'), schema: { tags: ['client-quote-requests'], body: quoteSchema } },async (request,reply) => {
     reply.header('Cache-Control','private, no-store');

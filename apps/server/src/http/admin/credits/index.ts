@@ -23,7 +23,7 @@ interface RechargeBody {
 const userIdSchema = { type: 'string', format: 'uuid' };
 
 export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get<{ Querystring: CreditListQuery }>('/credits', { schema: {
+  app.get<{ Querystring: CreditListQuery }>('/credits', { config: { permissions: ['credits.read'] }, schema: {
     tags: ['admin-credits'],
     querystring: { type: 'object', additionalProperties: false, properties: {
       page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
@@ -37,7 +37,7 @@ export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.P
     ...(request.query.jobId ? { jobId: request.query.jobId } : {}),
   }) }));
 
-  app.post<{ Body: RechargeBody }>('/credits/recharge', { schema: {
+  app.post<{ Body: RechargeBody }>('/credits/recharge', { config: { permissions: ['credits.recharge'] }, schema: {
     tags: ['admin-credits'], body: { type: 'object', additionalProperties: false, required: ['userId', 'amount', 'requestKey'], properties: {
       requestKey: { type: 'string', minLength: 1, maxLength: 200, pattern: '\\S' },
       userId: userIdSchema, amount: { type: 'integer', minimum: 1, maximum: 2147483647 },
@@ -48,16 +48,16 @@ export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.P
     return { code: 0, data: await rechargeCredits(pool, { ...request.body, operatorId }) };
   });
 
-  app.get<{ Params: { userId: string } }>('/credits/users/:userId/balance', { schema: {
+  app.get<{ Params: { userId: string } }>('/credits/users/:userId/balance', { config: { permissions: ['credits.read'] }, schema: {
     tags: ['admin-credits'], params: { type: 'object', required: ['userId'], properties: { userId: userIdSchema } },
   } }, async request => ({ code: 0, data: { balance: await getUserCreditBalance(pool, request.params.userId) } }));
 
   // 签到配置
-  app.get('/credits/sign-in-config', { schema: { tags: ['admin-credits'] } }, async () => {
+  app.get('/credits/sign-in-config', { config: { permissions: ['credits.read'] }, schema: { tags: ['admin-credits'] } }, async () => {
     return { code: 0, data: await getSignInConfig(pool) };
   });
 
-  app.put<{ Body: { enabled: boolean; dailyAmount: number; timezone: string } }>('/credits/sign-in-config', { schema: {
+  app.put<{ Body: { enabled: boolean; dailyAmount: number; timezone: string } }>('/credits/sign-in-config', { config: { permissions: ['credits.sign_in_config'] }, schema: {
     tags: ['admin-credits'],
     body: { type: 'object', additionalProperties: false, required: ['enabled', 'dailyAmount', 'timezone'], properties: {
       enabled: { type: 'boolean' },

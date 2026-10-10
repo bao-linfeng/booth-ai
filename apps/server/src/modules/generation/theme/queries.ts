@@ -61,3 +61,12 @@ export async function selectThemeResult(pool: pg.Pool, userId: string, jobId: st
   if (!updated) throw themeError('SELECTION_CONFLICT', 409);
   return { jobId, schemeCode: job.schemeCode, resultId, revision: updated.selectionRevision, selectedAt: updated.updatedAt };
 }
+
+/** SSE 重连时补发的当前状态；不属于该用户的任务视为不存在 */
+export async function themeJobStatus(pool: Pick<pg.Pool, 'query'>, userId: string, jobId: string): Promise<{ status: string; phase: string | null }> {
+  const job = (await pool.query<{ status: string; phase: string | null }>(
+    'SELECT status, phase FROM theme_jobs WHERE id = $1 AND user_id = $2', [jobId, userId],
+  )).rows[0];
+  if (!job) throw new Error('Theme job not found');
+  return job;
+}

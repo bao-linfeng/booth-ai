@@ -36,7 +36,7 @@ function decodedCode(params: CodeParams): string {
 }
 
 export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.Pool, storage: ReturnType<typeof createStorage>, redis: Redis): Promise<void> {
-  app.get('/assets', {
+  app.get('/assets', { config: { permissions: ['assets-renderings.read', 'assets-masks.read', 'assets-drawings.read', 'assets-artworks.read', 'assets-models.read', 'assets-checklists.read'] },
     schema: { tags: ['admin-assets'], querystring: { type: 'object', additionalProperties: false, properties: {
       type: assetTypeSchema, schemeCode: { type: 'string', minLength: 1 }, schemeName: { type: 'string', minLength: 1 },
       page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
@@ -55,7 +55,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     return { code: 0, data: await listAssets(pool, options) };
   });
 
-  app.get('/schemes/:code/assets', {
+  app.get('/schemes/:code/assets', { config: { permissions: ['assets-renderings.read', 'assets-masks.read', 'assets-drawings.read', 'assets-artworks.read', 'assets-models.read', 'assets-checklists.read'] },
     schema: { tags: ['admin-assets'], params: codeParamsSchema, querystring: { type: 'object', additionalProperties: false, properties: { type: assetTypeSchema } } },
   }, async request => {
     const query = request.query as SchemeAssetsQuery;
@@ -65,7 +65,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     return { code: 0, data: assets.filter(asset => permissions.includes(assetPermissionCode(asset.type, 'read'))) };
   });
 
-  app.get('/schemes/:code/assets/mask-candidates', {
+  app.get('/schemes/:code/assets/mask-candidates', { config: { permissions: ['assets-renderings.read', 'assets-masks.read', 'assets-drawings.read', 'assets-artworks.read', 'assets-models.read', 'assets-checklists.read'] },
     schema: { tags: ['admin-assets'], summary: '蒙版上传与改配的效果图候选（尺寸、排序、缩略图与占用蒙版）', params: codeParamsSchema },
   }, async request => {
     const permissions = requirePrincipal(request, 'admin').permissions;
@@ -87,7 +87,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     return { code: 0, data };
   });
 
-  app.post('/schemes/:code/assets', {
+  app.post('/schemes/:code/assets', { config: { permissions: ['assets-renderings.read', 'assets-masks.read', 'assets-drawings.read', 'assets-artworks.read', 'assets-models.read', 'assets-checklists.read'] },
     schema: { tags: ['admin-assets'], params: codeParamsSchema },
   }, async request => {
     const { file, fields } = await readAssetMultipart(request);
@@ -96,7 +96,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     return { code: 0, data: await uploadAsset(pool, storage, adminUserId(request), input, file, parseIdempotencyKey(fields)) };
   });
 
-  app.patch('/schemes/:code/assets/:assetId', {
+  app.patch('/schemes/:code/assets/:assetId', { config: { permissions: ['assets-renderings.read', 'assets-masks.read', 'assets-drawings.read', 'assets-artworks.read', 'assets-models.read', 'assets-checklists.read'] },
     schema: { tags: ['admin-assets'], params: assetParamsSchema, body: { type: 'object', required: ['expectedRevision'], additionalProperties: false, properties: {
       name: { type: 'string', minLength: 1, maxLength: 500 }, sortOrder: { type: 'integer' }, relatedAssetId: { type: ['string', 'null'], format: 'uuid' },
       metadata: { type: 'object', additionalProperties: true }, expectedRevision: { type: 'integer', minimum: 1 },
@@ -109,7 +109,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     return { code: 0, data: await updateAsset(pool, adminUserId(request), decodedCode(params), params.assetId, input, expectedRevision) };
   });
 
-  app.post('/schemes/:code/assets/:assetId/versions', {
+  app.post('/schemes/:code/assets/:assetId/versions', { config: { permissions: ['assets-renderings.read', 'assets-masks.read', 'assets-drawings.read', 'assets-artworks.read', 'assets-models.read', 'assets-checklists.read'] },
     schema: { tags: ['admin-assets'], params: assetParamsSchema },
   }, async request => {
     const params = request.params as AssetParams;
@@ -122,7 +122,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     return { code: 0, data: await uploadAssetVersion(pool, storage, adminUserId(request), schemeCode, params.assetId, file, expectedRevision) };
   });
 
-  app.delete('/schemes/:code/assets/:assetId', {
+  app.delete('/schemes/:code/assets/:assetId', { config: { permissions: ['assets-renderings.read', 'assets-masks.read', 'assets-drawings.read', 'assets-artworks.read', 'assets-models.read', 'assets-checklists.read'] },
     schema: { tags: ['admin-assets'], params: assetParamsSchema, body: { type: 'object', required: ['expectedRevision'], additionalProperties: false, properties: {
       expectedRevision: { type: 'integer', minimum: 1 }, withPairedMasks: { type: 'boolean' },
     } } },
@@ -136,7 +136,7 @@ export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.P
     return { code: 0, data: { revision } };
   });
 
-  app.get('/schemes/:code/assets/:assetId/download', {
+  app.get('/schemes/:code/assets/:assetId/download', { config: { permissions: ['assets-renderings.read', 'assets-masks.read', 'assets-drawings.read', 'assets-artworks.read', 'assets-models.read', 'assets-checklists.read'] },
     schema: { tags: ['admin-assets'], params: assetParamsSchema, querystring: { type: 'object', additionalProperties: false, properties: {
       assetVersionId: { type: 'string', format: 'uuid' }, disposition: { type: 'string', enum: ['attachment', 'preview'] },
     } } },

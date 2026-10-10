@@ -62,6 +62,7 @@ test('domain modules and infrastructure cannot depend on HTTP portals or worker 
 const moduleRules: Record<string, { dependsOn: string[]; exposes: string[] }> = {
   'ai-models': { dependsOn: [], exposes: [] },
   assets: { dependsOn: ['schemes'], exposes: ['deliverables.ts'] },
+  audit: { dependsOn: [], exposes: [] },
   'client-sign-in': { dependsOn: ['identity', 'projects', 'selection'], exposes: [] },
   credits: { dependsOn: [], exposes: ['service.ts', 'management-service.ts'] },
   'customer-service': { dependsOn: ['selection'], exposes: [] },
@@ -134,6 +135,24 @@ test('ledger and generation job tables are only written by their owning module',
       const owner = tableOwners.find(rule => rule.tables.test(table));
       if (owner && !owner.writers.some(prefix => relative.startsWith(prefix))) violations.push(`${relative}: writes ${table}`);
     }
+  }
+  assert.deepEqual(violations, []);
+});
+
+// Controller 保持薄：HTTP 层不直接执行 SQL 或开启事务，查询与写入都放进业务模块，便于 Worker 等其他入口复用同一规则。
+test('HTTP portals delegate persistence to business modules', async () => {
+  const violations: string[] = [];
+  for (const filename of await sourceFiles(path.join(sourceRoot, 'http'))) {
+    const relative = path.relative(sourceRoot, filename).replaceAll('\\', '/');
+    const source = ts.createSourceFile(filename, await readFile(filename, 'utf8'), ts.ScriptTarget.Latest, true);
+    if (imports(source).some(specifier => specifier.endsWith('/infra/database.js'))) violations.push(`${relative}: imports infra/database`);
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'query') {
+        violations.push(`${relative}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1}: runs a query`);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
   }
   assert.deepEqual(violations, []);
 });

@@ -14,7 +14,7 @@ interface ImportParams {
 }
 
 export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get('/scheme-imports/template', {
+  app.get('/scheme-imports/template', { config: { permissions: ['schemes.import'] },
     schema: { tags: ['admin-scheme-imports'], summary: '下载与当前解析规则和启用字典一致的方案导入模板' },
   }, async (_request, reply) => {
     const file = await buildImportTemplate(pool);
@@ -23,7 +23,7 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
       .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(file);
   });
 
-  app.post('/scheme-imports', {
+  app.post('/scheme-imports', { config: { permissions: ['schemes.import'] },
     schema: { tags: ['admin-scheme-imports'] },
   }, async request => {
     const data = await request.file({ limits: { fileSize: workbookUploadMaxBytes } });
@@ -36,7 +36,7 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
     return { code: 0, data: result };
   });
 
-  app.post('/scheme-imports/:importId/commit', {
+  app.post('/scheme-imports/:importId/commit', { config: { permissions: ['schemes.import'] },
     schema: {
       tags: ['admin-scheme-imports'],
       params: { type: 'object', required: ['importId'], additionalProperties: false, properties: { importId: { type: 'string', format: 'uuid' } } },

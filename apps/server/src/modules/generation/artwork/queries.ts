@@ -96,3 +96,12 @@ export async function listArtworkJobs(pool: pg.Pool, userId: string, context: Ar
     [userId, context.schemeCode, context.themeJobId, context.resultId, context.selectionRevision])).rows;
   return { items: rows };
 }
+
+/** SSE 重连时补发的当前状态；不属于该用户的任务视为不存在 */
+export async function artworkJobStatus(pool: Pick<pg.Pool, 'query'>, userId: string, jobId: string): Promise<{ status: string; phase: string | null; deliveryStatus: string }> {
+  const job = (await pool.query<{ status: string; phase: string | null; deliveryStatus: string }>(
+    'SELECT status, phase, delivery_status AS "deliveryStatus" FROM artwork_jobs WHERE id = $1 AND user_id = $2', [jobId, userId],
+  )).rows[0];
+  if (!job) throw new Error('Artwork job not found');
+  return job;
+}

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { bomError } from '../../../modules/schemes/bill-of-materials/errors.js';
 import { getBom } from '../../../modules/schemes/bill-of-materials/repository.js';
+import { assertCurrentPublishedBom, assertSchemePublished } from '../../../modules/schemes/bill-of-materials/publication.js';
 import { exportBomWorkbook } from '../../../modules/schemes/bill-of-materials/workbook.js';
 
 interface CodeParams { code: string }
@@ -16,24 +17,8 @@ function code(request: FastifyRequest<{ Params: CodeParams }>): string {
   return raw;
 }
 
-async function assertPublished(pool: pg.Pool, schemeCode: string): Promise<void> {
-  const row = (await pool.query('SELECT 1 FROM schemes WHERE code = $1 AND publish_status = $2', [schemeCode, 'published'])).rows[0];
-  if (!row) throw bomError('RESOURCE_NOT_FOUND', 404);
-}
-
 async function noStore(_request: FastifyRequest, reply: FastifyReply): Promise<void> {
   reply.header('Cache-Control', 'no-store');
-}
-
-async function assertCurrentPublishedBom(pool: pg.Pool, schemeCode: string, revision: number): Promise<void> {
-  const row = (await pool.query<{ publishStatus: string; revision: number | null; status: string | null }>(
-    `SELECT s.publish_status AS "publishStatus", b.revision, b.status
-     FROM schemes s LEFT JOIN scheme_boms b ON b.scheme_id = s.id
-     WHERE s.code = $1`,
-    [schemeCode],
-  )).rows[0];
-  if (!row || row.publishStatus !== 'published') throw bomError('RESOURCE_NOT_FOUND', 404);
-  if (row.revision !== revision || row.status !== 'verified') throw bomError('BOM_REVISION_CHANGED', 409);
 }
 
 export async function registerClientBomRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
@@ -42,7 +27,7 @@ export async function registerClientBomRoutes(app: FastifyInstance, pool: pg.Poo
     schema: { tags: ['client-bill-of-materials'], params },
   }, async request => {
     const schemeCode = code(request);
-    await assertPublished(pool, schemeCode);
+    await assertSchemePublished(pool, schemeCode);
     const bom = await getBom(pool, schemeCode);
     if (!bom || bom.status !== 'verified') throw bomError('BOM_NOT_AVAILABLE', 409);
 
@@ -76,7 +61,7 @@ export async function registerClientBomRoutes(app: FastifyInstance, pool: pg.Poo
     const schemeCode = code(request);
     const requested = Number(request.query.revision);
     if (!Number.isSafeInteger(requested) || requested <= 0) throw bomError('INVALID_INPUT', 400);
-    await assertPublished(pool, schemeCode);
+    await assertSchemePublished(pool, schemeCode);
     const bom = await getBom(pool, schemeCode);
     if (!bom || bom.status !== 'verified') throw bomError('BOM_NOT_AVAILABLE', 409);
     if (bom.revision !== requested) throw bomError('BOM_REVISION_CHANGED', 409);

@@ -211,7 +211,8 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 ## 模块开发规范
 
 - 新增业务路由：在对应 `src/http/{admin|client|su}/` 子目录实现，注册到 Fastify（参考 app.ts 的 plugin 模式）
-- Controller 保持薄：只做解析和响应，业务逻辑放 service 层
+- Controller 保持薄：只做解析和响应，业务逻辑放 service 层；`src/http` 内不得直接执行 SQL 或开启事务（边界测试检查）
+- 管理端路由权限在路由配置就近声明：`config: { permissions: ['schemes.read'] }`（类型为 `PermissionCode`，拼错会编译失败）。语义是任一权限码已授予即可进入，`[]` 表示任何已登录管理员；未声明的非公开路由一律 403。hook 只检查声明的权限码本身，不复核依赖闭包；需要依赖闭包或细粒度判断（资产类型、修改字段、对象归属）时，在 handler / route preHandler 里调用 `requireAdminPermission`。依赖闭包由角色保存校验和 `admin-roles-integration` 的迁移断言保证
 - 成功响应 schema 用 `src/http/schemas.ts` 的 `successResponse(...)`。声明后 Fastify 会按 schema 序列化并丢弃未声明字段，所以必须覆盖前端用到的全部字段，并在测试里比对序列化结果（参考 `tests/http-contract.test.ts`）。错误响应 schema 由 `src/http/errors.ts` 自动挂到所有路由，路由不要再自定义 errorHandler 或手写错误体
 - 共享业务放 `src/modules/` 领域模块，禁止导入 HTTP 门户、Fastify 或 Worker 调度实现；`infra/` 禁止反向导入业务模块
 - `src/modules/{admin,client,su}/` 只剩重构遗留的空目录，不要往里放代码；按业务领域放入对应模块

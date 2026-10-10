@@ -4,48 +4,47 @@ import type { Redis } from 'ioredis';
 import type { createStorage } from '../../../infra/storage.js';
 import { adminUserId } from '../../authentication.js';
 import { assignProject,followUpProject,linkProjectScheme,quotationRevision,saveQuotation,saveAssignmentConfig,statusTransitions,type AssignmentInput,type FollowUpInput,type SchemeLinkInput,type AssignmentConfigInput } from '../../../modules/projects/admin-service.js';
-import { getProject,listProjects,projectEvents,requirementOptionLabels,type ProjectQuery } from '../../../modules/projects/repository.js';
+import { findProjectAssetVersion,getProject,listProjects,projectEvents,requirementOptionLabels,type ProjectQuery } from '../../../modules/projects/repository.js';
 import { quotationWorkbook } from '../../../modules/projects/quotation-workbook.js';
 import { projectError } from '../../../modules/projects/domain.js';
 import type { QuotationInput } from '../../../modules/projects/quotation.js';
 import { assignmentSchema,followUpSchema,linkSchema,projectParams,queryProperties,quotationSchema,uuid } from '../../../modules/projects/schema.js';
-import { assigneePermissionSql, getAssignmentConfig } from '../../../modules/projects/assignment.js';
+import { getAssignmentConfig, listAssignableAdmins } from '../../../modules/projects/assignment.js';
 
 export async function registerAdminProjectRoutes(app:FastifyInstance,pool:pg.Pool,redis:Redis,storage:ReturnType<typeof createStorage>) {
   await app.register(async routes=>{
     routes.addHook('onRequest',async(request,reply)=>{reply.header('Cache-Control','private, no-store');adminUserId(request);});
-    routes.get('/project-assignees',async()=>({code:0,data:(await pool.query(`SELECT a.id,coalesce(a.nickname,a.username) AS name FROM admins a WHERE a.enabled AND ${assigneePermissionSql('a')} ORDER BY a.username,a.id`)).rows}));
-    routes.get('/project-assignment-config',async()=>({code:0,data:await getAssignmentConfig(pool)}));
-    routes.put<{Body:AssignmentConfigInput}>('/project-assignment-config',{schema:{body:{type:'object',additionalProperties:false,
+    routes.get('/project-assignees',{ config: { permissions: ['projects.assign'] } }, async()=>({code:0,data:await listAssignableAdmins(pool)}));
+    routes.get('/project-assignment-config',{ config: { permissions: ['projects.read'] } }, async()=>({code:0,data:await getAssignmentConfig(pool)}));
+    routes.put<{Body:AssignmentConfigInput}>('/project-assignment-config',{config:{permissions:['projects.assign']},schema:{body:{type:'object',additionalProperties:false,
       required:['defaultAssigneeAdminId','expectedRevision'],properties:{defaultAssigneeAdminId:{anyOf:[uuid,{type:'null'}]},expectedRevision:{type:'integer',minimum:0}}}}},
     async request=>({code:0,data:await saveAssignmentConfig(pool,adminUserId(request),request.body)}));
-    routes.get<{Querystring:ProjectQuery}>('/projects',{schema:{querystring:{type:'object',additionalProperties:false,properties:{...queryProperties,city:{type:'string',maxLength:100},customerName:{type:'string',maxLength:200},customerUserId:uuid,assigneeAdminId:uuid,
+    routes.get<{Querystring:ProjectQuery}>('/projects',{config:{permissions:['projects.read']},schema:{querystring:{type:'object',additionalProperties:false,properties:{...queryProperties,city:{type:'string',maxLength:100},customerName:{type:'string',maxLength:200},customerUserId:uuid,assigneeAdminId:uuid,
       exhibitionStartFrom:{type:'string',format:'date'},exhibitionStartTo:{type:'string',format:'date'}}}}},async request=>({code:0,data:await listProjects(pool,request.query)}));
-    routes.get<{Params:{projectId:string}}>('/projects/:projectId',{schema:{params:projectParams}},async request=>{
+    routes.get<{Params:{projectId:string}}>('/projects/:projectId',{config:{permissions:['projects.read']},schema:{params:projectParams}},async request=>{
       const project=await getProject(pool,request.params.projectId);
       return {code:0,data:{...project,statusTransitions:statusTransitions(project.status),requirementOptionLabels:await requirementOptionLabels(pool,project.request),
         events:await projectEvents(pool,project.projectId),quotation:await quotationRevision(pool,project.projectId)}};
     });
-    routes.get<{Params:{projectId:string}}>('/projects/:projectId/events',{schema:{params:projectParams,querystring:{type:'object',additionalProperties:false,properties:{}}}},async request=>{
+    routes.get<{Params:{projectId:string}}>('/projects/:projectId/events',{config:{permissions:['projects.read']},schema:{params:projectParams,querystring:{type:'object',additionalProperties:false,properties:{}}}},async request=>{
       await getProject(pool,request.params.projectId);return {code:0,data:await projectEvents(pool,request.params.projectId)};
     });
-    routes.put<{Params:{projectId:string};Body:AssignmentInput}>('/projects/:projectId/assignee',{schema:{params:projectParams,body:assignmentSchema}},async request=>({code:0,data:await assignProject(pool,request.params.projectId,adminUserId(request),request.body)}));
-    routes.post<{Params:{projectId:string};Body:FollowUpInput}>('/projects/:projectId/follow-ups',{schema:{params:projectParams,body:followUpSchema}},async request=>({code:0,data:await followUpProject(pool,request.params.projectId,adminUserId(request),request.body)}));
-    routes.put<{Params:{projectId:string};Body:SchemeLinkInput}>('/projects/:projectId/scheme',{schema:{params:projectParams,body:linkSchema}},async request=>({code:0,data:await linkProjectScheme(pool,request.params.projectId,adminUserId(request),request.body)}));
-    routes.get<{Params:{projectId:string};Querystring:{revision?:number}}>('/projects/:projectId/quotation',{schema:{params:projectParams,querystring:{type:'object',additionalProperties:false,properties:{revision:{type:'integer',minimum:1}}}}},async request=>{
+    routes.put<{Params:{projectId:string};Body:AssignmentInput}>('/projects/:projectId/assignee',{config:{permissions:['projects.assign']},schema:{params:projectParams,body:assignmentSchema}},async request=>({code:0,data:await assignProject(pool,request.params.projectId,adminUserId(request),request.body)}));
+    routes.post<{Params:{projectId:string};Body:FollowUpInput}>('/projects/:projectId/follow-ups',{config:{permissions:['projects.follow-up']},schema:{params:projectParams,body:followUpSchema}},async request=>({code:0,data:await followUpProject(pool,request.params.projectId,adminUserId(request),request.body)}));
+    routes.put<{Params:{projectId:string};Body:SchemeLinkInput}>('/projects/:projectId/scheme',{config:{permissions:['projects.link-scheme']},schema:{params:projectParams,body:linkSchema}},async request=>({code:0,data:await linkProjectScheme(pool,request.params.projectId,adminUserId(request),request.body)}));
+    routes.get<{Params:{projectId:string};Querystring:{revision?:number}}>('/projects/:projectId/quotation',{config:{permissions:['projects.read']},schema:{params:projectParams,querystring:{type:'object',additionalProperties:false,properties:{revision:{type:'integer',minimum:1}}}}},async request=>{
       const project=await getProject(pool,request.params.projectId);return {code:0,data:{projectId:project.projectId,projectRevision:project.revision,quotation:await quotationRevision(pool,project.projectId,request.query.revision)}};
     });
-    routes.put<{Params:{projectId:string};Body:QuotationInput}>('/projects/:projectId/quotation',{bodyLimit:32*1024*1024,schema:{params:projectParams,body:quotationSchema}},async request=>({code:0,data:await saveQuotation(pool,request.params.projectId,adminUserId(request),request.body)}));
-    routes.get<{Params:{projectId:string};Querystring:{revision:number}}>('/projects/:projectId/quotation/download',{schema:{params:projectParams,querystring:{type:'object',additionalProperties:false,required:['revision'],properties:{revision:{type:'integer',minimum:1}}}}},async(request,reply)=>{
+    routes.put<{Params:{projectId:string};Body:QuotationInput}>('/projects/:projectId/quotation',{config:{permissions:['projects.quotation']},bodyLimit:32*1024*1024,schema:{params:projectParams,body:quotationSchema}},async request=>({code:0,data:await saveQuotation(pool,request.params.projectId,adminUserId(request),request.body)}));
+    routes.get<{Params:{projectId:string};Querystring:{revision:number}}>('/projects/:projectId/quotation/download',{config:{permissions:['projects.quotation-download']},schema:{params:projectParams,querystring:{type:'object',additionalProperties:false,required:['revision'],properties:{revision:{type:'integer',minimum:1}}}}},async(request,reply)=>{
       const project=await getProject(pool,request.params.projectId);const quotation=await quotationRevision(pool,project.projectId,request.query.revision);
       if(!quotation)throw projectError('RESOURCE_NOT_FOUND',404);
       const buffer=await quotationWorkbook({projectNo:project.projectNo,schemeCode:project.schemeCode,contact:project.request.contact,company:project.request.company},quotation);
       return reply.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').header('Content-Disposition',`attachment; filename="${project.projectNo}-quotation-r${quotation.revision}.xlsx"`).send(buffer);
     });
-    routes.get<{Params:{projectId:string;versionId:string}}>('/projects/:projectId/assets/:versionId/download',{schema:{params:{...projectParams,required:['projectId','versionId'],properties:{...projectParams.properties,versionId:uuid}}}},async request=>{
+    routes.get<{Params:{projectId:string;versionId:string}}>('/projects/:projectId/assets/:versionId/download',{config:{permissions:['projects.asset-download']},schema:{params:{...projectParams,required:['projectId','versionId'],properties:{...projectParams.properties,versionId:uuid}}}},async request=>{
       await getProject(pool,request.params.projectId);
-      const asset=(await pool.query<{objectKey:string;filename:string}>(`SELECT v.object_key AS "objectKey",v.original_filename AS filename FROM project_asset_versions p JOIN asset_versions v ON v.id=p.asset_version_id WHERE p.project_id=$1 AND v.id=$2`,[request.params.projectId,request.params.versionId])).rows[0];
-      if(!asset)throw projectError('RESOURCE_NOT_FOUND',404);
+      const asset=await findProjectAssetVersion(pool,request.params.projectId,request.params.versionId);
       return {code:0,data:{filename:asset.filename,downloadUrl:await storage.signDownloadWithName(asset.objectKey,asset.filename,300)}};
     });
   });

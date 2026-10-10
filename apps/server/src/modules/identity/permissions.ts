@@ -30,6 +30,12 @@ export const permissionGroups = [
   { key: 'audit', label: '审计日志', routes: [], actions: [['read', '查看审计日志']] },
 ] as const;
 
+type PermissionGroup = typeof permissionGroups[number];
+/** 权限目录中的全部权限码，路由声明使用它，拼写错误会编译失败 */
+export type PermissionCode = PermissionGroup extends infer G
+  ? G extends { key: infer K extends string; actions: readonly (readonly [infer A extends string, string])[] } ? `${K}.${A}` : never
+  : never;
+
 const moduleDependencies: Record<string, string[]> = {
   bom: ['schemes.read', 'dictionaries.read'], credits: ['users.read'],
   searches: ['users.read', 'schemes.read'], prompts: ['schemes.read'],
@@ -51,8 +57,9 @@ export const permissionCatalog = permissionGroups.flatMap(group => group.actions
 })));
 export const allPermissionCodes = permissionCatalog.map(item => item.code);
 
-export function assetPermissionCode(type: keyof typeof assetPermissionGroups, action: string): string {
-  return `${assetPermissionGroups[type]}.${action}`;
+export function assetPermissionCode(type: keyof typeof assetPermissionGroups, action: string): PermissionCode {
+  // 某些类型没有该操作（如效果图没有 download）时返回目录外的码，hasAdminPermission 对其一律判为未授予
+  return `${assetPermissionGroups[type]}.${action}` as PermissionCode;
 }
 
 export function accessSummary(permissions: string[]) {

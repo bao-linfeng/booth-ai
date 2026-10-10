@@ -72,3 +72,11 @@ export async function requirementOptionLabels(db: pg.Pool,request: RequestSnapsh
     .flatMap(([,value])=>Array.isArray(value)?value:[value]).filter((value):value is string=>typeof value==='string');
   return dictionaryItemLabels(db,[...new Set(ids)]);
 }
+
+/** 项目快照冻结的资产版本；不属于该项目的版本视为不存在 */
+export async function findProjectAssetVersion(db: Pick<pg.Pool, 'query'>, projectId: string, versionId: string): Promise<{ objectKey: string; filename: string }> {
+  const asset = (await db.query<{ objectKey: string; filename: string }>(`SELECT v.object_key AS "objectKey",v.original_filename AS filename
+    FROM project_asset_versions p JOIN asset_versions v ON v.id=p.asset_version_id WHERE p.project_id=$1 AND v.id=$2`, [projectId, versionId])).rows[0];
+  if (!asset) throw projectError('RESOURCE_NOT_FOUND', 404);
+  return asset;
+}

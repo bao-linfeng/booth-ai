@@ -30,10 +30,10 @@ function decodedCode(params: CodeParams): string {
 }
 
 export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get('/schemes/:code/readiness', { schema: { tags: ['admin-reviews'], params: codeParams } }, async request => {
+  app.get('/schemes/:code/readiness', { config: { permissions: ['schemes.readiness'] }, schema: { tags: ['admin-reviews'], params: codeParams } }, async request => {
     return { code: 0, data: mapReadinessResponse(await getSchemeReadiness(pool, decodedCode(request.params as CodeParams))) };
   });
-  app.post('/schemes/:code/reviews', {
+  app.post('/schemes/:code/reviews', { config: { permissions: ['schemes.review'] },
     schema: {
       tags: ['admin-reviews'], params: codeParams,
       body: {
@@ -51,10 +51,10 @@ export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.
   }, async request => {
     return { code: 0, data: await createReview(pool, decodedCode(request.params as CodeParams), adminUserId(request), request.body as CreateReviewInput) };
   });
-  app.post('/schemes/:code/publish', { schema: { tags: ['admin-reviews'], params: codeParams } }, async request => {
+  app.post('/schemes/:code/publish', { config: { permissions: ['schemes.publish'] }, schema: { tags: ['admin-reviews'], params: codeParams } }, async request => {
     return { code: 0, data: await publishScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request)) };
   });
-  app.post('/schemes/:code/unpublish', {
+  app.post('/schemes/:code/unpublish', { config: { permissions: ['schemes.unpublish'] },
     schema: {
       tags: ['admin-reviews'], params: codeParams,
       body: { type: 'object', additionalProperties: false, properties: { reason: { type: 'string' } } },

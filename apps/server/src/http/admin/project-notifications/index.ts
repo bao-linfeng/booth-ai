@@ -17,13 +17,13 @@ const listQuery = {
 export async function registerAdminProjectNotificationRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   await app.register(async routes => {
     routes.addHook('onRequest', async (request, reply) => { reply.header('Cache-Control', 'private, no-store'); adminUserId(request); });
-    routes.get<{ Querystring: NotificationInboxQuery }>('/project-notifications', { schema: { tags, querystring: listQuery } },
+    routes.get<{ Querystring: NotificationInboxQuery }>('/project-notifications', { config: { permissions: ['notifications.read'] }, schema: { tags, querystring: listQuery } },
       async request => ({ code: 0, data: await listNotificationInbox(pool, adminUserId(request), request.query) }));
-    routes.post('/project-notifications/read-all', { schema: { tags } },
+    routes.post('/project-notifications/read-all', { config: { permissions: ['notifications.mark-all-read'] }, schema: { tags } },
       async request => ({ code: 0, data: { updated: await markAllNotificationsRead(pool, adminUserId(request)) } }));
-    routes.get<{ Params: { id: string } }>('/project-notifications/:id', { schema: { tags, params: idParams } },
+    routes.get<{ Params: { id: string } }>('/project-notifications/:id', { config: { permissions: ['notifications.read'] }, schema: { tags, params: idParams } },
       async request => ({ code: 0, data: await getNotificationInboxDetail(pool, adminUserId(request), request.params.id) }));
-    routes.post<{ Params: { id: string } }>('/project-notifications/:id/read', { schema: { tags, params: idParams } },
+    routes.post<{ Params: { id: string } }>('/project-notifications/:id/read', { config: { permissions: ['notifications.mark-read'] }, schema: { tags, params: idParams } },
       async request => { await markNotificationRead(pool, adminUserId(request), request.params.id); return { code: 0, data: { id: request.params.id, isRead: true } }; });
   });
 }

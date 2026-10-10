@@ -20,7 +20,7 @@ function authenticationError(): Error & { statusCode: number } {
 }
 
 export async function registerAdminMeRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get('/me', { schema: { tags: ['admin-auth'], response: { 200: successResponse(adminCurrentUserSchema) } } }, async request => {
+  app.get('/me', { config: { permissions: [] }, schema: { tags: ['admin-auth'], response: { 200: successResponse(adminCurrentUserSchema) } } }, async request => {
     const { token, session, localId: accountId } = requirePrincipal(request, 'admin');
     let externalJwt: string;
     try {

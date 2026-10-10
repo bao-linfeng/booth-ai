@@ -40,7 +40,7 @@ const itemUpdateSchema = { type: 'object', minProperties: 1, additionalPropertie
 
 export async function registerAdminDictionariesRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   const tags = ['admin-dictionaries'];
-  app.get('/dictionaries', { schema: { tags, querystring: querySchema } }, async request => {
+  app.get('/dictionaries', { config: { permissions: ['dictionaries.read'] }, schema: { tags, querystring: querySchema } }, async request => {
     const query = request.query as DictionaryQuery;
     return { code: 0, data: await listDictionaries(pool, {
       page: query.page ?? 1, pageSize: query.pageSize ?? 20,
@@ -50,30 +50,30 @@ export async function registerAdminDictionariesRoutes(app: FastifyInstance, pool
       ...(query.enabled !== undefined ? { enabled: query.enabled } : {}),
     }) };
   });
-  app.get('/dictionaries/:id', { schema: { tags, params: paramsSchema } }, async request => {
+  app.get('/dictionaries/:id', { config: { permissions: ['dictionaries.read'] }, schema: { tags, params: paramsSchema } }, async request => {
     return { code: 0, data: await getDictionary(pool, (request.params as IdParams).id) };
   });
-  app.post('/dictionaries', { schema: { tags, body: dictionaryCreateSchema } }, async request => {
+  app.post('/dictionaries', { config: { permissions: ['dictionaries.create'] }, schema: { tags, body: dictionaryCreateSchema } }, async request => {
     return { code: 0, data: await createDictionary(pool, request.body as DictionaryInput) };
   });
-  app.put('/dictionaries/:id', { schema: { tags, params: paramsSchema, body: dictionaryUpdateSchema } }, async request => {
+  app.put('/dictionaries/:id', { config: { permissions: ['dictionaries.update'] }, schema: { tags, params: paramsSchema, body: dictionaryUpdateSchema } }, async request => {
     return { code: 0, data: await updateDictionary(pool, (request.params as IdParams).id, request.body as DictionaryInput) };
   });
-  app.delete('/dictionaries/:id', { schema: { tags, params: paramsSchema } }, async request => {
+  app.delete('/dictionaries/:id', { config: { permissions: ['dictionaries.delete'] }, schema: { tags, params: paramsSchema } }, async request => {
     await deleteDictionary(pool, (request.params as IdParams).id);
     return { code: 0, data: null };
   });
-  app.get('/dictionaries/:id/items', { schema: { tags, params: paramsSchema } }, async request => {
+  app.get('/dictionaries/:id/items', { config: { permissions: ['dictionaries.read'] }, schema: { tags, params: paramsSchema } }, async request => {
     return { code: 0, data: await listDictionaryItems(pool, (request.params as IdParams).id) };
   });
-  app.post('/dictionaries/:id/items', { schema: { tags, params: paramsSchema, body: itemCreateSchema } }, async request => {
+  app.post('/dictionaries/:id/items', { config: { permissions: ['dictionaries.item-create'] }, schema: { tags, params: paramsSchema, body: itemCreateSchema } }, async request => {
     return { code: 0, data: await createDictionaryItem(pool, (request.params as IdParams).id, request.body as DictionaryItemInput) };
   });
-  app.put('/dictionaries/:id/items/:itemId', { schema: { tags, params: itemParamsSchema, body: itemUpdateSchema } }, async request => {
+  app.put('/dictionaries/:id/items/:itemId', { config: { permissions: ['dictionaries.item-update'] }, schema: { tags, params: itemParamsSchema, body: itemUpdateSchema } }, async request => {
     const { id, itemId } = request.params as ItemParams;
     return { code: 0, data: await updateDictionaryItem(pool, itemId, request.body as DictionaryItemInput, id) };
   });
-  app.delete('/dictionaries/:id/items/:itemId', { schema: { tags, params: itemParamsSchema } }, async request => {
+  app.delete('/dictionaries/:id/items/:itemId', { config: { permissions: ['dictionaries.item-delete'] }, schema: { tags, params: itemParamsSchema } }, async request => {
     const { id, itemId } = request.params as ItemParams;
     await deleteDictionaryItem(pool, itemId, id);
     return { code: 0, data: null };

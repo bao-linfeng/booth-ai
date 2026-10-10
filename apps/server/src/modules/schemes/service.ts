@@ -335,3 +335,18 @@ async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: st
   if (!exists.rowCount) throw requestError('Scheme not found', 404);
   throw requestError('Scheme revision conflict', 409);
 }
+
+export type SchemeFormOptions = Record<string, { id: string; label: string; itemValue: string }[]>;
+
+/** 方案编辑表单使用的启用字典项，按字典编码分组 */
+export async function schemeFormOptions(pool: Pick<pg.Pool, 'query'>): Promise<SchemeFormOptions> {
+  const result = await pool.query<{ code: string; id: string; label: string; itemValue: string }>(`
+    SELECT d.code, i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue" FROM dictionaries d
+    JOIN dictionary_items i ON i.dictionary_id = d.id
+     WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','booth_size','product_system','style','industry','budget_tier','functional_zone','key_feature')
+    ORDER BY d.code, i.sort_order, i.id`);
+  return result.rows.reduce<SchemeFormOptions>((options, item) => {
+    (options[item.code] ??= []).push({ id: item.id, label: item.label, itemValue: item.itemValue });
+    return options;
+  }, {});
+}

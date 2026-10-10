@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
-import { createScheme, deleteScheme, getScheme, listSchemes, updateScheme, type ListSchemesOptions, type SchemeInput } from '../../../modules/schemes/service.js';
+import { createScheme, deleteScheme, getScheme, listSchemes, schemeFormOptions, updateScheme, type ListSchemesOptions, type SchemeInput } from '../../../modules/schemes/service.js';
 
 interface SchemeQuery extends Partial<ListSchemesOptions> {}
 interface CodeParams { code: string; }
@@ -111,35 +111,25 @@ function listOptions(query: SchemeQuery): ListSchemesOptions {
 }
 
 export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get('/schemes/options', { schema: { tags: ['admin-schemes'] } }, async () => {
-    const result = await pool.query<{ code: string; id: string; label: string; itemValue: string }>(`
-      SELECT d.code, i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue" FROM dictionaries d
-      JOIN dictionary_items i ON i.dictionary_id = d.id
-       WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','booth_size','product_system','style','industry','budget_tier','functional_zone','key_feature')
-      ORDER BY d.code, i.sort_order, i.id`);
-    return { code: 0, data: result.rows.reduce<Record<string, { id: string; label: string; itemValue: string }[]>>((options, item) => {
-      (options[item.code] ??= []).push({ id: item.id, label: item.label, itemValue: item.itemValue });
-      return options;
-    }, {}) };
-  });
-  app.get('/schemes', { schema: { tags: ['admin-schemes'], querystring: listQuerySchema } }, async request => {
+  app.get('/schemes/options', { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'] } }, async () => ({ code: 0, data: await schemeFormOptions(pool) }));
+  app.get('/schemes', { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'], querystring: listQuerySchema } }, async request => {
     return { code: 0, data: await listSchemes(pool, listOptions(request.query as SchemeQuery)) };
   });
-  app.get('/schemes/:code', { schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async request => {
+  app.get('/schemes/:code', { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async request => {
     return { code: 0, data: await getScheme(pool, decodedCode(request.params as CodeParams)) };
   });
-  app.post('/schemes', {
+  app.post('/schemes', { config: { permissions: ['schemes.create'] },
     schema: { tags: ['admin-schemes'], body: { type: 'object', required: ['code', 'name'], additionalProperties: false, properties: schemeProperties } },
   }, async request => {
     return { code: 0, data: await createScheme(pool, adminUserId(request), request.body as SchemeInput) };
   });
-  app.put('/schemes/:code', {
+  app.put('/schemes/:code', { config: { permissions: ['schemes.update'] },
     schema: { tags: ['admin-schemes'], params: codeParamsSchema, body: { type: 'object', required: ['editRevision'], additionalProperties: false, properties: updateProperties } },
   }, async request => {
     const { editRevision, ...input } = request.body as UpdateBody;
     return { code: 0, data: await updateScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request), input, editRevision) };
   });
-  app.delete('/schemes/:code', { schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async (request) => {
+  app.delete('/schemes/:code', { config: { permissions: ['schemes.delete'] }, schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async (request) => {
     await deleteScheme(pool, adminUserId(request), decodedCode(request.params as CodeParams));
     return { code: 0, data: null };
   });

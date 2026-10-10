@@ -42,7 +42,7 @@ const idParamsSchema = {
 };
 
 export async function registerAdminUserRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
-  app.get('/users', {
+  app.get('/users', { config: { permissions: ['users.read'] },
     schema: {
       tags: ['admin-users'],
       querystring: {
@@ -55,21 +55,21 @@ export async function registerAdminUserRoutes(app: FastifyInstance, pool: pg.Poo
     return { code: 0, data: result };
   });
 
-  app.get('/users/:id', {
+  app.get('/users/:id', { config: { permissions: ['users.detail'] },
     schema: { tags: ['admin-users'], params: idParamsSchema },
   }, async request => {
     const result = await getUser(pool, (request.params as { id: string }).id);
     return { code: 0, data: result };
   });
 
-  app.get('/admins', {
+  app.get('/admins', { config: { permissions: ['admins.read'] },
     schema: { tags: ['admin-users'], querystring: paginationSchema },
   }, async request => {
     const result = await listAdmins(pool, toListOptions(request.query as ListQuery, false));
     return { code: 0, data: result };
   });
 
-  app.get('/admins/:id', {
+  app.get('/admins/:id', { config: { permissions: ['admins.read'] },
     schema: { tags: ['admin-users'], params: idParamsSchema },
   }, async request => {
     const result = await getAdmin(pool, (request.params as { id: string }).id);

@@ -16,7 +16,7 @@ interface SearchQuery {
 }
 
 export async function registerAdminSchemeSearchesRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
-  app.get('/scheme-searches', { schema: { tags: ['admin-scheme-searches'], querystring: {
+  app.get('/scheme-searches', { config: { permissions: ['searches.read'] }, schema: { tags: ['admin-scheme-searches'], querystring: {
     type: 'object', additionalProperties: false, properties: {
       page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
       from: { type: 'string', format: 'date' }, to: { type: 'string', format: 'date' },
@@ -29,15 +29,15 @@ export async function registerAdminSchemeSearchesRoutes(app: FastifyInstance, po
     ...request.query as SearchQuery,
   }) }));
 
-  app.get('/scheme-searches/visitors', { schema: { tags: ['admin-scheme-searches'] } }, async () => ({
+  app.get('/scheme-searches/visitors', { config: { permissions: ['searches.read'] }, schema: { tags: ['admin-scheme-searches'] } }, async () => ({
     code: 0, data: await listSearchVisitors(pool),
   }));
 
-  app.get('/scheme-searches/statistics', { schema: { tags: ['admin-scheme-searches'], querystring: {
+  app.get('/scheme-searches/statistics', { config: { permissions: ['search-analytics.read'] }, schema: { tags: ['admin-scheme-searches'], querystring: {
      type: 'object', additionalProperties: false, properties: { from: { type: 'string', format: 'date' }, to: { type: 'string', format: 'date' }, granularity: { type: 'string', enum: ['date', 'hour'] } },
    } } }, async request => ({ code: 0, data: await getStatistics(pool, request.query as { from?: string; to?: string; granularity?: 'date' | 'hour' }) }));
 
-  app.get('/scheme-searches/:id', { schema: { tags: ['admin-scheme-searches'], params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'string', format: 'uuid' } } } } }, async request => ({
+  app.get('/scheme-searches/:id', { config: { permissions: ['searches.detail'] }, schema: { tags: ['admin-scheme-searches'], params: { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'string', format: 'uuid' } } } } }, async request => ({
     code: 0, data: await getSearch(pool, (request.params as { id: string }).id),
   }));
 }

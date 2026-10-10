@@ -5,7 +5,7 @@ import test from 'node:test';
 import pg from 'pg';
 import { loadConfig } from '../src/config.js';
 import { getAdminRole, listAdminRoles, resolveAdminPermissions, updateRolePermissions } from '../src/modules/identity/roles.js';
-import { allPermissionCodes } from '../src/modules/identity/permissions.js';
+import { allPermissionCodes, validatePermissionCodes } from '../src/modules/identity/permissions.js';
 import { assertProjectAdmin } from '../src/modules/projects/admin-service.js';
 import { configuredAssignee } from '../src/modules/projects/assignment.js';
 import { projectTestPool } from './project-fixtures.js';
@@ -53,6 +53,19 @@ test('060 seeds the original grants, 061 migrates them to page actions and 072 g
         await pool.query(grant);
         assert.equal((await getAdminRole(pool, existingId ?? 5)).revision, granted.revision);
       });
+    }
+  });
+
+// 路由权限 hook 只检查声明的权限码本身、不复核依赖（见 http/admin/authorization.ts），前提是写入的权限都满足依赖闭包。
+// 管理端保存角色时由 validatePermissionCodes 保证；迁移直接写表，由这里断言执行全部迁移后的内置角色仍然满足。
+test('after every migration each seeded role grants complete permission dependency closures',
+  { skip: !process.env.PROJECT_TEST_DATABASE_URL }, async t => {
+    const pool = await projectTestPool(t);
+    const roles = (await pool.query<{ name: string; codes: string[] }>('SELECT name, permission_codes AS codes FROM admin_roles ORDER BY name')).rows;
+    assert.ok(roles.length > 0);
+    for (const role of roles) {
+      const known = role.codes.filter(code => allPermissionCodes.includes(code));
+      assert.doesNotThrow(() => validatePermissionCodes(known), role.name);
     }
   });
 

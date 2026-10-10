@@ -11,7 +11,7 @@ export async function registerAdminGenerationJobRoutes(
   storage: { signDownload: (key: string, expiresIn: number) => Promise<string> },
   redis?: Redis,
 ): Promise<void> {
-  app.get('/generation-jobs', { schema: { tags: ['admin-generation-jobs'], querystring: {
+  app.get('/generation-jobs', { config: { permissions: ['generation.read'] }, schema: { tags: ['admin-generation-jobs'], querystring: {
     type: 'object', additionalProperties: false, properties: {
       page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
       jobType: { type: 'string', enum: ['theme', 'artwork'] },
@@ -22,7 +22,7 @@ export async function registerAdminGenerationJobRoutes(
     },
   } } }, async request => ({ code: 0, data: await listGenerationJobs(pool, request.query as GenerationJobQuery) }));
 
-  app.get('/generation-jobs/:jobId', { schema: { tags: ['admin-generation-jobs'], params: {
+  app.get('/generation-jobs/:jobId', { config: { permissions: ['generation.detail'] }, schema: { tags: ['admin-generation-jobs'], params: {
     type: 'object', required: ['jobId'], additionalProperties: false, properties: { jobId: { type: 'string', format: 'uuid' } },
   } } }, async (request, reply) => {
     reply.header('Cache-Control', 'private, no-store');

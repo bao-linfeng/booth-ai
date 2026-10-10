@@ -11,10 +11,11 @@ import { createManualProject } from '../src/modules/projects/service.js';
 import { getProject } from '../src/modules/projects/repository.js';
 import { emptyRequirement } from '../src/modules/selection/domain.js';
 import type { ManualInput } from '../src/modules/projects/domain.js';
-import { adminRoutePermissions } from '../src/http/admin/authorization.js';
+import { routePermissions } from './admin-route-policies.js';
 import type { createStorage } from '../src/infra/storage.js';
 
-test('assignment configuration route permissions are explicit', () => {
+test('assignment configuration route permissions are explicit', async () => {
+  const adminRoutePermissions = await routePermissions();
   assert.deepEqual(adminRoutePermissions('GET', '/api/v1/admin/project-assignment-config'), ['projects.read']);
   assert.deepEqual(adminRoutePermissions('PUT', '/api/v1/admin/project-assignment-config'), ['projects.assign']);
 });

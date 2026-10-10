@@ -7,6 +7,7 @@ import { createPromptTemplate, getPromptTemplate, listPromptTemplates, updatePro
 import { promptDefinitions, previewPrompt, type PreviewInput } from '../../../modules/prompt-preview/service.js';
 import { PROMPT_PURPOSES } from '../../../modules/prompts/template.js';
 import { domainError } from '../../../lib/errors.js';
+import { requireAdminPermission } from '../authorization.js';
 
 interface ListQuery { purpose?: string; industryId?: string; styleId?: string; enabled?: boolean; page?: number; pageSize?: number }
 interface IdParams { id: string }
@@ -18,8 +19,8 @@ const purposeSchema = { type: 'string', enum: [...PROMPT_PURPOSES] };
 const uuidSchema = { type: 'string', format: 'uuid' };
 
 export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get('/prompt-templates/definitions', { schema: { tags } }, async () => ({ code: 0, data: promptDefinitions() }));
-  app.post<{ Body: PreviewInput }>('/prompt-templates/preview', {
+  app.get('/prompt-templates/definitions', { config: { permissions: ['prompts.read'] }, schema: { tags } }, async () => ({ code: 0, data: promptDefinitions() }));
+  app.post<{ Body: PreviewInput }>('/prompt-templates/preview', { config: { permissions: ['prompts.preview'] },
     schema: { tags, body: { type: 'object', additionalProperties: false, required: ['purpose', 'body'], properties: {
       purpose: purposeSchema, body: { type: 'string', maxLength: 30000 }, sample: {
         type: 'object', additionalProperties: false, properties: {
@@ -30,7 +31,7 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
       },
     } } },
   }, async request => ({ code: 0, data: await previewPrompt(pool, request.body) }));
-  app.get<{ Querystring: ListQuery }>('/prompt-templates', {
+  app.get<{ Querystring: ListQuery }>('/prompt-templates', { config: { permissions: ['prompts.read'] },
     schema: { tags, querystring: { type: 'object', additionalProperties: false, properties: {
       purpose: purposeSchema, enabled: { type: 'boolean' }, industryId: uuidSchema, styleId: uuidSchema,
       page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
@@ -39,7 +40,7 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
     ...request.query, page: request.query.page ?? 1, pageSize: request.query.pageSize ?? 20,
   }) }));
 
-  app.post<{ Body: CreateTemplateInput }>('/prompt-templates', {
+  app.post<{ Body: CreateTemplateInput }>('/prompt-templates', { config: { permissions: ['prompts.create'] },
     schema: { tags, body: { type: 'object', additionalProperties: false, required: ['purpose', 'body'], properties: {
       purpose: purposeSchema,
       industryId: { anyOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
@@ -48,17 +49,23 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
     } } },
   }, async request => ({ code: 0, data: await createPromptTemplate(pool, request.body, adminUserId(request)) }));
 
-  app.get<{ Params: IdParams }>('/prompt-templates/:id', { schema: { tags, params: idSchema } }, async request => {
+  app.get<{ Params: IdParams }>('/prompt-templates/:id', { config: { permissions: ['prompts.read'] }, schema: { tags, params: idSchema } }, async request => {
     const template = await getPromptTemplate(pool, request.params.id);
     if (!template) throw domainError('RESOURCE_NOT_FOUND', 404);
     return { code: 0, data: template };
   });
 
-  app.patch<{ Params: IdParams; Body: UpdateTemplateInput }>('/prompt-templates/:id', {
+  app.patch<{ Params: IdParams; Body: UpdateTemplateInput }>('/prompt-templates/:id', { config: { permissions: ['prompts.update', 'prompts.enable', 'prompts.disable'] },
     schema: { tags, params: idSchema, body: { type: 'object', additionalProperties: false, required: ['expectedRevision'], properties: {
       body: bodySchema, enabled: { type: 'boolean' },
       expectedRevision: { type: 'integer', minimum: 1 },
     } } },
+    // 字段级权限：修改正文需要 update，启用 / 停用分别需要 enable / disable
+    preHandler: async request => {
+      const body = request.body;
+      if (Object.keys(body).some(key => key !== 'enabled' && key !== 'expectedRevision')) requireAdminPermission(request, 'prompts.update');
+      if (body.enabled !== undefined) requireAdminPermission(request, body.enabled ? 'prompts.enable' : 'prompts.disable');
+    },
   }, async request => ({ code: 0, data: await updatePromptTemplate(pool, request.params.id, request.body,
     adminUserId(request)) }));
 }

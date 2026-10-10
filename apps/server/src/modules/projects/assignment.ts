@@ -46,3 +46,9 @@ export async function configuredAssignee(client: pg.PoolClient): Promise<string>
   if (!config?.id || !await eligibleAssignee(client, config.id)) throw projectError('ASSIGNMENT_UNAVAILABLE', 503);
   return config.id;
 }
+
+/** 可被指派为承接人的管理员（启用且具备承接所需权限） */
+export async function listAssignableAdmins(db: Pick<pg.Pool, 'query'>): Promise<{ id: string; name: string }[]> {
+  return (await db.query<{ id: string; name: string }>(`SELECT a.id,coalesce(a.nickname,a.username) AS name FROM admins a
+    WHERE a.enabled AND ${assigneePermissionSql('a')} ORDER BY a.username,a.id`)).rows;
+}

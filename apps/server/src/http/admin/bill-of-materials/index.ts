@@ -32,11 +32,11 @@ const itemSchema = { type:'object',required:['productName','sourceQuantity','sou
 function code(request: FastifyRequest): string { try { return decodeURIComponent((request.params as CodeParams).code); } catch { throw bomError('INVALID_INPUT',400); } }
 function integer(value: unknown): number { const parsed = typeof value === 'string' && /^\d{1,9}$/.test(value) ? Number(value) : NaN; if (!Number.isSafeInteger(parsed)) throw bomError('INVALID_INPUT',400); return parsed; }
 export async function registerAdminBomRoutes(app: FastifyInstance, pool: pg.Pool, storage: ReturnType<typeof createStorage>, redis: Redis, config: Config): Promise<void> {
-  app.get('/bill-of-materials',{schema:{tags:['admin-bill-of-materials'],querystring:{type:'object',additionalProperties:false,properties:{code:{type:'string'},page:{type:'integer',minimum:1,default:1},pageSize:{type:'integer',minimum:1,maximum:100,default:20}}}}},async request => {
+  app.get('/bill-of-materials',{config:{permissions:['bom.read']},schema:{tags:['admin-bill-of-materials'],querystring:{type:'object',additionalProperties:false,properties:{code:{type:'string'},page:{type:'integer',minimum:1,default:1},pageSize:{type:'integer',minimum:1,maximum:100,default:20}}}}},async request => {
     const query=request.query as {code?:string;page:number;pageSize:number};
     return {code:0,data:await listBoms(pool,query)};
   });
-  app.post('/schemes/:code/bill-of-materials/imports',{ schema:{tags:['admin-bill-of-materials'],params} },async (request,reply) => {
+  app.post('/schemes/:code/bill-of-materials/imports',{ config: { permissions: ['bom.import'] }, schema:{tags:['admin-bill-of-materials'],params} },async (request,reply) => {
     let file: Buffer | undefined; let filename = ''; let mime = ''; let expected: number | undefined;
     for await (const part of request.parts({ limits: { fileSize: workbookUploadMaxBytes } })) {
       if (part.type === 'file') {
@@ -58,26 +58,26 @@ export async function registerAdminBomRoutes(app: FastifyInstance, pool: pg.Pool
       return reply.code(201).send({code:0,data:{importId:imported.id,schemeCode,baseRevision:imported.baseRevision,mappingRevision:imported.mappingRevision,expiresAt:imported.expiresAt,status:imported.status,sourceFileName:filename,sourceHash:imported.sourceHash,canCommit:imported.canCommit,items:parsed.items.map((item,index)=>({ ...item,ordinal:index+1 })),errors:parsed.errors,warnings:parsed.warnings}});
     } catch (error) { await storage.deleteObject(objectKey).catch(() => {}); throw error; }
   });
-  app.post('/schemes/:code/bill-of-materials/imports/:importId/commit',{schema:{tags:['admin-bill-of-materials'],params:withImport,body:{type:'object',required:['expectedRevision'],additionalProperties:false,properties:{expectedRevision:{type:'integer',minimum:0}}}}},async request => {
+  app.post('/schemes/:code/bill-of-materials/imports/:importId/commit',{config:{permissions:['bom.import']},schema:{tags:['admin-bill-of-materials'],params:withImport,body:{type:'object',required:['expectedRevision'],additionalProperties:false,properties:{expectedRevision:{type:'integer',minimum:0}}}}},async request => {
     const body=request.body as CommitBody;
     return {code:0,data:await createOrReplaceBomFromImport(pool,adminUserId(request),code(request),(request.params as ImportParams).importId,body.expectedRevision)};
   });
-  app.get('/schemes/:code/bill-of-materials',{schema:{tags:['admin-bill-of-materials'],params}},async request => ({code:0,data:await getBom(pool,code(request)) ?? {schemeCode:code(request),revision:0,status:'absent',items:[]}}));
-  app.delete('/schemes/:code/bill-of-materials',{schema:{tags:['admin-bill-of-materials'],params,querystring:{type:'object',required:['expectedRevision'],additionalProperties:false,properties:{expectedRevision:revision}}}},async request => {
+  app.get('/schemes/:code/bill-of-materials',{config:{permissions:['bom.read']},schema:{tags:['admin-bill-of-materials'],params}},async request => ({code:0,data:await getBom(pool,code(request)) ?? {schemeCode:code(request),revision:0,status:'absent',items:[]}}));
+  app.delete('/schemes/:code/bill-of-materials',{config:{permissions:['bom.delete']},schema:{tags:['admin-bill-of-materials'],params,querystring:{type:'object',required:['expectedRevision'],additionalProperties:false,properties:{expectedRevision:revision}}}},async request => {
     await deleteBom(pool,adminUserId(request),code(request),(request.query as {expectedRevision:number}).expectedRevision);
     return {code:0,data:null};
   });
-  app.put('/schemes/:code/bill-of-materials/items',{schema:{tags:['admin-bill-of-materials'],params,body:{type:'object',required:['expectedRevision','changeReason','items'],additionalProperties:false,properties:{expectedRevision:revision,changeReason:reason,items:{type:'array',minItems:1,maxItems:10000,items:itemSchema}}}}},async request => {
+  app.put('/schemes/:code/bill-of-materials/items',{config:{permissions:['bom.update']},schema:{tags:['admin-bill-of-materials'],params,body:{type:'object',required:['expectedRevision','changeReason','items'],additionalProperties:false,properties:{expectedRevision:revision,changeReason:reason,items:{type:'array',minItems:1,maxItems:10000,items:itemSchema}}}}},async request => {
     const body=request.body as ItemsBody; return {code:0,data:await updateBomItems(pool,adminUserId(request),code(request),body.expectedRevision,body.changeReason,body.items)};
   });
-  app.delete('/schemes/:code/bill-of-materials/items/:itemId',{schema:{tags:['admin-bill-of-materials'],params:withItem,querystring:{type:'object',required:['expectedRevision'],additionalProperties:false,properties:{expectedRevision:revision}}}},async request => {
+  app.delete('/schemes/:code/bill-of-materials/items/:itemId',{config:{permissions:['bom.delete-item']},schema:{tags:['admin-bill-of-materials'],params:withItem,querystring:{type:'object',required:['expectedRevision'],additionalProperties:false,properties:{expectedRevision:revision}}}},async request => {
     return {code:0,data:await deleteBomItem(pool,adminUserId(request),code(request),(request.params as ItemParams).itemId,(request.query as {expectedRevision:number}).expectedRevision)};
   });
-  app.post('/schemes/:code/bill-of-materials/verifications',{schema:{tags:['admin-bill-of-materials'],params,body:{type:'object',required:['requestKey','expectedRevision','decision'],additionalProperties:false,properties:{requestKey:{type:'string',minLength:1,maxLength:200},expectedRevision:revision,decision:{type:'string',enum:['pass','reject']},notes:{type:'string',maxLength:1000}}}}},async (request,reply) => {
+  app.post('/schemes/:code/bill-of-materials/verifications',{config:{permissions:['bom.verify']},schema:{tags:['admin-bill-of-materials'],params,body:{type:'object',required:['requestKey','expectedRevision','decision'],additionalProperties:false,properties:{requestKey:{type:'string',minLength:1,maxLength:200},expectedRevision:revision,decision:{type:'string',enum:['pass','reject']},notes:{type:'string',maxLength:1000}}}}},async (request,reply) => {
     const {replayed,...result}=await submitBomVerification(pool,adminUserId(request),code(request),request.body as BomVerificationInput);
     return reply.code(replayed?200:201).send({code:0,data:result});
   });
-  app.get('/schemes/:code/bill-of-materials/download',{schema:{tags:['admin-bill-of-materials'],params,querystring:{type:'object',required:['revision'],additionalProperties:false,properties:{revision}}}},async (request,reply) => {
+  app.get('/schemes/:code/bill-of-materials/download',{config:{permissions:['bom.download']},schema:{tags:['admin-bill-of-materials'],params,querystring:{type:'object',required:['revision'],additionalProperties:false,properties:{revision}}}},async (request,reply) => {
     const schemeCode=code(request); const requested=(request.query as {revision:number}).revision;
     const bom=await getBom(pool,schemeCode);
     if (!bom || bom.status !== 'verified') throw bomError('BOM_NOT_AVAILABLE',409);
