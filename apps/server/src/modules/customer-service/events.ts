@@ -20,15 +20,23 @@ export type AgentEventType = 'queue.changed' | 'conversation.updated' | 'message
  * message.created 额外带 senderType/kind，前端据此只对客户消息做新消息提醒。
  */
 export interface AgentEvent {
-  type: AgentEventType; conversationId: string; status: ConversationStatus; agentAdminId: string | null; seq?: number;
-  senderType?: MessageRow['senderType']; kind?: MessageRow['kind'];
+  type: AgentEventType;
+  conversationId: string;
+  status: ConversationStatus;
+  agentAdminId: string | null;
+  seq?: number;
+  senderType?: MessageRow['senderType'];
+  kind?: MessageRow['kind'];
 }
 
 export async function publishSafe(redis: CsPublisher, channel: string, payload: unknown): Promise<void> {
   try {
     await redis.publish(channel, JSON.stringify(payload));
   } catch (error) {
-    logger.warn({ channel: channel.startsWith('cs:conv:') ? 'cs:conv' : channel, code: errorCode(error) }, 'Customer service event publish failed');
+    logger.warn(
+      { channel: channel.startsWith('cs:conv:') ? 'cs:conv' : channel, code: errorCode(error) },
+      'Customer service event publish failed',
+    );
   }
 }
 

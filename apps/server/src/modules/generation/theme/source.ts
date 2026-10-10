@@ -14,7 +14,10 @@ const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex
 /** 快照任务使用冻结的提示词；无快照的旧任务按当前字典与模板实时构建。 */
 export async function resolveThemePrompt(database: pg.Pool, job: ThemeJob): Promise<string> {
   if (job.snapshot?.prompt !== undefined) return job.snapshot.prompt;
-  const labels = await database.query<{ id: string; label: string }>('SELECT id::text AS id, item_label AS label FROM dictionary_items WHERE id IN ($1, $2)', [job.input.industryId, job.input.styleId]);
+  const labels = await database.query<{ id: string; label: string }>(
+    'SELECT id::text AS id, item_label AS label FROM dictionary_items WHERE id IN ($1, $2)',
+    [job.input.industryId, job.input.styleId],
+  );
   const industry = labels.rows.find(row => row.id === job.input.industryId)?.label;
   const style = labels.rows.find(row => row.id === job.input.styleId)?.label;
   if (!industry || !style) throw new ImageGenerationError('THEME_DICTIONARY_UNAVAILABLE');
@@ -23,22 +26,30 @@ export async function resolveThemePrompt(database: pg.Pool, job: ThemeJob): Prom
 }
 
 async function sourceObjectKey(database: pg.Pool, job: ThemeJob): Promise<string> {
-  const key = job.snapshot?.source.objectKey ?? (await database.query<{ objectKey: string }>(
-    `SELECT v.object_key AS "objectKey" FROM scheme_baseline_assets a
+  const key =
+    job.snapshot?.source.objectKey ??
+    (
+      await database.query<{ objectKey: string }>(
+        `SELECT v.object_key AS "objectKey" FROM scheme_baseline_assets a
      JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
-     WHERE a.id = $1 AND a.is_active = true`, [job.sourceAssetId],
-  )).rows[0]?.objectKey;
+     WHERE a.id = $1 AND a.is_active = true`,
+        [job.sourceAssetId],
+      )
+    ).rows[0]?.objectKey;
   if (!key) throw new ImageGenerationError('THEME_SOURCE_UNAVAILABLE');
   return key;
 }
 
 async function maskObjectKey(database: pg.Pool, job: ThemeJob): Promise<string | undefined> {
   if (job.snapshot) return job.snapshot.mask?.objectKey;
-  return (await database.query<{ objectKey: string }>(
-    `SELECT v.object_key AS "objectKey" FROM scheme_baseline_assets a
+  return (
+    await database.query<{ objectKey: string }>(
+      `SELECT v.object_key AS "objectKey" FROM scheme_baseline_assets a
      JOIN LATERAL (SELECT object_key FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
-     WHERE a.related_asset_id = $1 AND a.type = 'mask' AND a.is_active = true LIMIT 1`, [job.sourceAssetId],
-  )).rows[0]?.objectKey;
+     WHERE a.related_asset_id = $1 AND a.type = 'mask' AND a.is_active = true LIMIT 1`,
+      [job.sourceAssetId],
+    )
+  ).rows[0]?.objectKey;
 }
 
 /** 标注色（品红）区域转为透明，供供应商按“可编辑区域”处理。 */
@@ -47,7 +58,9 @@ async function toEditMask(maskImage: Buffer): Promise<Buffer> {
   for (let i = 0; i < info.width * info.height; i++) {
     data[i * 4 + 3] = data[i * 4]! > 200 && data[i * 4 + 1]! < 60 && data[i * 4 + 2]! > 200 ? 0 : 255;
   }
-  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
+    .png()
+    .toBuffer();
 }
 
 async function loadMask(database: pg.Pool, job: ThemeJob, storage: ThemeStorage): Promise<Buffer | undefined> {

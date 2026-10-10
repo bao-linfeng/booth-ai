@@ -17,8 +17,12 @@ export function enqueueGenerationJob(queue: Pick<Queue, 'add'>, kind: Generation
 // The job row stays locked until COMMIT, so a consumer cannot claim it before the outbox marker is durable.
 // A crash after add() is safe: the next dispatch re-adds the same jobId, which BullMQ deduplicates.
 // Queue records that are already terminal are left to generation recovery, which owns the retry-or-settle decision.
-export async function dispatchGenerationOutbox(database: pg.Pool, kind: GenerationKind, queue: Pick<Queue, 'add'>,
-  publish: PublishGenerationEvent = async () => {}): Promise<number> {
+export async function dispatchGenerationOutbox(
+  database: pg.Pool,
+  kind: GenerationKind,
+  queue: Pick<Queue, 'add'>,
+  publish: PublishGenerationEvent = async () => {},
+): Promise<number> {
   const queued = await transaction(database, async client => {
     const pending = await client.query<{ jobId: string; status: string }>(
       `SELECT o.job_id AS "jobId", j.status::text AS status FROM ${kind}_job_outbox o

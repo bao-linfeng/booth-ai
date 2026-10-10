@@ -17,8 +17,11 @@ async function referenceDataUrl(reference: Buffer): Promise<string> {
   if (reference.length <= INLINE_REFERENCE_BYTES && Math.max(width, height) <= MAX_REFERENCE_EDGE) {
     return `data:${await imageMimeType(reference)};base64,${reference.toString('base64')}`;
   }
-  const resized = await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels }).rotate()
-    .resize({ width: MAX_REFERENCE_EDGE, height: MAX_REFERENCE_EDGE, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
+  const resized = await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels })
+    .rotate()
+    .resize({ width: MAX_REFERENCE_EDGE, height: MAX_REFERENCE_EDGE, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 90 })
+    .toBuffer();
   return `data:image/jpeg;base64,${resized.toString('base64')}`;
 }
 
@@ -29,17 +32,35 @@ export const arkImage: ImageModelAdapter = {
   downloadHosts: [],
   async edit(model, { reference, prompt, deadline, onProviderRequest }) {
     const url = await providerEndpoint(model.baseUrl, '/images/generations');
-    const body = await providerJson(url, {
-      method: 'POST', headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: model.model, prompt, image: await referenceDataUrl(reference), size: OUTPUT_SIZE,
-        response_format: 'b64_json', watermark: false, stream: false }),
-    }, deadline, true, onProviderRequest) as ArkImageResponse;
+    const body = (await providerJson(
+      url,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: model.model,
+          prompt,
+          image: await referenceDataUrl(reference),
+          size: OUTPUT_SIZE,
+          response_format: 'b64_json',
+          watermark: false,
+          stream: false,
+        }),
+      },
+      deadline,
+      true,
+      onProviderRequest,
+    )) as ArkImageResponse;
     if (!Array.isArray(body?.data)) throw new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
-    const images = body.data.flatMap(item => typeof item?.b64_json === 'string' && item.b64_json
-      ? [`data:image/${item.output_format === 'png' ? 'png' : 'jpeg'};base64,${item.b64_json}`] : []);
+    const images = body.data.flatMap(item =>
+      typeof item?.b64_json === 'string' && item.b64_json
+        ? [`data:image/${item.output_format === 'png' ? 'png' : 'jpeg'};base64,${item.b64_json}`]
+        : [],
+    );
     if (images.length) return images;
-    throw new ImageGenerationError(body.data.some(item => /SensitiveContent/i.test(String(item?.error?.code ?? '')))
-      ? 'PROVIDER_CONTENT_BLOCKED' : 'PROVIDER_NO_IMAGE');
+    throw new ImageGenerationError(
+      body.data.some(item => /SensitiveContent/i.test(String(item?.error?.code ?? ''))) ? 'PROVIDER_CONTENT_BLOCKED' : 'PROVIDER_NO_IMAGE',
+    );
   },
 };
 

@@ -42,37 +42,48 @@ const idParamsSchema = {
 };
 
 export async function registerAdminUserRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
-  app.get('/users', { config: { permissions: ['users.read'] },
-    schema: {
-      tags: ['admin-users'],
-      querystring: {
-        ...paginationSchema,
-        properties: { ...paginationSchema.properties, phone: { type: 'string', minLength: 1 } },
+  app.get(
+    '/users',
+    {
+      config: { permissions: ['users.read'] },
+      schema: {
+        tags: ['admin-users'],
+        querystring: {
+          ...paginationSchema,
+          properties: { ...paginationSchema.properties, phone: { type: 'string', minLength: 1 } },
+        },
       },
     },
-  }, async request => {
-    const result = await listUsers(pool, toListOptions(request.query as ListQuery, true));
-    return { code: 0, data: result };
-  });
+    async request => {
+      const result = await listUsers(pool, toListOptions(request.query as ListQuery, true));
+      return { code: 0, data: result };
+    },
+  );
 
-  app.get('/users/:id', { config: { permissions: ['users.detail'] },
-    schema: { tags: ['admin-users'], params: idParamsSchema },
-  }, async request => {
-    const result = await getUser(pool, (request.params as { id: string }).id);
-    return { code: 0, data: result };
-  });
+  app.get(
+    '/users/:id',
+    { config: { permissions: ['users.detail'] }, schema: { tags: ['admin-users'], params: idParamsSchema } },
+    async request => {
+      const result = await getUser(pool, (request.params as { id: string }).id);
+      return { code: 0, data: result };
+    },
+  );
 
-  app.get('/admins', { config: { permissions: ['admins.read'] },
-    schema: { tags: ['admin-users'], querystring: paginationSchema },
-  }, async request => {
-    const result = await listAdmins(pool, toListOptions(request.query as ListQuery, false));
-    return { code: 0, data: result };
-  });
+  app.get(
+    '/admins',
+    { config: { permissions: ['admins.read'] }, schema: { tags: ['admin-users'], querystring: paginationSchema } },
+    async request => {
+      const result = await listAdmins(pool, toListOptions(request.query as ListQuery, false));
+      return { code: 0, data: result };
+    },
+  );
 
-  app.get('/admins/:id', { config: { permissions: ['admins.read'] },
-    schema: { tags: ['admin-users'], params: idParamsSchema },
-  }, async request => {
-    const result = await getAdmin(pool, (request.params as { id: string }).id);
-    return { code: 0, data: result };
-  });
+  app.get(
+    '/admins/:id',
+    { config: { permissions: ['admins.read'] }, schema: { tags: ['admin-users'], params: idParamsSchema } },
+    async request => {
+      const result = await getAdmin(pool, (request.params as { id: string }).id);
+      return { code: 0, data: result };
+    },
+  );
 }

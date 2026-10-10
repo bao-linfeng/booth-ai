@@ -6,11 +6,15 @@ export async function lockCreditJob(client: pg.PoolClient, job: CreditJob): Prom
   const peek = (await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM ${job.kind}_jobs WHERE id = $1`, [job.id])).rows[0];
   if (!peek) return;
   await lockCreditUser(client, peek.userId);
-  return (await client.query<LockedCreditJob>(
-    `SELECT user_id AS "userId", status, unit_credits AS "unitCredits", requested_count AS "requestedCount",
+  return (
+    await client.query<LockedCreditJob>(
+      `SELECT user_id AS "userId", status, unit_credits AS "unitCredits", requested_count AS "requestedCount",
       usable_count AS "usableCount", ${job.kind === 'theme' ? 'cache_hit' : 'false'} AS "cacheHit",
       lease_token AS "leaseToken", lease_until AS "leaseUntil"
-    FROM ${job.kind}_jobs WHERE id = $1 FOR UPDATE`, [job.id])).rows[0];
+    FROM ${job.kind}_jobs WHERE id = $1 FOR UPDATE`,
+      [job.id],
+    )
+  ).rows[0];
 }
 
 // Generation owns the job tables and credits owns the ledger; settling a job combines both inside one transaction.

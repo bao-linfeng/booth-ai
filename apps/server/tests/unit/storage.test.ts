@@ -24,17 +24,25 @@ test('bounded S3 binary reads preserve bytes and reject oversized and unavailabl
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
-  t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
+  t.after(() => new Promise<void>((resolve, reject) => server.close(error => (error ? reject(error) : resolve()))));
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const endpoint = `http://127.0.0.1:${address.port}`;
-  const storage = createStorage(loadConfig({
-    NODE_ENV: 'test', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',
-    S3_ENDPOINT: endpoint, S3_PUBLIC_ENDPOINT: endpoint, S3_BUCKET: 'test',
-    S3_ACCESS_KEY: 'test-only', S3_SECRET_KEY: 'test-only',
-    EXTERNAL_API_URL: 'https://api.example.test',
-    SESSION_SECRET: 'test-session-secret-must-be-at-least-32-bytes', AI_MODEL_ENCRYPTION_KEY: 'a'.repeat(64),
-  }));
+  const storage = createStorage(
+    loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgres://localhost/test',
+      REDIS_URL: 'redis://localhost',
+      S3_ENDPOINT: endpoint,
+      S3_PUBLIC_ENDPOINT: endpoint,
+      S3_BUCKET: 'test',
+      S3_ACCESS_KEY: 'test-only',
+      S3_SECRET_KEY: 'test-only',
+      EXTERNAL_API_URL: 'https://api.example.test',
+      SESSION_SECRET: 'test-session-secret-must-be-at-least-32-bytes',
+      AI_MODEL_ENCRYPTION_KEY: 'a'.repeat(64),
+    }),
+  );
   t.after(() => storage.close());
   assert.deepEqual(await storage.getBuffer('binary', bytes.length), bytes);
   await assert.rejects(storage.getBuffer('binary', bytes.length - 1), /size limit/);
@@ -44,7 +52,9 @@ test('bounded S3 binary reads preserve bytes and reject oversized and unavailabl
   const streamed: Uint8Array[] = [];
   for await (const chunk of await storage.openRead('chunked', bytes.length * 2)) streamed.push(chunk);
   assert.deepEqual(Buffer.concat(streamed), Buffer.concat([bytes, bytes]));
-  await assert.rejects(async () => { for await (const _ of await storage.openRead('chunked', bytes.length)); }, /size limit/);
+  await assert.rejects(async () => {
+    for await (const _ of await storage.openRead('chunked', bytes.length));
+  }, /size limit/);
   await assert.rejects(storage.openRead('binary', bytes.length - 1), /size limit/);
   assert.equal(await storage.objectSize('binary'), bytes.length);
   await assert.rejects(storage.objectSize('missing'));

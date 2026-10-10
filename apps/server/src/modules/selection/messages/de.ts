@@ -22,7 +22,8 @@ export const de: Messages = {
   missBudget: 'Die Budgetstufe für den Materialkauf weicht von der Präferenz ab',
   noPublished: 'Derzeit gibt es keine veröffentlichten und geprüften Entwürfe',
   noMatchRandom: 'Derzeit sind keine Entwürfe für eine zufällige Empfehlung verfügbar (Ausschlussgründe können sich überschneiden)',
-  noMatchFiltered: 'Für diese Kriterienkombination gibt es keinen verwendbaren oder als Referenz geeigneten Entwurf (Ausschlussgründe können sich überschneiden)',
+  noMatchFiltered:
+    'Für diese Kriterienkombination gibt es keinen verwendbaren oder als Referenz geeigneten Entwurf (Ausschlussgründe können sich überschneiden)',
   excUnverifiedChecklist: 'Checkliste nicht geprüft',
   excIncompleteAssets: 'Unvollständige Assets',
   excInvalidData: 'Unvollständige Basisdaten oder Prüfinformationen',
@@ -32,19 +33,25 @@ export const de: Messages = {
   excDimensions: 'Maße passen nicht oder liegen außerhalb des Referenzbereichs',
   excPoolLine: '{label}: {count} veröffentlichte Entwürfe',
   excAvailableLine: '{label}: {count} verfügbare Entwürfe',
-  suggestDimensions: 'Prüfen Sie die gewählte Länge, Breite und Höhe oder passen Sie die benutzerdefinierte Länge, Breite und Fläche an und suchen Sie erneut',
+  suggestDimensions:
+    'Prüfen Sie die gewählte Länge, Breite und Höhe oder passen Sie die benutzerdefinierte Länge, Breite und Fläche an und suchen Sie erneut',
   suggestProductSystem: 'Prüfen Sie das gewählte Produktsystem und suchen Sie nach der Änderung erneut',
   suggestTags: 'Prüfen Sie die erforderlichen oder ausgeschlossenen Funktionskriterien und suchen Sie nach der Änderung erneut',
   suggestAdvisor: 'Sie können auch einen Berater kontaktieren, um verfügbare Entwürfe zu klären',
-  parseUnhandledRules: 'Ein Teil des Textes konnte nicht zuverlässig erkannt werden. Ergänzen Sie die Kriterien im Formular oder wenden Sie sich an einen Berater.',
-  parseNoReliable: 'Es wurden keine verlässlichen Kriterien erkannt. Bitte geben Sie eindeutige Maße an oder wählen Sie Kriterien im Formular.',
+  parseUnhandledRules:
+    'Ein Teil des Textes konnte nicht zuverlässig erkannt werden. Ergänzen Sie die Kriterien im Formular oder wenden Sie sich an einen Berater.',
+  parseNoReliable:
+    'Es wurden keine verlässlichen Kriterien erkannt. Bitte geben Sie eindeutige Maße an oder wählen Sie Kriterien im Formular.',
   parseWarningRulesOnly: 'Diesmal wurde die regelbasierte Erkennung verwendet; nicht erkannte Inhalte müssen manuell bestätigt werden.',
   parseDimMultiple: 'Für dasselbe Maß wurden mehrere Werte gefunden. Bitte bestätigen Sie den endgültigen Wert im Formular.',
   parseDimInvalid: 'Das Maß muss eine positive Zahl auf den Millimeter genau sein. Bitte korrigieren.',
-  parseHeightNeedsSize: 'Die Entwurfshöhe muss zusammen mit eindeutiger Länge und Breite als vollständige Größe gewählt werden. Bitte bestätigen.',
-  parseHeightNoSize: 'Es gibt keine passende vollständige Entwurfsgröße. Wählen Sie eine vorhandene Größe oder wenden Sie sich an einen Berater.',
+  parseHeightNeedsSize:
+    'Die Entwurfshöhe muss zusammen mit eindeutiger Länge und Breite als vollständige Größe gewählt werden. Bitte bestätigen.',
+  parseHeightNoSize:
+    'Es gibt keine passende vollständige Entwurfsgröße. Wählen Sie eine vorhandene Größe oder wenden Sie sich an einen Berater.',
   parseAreaMultiple: 'Es wurden mehrere Flächen gefunden. Bitte bestätigen Sie die endgültige Fläche.',
-  parseDirection: 'Die Richtungen von Länge und Breite bei „{text}“ sind unklar. Bitte bestätigen Sie, wobei links-rechts die Länge und vorn-hinten die Breite ist.',
+  parseDirection:
+    'Die Richtungen von Länge und Breite bei „{text}“ sind unklar. Bitte bestätigen Sie, wobei links-rechts die Länge und vorn-hinten die Breite ist.',
   parseOpeningConflict: 'Die Anzahl offener Seiten ist widersprüchlich. Bitte bestätigen.',
   parseNoConstraints: 'Diese Kategorie unterstützt keine Verneinung oder Pflichtkriterien. Bitte bestätigen.',
   parseCandidates: 'Für „{text}“ gibt es mehrere Kandidaten. Bitte bestätigen.',

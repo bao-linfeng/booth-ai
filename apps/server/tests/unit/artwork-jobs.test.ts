@@ -9,20 +9,44 @@ import { DIRECTIONS, DIRECTION_LABELS } from '../../src/modules/generation/artwo
 import { assignedRow } from '../helpers/ai-fixtures.js';
 
 test('default artwork snapshot freezes single-reference reconstruction and resolves each requested camera direction', async () => {
-  const source = { sourceAssetId: 'theme-asset', versionId: 'theme-version', objectKey: 'selected-theme.png', checksum: 'theme-checksum',
-    input: { industryId: 'industry', styleId: 'style', brandColors: [], brandKeywords: '' } };
+  const source = {
+    sourceAssetId: 'theme-asset',
+    versionId: 'theme-version',
+    objectKey: 'selected-theme.png',
+    checksum: 'theme-checksum',
+    input: { industryId: 'industry', styleId: 'style', brandColors: [], brandKeywords: '' },
+  };
   let templateEnabled = false;
-  const template = { id: 'template', revision: 3, body: '{{industryLabel}}/{{styleLabel}}/{{directionLabel}}', createdAt: new Date(), updatedAt: new Date() };
-  const pool = { query: async (sql: string) => {
-    if (sql.includes('FROM theme_jobs')) return { rows: [source] };
-    if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('openai', 'artwork', { unitCredits: 5, revision: 2 })] };
-    if (sql.includes('FROM dictionary_items')) return { rows: [{ id: 'industry', label: '汽车' }, { id: 'style', label: '科技未来' }] };
-    if (sql.includes('FROM prompt_templates')) return { rows: templateEnabled ? [template] : [] };
-    throw new Error(`Unexpected query: ${sql}`);
-  } } as unknown as pg.Pool;
+  const template = {
+    id: 'template',
+    revision: 3,
+    body: '{{industryLabel}}/{{styleLabel}}/{{directionLabel}}',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const pool = {
+    query: async (sql: string) => {
+      if (sql.includes('FROM theme_jobs')) return { rows: [source] };
+      if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('openai', 'artwork', { unitCredits: 5, revision: 2 })] };
+      if (sql.includes('FROM dictionary_items'))
+        return {
+          rows: [
+            { id: 'industry', label: '汽车' },
+            { id: 'style', label: '科技未来' },
+          ],
+        };
+      if (sql.includes('FROM prompt_templates')) return { rows: templateEnabled ? [template] : [] };
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  } as unknown as pg.Pool;
   const context = { schemeCode: 'SCHEME', themeJobId: 'theme-job', resultId: 'theme-result', selectionRevision: 1 };
   const snapshot = await loadArtworkSnapshot(pool, 'user', context);
-  assert.deepEqual(snapshot.source, { assetId: source.sourceAssetId, versionId: source.versionId, objectKey: source.objectKey, checksum: source.checksum });
+  assert.deepEqual(snapshot.source, {
+    assetId: source.sourceAssetId,
+    versionId: source.versionId,
+    objectKey: source.objectKey,
+    checksum: source.checksum,
+  });
   assert.equal(snapshot.template, null);
   assert.equal(snapshot.pipelineRevision, 5);
   assert.match(snapshot.prompt, /行业：汽车。风格：科技未来。品牌色：沿用参考图已有配色/);
@@ -75,26 +99,46 @@ test('default artwork snapshot freezes single-reference reconstruction and resol
 });
 
 test('artwork snapshot freezes the first assigned model able to render artwork', async () => {
-  const source = { sourceAssetId: 'theme-asset', versionId: 'theme-version', objectKey: 'selected-theme.png', checksum: 'theme-checksum',
-    input: { industryId: 'industry', styleId: 'style', brandColors: [], brandKeywords: '' } };
-  const pool = { query: async (sql: string) => {
-    if (sql.includes('FROM theme_jobs')) return { rows: [source] };
-    // Rows come back in position order; a protocol that is no longer registered is skipped even if assigned.
-    if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('gemini', 'artwork', { protocol: 'retired' as ProviderProtocol, unitCredits: 1, revision: 9 }),
-      assignedRow('gemini', 'artwork', { id: 'gemini-model', unitCredits: 6, revision: 3, position: 2 })] };
-    if (sql.includes('FROM dictionary_items')) return { rows: [] };
-    if (sql.includes('FROM prompt_templates')) return { rows: [] };
-    throw new Error(`Unexpected query: ${sql}`);
-  } } as unknown as pg.Pool;
-  const snapshot = await loadArtworkSnapshot(pool, 'user', { schemeCode: 'SCHEME', themeJobId: 'theme-job', resultId: 'theme-result', selectionRevision: 1 });
+  const source = {
+    sourceAssetId: 'theme-asset',
+    versionId: 'theme-version',
+    objectKey: 'selected-theme.png',
+    checksum: 'theme-checksum',
+    input: { industryId: 'industry', styleId: 'style', brandColors: [], brandKeywords: '' },
+  };
+  const pool = {
+    query: async (sql: string) => {
+      if (sql.includes('FROM theme_jobs')) return { rows: [source] };
+      // Rows come back in position order; a protocol that is no longer registered is skipped even if assigned.
+      if (sql.includes('FROM ai_model_assignments'))
+        return {
+          rows: [
+            assignedRow('gemini', 'artwork', { protocol: 'retired' as ProviderProtocol, unitCredits: 1, revision: 9 }),
+            assignedRow('gemini', 'artwork', { id: 'gemini-model', unitCredits: 6, revision: 3, position: 2 }),
+          ],
+        };
+      if (sql.includes('FROM dictionary_items')) return { rows: [] };
+      if (sql.includes('FROM prompt_templates')) return { rows: [] };
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  } as unknown as pg.Pool;
+  const snapshot = await loadArtworkSnapshot(pool, 'user', {
+    schemeCode: 'SCHEME',
+    themeJobId: 'theme-job',
+    resultId: 'theme-result',
+    selectionRevision: 1,
+  });
   assert.deepEqual(snapshot.model, { id: 'gemini-model', model: 'gemini-3.1-flash-image', revision: 3, unitCredits: 6 });
 });
 
 test('artwork acceptance converts actual JPEG pixels to PNG and rejects low resolution, corrupt and oversized content', async () => {
-  const jpeg = await sharp({ create: { width: 2048, height: 1152, channels: 3, background: '#345678' } }).jpeg().toBuffer();
+  const jpeg = await sharp({ create: { width: 2048, height: 1152, channels: 3, background: '#345678' } })
+    .jpeg()
+    .toBuffer();
   const image = await normalizeArtworkImage(jpeg);
   assert.deepEqual([...image.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-  assert.equal(image.width, 2048); assert.equal(image.height, 1152);
+  assert.equal(image.width, 2048);
+  assert.equal(image.height, 1152);
   assert.equal((await sharp(image.bytes).metadata()).format, 'png');
   const small = await sharp(jpeg).resize(1024, 576).png().toBuffer();
   await assert.rejects(normalizeArtworkImage(small), /ARTWORK_RESOLUTION_TOO_LOW/);
@@ -104,4 +148,3 @@ test('artwork acceptance converts actual JPEG pixels to PNG and rejects low reso
   await assert.rejects(normalizeArtworkImage(jpeg.subarray(0, 100)));
   await assert.rejects(normalizeArtworkImage(Buffer.alloc(30 * 1024 * 1024 + 1)), /ARTWORK_SIZE_INVALID/);
 });
-

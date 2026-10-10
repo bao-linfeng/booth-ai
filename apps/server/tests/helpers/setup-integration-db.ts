@@ -27,14 +27,18 @@ for (const url of databaseUrls) {
   try {
     await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`);
     await admin.query(`CREATE DATABASE ${database}`);
-  } finally { await admin.end(); }
+  } finally {
+    await admin.end();
+  }
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {
     const migrations = (await readdir(new URL('../../migrations/', import.meta.url))).filter(name => /^\d+_.+\.sql$/.test(name)).sort();
     for (const name of migrations) await client.query(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
     console.info(`Integration database ${database} recreated with ${migrations.length} migrations`);
-  } finally { await client.end(); }
+  } finally {
+    await client.end();
+  }
 }
 
 const redisUrls = new Set<string>();
@@ -43,6 +47,10 @@ for (const redisUrl of redisUrls) {
   const db = Number(new URL(redisUrl).pathname.slice(1) || 0);
   if (!Number.isInteger(db) || db === 0) throw new Error('Integration test Redis URLs must select a dedicated non-zero Redis database');
   const redis = new Redis(redisUrl, { maxRetriesPerRequest: 1 });
-  try { await redis.flushdb(); } finally { redis.disconnect(); }
+  try {
+    await redis.flushdb();
+  } finally {
+    redis.disconnect();
+  }
   console.info(`Integration Redis database ${db} flushed`);
 }

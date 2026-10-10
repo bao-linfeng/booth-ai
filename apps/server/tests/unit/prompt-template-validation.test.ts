@@ -5,7 +5,8 @@ import { buildArtworkPrompts } from '../../src/modules/generation/artwork/prompt
 
 test('prompt validation extracts supported variables and rejects unknown variables and empty bodies', () => {
   assert.deepEqual(inspectPrompt('theme', '{{industryLabel}} / {{brandColors}}'), {
-    variables: ['industryLabel', 'brandColors'], issues: [],
+    variables: ['industryLabel', 'brandColors'],
+    issues: [],
   });
   assert.equal(inspectPrompt('filter', '').issues[0]?.code, 'EMPTY_BODY');
   assert.equal(inspectPrompt('theme', '{{unknown}}').issues[0]?.code, 'UNKNOWN_VARIABLE');
@@ -26,8 +27,11 @@ test('rendering replaces template tokens once and preserves variable-like user t
 });
 
 test('artwork user keywords are not recursively rendered while system direction instructions are expanded', () => {
-  const result = buildArtworkPrompts({ industryId: 'industry', styleId: 'style', brandColors: [],
-    brandKeywords: '{{directionLabel}} {{cameraInstructions}}' }, '行业', '风格');
+  const result = buildArtworkPrompts(
+    { industryId: 'industry', styleId: 'style', brandColors: [], brandKeywords: '{{directionLabel}} {{cameraInstructions}}' },
+    '行业',
+    '风格',
+  );
   const left = result.directionPrompts.left;
   assert.match(left, /品牌关键词：\{\{directionLabel\}\} \{\{cameraInstructions\}\}/);
   assert.match(left, /【本次相机：左侧 \/ LEFT/);

@@ -3,8 +3,12 @@ import type { ImportDictionaryLabels, ImportPreviewRow, ImportRow } from './type
 import { indexDictionaryTerms, resolveIndexedTerms, type DictionaryAlias, type DictionaryTermIndex } from '../../dictionaries/language.js';
 
 export const importDictionaries = {
-  productSystemId: 'product_system', styleId: 'style', industryIds: 'industry',
-  budgetTierId: 'budget_tier', zoneIds: 'functional_zone', featureIds: 'key_feature',
+  productSystemId: 'product_system',
+  styleId: 'style',
+  industryIds: 'industry',
+  budgetTierId: 'budget_tier',
+  zoneIds: 'functional_zone',
+  featureIds: 'key_feature',
 } as const;
 
 type ImportDictionaryField = keyof typeof importDictionaries;
@@ -18,13 +22,26 @@ export interface ImportDictionaries {
 /** 一次查询加载导入涉及的全部启用字典；提交阶段仍由 validateSchemeDictionaryIds 复核有效性。 */
 export async function loadImportDictionaries(client: pg.Pool | pg.PoolClient): Promise<ImportDictionaries> {
   const codes = Object.values(importDictionaries);
-  const result = await client.query<{ dictionaryCode: string; id: string; label: string; itemValue: string; labels: Record<string, string>; aliases: DictionaryAlias[] }>(`
+  const result = await client.query<{
+    dictionaryCode: string;
+    id: string;
+    label: string;
+    itemValue: string;
+    labels: Record<string, string>;
+    aliases: DictionaryAlias[];
+  }>(
+    `
     SELECT d.code AS "dictionaryCode", i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue", i.labels, i.aliases
     FROM dictionary_items i JOIN dictionaries d ON d.id = i.dictionary_id
-    WHERE d.code = ANY($1::text[]) AND d.enabled AND i.enabled`, [codes]);
-  const terms = new Map(codes.map(code => [code, indexDictionaryTerms(result.rows
-    .filter(item => item.dictionaryCode === code)
-    .map(item => ({ ...item, value: item.itemValue })))]));
+    WHERE d.code = ANY($1::text[]) AND d.enabled AND i.enabled`,
+    [codes],
+  );
+  const terms = new Map(
+    codes.map(code => [
+      code,
+      indexDictionaryTerms(result.rows.filter(item => item.dictionaryCode === code).map(item => ({ ...item, value: item.itemValue }))),
+    ]),
+  );
   return { terms, labels: new Map(result.rows.map(item => [item.id, item.label])) };
 }
 
@@ -37,7 +54,7 @@ function resolveImportLabels(dictionaries: ImportDictionaries, row: ImportRow): 
     const labels = Array.isArray(value) ? value : [value];
     if (labels.length === 0) continue;
     const ids = resolveIndexedTerms(dictionaries.terms.get(code) ?? new Map(), labels);
-    (result as Record<ImportDictionaryField, string | string[] | null>)[field] = Array.isArray(value) ? ids as string[] : ids[0]!;
+    (result as Record<ImportDictionaryField, string | string[] | null>)[field] = Array.isArray(value) ? (ids as string[]) : ids[0]!;
   }
   return result;
 }
@@ -60,8 +77,12 @@ export function validateImportedSize(row: ImportRow): void {
   }
   if (row.areaM2 !== null && (!Number.isFinite(row.areaM2) || row.areaM2 <= 0))
     throw Object.assign(new Error('面积必须为正数'), { statusCode: 400 });
-  if (row.areaM2 !== null && row.lengthMm !== null && row.widthMm !== null &&
-    Math.abs(row.areaM2 - row.lengthMm * row.widthMm / 1_000_000) > 0.000001)
+  if (
+    row.areaM2 !== null &&
+    row.lengthMm !== null &&
+    row.widthMm !== null &&
+    Math.abs(row.areaM2 - (row.lengthMm * row.widthMm) / 1_000_000) > 0.000001
+  )
     throw Object.assign(new Error('面积与长宽不一致'), { statusCode: 400 });
 }
 
@@ -82,8 +103,14 @@ export function missingRequiredField(row: ImportRow): string | null {
 export function importRowFromJson(value: unknown): ImportPreviewRow | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   const row = value as Partial<ImportPreviewRow>;
-  if (typeof row.rowId !== 'number' || typeof row.sheetName !== 'string' || typeof row.rowNumber !== 'number' ||
-    typeof row.code !== 'string' || typeof row.name !== 'string' ||
-    (row.status !== 'valid' && row.status !== 'duplicate' && row.status !== 'unchanged' && row.status !== 'error')) return null;
+  if (
+    typeof row.rowId !== 'number' ||
+    typeof row.sheetName !== 'string' ||
+    typeof row.rowNumber !== 'number' ||
+    typeof row.code !== 'string' ||
+    typeof row.name !== 'string' ||
+    (row.status !== 'valid' && row.status !== 'duplicate' && row.status !== 'unchanged' && row.status !== 'error')
+  )
+    return null;
   return row as ImportPreviewRow;
 }

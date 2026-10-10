@@ -19,6 +19,14 @@ export function signInClient(config: Config, pool: pg.Pool, redis: Redis, userna
   return loginClient(config, pool, redis, username, password, visitorId, attributeGuestData(pool));
 }
 
-export function signInClientWithToken(config: Config, pool: pg.Pool, redis: Redis, username: string, token: string, visitorId: string | null, type: UserType = 'client') {
+export function signInClientWithToken(
+  config: Config,
+  pool: pg.Pool,
+  redis: Redis,
+  username: string,
+  token: string,
+  visitorId: string | null,
+  type: UserType = 'client',
+) {
   return syncClientSession(config, pool, redis, username, token, visitorId, type, attributeGuestData(pool));
 }

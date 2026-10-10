@@ -58,37 +58,67 @@ export function toAssetVersion(row: AssetVersionRow): AssetVersion {
 }
 
 function toSchemeAsset(row: AssetRow): SchemeAsset {
-  const currentVersion = row.versionId === null || row.versionAssetId === null || row.versionObjectKey === null ||
-    row.versionOriginalFilename === null || row.versionMimeType === null || row.versionByteSize === null ||
-    row.versionChecksum === null || row.versionCreatedAt === null
-    ? null
-    : {
-        id: row.versionId, assetId: row.versionAssetId, objectKey: row.versionObjectKey,
-        originalFilename: row.versionOriginalFilename, mimeType: row.versionMimeType,
-        byteSize: Number(row.versionByteSize), checksum: row.versionChecksum, widthPx: row.versionWidthPx,
-        heightPx: row.versionHeightPx, pageCount: row.versionPageCount, createdAt: toIso(row.versionCreatedAt),
-      };
-  const { versionId: _versionId, versionAssetId: _versionAssetId, versionObjectKey: _versionObjectKey,
-    versionOriginalFilename: _versionOriginalFilename, versionMimeType: _versionMimeType,
-    versionByteSize: _versionByteSize, versionChecksum: _versionChecksum, versionWidthPx: _versionWidthPx,
-    versionHeightPx: _versionHeightPx, versionPageCount: _versionPageCount, versionCreatedAt: _versionCreatedAt,
-    createdAt, updatedAt, ...asset } = row;
+  const currentVersion =
+    row.versionId === null ||
+    row.versionAssetId === null ||
+    row.versionObjectKey === null ||
+    row.versionOriginalFilename === null ||
+    row.versionMimeType === null ||
+    row.versionByteSize === null ||
+    row.versionChecksum === null ||
+    row.versionCreatedAt === null
+      ? null
+      : {
+          id: row.versionId,
+          assetId: row.versionAssetId,
+          objectKey: row.versionObjectKey,
+          originalFilename: row.versionOriginalFilename,
+          mimeType: row.versionMimeType,
+          byteSize: Number(row.versionByteSize),
+          checksum: row.versionChecksum,
+          widthPx: row.versionWidthPx,
+          heightPx: row.versionHeightPx,
+          pageCount: row.versionPageCount,
+          createdAt: toIso(row.versionCreatedAt),
+        };
+  const {
+    versionId: _versionId,
+    versionAssetId: _versionAssetId,
+    versionObjectKey: _versionObjectKey,
+    versionOriginalFilename: _versionOriginalFilename,
+    versionMimeType: _versionMimeType,
+    versionByteSize: _versionByteSize,
+    versionChecksum: _versionChecksum,
+    versionWidthPx: _versionWidthPx,
+    versionHeightPx: _versionHeightPx,
+    versionPageCount: _versionPageCount,
+    versionCreatedAt: _versionCreatedAt,
+    createdAt,
+    updatedAt,
+    ...asset
+  } = row;
   return { ...asset, currentVersion, createdAt: toIso(createdAt), updatedAt: toIso(updatedAt) };
 }
 
 export async function findAsset(pool: pg.Pool | pg.PoolClient, schemeCode: string, assetId: string): Promise<SchemeAsset | null> {
-  const result = await pool.query<AssetRow>(`
+  const result = await pool.query<AssetRow>(
+    `
     SELECT ${assetColumns}
     FROM scheme_baseline_assets sa
     JOIN schemes s ON s.id = sa.scheme_id
     ${latestVersionJoin}
     WHERE s.code = $1 AND sa.id = $2 AND sa.is_active = true
-  `, [schemeCode, assetId]);
+  `,
+    [schemeCode, assetId],
+  );
   const row = result.rows[0];
   return row ? toSchemeAsset(row) : null;
 }
 
-export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Promise<{ data: SchemeAsset[]; total: number; page: number; pageSize: number }> {
+export async function listAssets(
+  pool: pg.Pool,
+  options: ListAssetsOptions,
+): Promise<{ data: SchemeAsset[]; total: number; page: number; pageSize: number }> {
   const conditions = ['sa.is_active = true'];
   const values: unknown[] = [];
   const add = (condition: string, value: unknown) => {
@@ -102,7 +132,8 @@ export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Pro
   const where = `WHERE ${conditions.join(' AND ')}`;
   const offset = (options.page - 1) * options.pageSize;
   const [records, count] = await Promise.all([
-    pool.query<AssetRow>(`
+    pool.query<AssetRow>(
+      `
       SELECT ${assetColumns}
       FROM scheme_baseline_assets sa
       JOIN schemes s ON s.id = sa.scheme_id
@@ -110,21 +141,34 @@ export async function listAssets(pool: pg.Pool, options: ListAssetsOptions): Pro
       ${where}
       ORDER BY s.code ASC, sa.sort_order ASC, sa.created_at ASC, sa.id ASC
       LIMIT $${values.length + 1} OFFSET $${values.length + 2}
-    `, [...values, options.pageSize, offset]),
-    pool.query<{ total: string }>(`SELECT count(*)::text AS total FROM scheme_baseline_assets sa JOIN schemes s ON s.id = sa.scheme_id ${where}`, values),
+    `,
+      [...values, options.pageSize, offset],
+    ),
+    pool.query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM scheme_baseline_assets sa JOIN schemes s ON s.id = sa.scheme_id ${where}`,
+      values,
+    ),
   ]);
-  return { data: records.rows.map(toSchemeAsset), total: Number(count.rows[0]?.total ?? 0), page: options.page, pageSize: options.pageSize };
+  return {
+    data: records.rows.map(toSchemeAsset),
+    total: Number(count.rows[0]?.total ?? 0),
+    page: options.page,
+    pageSize: options.pageSize,
+  };
 }
 
 export async function listSchemeAssets(pool: pg.Pool, schemeCode: string, type?: AssetType): Promise<SchemeAsset[]> {
-  const result = await pool.query<AssetRow>(`
+  const result = await pool.query<AssetRow>(
+    `
     SELECT ${assetColumns}
     FROM scheme_baseline_assets sa
     JOIN schemes s ON s.id = sa.scheme_id
     ${latestVersionJoin}
     WHERE s.code = $1 AND sa.is_active = true${type ? ' AND sa.type = $2' : ''}
     ORDER BY sa.sort_order ASC, sa.created_at ASC
-  `, type ? [schemeCode, type] : [schemeCode]);
+  `,
+    type ? [schemeCode, type] : [schemeCode],
+  );
   return result.rows.map(toSchemeAsset);
 }
 
@@ -135,11 +179,14 @@ export async function getAsset(pool: pg.Pool | pg.PoolClient, schemeCode: string
 }
 
 export async function getAssetVersion(pool: pg.Pool, assetId: string, versionId: string): Promise<AssetVersion> {
-  const result = await pool.query<AssetVersionRow>(`
+  const result = await pool.query<AssetVersionRow>(
+    `
     SELECT ${assetVersionColumns}
     FROM asset_versions
     WHERE id = $1 AND asset_id = $2
-  `, [versionId, assetId]);
+  `,
+    [versionId, assetId],
+  );
   const row = result.rows[0];
   if (!row) throw Object.assign(new Error('Asset version not found'), { statusCode: 404 });
   return toAssetVersion(row);
@@ -162,13 +209,18 @@ export async function listMaskPairingCandidates(pool: pg.Pool, schemeCode: strin
 }
 
 /** 每个资产最新版本的对象键，用于给历史快照里的图片重新签名 */
-export async function latestVersionKeys(pool: Pick<pg.Pool, 'query'>, assetIds: string[]): Promise<{ assetId: string; objectKey: string }[]> {
+export async function latestVersionKeys(
+  pool: Pick<pg.Pool, 'query'>,
+  assetIds: string[],
+): Promise<{ assetId: string; objectKey: string }[]> {
   if (assetIds.length === 0) return [];
-  return (await pool.query<{ assetId: string; objectKey: string }>(
-    `SELECT DISTINCT ON (v.asset_id) v.asset_id::text AS "assetId",v.object_key AS "objectKey"
+  return (
+    await pool.query<{ assetId: string; objectKey: string }>(
+      `SELECT DISTINCT ON (v.asset_id) v.asset_id::text AS "assetId",v.object_key AS "objectKey"
      FROM asset_versions v
      WHERE v.asset_id::text = ANY($1::text[])
      ORDER BY v.asset_id,v.created_at DESC,v.id DESC`,
-    [assetIds],
-  )).rows;
+      [assetIds],
+    )
+  ).rows;
 }

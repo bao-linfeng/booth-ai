@@ -4,9 +4,18 @@ import { loadConfig } from '../../src/config.js';
 import { registerAdminModule } from '../../src/http/admin/index.js';
 
 const config = loadConfig({
-  NODE_ENV: 'test', LOG_LEVEL: 'silent', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',
-  S3_ENDPOINT: 'http://localhost:9000', S3_PUBLIC_ENDPOINT: 'http://localhost:19000', S3_BUCKET: 'test', S3_ACCESS_KEY: 'test-only', S3_SECRET_KEY: 'test-only',
-  CORS_ORIGINS: 'http://localhost:5173', SESSION_SECRET: 'test-session-secret-must-be-at-least-32-bytes', AI_MODEL_ENCRYPTION_KEY: 'a'.repeat(64),
+  NODE_ENV: 'test',
+  LOG_LEVEL: 'silent',
+  DATABASE_URL: 'postgres://localhost/test',
+  REDIS_URL: 'redis://localhost',
+  S3_ENDPOINT: 'http://localhost:9000',
+  S3_PUBLIC_ENDPOINT: 'http://localhost:19000',
+  S3_BUCKET: 'test',
+  S3_ACCESS_KEY: 'test-only',
+  S3_SECRET_KEY: 'test-only',
+  CORS_ORIGINS: 'http://localhost:5173',
+  SESSION_SECRET: 'test-session-secret-must-be-at-least-32-bytes',
+  AI_MODEL_ENCRYPTION_KEY: 'a'.repeat(64),
   EXTERNAL_API_URL: 'https://api.example.test',
 });
 

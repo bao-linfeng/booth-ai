@@ -49,10 +49,14 @@ async function setup(options: { status?: string; subscribeError?: boolean; snaps
   const subscriber = new Subscriber();
   subscriber.subscribeError = options.subscribeError ?? false;
   const values = new Map<string, string>();
-  values.set(`session:${createHash('sha256').update('owner').digest('hex').slice(0, 32)}`,
-    JSON.stringify({ site: 'client', localId: userId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }));
-  values.set(`session:${createHash('sha256').update('other').digest('hex').slice(0, 32)}`,
-    JSON.stringify({ site: 'client', localId: otherJobId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }));
+  values.set(
+    `session:${createHash('sha256').update('owner').digest('hex').slice(0, 32)}`,
+    JSON.stringify({ site: 'client', localId: userId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }),
+  );
+  values.set(
+    `session:${createHash('sha256').update('other').digest('hex').slice(0, 32)}`,
+    JSON.stringify({ site: 'client', localId: otherJobId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }),
+  );
   const redis = {
     get: async (key: string) => values.get(key) ?? null,
     getdel: async (key: string) => {
@@ -67,7 +71,10 @@ async function setup(options: { status?: string; subscribeError?: boolean; snaps
       return 'OK';
     },
     duplicate: () => {
-      setImmediate(() => { subscriber.status = 'ready'; subscriber.emit('ready'); });
+      setImmediate(() => {
+        subscriber.status = 'ready';
+        subscriber.emit('ready');
+      });
       return subscriber;
     },
   } as unknown as Redis;
@@ -78,7 +85,11 @@ async function setup(options: { status?: string; subscribeError?: boolean; snaps
         assert.equal(subscriber.subscribed, true, 'subscribe before reading the current state');
         assert.deepEqual(params, [jobId, userId]);
         if (options.snapshotError) throw new Error('Snapshot unavailable');
-        return { rows: [{ status: options.status ?? 'running', phase: null, deliveryStatus: options.status === 'succeeded' ? 'ready' : 'pending' }] };
+        return {
+          rows: [
+            { status: options.status ?? 'running', phase: null, deliveryStatus: options.status === 'succeeded' ? 'ready' : 'pending' },
+          ],
+        };
       }
       assert.ok(sql.includes('FROM artwork_jobs WHERE id=$1 AND user_id=$2'));
       return { rows: params[0] === jobId && params[1] === userId ? [{ id: jobId }] : [] };
@@ -90,7 +101,11 @@ async function setup(options: { status?: string; subscribeError?: boolean; snaps
   await registerArtworkJobRoutes(app, pool, redis, {} as ReturnType<typeof createStorage>);
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
   async function ticket() {
-    const response = await app.inject({ method: 'POST', url: `/artwork-jobs/${jobId}/events-ticket`, headers: { authorization: 'Bearer owner' } });
+    const response = await app.inject({
+      method: 'POST',
+      url: `/artwork-jobs/${jobId}/events-ticket`,
+      headers: { authorization: 'Bearer owner' },
+    });
     assert.equal(response.statusCode, 200, response.body);
     assert.equal(response.headers['cache-control'], 'private, no-store');
     return response.json<{ data: { ticket: string } }>().data.ticket;
@@ -113,8 +128,13 @@ test('artwork SSE closes at the next heartbeat after the owner logs out', { time
   const { app, ticket, address, values } = await setup();
   t.mock.timers.enable({ apis: ['setInterval'] });
   const abort = new AbortController();
-  t.after(async () => { abort.abort(); await app.close(); });
-  const reader = (await fetch(`${address}/artwork-jobs/${jobId}/events?ticket=${await ticket()}`, { signal: abort.signal })).body!.getReader();
+  t.after(async () => {
+    abort.abort();
+    await app.close();
+  });
+  const reader = (
+    await fetch(`${address}/artwork-jobs/${jobId}/events?ticket=${await ticket()}`, { signal: abort.signal })
+  ).body!.getReader();
   await readUntil(reader, '"running"');
   t.mock.timers.tick(15_000);
   await readUntil(reader, 'event: ping');
@@ -141,9 +161,15 @@ test('artwork event tickets require ownership, reject invalid and mismatched tic
 test('artwork SSE syncs completion missed before connecting, preserves CORS and cleans up on client close', { timeout: 5000 }, async t => {
   const { app, ticket, subscriber, address } = await setup({ status: 'succeeded' });
   const abort = new AbortController();
-  t.after(async () => { abort.abort(); await app.close(); });
+  t.after(async () => {
+    abort.abort();
+    await app.close();
+  });
   const issued = await ticket();
-  const response = await fetch(`${address}/artwork-jobs/${jobId}/events?ticket=${issued}`, { headers: { origin: 'http://localhost:5173' }, signal: abort.signal });
+  const response = await fetch(`${address}/artwork-jobs/${jobId}/events?ticket=${issued}`, {
+    headers: { origin: 'http://localhost:5173' },
+    signal: abort.signal,
+  });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'text/event-stream');
   assert.equal(response.headers.get('access-control-allow-origin'), 'http://localhost:5173');
@@ -161,7 +187,10 @@ test('artwork SSE syncs completion missed before connecting, preserves CORS and 
 test('artwork SSE forwards direction and settlement changes and closes when Redis becomes unavailable', { timeout: 5000 }, async t => {
   const { app, ticket, subscriber, address } = await setup();
   const abort = new AbortController();
-  t.after(async () => { abort.abort(); await app.close(); });
+  t.after(async () => {
+    abort.abort();
+    await app.close();
+  });
   const response = await fetch(`${address}/artwork-jobs/${jobId}/events?ticket=${await ticket()}`, { signal: abort.signal });
   const reader = response.body!.getReader();
   await readUntil(reader, '"running"');

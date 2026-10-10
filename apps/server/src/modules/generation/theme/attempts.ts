@@ -20,8 +20,13 @@ type AttemptOutcome =
   | { kind: 'failed'; error: ImageGenerationError };
 
 async function loadAttempts(database: pg.Pool, jobId: string) {
-  return (await database.query<ProviderAttempt>(`SELECT id, model_id AS "modelId", revision, status
-    FROM theme_job_provider_attempts WHERE job_id = $1 ORDER BY created_at, id`, [jobId])).rows;
+  return (
+    await database.query<ProviderAttempt>(
+      `SELECT id, model_id AS "modelId", revision, status
+    FROM theme_job_provider_attempts WHERE job_id = $1 ORDER BY created_at, id`,
+      [jobId],
+    )
+  ).rows;
 }
 
 /** 把供应商返回的 URL 按空位顺序落库（幂等补齐到请求数量），并将尝试与任务阶段标记为已持久化。 */
@@ -29,7 +34,10 @@ async function persistGeneratedUrls(run: ThemeRun, attemptId: string, urls: stri
   const { database, jobId, lease } = run;
   await transaction(database, async client => {
     await lockRunningLease(client, { kind: 'theme', id: run.jobId }, lease);
-    const saved = await client.query<{ ordinal: number }>('SELECT ordinal FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId]);
+    const saved = await client.query<{ ordinal: number }>(
+      'SELECT ordinal FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal',
+      [jobId],
+    );
     const occupied = new Set(saved.rows.map(row => row.ordinal));
     let ordinal = 1;
     for (const url of urls.slice(0, Math.max(0, run.job.requestedCount - occupied.size))) {
@@ -43,27 +51,44 @@ async function persistGeneratedUrls(run: ThemeRun, attemptId: string, urls: stri
 }
 
 /** 发起一次供应商调用并把结果归类。 */
-async function runAttempt(run: ThemeRun, model: ActiveAiModel, adapter: ImageModelAdapter, request: Omit<ImageEditRequest, 'onProviderRequest'>): Promise<AttemptOutcome> {
+async function runAttempt(
+  run: ThemeRun,
+  model: ActiveAiModel,
+  adapter: ImageModelAdapter,
+  request: Omit<ImageEditRequest, 'onProviderRequest'>,
+): Promise<AttemptOutcome> {
   const { database, jobId, lease, log } = run;
   await refreshGeneration(database, { kind: 'theme', id: run.jobId }, lease, 'provider_submitting');
   const attemptId = randomUUID();
   await transaction(database, async client => {
     await lockRunningLease(client, { kind: 'theme', id: run.jobId }, lease);
-    await client.query(`INSERT INTO theme_job_provider_attempts(id, job_id, provider, model, revision, status, model_id)
-      VALUES($1, $2, $3, $4, $5, 'submitting', $6)`, [attemptId, jobId, model.protocol, model.model, model.revision, model.id]);
+    await client.query(
+      `INSERT INTO theme_job_provider_attempts(id, job_id, provider, model, revision, status, model_id)
+      VALUES($1, $2, $3, $4, $5, 'submitting', $6)`,
+      [attemptId, jobId, model.protocol, model.model, model.revision, model.id],
+    );
   });
   let providerRequestId: string | undefined;
   try {
-    const urls = await adapter.edit(model, { ...request, onProviderRequest: async id => {
-      providerRequestId = id;
-      await database.query('UPDATE theme_job_provider_attempts SET provider_request_id = $2 WHERE id = $1', [attemptId, id]);
-    } });
+    const urls = await adapter.edit(model, {
+      ...request,
+      onProviderRequest: async id => {
+        providerRequestId = id;
+        await database.query('UPDATE theme_job_provider_attempts SET provider_request_id = $2 WHERE id = $1', [attemptId, id]);
+      },
+    });
     return { kind: 'generated', attemptId, providerRequestId, urls };
   } catch (error) {
     const classified = error instanceof ImageGenerationError ? error : new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
-    await database.query('UPDATE theme_job_provider_attempts SET status = $2, reason = $3, updated_at = now() WHERE id = $1',
-      [attemptId, classified.outcomeUnknown ? 'unknown' : 'failed', classified.code]);
-    log.warn({ attemptId, modelId: model.id, protocol: model.protocol, providerRequestId, code: classified.code }, 'Theme provider attempt failed');
+    await database.query('UPDATE theme_job_provider_attempts SET status = $2, reason = $3, updated_at = now() WHERE id = $1', [
+      attemptId,
+      classified.outcomeUnknown ? 'unknown' : 'failed',
+      classified.code,
+    ]);
+    log.warn(
+      { attemptId, modelId: model.id, protocol: model.protocol, providerRequestId, code: classified.code },
+      'Theme provider attempt failed',
+    );
     return { kind: 'failed', error: classified };
   }
 }
@@ -74,10 +99,12 @@ async function runAttempt(run: ThemeRun, model: ActiveAiModel, adapter: ImageMod
  */
 async function submitWithFallback(run: ThemeRun, attempts: ProviderAttempt[], activeModels: ActiveAiModel[]) {
   const { database, job: themeJob, storage, deadline, log } = run;
-  const models = themeJob.snapshot ? themeJob.snapshot.models.flatMap(pinned => {
-    const model = activeModels.find(active => active.id === pinned.id && active.revision === pinned.revision);
-    return model ? [model] : [];
-  }) : activeModels;
+  const models = themeJob.snapshot
+    ? themeJob.snapshot.models.flatMap(pinned => {
+        const model = activeModels.find(active => active.id === pinned.id && active.revision === pinned.revision);
+        return model ? [model] : [];
+      })
+    : activeModels;
   if (!models.length) return;
   const prompt = await resolveThemePrompt(database, themeJob);
   const source = await loadThemeSource(database, themeJob, storage);
@@ -99,7 +126,10 @@ async function submitWithFallback(run: ThemeRun, attempts: ProviderAttempt[], ac
       }
       const { attemptId, providerRequestId, urls } = outcome;
       await persistGeneratedUrls(run, attemptId, urls);
-      log.info({ attemptId, modelId: model.id, protocol: model.protocol, providerRequestId, images: urls.length }, 'Theme provider attempt completed');
+      log.info(
+        { attemptId, modelId: model.id, protocol: model.protocol, providerRequestId, images: urls.length },
+        'Theme provider attempt completed',
+      );
       collected += urls.length;
       // Providers capped below the requested count are called again for the remainder; short answers end the job.
       if (urls.length && urls.length >= count && collected < themeJob.requestedCount) {
@@ -117,12 +147,18 @@ async function submitWithFallback(run: ThemeRun, attempts: ProviderAttempt[], ac
  */
 export async function generateTheme(run: ThemeRun) {
   const { database, jobId, config } = run;
-  const saved = await database.query<{ ordinal: number; url: string }>('SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal', [jobId]);
+  const saved = await database.query<{ ordinal: number; url: string }>(
+    'SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal',
+    [jobId],
+  );
   const attempts = await loadAttempts(database, jobId);
   const unresolved = attempts.find(attempt => attempt.status === 'submitting' || attempt.status === 'unknown');
   if (unresolved?.status === 'submitting') {
     // 上次执行在提交途中中断，无法确认供应商是否已受理；标记为结果不明且不再重复提交。
-    await database.query("UPDATE theme_job_provider_attempts SET status = 'unknown', reason = 'PROVIDER_OUTCOME_UNKNOWN', updated_at = now() WHERE id = $1", [unresolved.id]);
+    await database.query(
+      "UPDATE theme_job_provider_attempts SET status = 'unknown', reason = 'PROVIDER_OUTCOME_UNKNOWN', updated_at = now() WHERE id = $1",
+      [unresolved.id],
+    );
     return;
   }
   if (unresolved?.status === 'unknown') return;

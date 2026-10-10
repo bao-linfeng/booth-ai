@@ -9,12 +9,14 @@ export async function assertSchemePublished(pool: Pick<pg.Pool, 'query'>, scheme
 }
 
 export async function assertCurrentPublishedBom(pool: Pick<pg.Pool, 'query'>, schemeCode: string, revision: number): Promise<void> {
-  const row = (await pool.query<{ publishStatus: string; revision: number | null; status: string | null }>(
-    `SELECT s.publish_status AS "publishStatus", b.revision, b.status
+  const row = (
+    await pool.query<{ publishStatus: string; revision: number | null; status: string | null }>(
+      `SELECT s.publish_status AS "publishStatus", b.revision, b.status
      FROM schemes s LEFT JOIN scheme_boms b ON b.scheme_id = s.id
      WHERE s.code = $1`,
-    [schemeCode],
-  )).rows[0];
+      [schemeCode],
+    )
+  ).rows[0];
   if (!row || row.publishStatus !== 'published') throw bomError('RESOURCE_NOT_FOUND', 404);
   if (row.revision !== revision || row.status !== 'verified') throw bomError('BOM_REVISION_CHANGED', 409);
 }

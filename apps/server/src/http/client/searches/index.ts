@@ -31,56 +31,74 @@ function getFirstImageAssetId(item: SearchSnapshotItem): string | null {
   return typeof image?.assetId === 'string' ? image.assetId : null;
 }
 
-export async function registerClientSearchRoutes(app: FastifyInstance, pool: pg.Pool, _redis: Redis, storage: ReturnType<typeof createStorage>) {
-  app.get<{ Querystring: { page?: number; pageSize?: number } }>('/me/searches', {
-    schema: {
-      querystring: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          page: { type: 'integer', minimum: 1, default: 1 },
-          pageSize: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+export async function registerClientSearchRoutes(
+  app: FastifyInstance,
+  pool: pg.Pool,
+  _redis: Redis,
+  storage: ReturnType<typeof createStorage>,
+) {
+  app.get<{ Querystring: { page?: number; pageSize?: number } }>(
+    '/me/searches',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            page: { type: 'integer', minimum: 1, default: 1 },
+            pageSize: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+          },
         },
       },
     },
-  }, async (request, reply) => {
-    reply.header('Cache-Control', 'private, no-store');
-    const userId = request.principal?.localId;
-    const visitorId = getProvidedVisitorId(request);
-    if (!userId && !visitorId) throw Object.assign(new Error('A valid x-visitor-id header is required'), { statusCode: 400 });
-    const page = request.query.page ?? 1;
-    const pageSize = request.query.pageSize ?? 20;
-    const result = await listClientSearches(pool, userId ? { userId } : { visitorId: visitorId! }, { page, pageSize });
-    const snapshotItems = result.data.flatMap(search => asSnapshotItems(search.resultSnapshot));
-    const jobs = userId ? await listSearchJobs(pool, storage, userId, result.data.map(search => search.id)) : null;
-    const assetIds = [...new Set(snapshotItems.map(getFirstImageAssetId).filter((assetId): assetId is string => Boolean(assetId)))];
-    const versions = await latestVersionKeys(pool, assetIds);
-    const signedUrls = new Map(await Promise.all(versions.map(async version => [version.assetId, await storage.signDownload(version.objectKey, 270)] as const)));
+    async (request, reply) => {
+      reply.header('Cache-Control', 'private, no-store');
+      const userId = request.principal?.localId;
+      const visitorId = getProvidedVisitorId(request);
+      if (!userId && !visitorId) throw Object.assign(new Error('A valid x-visitor-id header is required'), { statusCode: 400 });
+      const page = request.query.page ?? 1;
+      const pageSize = request.query.pageSize ?? 20;
+      const result = await listClientSearches(pool, userId ? { userId } : { visitorId: visitorId! }, { page, pageSize });
+      const snapshotItems = result.data.flatMap(search => asSnapshotItems(search.resultSnapshot));
+      const jobs = userId
+        ? await listSearchJobs(
+            pool,
+            storage,
+            userId,
+            result.data.map(search => search.id),
+          )
+        : null;
+      const assetIds = [...new Set(snapshotItems.map(getFirstImageAssetId).filter((assetId): assetId is string => Boolean(assetId)))];
+      const versions = await latestVersionKeys(pool, assetIds);
+      const signedUrls = new Map(
+        await Promise.all(versions.map(async version => [version.assetId, await storage.signDownload(version.objectKey, 270)] as const)),
+      );
 
-    return {
-      code: 0,
-      data: {
-        items: result.data.map(search => ({
-          id: search.id,
-          status: search.status,
-          mode: search.mode,
-          inputText: search.inputText,
-          finalRequirement: search.finalRequirement,
-          counts: { direct: search.directCount, reference: search.referenceCount, random: search.randomCount, total: search.resultCount },
-          items: asSnapshotItems(search.resultSnapshot).map(item => ({
-            code: item.code,
-            matchType: item.matchType,
-            specifications: item.specifications,
-            thumbnail: signedUrls.get(getFirstImageAssetId(item) ?? '') ?? '',
-            theme: typeof item.code === 'string' ? jobs?.get(search.id)?.get(item.code)?.theme ?? null : null,
-            artwork: typeof item.code === 'string' ? jobs?.get(search.id)?.get(item.code)?.artwork ?? null : null,
+      return {
+        code: 0,
+        data: {
+          items: result.data.map(search => ({
+            id: search.id,
+            status: search.status,
+            mode: search.mode,
+            inputText: search.inputText,
+            finalRequirement: search.finalRequirement,
+            counts: { direct: search.directCount, reference: search.referenceCount, random: search.randomCount, total: search.resultCount },
+            items: asSnapshotItems(search.resultSnapshot).map(item => ({
+              code: item.code,
+              matchType: item.matchType,
+              specifications: item.specifications,
+              thumbnail: signedUrls.get(getFirstImageAssetId(item) ?? '') ?? '',
+              theme: typeof item.code === 'string' ? (jobs?.get(search.id)?.get(item.code)?.theme ?? null) : null,
+              artwork: typeof item.code === 'string' ? (jobs?.get(search.id)?.get(item.code)?.artwork ?? null) : null,
+            })),
+            createdAt: search.createdAt,
           })),
-          createdAt: search.createdAt,
-        })),
-        total: result.total,
-        page: result.page,
-        pageSize: result.pageSize,
-      },
-    };
-  });
+          total: result.total,
+          page: result.page,
+          pageSize: result.pageSize,
+        },
+      };
+    },
+  );
 }

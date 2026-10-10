@@ -8,9 +8,19 @@ import { MailDeliveryError, type MailMessage } from '../../src/infra/mailer.js';
 import type { Logger } from '../../src/infra/logger.js';
 
 const email: ReceiptEmail = {
-  id: 'receipt-1', projectId: 'project-1', recipient: 'Visitor@Example.com', locale: 'zh', accountBound: false, attempts: 1,
-  projectNo: 'PJ-00000001', requestNo: 'QR-ABC', sourceType: 'quote_request', contactName: '<b>访客</b>',
-  exhibition: { name: '测试展会', city: '上海', startDate: '2026-11-10', endDate: '2026-11-12' }, schemeName: '标准展台', schemeCode: 'S-001',
+  id: 'receipt-1',
+  projectId: 'project-1',
+  recipient: 'Visitor@Example.com',
+  locale: 'zh',
+  accountBound: false,
+  attempts: 1,
+  projectNo: 'PJ-00000001',
+  requestNo: 'QR-ABC',
+  sourceType: 'quote_request',
+  contactName: '<b>访客</b>',
+  exhibition: { name: '测试展会', city: '上海', startDate: '2026-11-10', endDate: '2026-11-12' },
+  schemeName: '标准展台',
+  schemeCode: 'S-001',
 };
 
 test('receipt email links guests to sign-in and account holders to the project, escaping customer input', () => {
@@ -21,7 +31,10 @@ test('receipt email links guests to sign-in and account holders to the project, 
   assert.ok(guest.text.includes('标准展台 (S-001)'));
   assert.ok(guest.html.includes('&lt;b&gt;访客&lt;/b&gt;'));
   assert.ok(!guest.html.includes('<b>访客'));
-  const member = renderReceiptEmail({ ...email, accountBound: true, sourceType: 'manual_request', schemeCode: null, schemeName: null, exhibition: null }, 'https://booth.example.test');
+  const member = renderReceiptEmail(
+    { ...email, accountBound: true, sourceType: 'manual_request', schemeCode: null, schemeName: null, exhibition: null },
+    'https://booth.example.test',
+  );
   assert.ok(member.text.includes('https://booth.example.test/my-projects/project-1'));
   assert.ok(member.text.includes('人工需求'));
   assert.ok(!member.text.includes('方案:'));
@@ -39,11 +52,13 @@ test('every receipt email locale is complete and keeps placeholders', () => {
 test('delivery completes sent emails, dead-letters permanent rejections and stops the batch on transient failures', async () => {
   const updates: { sql: string; values: unknown[] }[] = [];
   const claimed = [email, { ...email, id: 'receipt-2' }, { ...email, id: 'receipt-3' }, { ...email, id: 'receipt-4' }];
-  const database = { query: async (sql: string, values: unknown[] = []) => {
-    if (sql.includes('UPDATE project_receipt_emails r SET attempts')) return { rows: claimed };
-    updates.push({ sql, values });
-    return { rows: [] };
-  } } as unknown as Pick<pg.Pool, 'query'>;
+  const database = {
+    query: async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('UPDATE project_receipt_emails r SET attempts')) return { rows: claimed };
+      updates.push({ sql, values });
+      return { rows: [] };
+    },
+  } as unknown as Pick<pg.Pool, 'query'>;
   const sent: MailMessage[] = [];
   const send = async (message: MailMessage) => {
     sent.push(message);
@@ -51,7 +66,11 @@ test('delivery completes sent emails, dead-letters permanent rejections and stop
     if (sent.length === 3) throw new MailDeliveryError('SMTP_ECONNECTION', false);
   };
   const logs: unknown[] = [];
-  const log = { info: (entry: unknown) => logs.push(entry), warn: (entry: unknown) => logs.push(entry), error: (entry: unknown) => logs.push(entry) } as unknown as Logger;
+  const log = {
+    info: (entry: unknown) => logs.push(entry),
+    warn: (entry: unknown) => logs.push(entry),
+    error: (entry: unknown) => logs.push(entry),
+  } as unknown as Logger;
   assert.deepEqual(await deliverReceiptEmails(database, send, 'https://booth.example.test', log), { delivered: 1, failed: 2, released: 1 });
   assert.equal(sent.length, 3, 'an unreachable SMTP server stops the batch');
   assert.equal(sent[0]!.to, 'Visitor@Example.com');
@@ -68,15 +87,23 @@ test('delivery completes sent emails, dead-letters permanent rejections and stop
 test('delivery only starts an email that can finish inside the claim lease', async () => {
   const claimed = [email, { ...email, id: 'receipt-2' }, { ...email, id: 'receipt-3' }];
   const released: unknown[] = [];
-  const database = { query: async (sql: string, values: unknown[] = []) => {
-    if (sql.includes('UPDATE project_receipt_emails r SET attempts')) return { rows: claimed };
-    if (sql.includes('GREATEST(attempts - 1, 0)')) released.push(values[0]);
-    return { rows: [] };
-  } } as unknown as Pick<pg.Pool, 'query'>;
+  const database = {
+    query: async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('UPDATE project_receipt_emails r SET attempts')) return { rows: claimed };
+      if (sql.includes('GREATEST(attempts - 1, 0)')) released.push(values[0]);
+      return { rows: [] };
+    },
+  } as unknown as Pick<pg.Pool, 'query'>;
   let clock = 0;
   // Each send takes 70 seconds: with a 120-second lease, a 45-second worst case and a 10-second margin a second one would overrun.
-  const send = async () => { clock += 70_000; };
+  const send = async () => {
+    clock += 70_000;
+  };
   const log = { info: () => {}, warn: () => {}, error: () => {} } as unknown as Logger;
-  assert.deepEqual(await deliverReceiptEmails(database, send, 'https://booth.example.test', log, () => clock), { delivered: 1, failed: 0, released: 2 });
+  assert.deepEqual(await deliverReceiptEmails(database, send, 'https://booth.example.test', log, () => clock), {
+    delivered: 1,
+    failed: 0,
+    released: 2,
+  });
   assert.deepEqual(released, [['receipt-2', 'receipt-3']]);
 });

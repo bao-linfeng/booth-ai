@@ -22,7 +22,8 @@ export const es: Messages = {
   missBudget: 'El nivel de presupuesto de compra de materiales es diferente de la preferencia',
   noPublished: 'Actualmente no hay diseños publicados y revisados',
   noMatchRandom: 'Actualmente no hay diseños disponibles para la recomendación aleatoria (los motivos de exclusión pueden solaparse)',
-  noMatchFiltered: 'No hay diseños que adoptar ni usar como referencia para esta combinación de criterios (los motivos de exclusión pueden solaparse)',
+  noMatchFiltered:
+    'No hay diseños que adoptar ni usar como referencia para esta combinación de criterios (los motivos de exclusión pueden solaparse)',
   excUnverifiedChecklist: 'Lista de verificación sin verificar',
   excIncompleteAssets: 'Recursos incompletos',
   excInvalidData: 'Datos básicos o información de revisión incompletos',
@@ -32,7 +33,8 @@ export const es: Messages = {
   excDimensions: 'Las dimensiones no coinciden o están fuera del rango de referencia',
   excPoolLine: '{label}: {count} diseños publicados',
   excAvailableLine: '{label}: {count} diseños disponibles',
-  suggestDimensions: 'Revise la longitud, el ancho y la altura seleccionados, o ajuste la longitud, el ancho y el área personalizados y vuelva a buscar',
+  suggestDimensions:
+    'Revise la longitud, el ancho y la altura seleccionados, o ajuste la longitud, el ancho y el área personalizados y vuelva a buscar',
   suggestProductSystem: 'Revise el sistema de producto seleccionado y vuelva a buscar después de cambiarlo',
   suggestTags: 'Revise los criterios de funciones obligatorias o excluidas y vuelva a buscar después de cambiarlos',
   suggestAdvisor: 'También puede contactar con un asesor para confirmar los diseños disponibles',
@@ -41,10 +43,12 @@ export const es: Messages = {
   parseWarningRulesOnly: 'Esta vez se usó el reconocimiento basado en reglas; el contenido no reconocido requiere confirmación manual.',
   parseDimMultiple: 'La misma dimensión tiene varios valores. Confirme el valor final en el formulario.',
   parseDimInvalid: 'La dimensión debe ser un número positivo con precisión de milímetro. Corríjala.',
-  parseHeightNeedsSize: 'La altura del diseño debe seleccionarse junto con una longitud y un ancho explícitos como dimensión completa. Confirme.',
+  parseHeightNeedsSize:
+    'La altura del diseño debe seleccionarse junto con una longitud y un ancho explícitos como dimensión completa. Confirme.',
   parseHeightNoSize: 'No hay una dimensión completa de diseño que coincida. Seleccione una dimensión existente o pase a un asesor.',
   parseAreaMultiple: 'Se encontraron varias áreas. Confirme el área final.',
-  parseDirection: 'Las direcciones de longitud y ancho de «{text}» no están claras. Confirme, considerando izquierda-derecha como longitud y frente-fondo como ancho.',
+  parseDirection:
+    'Las direcciones de longitud y ancho de «{text}» no están claras. Confirme, considerando izquierda-derecha como longitud y frente-fondo como ancho.',
   parseOpeningConflict: 'El número de lados abiertos es contradictorio. Confirme.',
   parseNoConstraints: 'Esta categoría no admite negaciones ni criterios obligatorios. Confirme.',
   parseCandidates: '«{text}» tiene varios candidatos. Confirme.',

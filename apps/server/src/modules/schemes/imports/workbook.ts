@@ -11,7 +11,11 @@ function cellText(value: ExcelJS.CellValue): string {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value).trim();
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'object') {
-    if ('richText' in value) return value.richText.map(part => part.text).join('').trim();
+    if ('richText' in value)
+      return value.richText
+        .map(part => part.text)
+        .join('')
+        .trim();
     if ('result' in value) return cellText(value.result as ExcelJS.CellValue);
     if ('text' in value && typeof value.text === 'string') return value.text.trim();
   }
@@ -33,7 +37,10 @@ function numericValue(value: ExcelJS.CellValue, multiplier = 1): number | null {
 function listValue(value: ExcelJS.CellValue): string[] | null {
   const text = cellText(value);
   if (text === '') return null;
-  return text.split(/[,，]/).map(item => item.trim()).filter(item => item !== '');
+  return text
+    .split(/[,，]/)
+    .map(item => item.trim())
+    .filter(item => item !== '');
 }
 
 function openingCount(value: ExcelJS.CellValue): number | null {
@@ -78,7 +85,7 @@ export const importColumns = [
   { key: 'notes', header: '备注', note: '可选，仅后台可见' },
 ] as const;
 
-type ImportColumnKey = typeof importColumns[number]['key'];
+type ImportColumnKey = (typeof importColumns)[number]['key'];
 
 const columnIndex = Object.fromEntries(importColumns.map((column, index) => [column.key, index + 1])) as Record<ImportColumnKey, number>;
 
@@ -105,7 +112,7 @@ function parseRow(row: ExcelJS.Row): ImportRow {
     notes: optionalText(cell('notes')),
   };
   if (parsed.areaM2 === null && parsed.lengthMm !== null && parsed.widthMm !== null) {
-    parsed.areaM2 = parsed.lengthMm * parsed.widthMm / 1_000_000;
+    parsed.areaM2 = (parsed.lengthMm * parsed.widthMm) / 1_000_000;
   }
   return parsed;
 }
@@ -133,7 +140,9 @@ export const maxImportRows = 2000;
 /** 最后一个含值的行号；仅有格式的尾部空行不计入，避免按 rowCount 扫描到异常远的行。 */
 function lastValueRow(worksheet: ExcelJS.Worksheet): number {
   let last = 0;
-  worksheet.eachRow((_row, rowNumber) => { last = rowNumber; });
+  worksheet.eachRow((_row, rowNumber) => {
+    last = rowNumber;
+  });
   return last;
 }
 
@@ -156,7 +165,8 @@ export async function parseWorkbook(buffer: Buffer): Promise<ParsedImportRow[]> 
     const mismatch = headerMismatch(worksheet);
     if (mismatch) throw Object.assign(domainError('IMPORT_TEMPLATE_MISMATCH', 400), { details: mismatch });
   }
-  if (ranges.reduce((total, { lastRow }) => total + Math.max(lastRow - 1, 0), 0) > maxImportRows) throw domainError('IMPORT_TOO_MANY_ROWS', 400);
+  if (ranges.reduce((total, { lastRow }) => total + Math.max(lastRow - 1, 0), 0) > maxImportRows)
+    throw domainError('IMPORT_TOO_MANY_ROWS', 400);
 
   const rows: ParsedImportRow[] = [];
   for (const { worksheet, lastRow } of ranges) {

@@ -5,9 +5,14 @@ import type pg from 'pg';
 export async function claimAnonymousProjects(db: pg.Pool | pg.PoolClient, userId: string, email: string | null): Promise<string[]> {
   const claimEmail = email?.trim().toLowerCase();
   if (!claimEmail) return [];
-  const rows = (await db.query<{ projectId: string }>(`WITH claimed AS (
+  const rows = (
+    await db.query<{ projectId: string }>(
+      `WITH claimed AS (
       UPDATE projects SET customer_user_id=$1 WHERE customer_user_id IS NULL AND claim_email=$2 RETURNING id
     ) INSERT INTO project_events(project_id,kind,payload)
-      SELECT id,'claimed',jsonb_build_object('customerUserId',$1::text) FROM claimed RETURNING project_id AS "projectId"`, [userId, claimEmail])).rows;
+      SELECT id,'claimed',jsonb_build_object('customerUserId',$1::text) FROM claimed RETURNING project_id AS "projectId"`,
+      [userId, claimEmail],
+    )
+  ).rows;
   return rows.map(row => row.projectId);
 }

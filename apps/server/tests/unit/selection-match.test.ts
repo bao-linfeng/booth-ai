@@ -6,10 +6,21 @@ import { matchSchemes } from '../../src/modules/selection/match.js';
 const candidate: Candidate = {
   code: 'BOOTH-1',
   specifications: {
-    lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: 18,
-    openingCount: 2, productSystemId: 'fs62', productSystemLabel: 'FS62',
+    lengthMm: 6000,
+    widthMm: 3000,
+    heightMm: 3500,
+    areaM2: 18,
+    openingCount: 2,
+    productSystemId: 'fs62',
+    productSystemLabel: 'FS62',
   },
-  images: [], styleId: null, industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
+  images: [],
+  styleId: null,
+  industryIds: [],
+  budgetTierId: null,
+  zoneIds: [],
+  featureIds: [],
+  keywords: [],
   description: '',
 };
 
@@ -17,9 +28,20 @@ test('complete size selection excludes differing heights and rotated footprints 
   const spaces = [{ id: 'size', label: '6 × 3 × 3.5 m', lengthMm: 6000, widthMm: 3000, heightMm: 3500 }];
   const higher = { ...candidate, code: 'HIGH', specifications: { ...candidate.specifications, heightMm: 4500 } };
   const rotated = { ...candidate, code: 'ROTATED', specifications: { ...candidate.specifications, lengthMm: 3000, widthMm: 6000 } };
-  const requirement = { ...emptyRequirement(), boothSpaceId: 'size', lengthMm: 6000, widthMm: 3000, areaM2: 18, maxHeightMm: 5000, openingCount: 2 };
+  const requirement = {
+    ...emptyRequirement(),
+    boothSpaceId: 'size',
+    lengthMm: 6000,
+    widthMm: 3000,
+    areaM2: 18,
+    maxHeightMm: 5000,
+    openingCount: 2,
+  };
   const result = matchSchemes([candidate, higher, rotated], requirement, 'filtered', false, undefined, spaces);
-  assert.deepEqual(result.items.map(item => item.code), ['BOOTH-1']);
+  assert.deepEqual(
+    result.items.map(item => item.code),
+    ['BOOTH-1'],
+  );
   assert.equal(result.diagnostics.exclusions.dimensions, 2);
   assert.equal(result.diagnostics.exclusions.height, 0);
   assert.equal(matchSchemes([candidate], { ...requirement, maxHeightMm: 3000 }, 'filtered', false, undefined, spaces).status, 'no_match');
@@ -65,7 +87,10 @@ test('required tags exclude schemes without the tag and keep schemes that have i
   const requirement = { ...emptyRequirement(), requiredZoneIds: ['storage'] };
   const tagged = { ...candidate, code: 'TAGGED', zoneIds: ['storage'] };
   const result = matchSchemes([candidate, tagged], requirement, 'filtered', false);
-  assert.deepEqual(result.items.map(item => item.code), ['TAGGED']);
+  assert.deepEqual(
+    result.items.map(item => item.code),
+    ['TAGGED'],
+  );
   assert.equal(result.diagnostics.exclusions.tags, 1);
 });
 
@@ -87,7 +112,10 @@ test('overlapping exclusions are counted independently and sorted by actual prev
 
 test('a combined empty result does not claim any single condition eliminated all schemes', () => {
   const requirement = { ...emptyRequirement(), productSystemId: 'fs62', maxHeightMm: 3000 };
-  const candidates = [candidate, { ...candidate, code: 'BOOTH-2', specifications: { ...candidate.specifications, productSystemId: 'other', heightMm: 2500 } }];
+  const candidates = [
+    candidate,
+    { ...candidate, code: 'BOOTH-2', specifications: { ...candidate.specifications, productSystemId: 'other', heightMm: 2500 } },
+  ];
   const result = matchSchemes(candidates, requirement, 'filtered', false);
   assert.deepEqual([result.diagnostics.exclusions.productSystem, result.diagnostics.exclusions.height], [1, 1]);
   assert.ok(result.reasons[0]?.includes('条件组合'));
@@ -97,8 +125,9 @@ test('a combined empty result does not claim any single condition eliminated all
 test('pre-pool exclusions are retained alongside filtered candidate failures', () => {
   const requirement = { ...emptyRequirement(), maxHeightMm: 3000 };
   const result = matchSchemes([candidate], requirement, 'filtered', false, {
-    reviewedPublished: 5, ready: 1,
-    exclusions: { unverifiedChecklist: 3, incompleteAssets: 2, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 }
+    reviewedPublished: 5,
+    ready: 1,
+    exclusions: { unverifiedChecklist: 3, incompleteAssets: 2, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 },
   });
   assert.equal(result.diagnostics.exclusions.height, 1);
   assert.match(result.reasons[1] ?? '', /清单未核验：3 套/);

@@ -56,7 +56,14 @@ test('recovery applies the matrix to theme and artwork alike and isolates per-jo
       if (id === 'artwork-expired') assert.fail('Expired jobs settle without consulting the queue');
       if (id === 'theme-broken') throw Object.assign(new Error('Redis unavailable'), { code: 'ECONNREFUSED' });
       const state = queueStates[id];
-      return state ? { getState: async () => state, retry: async (from: string) => { actions.push(`retry:${id}:${from}`); } } : undefined;
+      return state
+        ? {
+            getState: async () => state,
+            retry: async (from: string) => {
+              actions.push(`retry:${id}:${from}`);
+            },
+          }
+        : undefined;
     },
     add: async (_name: string, data: { jobId: string }, options: { jobId: string; attempts: number }) => {
       assert.equal(options.jobId, data.jobId);

@@ -15,26 +15,28 @@ const insertItemSql = `
   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 `;
 
-const optionalDecimal = (value: string | null | undefined) => value == null ? null : canonicalDecimal(value);
+const optionalDecimal = (value: string | null | undefined) => (value == null ? null : canonicalDecimal(value));
 
 export function contentHashOf(items: BomItem[]): string {
-  const normalizedItems = [...items].sort((a, b) => a.ordinal - b.ordinal).map(item => [
-    item.ordinal,
-    item.productName,
-    item.productModel,
-    item.specificationMm,
-    canonicalDecimal(item.sourceQuantity),
-    item.sourceUnit,
-    item.measurementKind,
-    canonicalDecimal(item.quantity),
-    item.erpCode,
-    item.unitPrice,
-    item.totalPrice,
-    item.totalWeightKg,
-    item.sourceSheet,
-    item.sourceRow,
-    item.diffNote,
-  ]);
+  const normalizedItems = [...items]
+    .sort((a, b) => a.ordinal - b.ordinal)
+    .map(item => [
+      item.ordinal,
+      item.productName,
+      item.productModel,
+      item.specificationMm,
+      canonicalDecimal(item.sourceQuantity),
+      item.sourceUnit,
+      item.measurementKind,
+      canonicalDecimal(item.quantity),
+      item.erpCode,
+      item.unitPrice,
+      item.totalPrice,
+      item.totalWeightKg,
+      item.sourceSheet,
+      item.sourceRow,
+      item.diffNote,
+    ]);
   return digest(normalizedItems);
 }
 
@@ -122,7 +124,14 @@ export async function deleteBomItem(pool: pg.Pool, adminId: string, code: string
     const item = bom.items.find(entry => entry.id === itemId);
     if (!item) throw bomError('RESOURCE_NOT_FOUND', 404);
     if (bom.items.length === 1) throw bomError('LAST_BOM_ITEM', 409);
-    return replaceItems(client, scheme, bom, adminId, `删除条目：${item.productName}`, bom.items.filter(entry => entry.id !== itemId));
+    return replaceItems(
+      client,
+      scheme,
+      bom,
+      adminId,
+      `删除条目：${item.productName}`,
+      bom.items.filter(entry => entry.id !== itemId),
+    );
   });
 }
 

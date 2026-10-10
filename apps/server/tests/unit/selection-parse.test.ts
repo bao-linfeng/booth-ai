@@ -5,10 +5,19 @@ import { parseRequirement } from '../../src/modules/selection/parse.js';
 
 const catalog: Catalog = {
   boothSpaces: [],
-  openingCounts: [{ id: '1', label: '1面开口' }, { id: '2', label: '2面开口' }, { id: '3', label: '3面开口' }, { id: '4', label: '4面开口（岛式）' }],
+  openingCounts: [
+    { id: '1', label: '1面开口' },
+    { id: '2', label: '2面开口' },
+    { id: '3', label: '3面开口' },
+    { id: '4', label: '4面开口（岛式）' },
+  ],
   productSystems: [],
-  styles: [{ id: 'modern', label: '现代简约' }, { id: 'tech', label: '科技感' }],
-  industries: [], budgetTiers: [],
+  styles: [
+    { id: 'modern', label: '现代简约' },
+    { id: 'tech', label: '科技感' },
+  ],
+  industries: [],
+  budgetTiers: [],
   zones: [{ id: 'storage', label: '储藏间' }],
   features: [],
 };

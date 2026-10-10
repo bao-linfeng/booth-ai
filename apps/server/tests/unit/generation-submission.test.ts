@@ -12,8 +12,13 @@ import { type ThemeOfferData } from '../../src/modules/generation/theme/service.
 import { assignedRow } from '../helpers/ai-fixtures.js';
 
 const userId = 'user';
-const theme = { schemeCode: 'S-1', sourceAssetId: 'source', input: { industryId: 'industry', styleId: 'style' },
-  requestedCount: 2, cacheMode: 'reuse' as const };
+const theme = {
+  schemeCode: 'S-1',
+  sourceAssetId: 'source',
+  input: { industryId: 'industry', styleId: 'style' },
+  requestedCount: 2,
+  cacheMode: 'reuse' as const,
+};
 const artwork = { schemeCode: 'S-1', themeJobId: 'theme-job', resultId: 'result', selectionRevision: 1 };
 
 function offerStore() {
@@ -26,32 +31,48 @@ function offerStore() {
       values.set(key, value);
       return 'OK';
     },
-    get: async (key: string) => { reads.push(key); return values.get(key) ?? null; },
+    get: async (key: string) => {
+      reads.push(key);
+      return values.get(key) ?? null;
+    },
   } as unknown as Redis;
   return { redis, values, writes, reads };
 }
 
 function quotePool(options: { available?: boolean; cached?: boolean; searchOwned?: boolean } = {}) {
   const queries: string[] = [];
-  const pool = { query: async (sql: string, params?: unknown[]) => {
-    queries.push(sql);
-    if (sql.includes('FROM ai_model_assignments')) return { rows: options.available === false ? [] : [assignedRow('openai', 'theme', { unitCredits: 7, revision: 3 })] };
-    if (sql.includes('FROM dictionaries d')) return { rows: [
-      { type: 'industry', id: 'industry', label: '科技' },
-      { type: 'industry', id: 'industry-2', label: '汽车' },
-      { type: 'style', id: 'style', label: '现代' },
-    ] };
-    if (sql.includes('FROM selection_searches')) {
-      assert.deepEqual(params, ['search', userId, theme.schemeCode]);
-      return { rows: options.searchOwned === false ? [] : [{ exists: 1 }] };
-    }
-    if (sql.includes('FROM scheme_baseline_assets a JOIN schemes')) return { rows: [{ assetId: 'source', versionId: 'v1', objectKey: 'source.png', checksum: 'hash' }] };
-    if (sql.includes('a.related_asset_id')) return { rows: [] };
-    if (sql.includes('FROM dictionary_items')) return { rows: [{ id: 'industry', label: '科技' }, { id: 'style', label: '现代' }] };
-    if (sql.includes('FROM prompt_templates')) return { rows: [] };
-    if (sql.includes('FROM theme_jobs j')) return { rows: options.cached ? [{ id: 'cached' }] : [] };
-    throw new Error(`Unexpected query: ${sql}`);
-  } } as unknown as pg.Pool;
+  const pool = {
+    query: async (sql: string, params?: unknown[]) => {
+      queries.push(sql);
+      if (sql.includes('FROM ai_model_assignments'))
+        return { rows: options.available === false ? [] : [assignedRow('openai', 'theme', { unitCredits: 7, revision: 3 })] };
+      if (sql.includes('FROM dictionaries d'))
+        return {
+          rows: [
+            { type: 'industry', id: 'industry', label: '科技' },
+            { type: 'industry', id: 'industry-2', label: '汽车' },
+            { type: 'style', id: 'style', label: '现代' },
+          ],
+        };
+      if (sql.includes('FROM selection_searches')) {
+        assert.deepEqual(params, ['search', userId, theme.schemeCode]);
+        return { rows: options.searchOwned === false ? [] : [{ exists: 1 }] };
+      }
+      if (sql.includes('FROM scheme_baseline_assets a JOIN schemes'))
+        return { rows: [{ assetId: 'source', versionId: 'v1', objectKey: 'source.png', checksum: 'hash' }] };
+      if (sql.includes('a.related_asset_id')) return { rows: [] };
+      if (sql.includes('FROM dictionary_items'))
+        return {
+          rows: [
+            { id: 'industry', label: '科技' },
+            { id: 'style', label: '现代' },
+          ],
+        };
+      if (sql.includes('FROM prompt_templates')) return { rows: [] };
+      if (sql.includes('FROM theme_jobs j')) return { rows: options.cached ? [{ id: 'cached' }] : [] };
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  } as unknown as pg.Pool;
   return { pool, queries };
 }
 
@@ -63,7 +84,10 @@ test('theme capability discovery returns combinations without persisting an offe
     assert.equal(result.available, available);
     assert.deepEqual(result.blockedReasons, available ? [] : ['MODEL_UNAVAILABLE']);
     assert.equal(result.offer, null);
-    assert.deepEqual(result.supportedCombinations, [{ industryId: 'industry', styleId: 'style' }, { industryId: 'industry-2', styleId: 'style' }]);
+    assert.deepEqual(result.supportedCombinations, [
+      { industryId: 'industry', styleId: 'style' },
+      { industryId: 'industry-2', styleId: 'style' },
+    ]);
     assert.deepEqual(result.limits, { maxBrandColors: 3, maxKeywordCharacters: 200, allowedCounts: [1, 2, 3, 4] });
     assert.equal(writes.length, 0);
     assert.equal(queries.length, 2);
@@ -74,8 +98,11 @@ test('theme service freezes normalized pricing and snapshot with a five-minute R
   const { pool } = quotePool();
   const { redis, writes } = offerStore();
   const before = Date.now();
-  const result = await createThemeOffer(pool, redis, userId, { ...theme, searchId: 'search',
-    input: { ...theme.input, brandColors: ['#aabbcc', '#AABBCC'], brandKeywords: '  brand  ' } });
+  const result = await createThemeOffer(pool, redis, userId, {
+    ...theme,
+    searchId: 'search',
+    input: { ...theme.input, brandColors: ['#aabbcc', '#AABBCC'], brandKeywords: '  brand  ' },
+  });
   assert.ok(result.offer);
   assert.equal(result.offer.maxCredits, 14);
   assert.equal(result.offer.pricingRevision, 3);
@@ -95,7 +122,11 @@ test('theme service freezes normalized pricing and snapshot with a five-minute R
 test('theme quote defaults to one reused image and refresh bypasses a free cached result', async () => {
   const { pool, queries } = quotePool({ cached: true });
   const { redis } = offerStore();
-  const cached = await createThemeOffer(pool, redis, userId, { schemeCode: theme.schemeCode, sourceAssetId: theme.sourceAssetId, input: theme.input });
+  const cached = await createThemeOffer(pool, redis, userId, {
+    schemeCode: theme.schemeCode,
+    sourceAssetId: theme.sourceAssetId,
+    input: theme.input,
+  });
   assert.ok(cached.offer);
   assert.equal(cached.offer.maxCredits, 0);
   assert.equal(cached.offer.cacheHit, true);
@@ -119,10 +150,12 @@ test('theme quote rejects an unowned search before reading snapshots or writing 
 
 test('theme submission replays before accessing Redis, rejects conflicts and rejects missing offers before creation', async () => {
   let exists = true;
-  const pool = { query: async (sql: string) => {
-    assert.ok(sql.includes('FROM theme_jobs WHERE user_id'));
-    return { rows: exists ? [{ ...theme, id: 'job', status: 'pending', cacheHit: false, usableCount: 0, unitCredits: 7 }] : [] };
-  } } as unknown as pg.Pool;
+  const pool = {
+    query: async (sql: string) => {
+      assert.ok(sql.includes('FROM theme_jobs WHERE user_id'));
+      return { rows: exists ? [{ ...theme, id: 'job', status: 'pending', cacheHit: false, usableCount: 0, unitCredits: 7 }] : [] };
+    },
+  } as unknown as pg.Pool;
   const { redis, reads } = offerStore();
   const input = { ...theme, requestKey: 'request', offerId: 'expired' };
   const replay = await submitThemeJob(pool, redis, userId, input);
@@ -140,18 +173,26 @@ test('theme submission delegates offer ownership validation before creating a jo
   const pool = { query: async () => ({ rows: [] }) } as unknown as pg.Pool;
   const { redis, values } = offerStore();
   values.set('theme-offer:other', JSON.stringify({ ...theme, userId: 'other' } satisfies Partial<ThemeOfferData>));
-  await assert.rejects(submitThemeJob(pool, redis, userId, { ...theme, requestKey: 'request', offerId: 'other' }), { reason: 'OFFER_MISMATCH' });
+  await assert.rejects(submitThemeJob(pool, redis, userId, { ...theme, requestKey: 'request', offerId: 'other' }), {
+    reason: 'OFFER_MISMATCH',
+  });
 });
 
 test('artwork offer service freezes selected artwork and four-direction pricing with a five-minute TTL', async () => {
   let selectionAvailable = true;
-  const pool = { query: async (sql: string) => {
-    if (sql.includes('FROM theme_jobs')) return { rows: selectionAvailable ? [{ input: theme.input,
-      sourceAssetId: 'selected', versionId: 'v1', objectKey: 'selected.png', checksum: 'hash' }] : [] };
-    if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('openai', 'artwork', { unitCredits: 9 })] };
-    if (sql.includes('FROM dictionary_items') || sql.includes('FROM prompt_templates')) return { rows: [] };
-    throw new Error(`Unexpected query: ${sql}`);
-  } } as unknown as pg.Pool;
+  const pool = {
+    query: async (sql: string) => {
+      if (sql.includes('FROM theme_jobs'))
+        return {
+          rows: selectionAvailable
+            ? [{ input: theme.input, sourceAssetId: 'selected', versionId: 'v1', objectKey: 'selected.png', checksum: 'hash' }]
+            : [],
+        };
+      if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('openai', 'artwork', { unitCredits: 9 })] };
+      if (sql.includes('FROM dictionary_items') || sql.includes('FROM prompt_templates')) return { rows: [] };
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  } as unknown as pg.Pool;
   const { redis, writes } = offerStore();
   const before = Date.now();
   const result = await createArtworkOffer(pool, redis, userId, artwork);
@@ -175,10 +216,16 @@ test('artwork offer service freezes selected artwork and four-direction pricing 
 
 test('artwork submission replays before accessing Redis, rejects conflicts and rejects missing or unowned offers', async () => {
   let exists = true;
-  const pool = { query: async (sql: string) => {
-    assert.ok(sql.includes('FROM artwork_jobs WHERE user_id'));
-    return { rows: exists ? [{ id: 'job', status: 'pending', deliveryStatus: 'pending', unitCredits: 9, usableCount: 0, requestHash: artworkHash(artwork) }] : [] };
-  } } as unknown as pg.Pool;
+  const pool = {
+    query: async (sql: string) => {
+      assert.ok(sql.includes('FROM artwork_jobs WHERE user_id'));
+      return {
+        rows: exists
+          ? [{ id: 'job', status: 'pending', deliveryStatus: 'pending', unitCredits: 9, usableCount: 0, requestHash: artworkHash(artwork) }]
+          : [],
+      };
+    },
+  } as unknown as pg.Pool;
   const { redis, reads, values } = offerStore();
   const input = { ...artwork, requestKey: 'request', offerId: 'expired' };
   const replay = await submitArtworkJob(pool, redis, userId, input);

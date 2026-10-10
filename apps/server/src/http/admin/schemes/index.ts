@@ -1,11 +1,24 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
-import { createScheme, deleteScheme, getScheme, listSchemes, schemeFormOptions, updateScheme, type ListSchemesOptions, type SchemeInput } from '../../../modules/schemes/service.js';
+import {
+  createScheme,
+  deleteScheme,
+  getScheme,
+  listSchemes,
+  schemeFormOptions,
+  updateScheme,
+  type ListSchemesOptions,
+  type SchemeInput,
+} from '../../../modules/schemes/service.js';
 
 interface SchemeQuery extends Partial<ListSchemesOptions> {}
-interface CodeParams { code: string; }
-interface UpdateBody extends SchemeInput { editRevision: number; }
+interface CodeParams {
+  code: string;
+}
+interface UpdateBody extends SchemeInput {
+  editRevision: number;
+}
 
 const nullableString = { type: ['string', 'null'] };
 const nullableNumber = { type: ['number', 'null'] };
@@ -57,16 +70,24 @@ const updateProperties = {
 };
 
 const codeParamsSchema = {
-  type: 'object', required: ['code'], additionalProperties: false,
+  type: 'object',
+  required: ['code'],
+  additionalProperties: false,
   properties: { code: { type: 'string', minLength: 1 } },
 };
 
 const listQuerySchema = {
-  type: 'object', additionalProperties: false,
+  type: 'object',
+  additionalProperties: false,
   properties: {
-    page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
-    keyword: { type: 'string', minLength: 1 }, code: { type: 'string', minLength: 1 }, name: { type: 'string', minLength: 1 }, styleId: { type: 'string', format: 'uuid' },
-    industryId: { type: 'string', format: 'uuid' }, productSystemId: { type: 'string', format: 'uuid' },
+    page: { type: 'integer', minimum: 1 },
+    pageSize: { type: 'integer', minimum: 1, maximum: 100 },
+    keyword: { type: 'string', minLength: 1 },
+    code: { type: 'string', minLength: 1 },
+    name: { type: 'string', minLength: 1 },
+    styleId: { type: 'string', format: 'uuid' },
+    industryId: { type: 'string', format: 'uuid' },
+    productSystemId: { type: 'string', format: 'uuid' },
     publishStatus: { type: 'string', enum: ['draft', 'published', 'unpublished'] },
     verificationStatus: { type: 'string', enum: ['unverified', 'verified', 'failed'] },
     openingCount: { type: 'integer', minimum: 1, maximum: 4 },
@@ -110,26 +131,61 @@ function listOptions(query: SchemeQuery): ListSchemesOptions {
 }
 
 export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
-  app.get('/schemes/options', { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'] } }, async () => ({ code: 0, data: await schemeFormOptions(pool) }));
-  app.get('/schemes', { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'], querystring: listQuerySchema } }, async request => {
-    return { code: 0, data: await listSchemes(pool, listOptions(request.query as SchemeQuery)) };
-  });
-  app.get('/schemes/:code', { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async request => {
-    return { code: 0, data: await getScheme(pool, decodedCode(request.params as CodeParams)) };
-  });
-  app.post('/schemes', { config: { permissions: ['schemes.create'] },
-    schema: { tags: ['admin-schemes'], body: { type: 'object', required: ['code', 'name'], additionalProperties: false, properties: schemeProperties } },
-  }, async request => {
-    return { code: 0, data: await createScheme(pool, adminUserId(request), request.body as SchemeInput) };
-  });
-  app.put('/schemes/:code', { config: { permissions: ['schemes.update'] },
-    schema: { tags: ['admin-schemes'], params: codeParamsSchema, body: { type: 'object', required: ['editRevision'], additionalProperties: false, properties: updateProperties } },
-  }, async request => {
-    const { editRevision, ...input } = request.body as UpdateBody;
-    return { code: 0, data: await updateScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request), input, editRevision) };
-  });
-  app.delete('/schemes/:code', { config: { permissions: ['schemes.delete'] }, schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async (request) => {
-    await deleteScheme(pool, adminUserId(request), decodedCode(request.params as CodeParams));
-    return { code: 0, data: null };
-  });
+  app.get('/schemes/options', { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'] } }, async () => ({
+    code: 0,
+    data: await schemeFormOptions(pool),
+  }));
+  app.get(
+    '/schemes',
+    { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'], querystring: listQuerySchema } },
+    async request => {
+      return { code: 0, data: await listSchemes(pool, listOptions(request.query as SchemeQuery)) };
+    },
+  );
+  app.get(
+    '/schemes/:code',
+    { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'], params: codeParamsSchema } },
+    async request => {
+      return { code: 0, data: await getScheme(pool, decodedCode(request.params as CodeParams)) };
+    },
+  );
+  app.post(
+    '/schemes',
+    {
+      config: { permissions: ['schemes.create'] },
+      schema: {
+        tags: ['admin-schemes'],
+        body: { type: 'object', required: ['code', 'name'], additionalProperties: false, properties: schemeProperties },
+      },
+    },
+    async request => {
+      return { code: 0, data: await createScheme(pool, adminUserId(request), request.body as SchemeInput) };
+    },
+  );
+  app.put(
+    '/schemes/:code',
+    {
+      config: { permissions: ['schemes.update'] },
+      schema: {
+        tags: ['admin-schemes'],
+        params: codeParamsSchema,
+        body: { type: 'object', required: ['editRevision'], additionalProperties: false, properties: updateProperties },
+      },
+    },
+    async request => {
+      const { editRevision, ...input } = request.body as UpdateBody;
+      return {
+        code: 0,
+        data: await updateScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request), input, editRevision),
+      };
+    },
+  );
+  app.delete(
+    '/schemes/:code',
+    { config: { permissions: ['schemes.delete'] }, schema: { tags: ['admin-schemes'], params: codeParamsSchema } },
+    async request => {
+      await deleteScheme(pool, adminUserId(request), decodedCode(request.params as CodeParams));
+      return { code: 0, data: null };
+    },
+  );
 }

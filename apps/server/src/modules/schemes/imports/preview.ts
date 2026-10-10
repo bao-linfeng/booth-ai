@@ -2,7 +2,13 @@ import type pg from 'pg';
 import { findSchemesByCodes, type SchemeRecord } from '../service.js';
 import { importRowChanges, onlyNotesChanged } from './changes.js';
 import type { ImportPreviewRow, ImportRow, ImportRowSource, ImportSummary, ParsedImportRow, PreviewImportResult } from './types.js';
-import { importDictionaryLabels, loadImportDictionaries, missingRequiredField, validateImportRow, type ImportDictionaries } from './validation.js';
+import {
+  importDictionaryLabels,
+  loadImportDictionaries,
+  missingRequiredField,
+  validateImportRow,
+  type ImportDictionaries,
+} from './validation.js';
 import { parseWorkbook } from './workbook.js';
 
 async function findExistingSchemes(pool: pg.Pool, parsedRows: ParsedImportRow[]): Promise<Map<string, SchemeRecord>> {
@@ -30,7 +36,11 @@ function existingRow(row: ImportPreviewRow & { data: ImportRow }, current: Schem
  * 逐行分类为 valid / duplicate / unchanged / error；空行计入 skipped。
  * rowId 按解析顺序从 1 编号，跨工作表唯一；行号保留各工作表内的原始行号。
  */
-function classifyRows(dictionaries: ImportDictionaries, parsedRows: ParsedImportRow[], existing: Map<string, SchemeRecord>): { rows: ImportPreviewRow[]; summary: ImportSummary } {
+function classifyRows(
+  dictionaries: ImportDictionaries,
+  parsedRows: ParsedImportRow[],
+  existing: Map<string, SchemeRecord>,
+): { rows: ImportPreviewRow[]; summary: ImportSummary } {
   const summary: ImportSummary = { total: parsedRows.length, valid: 0, duplicate: 0, unchanged: 0, error: 0, skipped: 0, unpublish: 0 };
   const rows: ImportPreviewRow[] = [];
   const firstSeen = new Map<string, ImportRowSource>();
@@ -58,7 +68,13 @@ function classifyRows(dictionaries: ImportDictionaries, parsedRows: ParsedImport
     const first = firstSeen.get(code);
     if (first) {
       summary.error += 1;
-      rows.push({ ...source, code, name, status: 'error', reason: `文件内方案编号重复（首次出现于「${first.sheetName}」第 ${first.rowNumber} 行）` });
+      rows.push({
+        ...source,
+        code,
+        name,
+        status: 'error',
+        reason: `文件内方案编号重复（首次出现于「${first.sheetName}」第 ${first.rowNumber} 行）`,
+      });
       continue;
     }
     firstSeen.set(code, { sheetName, rowNumber });
@@ -74,12 +90,21 @@ function classifyRows(dictionaries: ImportDictionaries, parsedRows: ParsedImport
   return { rows, summary };
 }
 
-async function savePreview(pool: pg.Pool, adminId: string | null, filename: string, rows: ImportPreviewRow[], summary: ImportSummary): Promise<{ importId: string; expiresAt: string }> {
-  const inserted = await pool.query<{ id: string; expiresAt: Date }>(`
+async function savePreview(
+  pool: pg.Pool,
+  adminId: string | null,
+  filename: string,
+  rows: ImportPreviewRow[],
+  summary: ImportSummary,
+): Promise<{ importId: string; expiresAt: string }> {
+  const inserted = await pool.query<{ id: string; expiresAt: Date }>(
+    `
     INSERT INTO scheme_imports (source_filename, preview, summary, expires_at, created_by)
     VALUES ($1, $2, $3, now() + interval '1 hour', $4)
     RETURNING id::text AS id, expires_at AS "expiresAt"
-  `, [filename, JSON.stringify(rows), JSON.stringify(summary), adminId]);
+  `,
+    [filename, JSON.stringify(rows), JSON.stringify(summary), adminId],
+  );
   const saved = inserted.rows[0];
   if (!saved) throw Object.assign(new Error('Failed to create import preview'), { statusCode: 500 });
   return { importId: saved.id, expiresAt: new Date(saved.expiresAt).toISOString() };

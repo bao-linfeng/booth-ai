@@ -48,8 +48,12 @@ unhandledText 为最多 20 项的原文片段数组；不输出空字段值、nu
 export function buildSelectionMessages(text: string, catalog: Catalog, body = extractionInstruction) {
   assertPrompt('filter', body);
   const dictionaries = {
-    ...Object.fromEntries((['openingCounts', 'productSystems', 'styles', 'industries', 'budgetTiers', 'zones', 'features'] as const)
-      .map(group => [group, catalog[group]])),
+    ...Object.fromEntries(
+      (['openingCounts', 'productSystems', 'styles', 'industries', 'budgetTiers', 'zones', 'features'] as const).map(group => [
+        group,
+        catalog[group],
+      ]),
+    ),
     boothSpaces: catalog.boothSpaces,
   };
   return [

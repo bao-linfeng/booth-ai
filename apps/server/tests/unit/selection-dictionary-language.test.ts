@@ -5,13 +5,29 @@ import { emptyRequirement, validateRequirement, type Catalog } from '../../src/m
 import { parseRequirement } from '../../src/modules/selection/parse.js';
 import { mergeExtraction } from '../../src/modules/selection/llm.js';
 
-const modern = { id: 'modern', label: '现代简约', value: 'modern', labels: { en: 'Modern minimalist', ja: 'モダン・ミニマル' },
-  aliases: [{ locale: 'en', text: 'modern minimalism' }, { locale: 'ja', text: 'ミニマル' }] };
-const catalog: Catalog = { boothSpaces: [
-  { id: 'size', label: '6 × 3 × 4.5 m', lengthMm: 6000, widthMm: 3000, heightMm: 4500 },
-], openingCounts: [], productSystems: [], styles: [modern], industries: [], budgetTiers: [],
-zones: [{ id: 'meeting', label: '洽谈区', labels: { en: 'Meeting area', ja: '商談スペース' } },
-  { id: 'storage', label: '储藏间', labels: { en: 'Storage room', ja: '収納室' } }], features: [] };
+const modern = {
+  id: 'modern',
+  label: '现代简约',
+  value: 'modern',
+  labels: { en: 'Modern minimalist', ja: 'モダン・ミニマル' },
+  aliases: [
+    { locale: 'en', text: 'modern minimalism' },
+    { locale: 'ja', text: 'ミニマル' },
+  ],
+};
+const catalog: Catalog = {
+  boothSpaces: [{ id: 'size', label: '6 × 3 × 4.5 m', lengthMm: 6000, widthMm: 3000, heightMm: 4500 }],
+  openingCounts: [],
+  productSystems: [],
+  styles: [modern],
+  industries: [],
+  budgetTiers: [],
+  zones: [
+    { id: 'meeting', label: '洽谈区', labels: { en: 'Meeting area', ja: '商談スペース' } },
+    { id: 'storage', label: '储藏间', labels: { en: 'Storage room', ja: '収納室' } },
+  ],
+  features: [],
+};
 
 test('default, translations, codes and normalized aliases resolve to one identity', () => {
   for (const term of ['现代简约', 'Modern minimalist', 'モダン・ミニマル', 'ＭＯＤＥＲＮ', '  modern minimalism  ', 'ミニマル']) {
@@ -59,16 +75,21 @@ test('selected sizes derive footprint without substituting venue height and stal
 test('model extraction accepts only live size identities and retains original Japanese evidence', () => {
   const text = 'モダン・ミニマル';
   const result = mergeExtraction(text, emptyRequirement(), catalog, {
-    fields: { styleIds: { value: ['modern'], evidence: text } }, unhandledText: [],
+    fields: { styleIds: { value: ['modern'], evidence: text } },
+    unhandledText: [],
   });
   assert.deepEqual(result.requirement.styleIds, ['modern']);
   assert.equal(result.fieldSources.styleIds?.evidence, text);
   const size = mergeExtraction('長さ6m、奥行き3m、高さ4.5m', emptyRequirement(), catalog, {
-    fields: { boothSpaceId: { value: 'size', evidence: '長さ6m、奥行き3m、高さ4.5m' } }, unhandledText: [],
+    fields: { boothSpaceId: { value: 'size', evidence: '長さ6m、奥行き3m、高さ4.5m' } },
+    unhandledText: [],
   });
   assert.equal(size.requirement.boothSpaceId, 'size');
   assert.equal(size.requirement.maxHeightMm, null);
-  assert.throws(() => mergeExtraction('サイズ', emptyRequirement(), catalog, {
-    fields: { boothSpaceId: { value: 'invented', evidence: 'サイズ' } }, unhandledText: [],
-  }));
+  assert.throws(() =>
+    mergeExtraction('サイズ', emptyRequirement(), catalog, {
+      fields: { boothSpaceId: { value: 'invented', evidence: 'サイズ' } },
+      unhandledText: [],
+    }),
+  );
 });

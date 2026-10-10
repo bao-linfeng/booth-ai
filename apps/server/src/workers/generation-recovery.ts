@@ -45,8 +45,11 @@ export function decideRecovery(candidate: RecoveryCandidate, queueState: string 
   return 'wait';
 }
 
-export async function recoverGenerationJobs(database: pg.Pool, queues: RecoveryQueues,
-  publish: Partial<Record<GenerationKind, PublishGenerationEvent>> = {}): Promise<RecoveryReport> {
+export async function recoverGenerationJobs(
+  database: pg.Pool,
+  queues: RecoveryQueues,
+  publish: Partial<Record<GenerationKind, PublishGenerationEvent>> = {},
+): Promise<RecoveryReport> {
   const report: RecoveryReport = { enqueued: 0, retried: 0, settled: 0, errors: [] };
   for (const kind of ['theme', 'artwork'] as const) {
     const candidates = await database.query<{ id: string } & RecoveryCandidate>(`SELECT id, status::text AS status,

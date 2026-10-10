@@ -31,23 +31,45 @@ export function sendError(error: DomainError, request: FastifyRequest, reply: Fa
   request.log[status >= 500 ? 'error' : 'warn']({ code: error.code ?? 'REQUEST_ERROR', statusCode: status }, 'request failed');
   const { reason, details } = error;
   const assignmentUnavailable = status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE';
-  const code = error.validation ? 'VALIDATION_ERROR' : assignmentUnavailable ? 'REQUEST_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR';
-  const message = assignmentUnavailable ? 'Request acceptance is temporarily unavailable' : status >= 500 ? 'Internal server error' : 'Invalid request';
-  return reply.code(status).send({ error: {
-    code, ...(reason && (status < 500 || assignmentUnavailable) ? { reason } : {}), ...(reason && details !== undefined && status < 500 ? { details } : {}),
-    message, requestId: request.id,
-  } });
+  const code = error.validation
+    ? 'VALIDATION_ERROR'
+    : assignmentUnavailable
+      ? 'REQUEST_ERROR'
+      : status >= 500
+        ? 'INTERNAL_ERROR'
+        : 'REQUEST_ERROR';
+  const message = assignmentUnavailable
+    ? 'Request acceptance is temporarily unavailable'
+    : status >= 500
+      ? 'Internal server error'
+      : 'Invalid request';
+  return reply.code(status).send({
+    error: {
+      code,
+      ...(reason && (status < 500 || assignmentUnavailable) ? { reason } : {}),
+      ...(reason && details !== undefined && status < 500 ? { details } : {}),
+      message,
+      requestId: request.id,
+    },
+  });
 }
 
 /** Registers the shared error contract: handler, unknown-route response and the error schema on every route's 4xx/5xx. */
 export function registerErrorContract(app: FastifyInstance) {
   app.addSchema(errorResponseSchema);
   app.setErrorHandler(sendError);
-  app.setNotFoundHandler((request, reply) => reply.code(404).send({ error: { code: 'REQUEST_ERROR', reason: 'ROUTE_NOT_FOUND', message: 'Route not found', requestId: request.id } }));
+  app.setNotFoundHandler((request, reply) =>
+    reply
+      .code(404)
+      .send({ error: { code: 'REQUEST_ERROR', reason: 'ROUTE_NOT_FOUND', message: 'Route not found', requestId: request.id } }),
+  );
   // Routes keep their own explicit status schemas (e.g. readiness 503); everything else documents and serializes the shared shape.
   app.addHook('onRoute', route => {
     const schema = route.schema ?? {};
     if (schema.hide) return;
-    route.schema = { ...schema, response: { '4xx': { $ref: 'ErrorResponse#' }, '5xx': { $ref: 'ErrorResponse#' }, ...(schema.response as object | undefined) } };
+    route.schema = {
+      ...schema,
+      response: { '4xx': { $ref: 'ErrorResponse#' }, '5xx': { $ref: 'ErrorResponse#' }, ...(schema.response as object | undefined) },
+    };
   });
 }

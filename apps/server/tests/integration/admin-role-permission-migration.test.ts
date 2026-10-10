@@ -3,8 +3,10 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import pg from 'pg';
 
-test('sign-in permission migration preserves grants, deduplicates codes and increments only affected revisions',
-  { skip: !process.env.ADMIN_ROLE_TEST_DATABASE_URL }, async () => {
+test(
+  'sign-in permission migration preserves grants, deduplicates codes and increments only affected revisions',
+  { skip: !process.env.ADMIN_ROLE_TEST_DATABASE_URL },
+  async () => {
     const client = new pg.Client({ connectionString: process.env.ADMIN_ROLE_TEST_DATABASE_URL });
     await client.connect();
     try {
@@ -21,8 +23,12 @@ test('sign-in permission migration preserves grants, deduplicates codes and incr
         [3, ['credits.sign_in_config'], true],
         [4, [], true],
       ] as const) {
-        await client.query('INSERT INTO admin_roles (id,name,active,permission_codes,revision) VALUES ($1,$2,$3,$4,7)',
-          [id, `ROLE_TEST_${id}`, active, [...grants, ...extra]]);
+        await client.query('INSERT INTO admin_roles (id,name,active,permission_codes,revision) VALUES ($1,$2,$3,$4,7)', [
+          id,
+          `ROLE_TEST_${id}`,
+          active,
+          [...grants, ...extra],
+        ]);
       }
       const before = (await client.query('SELECT * FROM admin_roles ORDER BY id')).rows;
       const sql = await readFile(new URL('../../migrations/070_sign_in_permission_code.sql', import.meta.url), 'utf8');
@@ -42,4 +48,5 @@ test('sign-in permission migration preserves grants, deduplicates codes and incr
       await client.query('ROLLBACK');
       await client.end();
     }
-  });
+  },
+);

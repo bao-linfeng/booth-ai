@@ -22,7 +22,8 @@ export const ms: Messages = {
   missBudget: 'Tahap bajet pembelian bahan berbeza daripada keutamaan',
   noPublished: 'Pada masa ini tiada reka bentuk yang diterbitkan dan disemak',
   noMatchRandom: 'Pada masa ini tiada reka bentuk tersedia untuk cadangan rawak (sebab pengecualian mungkin bertindih)',
-  noMatchFiltered: 'Tiada reka bentuk untuk diguna pakai atau dijadikan rujukan bagi gabungan kriteria ini (sebab pengecualian mungkin bertindih)',
+  noMatchFiltered:
+    'Tiada reka bentuk untuk diguna pakai atau dijadikan rujukan bagi gabungan kriteria ini (sebab pengecualian mungkin bertindih)',
   excUnverifiedChecklist: 'Senarai semak belum disahkan',
   excIncompleteAssets: 'Aset tidak lengkap',
   excInvalidData: 'Data asas atau maklumat semakan tidak lengkap',
@@ -32,7 +33,8 @@ export const ms: Messages = {
   excDimensions: 'Dimensi tidak sepadan atau di luar julat rujukan',
   excPoolLine: '{label}: {count} reka bentuk diterbitkan',
   excAvailableLine: '{label}: {count} reka bentuk tersedia',
-  suggestDimensions: 'Semak panjang, lebar dan tinggi yang dipilih, atau laraskan panjang, lebar dan keluasan tersuai, kemudian cari semula',
+  suggestDimensions:
+    'Semak panjang, lebar dan tinggi yang dipilih, atau laraskan panjang, lebar dan keluasan tersuai, kemudian cari semula',
   suggestProductSystem: 'Semak sistem produk yang dipilih dan cari semula selepas mengubahnya',
   suggestTags: 'Semak kriteria fungsi wajib atau dikecualikan dan cari semula selepas mengubahnya',
   suggestAdvisor: 'Anda juga boleh menghubungi penasihat untuk mengesahkan reka bentuk yang tersedia',
@@ -44,7 +46,8 @@ export const ms: Messages = {
   parseHeightNeedsSize: 'Ketinggian reka bentuk mesti dipilih bersama panjang dan lebar yang jelas sebagai saiz lengkap. Sila sahkan.',
   parseHeightNoSize: 'Tiada saiz reka bentuk lengkap yang sepadan. Sila pilih saiz sedia ada atau serahkan kepada penasihat.',
   parseAreaMultiple: 'Beberapa keluasan ditemui. Sila sahkan keluasan akhir.',
-  parseDirection: 'Arah panjang dan lebar bagi "{text}" tidak jelas. Sila sahkan, dengan kiri-kanan sebagai panjang dan depan-belakang sebagai lebar.',
+  parseDirection:
+    'Arah panjang dan lebar bagi "{text}" tidak jelas. Sila sahkan, dengan kiri-kanan sebagai panjang dan depan-belakang sebagai lebar.',
   parseOpeningConflict: 'Bilangan sisi terbuka bercanggah. Sila sahkan.',
   parseNoConstraints: 'Kategori ini tidak menyokong penafian atau kriteria wajib. Sila sahkan.',
   parseCandidates: '"{text}" mempunyai beberapa calon. Sila sahkan.',

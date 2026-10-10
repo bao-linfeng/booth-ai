@@ -13,9 +13,17 @@ test('test files live in a category directory and integration tests are grouped 
     const file = entry.replaceAll('\\', '/');
     if (!file.endsWith('.test.ts')) continue;
     const [category, name, ...rest] = file.split('/');
-    if (!name || rest.length || !categories.includes(category!)) { misplaced.push(`${file}: expected tests/<${categories.join('|')}>/*.test.ts`); continue; }
-    const needsServices = /process\.env\.(?:[A-Z_]+_TEST_(?:DATABASE|REDIS)_URL|REQUIRE_INTEGRATION_TESTS)/.test(await readFile(new URL(file, root), 'utf8'));
-    if (needsServices !== (category === 'integration')) misplaced.push(`${file}: ${needsServices ? 'uses test database/Redis variables, move to integration/' : 'needs no services, move out of integration/'}`);
+    if (!name || rest.length || !categories.includes(category!)) {
+      misplaced.push(`${file}: expected tests/<${categories.join('|')}>/*.test.ts`);
+      continue;
+    }
+    const needsServices = /process\.env\.(?:[A-Z_]+_TEST_(?:DATABASE|REDIS)_URL|REQUIRE_INTEGRATION_TESTS)/.test(
+      await readFile(new URL(file, root), 'utf8'),
+    );
+    if (needsServices !== (category === 'integration'))
+      misplaced.push(
+        `${file}: ${needsServices ? 'uses test database/Redis variables, move to integration/' : 'needs no services, move out of integration/'}`,
+      );
   }
   assert.deepEqual(misplaced, []);
 });

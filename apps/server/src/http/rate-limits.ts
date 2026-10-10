@@ -26,14 +26,25 @@ export function rateLimit(redis: Redis, policyName: RateLimitPolicyName, anonymo
 }
 
 /** visitor 身份取 request.csVisitorId（客服接口解析主体后写入），供按条件叠加多条策略的路由直接调用 */
-export async function enforceRateLimit(redis: Redis, request: FastifyRequest, reply: FastifyReply, name: RateLimitPolicyName): Promise<void> {
+export async function enforceRateLimit(
+  redis: Redis,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  name: RateLimitPolicyName,
+): Promise<void> {
   const policy = rateLimitPolicies[name];
-  const identity = policy.identity === 'user' ? request.principal?.localId : policy.identity === 'visitor' ? request.csVisitorId : request.ip;
+  const identity =
+    policy.identity === 'user' ? request.principal?.localId : policy.identity === 'visitor' ? request.csVisitorId : request.ip;
   if (!identity) throw Object.assign(new Error('Authentication required'), { statusCode: 401, reason: 'AUTH_REQUIRED' });
   const digest = createHash('sha256').update(identity).digest('hex');
   const window = Math.floor(Date.now() / (policy.windowSeconds * 1000));
   const key = `rate:${request.principal?.site ?? request.routeOptions.url?.split('/')[3] ?? 'public'}:${name}:${digest}:${window}`;
-  const count = await redis.eval('local n=redis.call("INCR",KEYS[1]); if n==1 then redis.call("EXPIRE",KEYS[1],ARGV[1]) end; return n', 1, key, policy.windowSeconds);
+  const count = await redis.eval(
+    'local n=redis.call("INCR",KEYS[1]); if n==1 then redis.call("EXPIRE",KEYS[1],ARGV[1]) end; return n',
+    1,
+    key,
+    policy.windowSeconds,
+  );
   if (Number(count) > policy.max) {
     reply.header('Retry-After', String(policy.windowSeconds));
     throw Object.assign(new Error('Rate limited'), { statusCode: 429, reason: 'RATE_LIMITED' });

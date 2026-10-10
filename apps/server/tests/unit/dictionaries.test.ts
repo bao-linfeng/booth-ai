@@ -2,17 +2,38 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type pg from 'pg';
 import {
-  createDictionary, createDictionaryItem, deleteDictionary, deleteDictionaryItem,
-  getDictionary, listDictionaries, listDictionaryItems, updateDictionary, updateDictionaryItem,
+  createDictionary,
+  createDictionaryItem,
+  deleteDictionary,
+  deleteDictionaryItem,
+  getDictionary,
+  listDictionaries,
+  listDictionaryItems,
+  updateDictionary,
+  updateDictionaryItem,
 } from '../../src/modules/dictionaries/service.js';
 
 const dictionary = {
-  id: 'dictionary-id', code: 'gender', name: 'Gender', type: 'default', description: null, enabled: true,
-  sortOrder: 0, createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'),
+  id: 'dictionary-id',
+  code: 'gender',
+  name: 'Gender',
+  type: 'default',
+  description: null,
+  enabled: true,
+  sortOrder: 0,
+  createdAt: new Date('2026-01-01T00:00:00Z'),
+  updatedAt: new Date('2026-01-01T00:00:00Z'),
 };
 const item = {
-  id: 'item-id', dictionaryId: dictionary.id, itemValue: 'm', itemLabel: 'Male',
-  description: null, enabled: true, sortOrder: 0, createdAt: dictionary.createdAt, updatedAt: dictionary.updatedAt,
+  id: 'item-id',
+  dictionaryId: dictionary.id,
+  itemValue: 'm',
+  itemLabel: 'Male',
+  description: null,
+  enabled: true,
+  sortOrder: 0,
+  createdAt: dictionary.createdAt,
+  updatedAt: dictionary.updatedAt,
 };
 
 function poolFor(query: (sql: string, params?: unknown[]) => { rows: unknown[]; rowCount?: number }): pg.Pool {
@@ -47,8 +68,20 @@ test('dictionary detail includes ordered items and missing dictionary returns 40
   assert.equal(detail.type, 'default');
   assert.equal(detail.items[0]?.itemValue, 'm');
   assert.equal(detail.items[0]?.createdAt, '2026-01-01T00:00:00.000Z');
-  await assert.rejects(getDictionary(poolFor(() => ({ rows: [] })), 'missing'), { statusCode: 404 });
-  await assert.rejects(listDictionaryItems(poolFor(() => ({ rows: [], rowCount: 0 })), 'missing'), { statusCode: 404 });
+  await assert.rejects(
+    getDictionary(
+      poolFor(() => ({ rows: [] })),
+      'missing',
+    ),
+    { statusCode: 404 },
+  );
+  await assert.rejects(
+    listDictionaryItems(
+      poolFor(() => ({ rows: [], rowCount: 0 })),
+      'missing',
+    ),
+    { statusCode: 404 },
+  );
 });
 
 test('dictionary CRUD trims fields, rejects duplicate code and detects missing deletion', async () => {
@@ -73,10 +106,15 @@ test('dictionary CRUD trims fields, rejects duplicate code and detects missing d
   assert.equal(updated.type, 'default');
   await assert.rejects(updateDictionary(pool, dictionary.id, { type: '开口' }), { statusCode: 400 });
   await assert.rejects(deleteDictionary(pool, dictionary.id), { statusCode: 404 });
-  const conflict = poolFor(() => { throw Object.assign(new Error('duplicate'), { code: '23505' }); });
+  const conflict = poolFor(() => {
+    throw Object.assign(new Error('duplicate'), { code: '23505' });
+  });
   await assert.rejects(createDictionary(conflict, { code: 'gender', name: 'Gender', type: '尺寸' }), { statusCode: 409 });
   await assert.rejects(createDictionary(pool, { code: 'gender', name: 'Gender' }), { statusCode: 400, message: 'Type is required' });
-  await assert.rejects(createDictionary(pool, { code: 'gender', name: 'Gender', type: '  ' }), { statusCode: 400, message: 'Type is required' });
+  await assert.rejects(createDictionary(pool, { code: 'gender', name: 'Gender', type: '  ' }), {
+    statusCode: 400,
+    message: 'Type is required',
+  });
 });
 
 test('item CRUD scopes mutations to dictionary and handles foreign key and conflicts', async () => {
@@ -104,7 +142,9 @@ test('item CRUD scopes mutations to dictionary and handles foreign key and confl
   await assert.rejects(deleteDictionaryItem(pool, item.id, dictionary.id), { statusCode: 404 });
   const missingParent = poolFor(() => ({ rows: [] }));
   await assert.rejects(createDictionaryItem(missingParent, 'missing', { itemValue: 'm', itemLabel: 'Male' }), { statusCode: 404 });
-  const conflict = poolFor(() => { throw Object.assign(new Error('duplicate'), { code: '23505' }); });
+  const conflict = poolFor(() => {
+    throw Object.assign(new Error('duplicate'), { code: '23505' });
+  });
   await assert.rejects(updateDictionaryItem(conflict, item.id, { itemLabel: 'm' }), { statusCode: 409 });
   await assert.rejects(updateDictionaryItem(pool, item.id, { itemValue: 'other' }), { statusCode: 400 });
 });

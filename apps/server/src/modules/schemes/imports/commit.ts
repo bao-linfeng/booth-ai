@@ -83,22 +83,41 @@ function failedSource(row: ImportPreviewRow): Omit<CommitImportResult['failed'][
 /** insert / update 共用的 $1–$17 业务字段，其后依次追加各自的审计与版本参数。 */
 function schemeValues(data: ImportRow): unknown[] {
   return [
-    data.code, data.name, data.parentCode, data.widthMm, data.lengthMm,
-    data.areaM2, data.heightMm, data.openingCount, data.productSystemId,
-    data.styleId, data.industryIds ?? [], data.budgetTierId, data.zoneIds ?? [],
-    data.featureIds ?? [], data.description, data.keywords,
+    data.code,
+    data.name,
+    data.parentCode,
+    data.widthMm,
+    data.lengthMm,
+    data.areaM2,
+    data.heightMm,
+    data.openingCount,
+    data.productSystemId,
+    data.styleId,
+    data.industryIds ?? [],
+    data.budgetTierId,
+    data.zoneIds ?? [],
+    data.featureIds ?? [],
+    data.description,
+    data.keywords,
     data.notes,
   ];
 }
 
 /** 锁定待提交的导入记录；同一 importId 已提交时按请求摘要重放结果或报冲突。 */
-async function lockPendingImport(client: pg.PoolClient, importId: string, requestHash: string): Promise<{ replay: CommitImportResult } | { preview: unknown[] }> {
-  const imported = await client.query<ImportRecord>(`
+async function lockPendingImport(
+  client: pg.PoolClient,
+  importId: string,
+  requestHash: string,
+): Promise<{ replay: CommitImportResult } | { preview: unknown[] }> {
+  const imported = await client.query<ImportRecord>(
+    `
     SELECT preview, status, commit_request_hash, committed_result
     FROM scheme_imports
     WHERE id = $1 AND expires_at > now()
     FOR UPDATE
-  `, [importId]);
+  `,
+    [importId],
+  );
   const record = imported.rows[0];
   if (!record) throw domainError('IMPORT_PREVIEW_EXPIRED', 410);
   if (record.status === 'committed') {
@@ -111,7 +130,10 @@ async function lockPendingImport(client: pg.PoolClient, importId: string, reques
 }
 
 /** 待写入的行：仅 valid / duplicate，受 selectedRowIds 与重复策略过滤；预览时已无差异的行只计数不写入。 */
-function rowsToCommit(preview: unknown[], options: CommitImportOptions): { rows: (ImportPreviewRow & { data: ImportRow })[]; unchanged: number } {
+function rowsToCommit(
+  preview: unknown[],
+  options: CommitImportOptions,
+): { rows: (ImportPreviewRow & { data: ImportRow })[]; unchanged: number } {
   const selectedRowIds = options.selectedRowIds && options.selectedRowIds.length > 0 ? new Set(options.selectedRowIds) : null;
   const rows: (ImportPreviewRow & { data: ImportRow })[] = [];
   let unchanged = 0;
@@ -130,7 +152,11 @@ function rowsToCommit(preview: unknown[], options: CommitImportOptions): { rows:
 }
 
 /** 覆盖已有方案：锁定后按预览版本校验，再与当前内容比较，无差异不写入，仅改备注不触发下架。 */
-async function overwriteRow(client: pg.PoolClient, adminId: string | null, row: ImportPreviewRow & { data: ImportRow }): Promise<RowOutcome> {
+async function overwriteRow(
+  client: pg.PoolClient,
+  adminId: string | null,
+  row: ImportPreviewRow & { data: ImportRow },
+): Promise<RowOutcome> {
   if (row.snapshotRevision == null) return { kind: 'failed', reason: '预览数据缺少版本信息' };
   const [current] = await findSchemesByCodes(client, [row.code], true);
   if (!current || current.editRevision !== row.snapshotRevision) return { kind: 'failed', reason: '方案已被他人修改，请重新导入' };
@@ -152,9 +178,16 @@ async function writeRow(client: pg.PoolClient, adminId: string | null, row: Impo
   return overwriteRow(client, adminId, row);
 }
 
-export async function commitImport(pool: pg.Pool, adminId: string | null, importId: string, options: CommitImportOptions): Promise<CommitImportResult> {
+export async function commitImport(
+  pool: pg.Pool,
+  adminId: string | null,
+  importId: string,
+  options: CommitImportOptions,
+): Promise<CommitImportResult> {
   return transaction(pool, async client => {
-    const requestHash = createHash('sha256').update(JSON.stringify([importId, options.duplicateStrategy, options.selectedRowIds ?? null])).digest('hex');
+    const requestHash = createHash('sha256')
+      .update(JSON.stringify([importId, options.duplicateStrategy, options.selectedRowIds ?? null]))
+      .digest('hex');
     const locked = await lockPendingImport(client, importId, requestHash);
     if ('replay' in locked) return locked.replay;
 
@@ -179,7 +212,10 @@ export async function commitImport(pool: pg.Pool, adminId: string | null, import
       }
     }
     result.dictionaryItemsCreated = await ensureSelectionSizes(client, committedRows);
-    await client.query("UPDATE scheme_imports SET status = 'committed', committed_at = now(), commit_request_hash = $2, committed_result = $3 WHERE id = $1", [importId, requestHash, JSON.stringify(result)]);
+    await client.query(
+      "UPDATE scheme_imports SET status = 'committed', committed_at = now(), commit_request_hash = $2, committed_result = $3 WHERE id = $1",
+      [importId, requestHash, JSON.stringify(result)],
+    );
     return result;
   });
 }

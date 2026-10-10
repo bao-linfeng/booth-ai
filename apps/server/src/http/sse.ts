@@ -146,11 +146,18 @@ export async function streamEvents(redis: Redis, reply: FastifyReply, options: E
       if (closed) return;
       // 用具名事件而不是注释：前端据此判断连接存活（代理吞掉上游断开时浏览器收不到 error）
       response.write('event: ping\ndata: {}\n\n');
-      options.onHeartbeat?.(event => emit(JSON.stringify(event))).then(alive => { if (alive === false && !closed) response.end(); }, () => undefined);
+      options
+        .onHeartbeat?.(event => emit(JSON.stringify(event)))
+        .then(
+          alive => {
+            if (alive === false && !closed) response.end();
+          },
+          () => undefined,
+        );
     }, options.heartbeatMs ?? 15000);
 
     await options.onOpen?.();
-    for (const event of await options.replay?.() ?? []) {
+    for (const event of (await options.replay?.()) ?? []) {
       if (closed) return;
       response.write(write(JSON.stringify(event)));
     }

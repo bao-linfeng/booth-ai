@@ -10,33 +10,61 @@ import type { ArtworkContext } from '../../../modules/generation/artwork/types.j
 import { createArtworkOffer } from '../../../modules/generation/artwork/offers.js';
 import { artworkArchive, downloadArtworkAsset } from '../../../modules/generation/artwork/download.js';
 import { submitArtworkJob, type ArtworkSubmissionInput } from '../../../modules/generation/artwork/submission.js';
-import { artworkAssetSchema, artworkEventsSchema, artworkJobSchema, artworkListSchema, artworkOfferSchema, artworkSubmissionSchema } from './schema.js';
+import {
+  artworkAssetSchema,
+  artworkEventsSchema,
+  artworkJobSchema,
+  artworkListSchema,
+  artworkOfferSchema,
+  artworkSubmissionSchema,
+} from './schema.js';
 
-export async function registerArtworkJobRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>) {
+export async function registerArtworkJobRoutes(
+  app: FastifyInstance,
+  pool: pg.Pool,
+  redis: Redis,
+  storage: ReturnType<typeof createStorage>,
+) {
   app.post<{ Params: { jobId: string } }>('/artwork-jobs/:jobId/events-ticket', { schema: artworkJobSchema }, async (request, reply) => {
     reply.header('Cache-Control', 'private, no-store');
     const userId = clientUserId(request);
     await ownedArtworkJob(pool, userId, request.params.jobId);
-    const ticket = await issueEventTicket(redis, 'artwork', { subject: request.params.jobId, userId, token: requirePrincipal(request, 'client').token });
+    const ticket = await issueEventTicket(redis, 'artwork', {
+      subject: request.params.jobId,
+      userId,
+      token: requirePrincipal(request, 'client').token,
+    });
     return { code: 0, data: { ticket } };
   });
-  app.get<{ Params: { jobId: string }; Querystring: { ticket: string } }>('/artwork-jobs/:jobId/events', { config: { authentication: 'events', eventTicketPrefix: 'artwork' }, schema: artworkEventsSchema }, async (request, reply) => {
-    const userId = clientUserId(request);
-    await ownedArtworkJob(pool, userId, request.params.jobId);
-    await streamArtworkJobEvents(pool, redis, request.params.jobId, requirePrincipal(request, 'client'), reply);
-  });
-  app.post<{ Body: ArtworkContext }>('/artwork-offers', { preHandler: rateLimit(redis, 'generation'), schema: artworkOfferSchema }, async (request, reply) => {
-    reply.header('Cache-Control', 'private, no-store');
-    const userId = clientUserId(request);
-    return { code: 0, data: await createArtworkOffer(pool, redis, userId, request.body) };
-  });
-  app.post<{ Body: ArtworkSubmissionInput }>('/artwork-jobs', { preHandler: rateLimit(redis, 'generation'), schema: artworkSubmissionSchema }, async (request, reply) => {
-    reply.header('Cache-Control', 'private, no-store');
-    const userId = clientUserId(request);
-    const data = await submitArtworkJob(pool, redis, userId, request.body, request.id);
-    if (!data.reusedRequest) request.log.info({ jobKind: 'artwork', jobId: data.jobId }, 'generation job accepted');
-    return reply.code(data.reusedRequest ? 200 : 202).send({ code: 0, data });
-  });
+  app.get<{ Params: { jobId: string }; Querystring: { ticket: string } }>(
+    '/artwork-jobs/:jobId/events',
+    { config: { authentication: 'events', eventTicketPrefix: 'artwork' }, schema: artworkEventsSchema },
+    async (request, reply) => {
+      const userId = clientUserId(request);
+      await ownedArtworkJob(pool, userId, request.params.jobId);
+      await streamArtworkJobEvents(pool, redis, request.params.jobId, requirePrincipal(request, 'client'), reply);
+    },
+  );
+  app.post<{ Body: ArtworkContext }>(
+    '/artwork-offers',
+    { preHandler: rateLimit(redis, 'generation'), schema: artworkOfferSchema },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'private, no-store');
+      const userId = clientUserId(request);
+      return { code: 0, data: await createArtworkOffer(pool, redis, userId, request.body) };
+    },
+  );
+  app.post<{ Body: ArtworkSubmissionInput }>(
+    '/artwork-jobs',
+    { preHandler: rateLimit(redis, 'generation'), schema: artworkSubmissionSchema },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'private, no-store');
+      const userId = clientUserId(request);
+      const data = await submitArtworkJob(pool, redis, userId, request.body, request.id);
+      if (!data.reusedRequest) request.log.info({ jobKind: 'artwork', jobId: data.jobId }, 'generation job accepted');
+      return reply.code(data.reusedRequest ? 200 : 202).send({ code: 0, data });
+    },
+  );
   app.get<{ Querystring: ArtworkContext }>('/artwork-jobs', { schema: artworkListSchema }, async (request, reply) => {
     reply.header('Cache-Control', 'private, no-store');
     const userId = clientUserId(request);
@@ -48,13 +76,23 @@ export async function registerArtworkJobRoutes(app: FastifyInstance, pool: pg.Po
   });
   app.get<{ Params: { jobId: string } }>('/artwork-jobs/:jobId/download', { schema: artworkJobSchema }, async (request, reply) => {
     const archive = await artworkArchive(pool, storage, clientUserId(request), request.params.jobId);
-    return reply.header('Cache-Control', 'private, no-store').type('application/zip')
-      .header('Content-Disposition', `attachment; filename="artworks.zip"; filename*=UTF-8''${encodeURIComponent(archive.filename)}`).send(archive.stream);
+    return reply
+      .header('Cache-Control', 'private, no-store')
+      .type('application/zip')
+      .header('Content-Disposition', `attachment; filename="artworks.zip"; filename*=UTF-8''${encodeURIComponent(archive.filename)}`)
+      .send(archive.stream);
   });
-  app.get<{ Params: { jobId: string; assetId: string } }>('/artwork-jobs/:jobId/assets/:assetId/download', { schema: artworkAssetSchema }, async (request, reply) => {
-    const userId = clientUserId(request);
-    const { bytes, filename } = await downloadArtworkAsset(pool, storage, userId, request.params.jobId, request.params.assetId);
-    return reply.header('Cache-Control', 'private, no-store').type('image/png')
-      .header('Content-Disposition', `attachment; filename="${filename}"`).send(bytes);
-  });
+  app.get<{ Params: { jobId: string; assetId: string } }>(
+    '/artwork-jobs/:jobId/assets/:assetId/download',
+    { schema: artworkAssetSchema },
+    async (request, reply) => {
+      const userId = clientUserId(request);
+      const { bytes, filename } = await downloadArtworkAsset(pool, storage, userId, request.params.jobId, request.params.assetId);
+      return reply
+        .header('Cache-Control', 'private, no-store')
+        .type('image/png')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(bytes);
+    },
+  );
 }

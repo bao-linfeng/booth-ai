@@ -13,8 +13,16 @@ const jobId = '00000000-0000-4000-8000-000000000001';
 const userId = '00000000-0000-4000-8000-000000000002';
 const channel = `theme-job:${jobId}`;
 const sessionKey = `session:${createHash('sha256').update('owner').digest('hex').slice(0, 32)}`;
-const session = { site: 'client' as const, localId: userId, externalUserId: 1, username: 'owner', externalJwtCiphertext: '', expiresAt: Math.floor(Date.now() / 1000) + 3600,
-  loginSource: 'password' as const, sessionVersion: 1 };
+const session = {
+  site: 'client' as const,
+  localId: userId,
+  externalUserId: 1,
+  username: 'owner',
+  externalJwtCiphertext: '',
+  expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  loginSource: 'password' as const,
+  sessionVersion: 1,
+};
 const principal: Principal = { site: 'client', localId: userId, roles: [], permissions: [], session, token: 'owner' };
 
 class Subscriber extends EventEmitter {
@@ -54,7 +62,10 @@ async function setup(options: { status?: string; subscribeError?: boolean; snaps
   const redis = {
     get: async (key: string) => values.get(key) ?? null,
     duplicate: () => {
-      setImmediate(() => { subscriber.status = 'ready'; subscriber.emit('ready'); });
+      setImmediate(() => {
+        subscriber.status = 'ready';
+        subscriber.emit('ready');
+      });
       return subscriber;
     },
   } as unknown as Redis;
@@ -89,7 +100,10 @@ test('SSE rechecks the login session on every heartbeat and closes once it is go
   const { app, address, values } = await setup();
   t.mock.timers.enable({ apis: ['setInterval'] });
   const abort = new AbortController();
-  t.after(async () => { abort.abort(); await app.close(); });
+  t.after(async () => {
+    abort.abort();
+    await app.close();
+  });
   const reader = (await fetch(`${address}/events`, { signal: abort.signal })).body!.getReader();
   await readUntil(reader, '"running"');
   t.mock.timers.tick(15_000);
@@ -102,7 +116,10 @@ test('SSE rechecks the login session on every heartbeat and closes once it is go
 test('SSE waits for Redis readiness, snapshots missed completion, and preserves CORS', { timeout: 5000 }, async t => {
   const { app, subscriber, address } = await setup({ status: 'succeeded' });
   const abort = new AbortController();
-  t.after(async () => { abort.abort(); await app.close(); });
+  t.after(async () => {
+    abort.abort();
+    await app.close();
+  });
   const response = await fetch(`${address}/events`, { headers: { origin: 'http://localhost:5173' }, signal: abort.signal });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'text/event-stream');
@@ -119,7 +136,10 @@ test('SSE waits for Redis readiness, snapshots missed completion, and preserves 
 test('SSE keeps the subscription after the GET request and forwards later completion', { timeout: 5000 }, async t => {
   const { app, subscriber, address } = await setup();
   const abort = new AbortController();
-  t.after(async () => { abort.abort(); await app.close(); });
+  t.after(async () => {
+    abort.abort();
+    await app.close();
+  });
   const response = await fetch(`${address}/events`, { signal: abort.signal });
   const reader = response.body!.getReader();
   await readUntil(reader, '"running"');

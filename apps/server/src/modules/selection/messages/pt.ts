@@ -22,7 +22,8 @@ export const pt: Messages = {
   missBudget: 'A faixa de orçamento para compra de materiais é diferente da preferência',
   noPublished: 'No momento não há projetos publicados e revisados',
   noMatchRandom: 'No momento não há projetos disponíveis para recomendação aleatória (os motivos de exclusão podem se sobrepor)',
-  noMatchFiltered: 'Não há projetos para adotar ou usar como referência com esta combinação de critérios (os motivos de exclusão podem se sobrepor)',
+  noMatchFiltered:
+    'Não há projetos para adotar ou usar como referência com esta combinação de critérios (os motivos de exclusão podem se sobrepor)',
   excUnverifiedChecklist: 'Lista de verificação não verificada',
   excIncompleteAssets: 'Recursos incompletos',
   excInvalidData: 'Dados básicos ou informações de revisão incompletos',
@@ -32,19 +33,23 @@ export const pt: Messages = {
   excDimensions: 'Dimensões não correspondem ou estão fora da faixa de referência',
   excPoolLine: '{label}: {count} projetos publicados',
   excAvailableLine: '{label}: {count} projetos disponíveis',
-  suggestDimensions: 'Verifique o comprimento, a largura e a altura selecionados, ou ajuste o comprimento, a largura e a área personalizados e pesquise novamente',
+  suggestDimensions:
+    'Verifique o comprimento, a largura e a altura selecionados, ou ajuste o comprimento, a largura e a área personalizados e pesquise novamente',
   suggestProductSystem: 'Verifique o sistema de produto selecionado e pesquise novamente após alterá-lo',
   suggestTags: 'Verifique os critérios de funções obrigatórias ou excluídas e pesquise novamente após alterá-los',
   suggestAdvisor: 'Você também pode contatar um consultor para confirmar os projetos disponíveis',
-  parseUnhandledRules: 'Parte do texto não pôde ser reconhecida com segurança. Adicione critérios no formulário ou passe para um consultor.',
+  parseUnhandledRules:
+    'Parte do texto não pôde ser reconhecida com segurança. Adicione critérios no formulário ou passe para um consultor.',
   parseNoReliable: 'Nenhum critério confiável foi reconhecido. Adicione dimensões claras ou selecione critérios no formulário.',
   parseWarningRulesOnly: 'Desta vez foi usado o reconhecimento por regras; o conteúdo não reconhecido precisa de confirmação manual.',
   parseDimMultiple: 'A mesma dimensão tem vários valores. Confirme o valor final no formulário.',
   parseDimInvalid: 'A dimensão deve ser um número positivo com precisão de milímetro. Corrija-a.',
-  parseHeightNeedsSize: 'A altura do projeto deve ser selecionada junto com comprimento e largura explícitos como dimensão completa. Confirme.',
+  parseHeightNeedsSize:
+    'A altura do projeto deve ser selecionada junto com comprimento e largura explícitos como dimensão completa. Confirme.',
   parseHeightNoSize: 'Não há dimensão completa de projeto correspondente. Selecione uma dimensão existente ou passe para um consultor.',
   parseAreaMultiple: 'Foram encontradas várias áreas. Confirme a área final.',
-  parseDirection: 'As direções de comprimento e largura de "{text}" não estão claras. Confirme, considerando esquerda-direita como comprimento e frente-fundo como largura.',
+  parseDirection:
+    'As direções de comprimento e largura de "{text}" não estão claras. Confirme, considerando esquerda-direita como comprimento e frente-fundo como largura.',
   parseOpeningConflict: 'O número de lados abertos está em conflito. Confirme.',
   parseNoConstraints: 'Esta categoria não aceita negação nem critérios obrigatórios. Confirme.',
   parseCandidates: '"{text}" tem vários candidatos. Confirme.',

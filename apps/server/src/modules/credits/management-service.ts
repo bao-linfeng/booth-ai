@@ -36,7 +36,10 @@ const columns = `
 `;
 const from = 'credit_transactions ct LEFT JOIN users u ON u.id = ct.user_id LEFT JOIN admins a ON a.id = ct.operator_id';
 
-export async function listCreditTransactions(pool: pg.Pool, options: { page: number; pageSize: number; userId?: string; kind?: CreditKind; jobId?: string }) {
+export async function listCreditTransactions(
+  pool: pg.Pool,
+  options: { page: number; pageSize: number; userId?: string; kind?: CreditKind; jobId?: string },
+) {
   const conditions: string[] = [];
   const values: unknown[] = [];
   if (options.userId) {
@@ -53,14 +56,19 @@ export async function listCreditTransactions(pool: pg.Pool, options: { page: num
   }
   const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
   const [records, count] = await Promise.all([
-    pool.query<CreditTransaction>(`SELECT ${columns} FROM ${from}${where} ORDER BY ct.created_at DESC, ct.id DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
-      [...values, options.pageSize, (options.page - 1) * options.pageSize]),
+    pool.query<CreditTransaction>(
+      `SELECT ${columns} FROM ${from}${where} ORDER BY ct.created_at DESC, ct.id DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      [...values, options.pageSize, (options.page - 1) * options.pageSize],
+    ),
     pool.query<{ total: string }>(`SELECT count(*)::text AS total FROM ${from}${where}`, values),
   ]);
   return { data: records.rows, total: Number(count.rows[0]?.total ?? 0), page: options.page, pageSize: options.pageSize };
 }
 
-export async function rechargeCredits(pool: pg.Pool, input: { userId: string; amount: number; note?: string; operatorId: string; requestKey: string }) {
+export async function rechargeCredits(
+  pool: pg.Pool,
+  input: { userId: string; amount: number; note?: string; operatorId: string; requestKey: string },
+) {
   if (!Number.isInteger(input.amount) || input.amount <= 0 || input.amount > 2147483647) {
     throw Object.assign(new Error('Amount must be a positive integer'), { statusCode: 400, reason: 'INVALID_AMOUNT' });
   }
@@ -70,14 +78,19 @@ export async function rechargeCredits(pool: pg.Pool, input: { userId: string; am
   }
   return transaction(pool, async client => {
     await lockCreditUser(client, input.userId);
-    await client.query(`INSERT INTO credit_transactions (user_id, kind, amount, note, operator_id, request_key)
+    await client.query(
+      `INSERT INTO credit_transactions (user_id, kind, amount, note, operator_id, request_key)
       VALUES ($1, 'recharge', $2, $3, $4, $5)
       ON CONFLICT (operator_id, request_key) WHERE request_key IS NOT NULL DO NOTHING`,
-    [input.userId, input.amount, input.note ?? null, input.operatorId, input.requestKey]);
-    const result = (await client.query<CreditTransaction>(
-      `SELECT ${columns} FROM ${from}
-       WHERE ct.operator_id = $1 AND ct.request_key = $2`, [input.operatorId, input.requestKey],
-    )).rows[0];
+      [input.userId, input.amount, input.note ?? null, input.operatorId, input.requestKey],
+    );
+    const result = (
+      await client.query<CreditTransaction>(
+        `SELECT ${columns} FROM ${from}
+       WHERE ct.operator_id = $1 AND ct.request_key = $2`,
+        [input.operatorId, input.requestKey],
+      )
+    ).rows[0];
     if (!result) throw new Error('Recharge transaction missing');
     if (result.userId !== input.userId || result.amount !== input.amount || result.note !== (input.note ?? null)) {
       throw Object.assign(new Error('Request key already used with different parameters'), { statusCode: 409, reason: 'REQUEST_CONFLICT' });
@@ -99,10 +112,16 @@ export interface JobCreditLedger {
 /** 生成任务的积分预占与扣费流水，供后台任务详情核对并跳转到积分流水。 */
 export async function getJobCreditLedger(pool: Pick<pg.Pool, 'query'>, job: CreditJob): Promise<JobCreditLedger> {
   const [reservation, charge] = await Promise.all([
-    pool.query<NonNullable<JobCreditLedger['reservation']>>(`SELECT status, reserved_amount AS amount, created_at AS "createdAt", updated_at AS "updatedAt"
-      FROM credit_reservations WHERE ${job.kind}_job_id = $1`, [job.id]),
-    pool.query<NonNullable<JobCreditLedger['charge']>>(`SELECT id, amount, created_at AS "createdAt"
-      FROM credit_transactions WHERE ${job.kind}_job_id = $1`, [job.id]),
+    pool.query<NonNullable<JobCreditLedger['reservation']>>(
+      `SELECT status, reserved_amount AS amount, created_at AS "createdAt", updated_at AS "updatedAt"
+      FROM credit_reservations WHERE ${job.kind}_job_id = $1`,
+      [job.id],
+    ),
+    pool.query<NonNullable<JobCreditLedger['charge']>>(
+      `SELECT id, amount, created_at AS "createdAt"
+      FROM credit_transactions WHERE ${job.kind}_job_id = $1`,
+      [job.id],
+    ),
   ]);
   return { reservation: reservation.rows[0] ?? null, charge: charge.rows[0] ?? null };
 }

@@ -88,7 +88,12 @@ export async function loginExternal(
   const externalUserId = account?.id;
   const accountUsername = account?.username;
   const externalJwt = data?.JWT;
-  if (typeof externalUserId !== 'number' || !Number.isSafeInteger(externalUserId) || typeof accountUsername !== 'string' || !accountUsername) {
+  if (
+    typeof externalUserId !== 'number' ||
+    !Number.isSafeInteger(externalUserId) ||
+    typeof accountUsername !== 'string' ||
+    !accountUsername
+  ) {
     throw externalError('External authentication response is invalid', 400);
   }
   if (typeof externalJwt !== 'string' || !externalJwt) {
@@ -107,13 +112,21 @@ export async function fetchExternalUserDetail(config: Config, username: string, 
   const data = response.data;
   const externalUserId = data.id;
   const detailUsername = data.username;
-  if (typeof externalUserId !== 'number' || !Number.isSafeInteger(externalUserId) || typeof detailUsername !== 'string' || !detailUsername || typeof data.enabled !== 'boolean') {
+  if (
+    typeof externalUserId !== 'number' ||
+    !Number.isSafeInteger(externalUserId) ||
+    typeof detailUsername !== 'string' ||
+    !detailUsername ||
+    typeof data.enabled !== 'boolean'
+  ) {
     throw externalError('External user profile response is invalid', 502);
   }
   if (data.enabled === false) throw externalError('Account is disabled', 403, 'ACCOUNT_DISABLED');
 
   const roleRecords = Array.isArray(data.roles) ? data.roles.filter(isRecord) : [];
-  const roles = [...new Set(roleRecords.map(role => stringOrNull(role.name)).filter((role): role is string => role !== null && role.length > 0))];
+  const roles = [
+    ...new Set(roleRecords.map(role => stringOrNull(role.name)).filter((role): role is string => role !== null && role.length > 0)),
+  ];
   const fkAvatarId = typeof data.fkAvatarId === 'number' && Number.isSafeInteger(data.fkAvatarId) ? data.fkAvatarId : null;
   const avatarUrl = fkAvatarId !== null ? `${externalBaseUrl(config)}/api/attachment/images/${fkAvatarId}` : null;
   return {
@@ -133,11 +146,15 @@ export async function fetchExternalUserDetail(config: Config, username: string, 
   };
 }
 
-export interface ExternalRole { id: number; name: string }
+export interface ExternalRole {
+  id: number;
+  name: string;
+}
 
 export async function fetchExternalRoles(config: Config, externalJwt: string): Promise<ExternalRole[]> {
   const response = await fetchJson(`${externalBaseUrl(config)}/api/role/all`, {
-    method: 'GET', headers: { authorization: `Bearer ${externalJwt}`, accept: 'application/json' },
+    method: 'GET',
+    headers: { authorization: `Bearer ${externalJwt}`, accept: 'application/json' },
   });
   if (!isRecord(response) || response.success !== true || response.code !== '200' || !Array.isArray(response.data)) {
     throw externalError('角色列表获取失败', 502);
@@ -145,8 +162,16 @@ export async function fetchExternalRoles(config: Config, externalJwt: string): P
   const ids = new Set<number>();
   const names = new Set<string>();
   return response.data.map((role: unknown) => {
-    if (!isRecord(role) || typeof role.id !== 'number' || !Number.isSafeInteger(role.id) || role.id <= 0
-      || typeof role.name !== 'string' || !role.name.trim() || ids.has(role.id) || names.has(role.name)) {
+    if (
+      !isRecord(role) ||
+      typeof role.id !== 'number' ||
+      !Number.isSafeInteger(role.id) ||
+      role.id <= 0 ||
+      typeof role.name !== 'string' ||
+      !role.name.trim() ||
+      ids.has(role.id) ||
+      names.has(role.name)
+    ) {
       throw externalError('角色列表数据格式无效', 502);
     }
     ids.add(role.id);

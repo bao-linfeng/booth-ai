@@ -27,21 +27,47 @@ export interface QuoteInput {
   requirementContext?: { originalDescription: string; confirmedRequirements: Requirement };
 }
 export interface Receipt {
-  quoteRequestId: string; requestNo: string; projectId: string; projectNo: string; status: string;
-  revision: number; schemeCode: string; bomRevision: number | null; drawingRevision: number | null;
-  materialsStatus: { bom: string; drawings: string; artworks: string }; createdAt: string;
+  quoteRequestId: string;
+  requestNo: string;
+  projectId: string;
+  projectNo: string;
+  status: string;
+  revision: number;
+  schemeCode: string;
+  bomRevision: number | null;
+  drawingRevision: number | null;
+  materialsStatus: { bom: string; drawings: string; artworks: string };
+  createdAt: string;
 }
-export interface ManualInput extends Omit<QuoteInput, 'schemeCode' | 'schemeRevision' | 'bomRevision' | 'drawingRevision' | 'artworkRevision' | 'artworkJobId' | 'themeSelection' | 'requirementContext'> {
-  originalDescription: string; parsedRequirements?: Requirement; confirmedRequirements: Requirement; unresolvedQuestions?: string[];
+export interface ManualInput extends Omit<
+  QuoteInput,
+  | 'schemeCode'
+  | 'schemeRevision'
+  | 'bomRevision'
+  | 'drawingRevision'
+  | 'artworkRevision'
+  | 'artworkJobId'
+  | 'themeSelection'
+  | 'requirementContext'
+> {
+  originalDescription: string;
+  parsedRequirements?: Requirement;
+  confirmedRequirements: Requirement;
+  unresolvedQuestions?: string[];
 }
 export type ProjectStatus = 'pending' | 'following' | 'quoted' | 'won' | 'lost' | 'closed';
-export const terminalStatuses: ProjectStatus[] = ['won','lost','closed'];
+export const terminalStatuses: ProjectStatus[] = ['won', 'lost', 'closed'];
 export function normalizeManual(input: ManualInput): ManualInput {
-  const quote = normalizeQuote({...input,schemeCode:'manual'});
-  const {schemeCode: _scheme,...normalized} = quote;
-  if (!input.originalDescription.trim()) throw projectError('INVALID_INPUT',400);
-  return {...normalized,originalDescription:input.originalDescription.trim(),confirmedRequirements:input.confirmedRequirements,
-    ...(input.parsedRequirements ? {parsedRequirements:input.parsedRequirements}:{}),unresolvedQuestions:input.unresolvedQuestions ?? []};
+  const quote = normalizeQuote({ ...input, schemeCode: 'manual' });
+  const { schemeCode: _scheme, ...normalized } = quote;
+  if (!input.originalDescription.trim()) throw projectError('INVALID_INPUT', 400);
+  return {
+    ...normalized,
+    originalDescription: input.originalDescription.trim(),
+    confirmedRequirements: input.confirmedRequirements,
+    ...(input.parsedRequirements ? { parsedRequirements: input.parsedRequirements } : {}),
+    unresolvedQuestions: input.unresolvedQuestions ?? [],
+  };
 }
 export function validDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
@@ -49,17 +75,44 @@ export function validDate(value: string): boolean {
 export function normalizeQuote(input: QuoteInput): QuoteInput {
   if (input.artworkJobId && (!input.themeSelection || input.artworkRevision !== undefined)) throw projectError('INVALID_INPUT', 400);
   const exhibition = { ...input.exhibition, name: input.exhibition.name.trim(), city: input.exhibition.city.trim() };
-  const contact = { name: input.contact.name.trim(), ...(input.contact.email?.trim() ? { email: input.contact.email.trim() } : {}), ...(input.contact.phone?.trim() ? { phone: input.contact.phone.trim() } : {}) };
+  const contact = {
+    name: input.contact.name.trim(),
+    ...(input.contact.email?.trim() ? { email: input.contact.email.trim() } : {}),
+    ...(input.contact.phone?.trim() ? { phone: input.contact.phone.trim() } : {}),
+  };
   const company = input.company?.trim() ?? '';
-  if (!input.schemeCode.trim() || !exhibition.name || !exhibition.city || !validDate(exhibition.startDate) || !validDate(exhibition.endDate) || exhibition.endDate < exhibition.startDate
-    || !/^[A-Z]{2}$/.test(exhibition.countryCode) || !contact.name || (!contact.email && !contact.phone)
-    || (contact.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email))
-    || (contact.phone && (!/^\+?[\d ()-]{7,30}$/.test(contact.phone) || !/^\d{7,15}$/.test(contact.phone.replace(/\D/g,''))))
-    || (input.customerType === 'company' && !company) || !input.scopeCodes.length || input.scopeCodes.some(code => !scopeCodes.includes(code))
-    || (input.scopeCodes.includes('other') && !input.scopeNotes?.trim()) || !(input.materialBudget.currency in currencyScales)
-    || !/^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(input.materialBudget.amount) || !/[1-9]/.test(input.materialBudget.amount)) throw projectError('INVALID_INPUT', 400);
+  if (
+    !input.schemeCode.trim() ||
+    !exhibition.name ||
+    !exhibition.city ||
+    !validDate(exhibition.startDate) ||
+    !validDate(exhibition.endDate) ||
+    exhibition.endDate < exhibition.startDate ||
+    !/^[A-Z]{2}$/.test(exhibition.countryCode) ||
+    !contact.name ||
+    (!contact.email && !contact.phone) ||
+    (contact.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) ||
+    (contact.phone && (!/^\+?[\d ()-]{7,30}$/.test(contact.phone) || !/^\d{7,15}$/.test(contact.phone.replace(/\D/g, '')))) ||
+    (input.customerType === 'company' && !company) ||
+    !input.scopeCodes.length ||
+    input.scopeCodes.some(code => !scopeCodes.includes(code)) ||
+    (input.scopeCodes.includes('other') && !input.scopeNotes?.trim()) ||
+    !(input.materialBudget.currency in currencyScales) ||
+    !/^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/.test(input.materialBudget.amount) ||
+    !/[1-9]/.test(input.materialBudget.amount)
+  )
+    throw projectError('INVALID_INPUT', 400);
   const [whole, fraction = ''] = input.materialBudget.amount.split('.');
   const decimals = fraction.replace(/0+$/, '');
-  return { ...input, schemeCode: input.schemeCode.trim(), exhibition, contact, company, scopeCodes: [...new Set(input.scopeCodes)].sort(),
-    scopeNotes: input.scopeNotes?.trim() ?? '', notes: input.notes?.trim() ?? '', materialBudget: { ...input.materialBudget, amount: decimals ? `${whole}.${decimals}` : whole! } };
+  return {
+    ...input,
+    schemeCode: input.schemeCode.trim(),
+    exhibition,
+    contact,
+    company,
+    scopeCodes: [...new Set(input.scopeCodes)].sort(),
+    scopeNotes: input.scopeNotes?.trim() ?? '',
+    notes: input.notes?.trim() ?? '',
+    materialBudget: { ...input.materialBudget, amount: decimals ? `${whole}.${decimals}` : whole! },
+  };
 }

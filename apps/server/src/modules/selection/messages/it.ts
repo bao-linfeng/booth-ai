@@ -7,7 +7,7 @@ export const it: Messages = {
   missingOpeningCount: 'il numero di lati aperti',
   matchNeedCondition: 'Indica almeno un criterio riconoscibile',
   matchNoDirect: 'Nessun progetto è utilizzabile così com’è; quelli seguenti sono solo di riferimento',
-  matchRandomPending: "Raccomandazione casuale. Dimensioni, lati aperti e limite di altezza richiedono ulteriore conferma.",
+  matchRandomPending: 'Raccomandazione casuale. Dimensioni, lati aperti e limite di altezza richiedono ulteriore conferma.',
   reasonSize: 'Lunghezza, larghezza e lati aperti corrispondono ai criteri strutturali forniti',
   reasonHeight: "L'altezza effettiva del progetto non supera il limite di altezza dell'area espositiva",
   pendingMissing: 'Indica {field}',
@@ -22,7 +22,8 @@ export const it: Messages = {
   missBudget: "La fascia di budget per l'acquisto dei materiali è diversa dalla preferenza",
   noPublished: 'Al momento non ci sono progetti pubblicati e verificati',
   noMatchRandom: 'Al momento non ci sono progetti disponibili per la raccomandazione casuale (i motivi di esclusione possono sovrapporsi)',
-  noMatchFiltered: 'Per questa combinazione di criteri non ci sono progetti da adottare o da usare come riferimento (i motivi di esclusione possono sovrapporsi)',
+  noMatchFiltered:
+    'Per questa combinazione di criteri non ci sono progetti da adottare o da usare come riferimento (i motivi di esclusione possono sovrapporsi)',
   excUnverifiedChecklist: 'Checklist non verificata',
   excIncompleteAssets: 'Risorse incomplete',
   excInvalidData: 'Dati di base o informazioni di verifica incompleti',
@@ -32,19 +33,24 @@ export const it: Messages = {
   excDimensions: 'Dimensioni non corrispondenti o fuori dall’intervallo di riferimento',
   excPoolLine: '{label}: {count} progetti pubblicati',
   excAvailableLine: '{label}: {count} progetti disponibili',
-  suggestDimensions: 'Controlla lunghezza, larghezza e altezza selezionate, oppure modifica lunghezza, larghezza e area personalizzate e riprova la ricerca',
+  suggestDimensions:
+    'Controlla lunghezza, larghezza e altezza selezionate, oppure modifica lunghezza, larghezza e area personalizzate e riprova la ricerca',
   suggestProductSystem: 'Controlla il sistema prodotto selezionato e riprova la ricerca dopo averlo modificato',
   suggestTags: 'Controlla i criteri di funzioni obbligatorie o escluse e riprova la ricerca dopo averli modificati',
   suggestAdvisor: 'Puoi anche contattare un consulente per confermare i progetti disponibili',
-  parseUnhandledRules: 'Una parte del testo non è stata riconosciuta in modo affidabile. Aggiungi i criteri nel modulo oppure passa a un consulente.',
+  parseUnhandledRules:
+    'Una parte del testo non è stata riconosciuta in modo affidabile. Aggiungi i criteri nel modulo oppure passa a un consulente.',
   parseNoReliable: 'Non sono stati riconosciuti criteri affidabili. Aggiungi dimensioni chiare o seleziona i criteri nel modulo.',
-  parseWarningRulesOnly: 'Questa volta è stato usato il riconoscimento basato su regole; i contenuti non riconosciuti richiedono conferma manuale.',
+  parseWarningRulesOnly:
+    'Questa volta è stato usato il riconoscimento basato su regole; i contenuti non riconosciuti richiedono conferma manuale.',
   parseDimMultiple: 'La stessa dimensione ha più valori. Conferma il valore finale nel modulo.',
   parseDimInvalid: 'La dimensione deve essere un numero positivo preciso al millimetro. Correggila.',
-  parseHeightNeedsSize: "L'altezza del progetto deve essere selezionata insieme a lunghezza e larghezza esplicite come dimensione completa. Conferma.",
+  parseHeightNeedsSize:
+    "L'altezza del progetto deve essere selezionata insieme a lunghezza e larghezza esplicite come dimensione completa. Conferma.",
   parseHeightNoSize: 'Non esiste una dimensione completa corrispondente. Seleziona una dimensione esistente oppure passa a un consulente.',
   parseAreaMultiple: "Sono state trovate più aree. Conferma l'area finale.",
-  parseDirection: 'Le direzioni di lunghezza e larghezza di «{text}» non sono chiare. Conferma, considerando sinistra-destra come lunghezza e davanti-dietro come larghezza.',
+  parseDirection:
+    'Le direzioni di lunghezza e larghezza di «{text}» non sono chiare. Conferma, considerando sinistra-destra come lunghezza e davanti-dietro come larghezza.',
   parseOpeningConflict: 'Il numero di lati aperti è in conflitto. Conferma.',
   parseNoConstraints: 'Questa categoria non supporta negazioni o criteri obbligatori. Conferma.',
   parseCandidates: '«{text}» ha più candidati. Conferma.',

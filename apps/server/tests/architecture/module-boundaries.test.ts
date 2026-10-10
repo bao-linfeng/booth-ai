@@ -9,19 +9,30 @@ const sourceRoot = fileURLToPath(new URL('../../src/', import.meta.url));
 
 async function sourceFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
-  const files = await Promise.all(entries.map(entry => {
-    const filename = path.join(directory, entry.name);
-    return entry.isDirectory() ? sourceFiles(filename) : Promise.resolve(entry.name.endsWith('.ts') ? [filename] : []);
-  }));
+  const files = await Promise.all(
+    entries.map(entry => {
+      const filename = path.join(directory, entry.name);
+      return entry.isDirectory() ? sourceFiles(filename) : Promise.resolve(entry.name.endsWith('.ts') ? [filename] : []);
+    }),
+  );
   return files.flat();
 }
 
 function imports(source: ts.SourceFile): string[] {
   const result: string[] = [];
   const visit = (node: ts.Node) => {
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
       result.push(node.moduleSpecifier.text);
-    } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments[0] &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
       result.push(node.arguments[0].text);
     } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
       result.push(node.argument.literal.text);
@@ -47,8 +58,13 @@ test('domain modules and infrastructure cannot depend on HTTP portals or worker 
         violations.push(`${relative} -> ${target}`);
       }
       if (layer === 'modules' && (target.startsWith('workers/') || target === 'worker.js')) violations.push(`${relative} -> ${target}`);
-      if (layer === 'infra' && (target.startsWith('modules/') || target.startsWith('workers/') || target === 'worker.js')) violations.push(`${relative} -> ${target}`);
-      if (/^http\/(client|admin|su)\//.test(relative) && /^http\/(client|admin|su)\//.test(target) && relative.split('/')[1] !== target.split('/')[1]) {
+      if (layer === 'infra' && (target.startsWith('modules/') || target.startsWith('workers/') || target === 'worker.js'))
+        violations.push(`${relative} -> ${target}`);
+      if (
+        /^http\/(client|admin|su)\//.test(relative) &&
+        /^http\/(client|admin|su)\//.test(target) &&
+        relative.split('/')[1] !== target.split('/')[1]
+      ) {
         violations.push(`${relative} -> ${target}`);
       }
       if (/^modules\/(client|admin|su)\//.test(target)) violations.push(`${relative} -> legacy portal ${target}`);
@@ -68,13 +84,19 @@ const moduleRules: Record<string, { dependsOn: string[]; exposes: string[] }> = 
   'customer-service': { dependsOn: ['selection'], exposes: [] },
   dashboard: { dependsOn: ['projects'], exposes: [] },
   dictionaries: { dependsOn: [], exposes: ['service.ts', 'language.ts', 'sizes.ts'] },
-  generation: { dependsOn: ['credits', 'prompts'], exposes: ['artwork/queries.ts', 'artwork/prompt.ts', 'theme/prompt.ts', 'theme/domain.ts'] },
+  generation: {
+    dependsOn: ['credits', 'prompts'],
+    exposes: ['artwork/queries.ts', 'artwork/prompt.ts', 'theme/prompt.ts', 'theme/domain.ts'],
+  },
   identity: { dependsOn: [], exposes: ['service.ts', 'client-service.ts', 'roles.ts'] },
   projects: { dependsOn: ['dictionaries', 'generation', 'identity', 'schemes', 'selection'], exposes: ['claims.ts', 'domain.ts'] },
   'prompt-preview': { dependsOn: ['generation', 'prompts', 'selection'], exposes: [] },
   prompts: { dependsOn: [], exposes: ['service.ts', 'template.ts'] },
   schemes: { dependsOn: ['dictionaries'], exposes: ['publication.ts', 'image-spec.ts', 'readiness.ts', 'bill-of-materials/repository.ts'] },
-  selection: { dependsOn: ['assets', 'dictionaries', 'prompts'], exposes: ['domain.ts', 'match.ts', 'prompt.ts', 'repository.ts', 'messages/index.ts', 'analytics/recording.ts'] },
+  selection: {
+    dependsOn: ['assets', 'dictionaries', 'prompts'],
+    exposes: ['domain.ts', 'match.ts', 'prompt.ts', 'repository.ts', 'messages/index.ts', 'analytics/recording.ts'],
+  },
   tasks: { dependsOn: [], exposes: [] },
 };
 
@@ -103,7 +125,11 @@ test('business modules depend on each other only through declared, acyclic edges
   assert.deepEqual(violations, []);
   assert.deepEqual([...present].sort(), Object.keys(moduleRules).sort(), 'every business module must declare its rules');
   const declared = Object.entries(moduleRules).flatMap(([owner, rule]) => rule.dependsOn.map(dependency => `${owner} -> ${dependency}`));
-  assert.deepEqual(declared.filter(edge => !used.has(edge)), [], 'remove dependencies that are no longer used');
+  assert.deepEqual(
+    declared.filter(edge => !used.has(edge)),
+    [],
+    'remove dependencies that are no longer used',
+  );
 
   const visiting = new Set<string>();
   const done = new Set<string>();

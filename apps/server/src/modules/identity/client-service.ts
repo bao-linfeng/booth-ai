@@ -18,8 +18,15 @@ function errorWithStatus(message: string, statusCode: number): Error & { statusC
   return error;
 }
 
-export async function syncClientUser(pool: pg.Pool, detail: ExternalUserDetail, updateLoginTime: boolean, loginSource?: 'password' | 'sso_token', type?: UserType): Promise<LocalIdRow> {
-  const result = await pool.query<LocalIdRow>(`
+export async function syncClientUser(
+  pool: pg.Pool,
+  detail: ExternalUserDetail,
+  updateLoginTime: boolean,
+  loginSource?: 'password' | 'sso_token',
+  type?: UserType,
+): Promise<LocalIdRow> {
+  const result = await pool.query<LocalIdRow>(
+    `
     INSERT INTO users (
       external_user_id, username, nickname, email, mobile, avatar_path, company, country, city, language_code,
       enabled, roles, permissions, last_login_at, last_login_source, last_synced_at, updated_at, user_type
@@ -33,10 +40,26 @@ export async function syncClientUser(pool: pg.Pool, detail: ExternalUserDetail, 
       user_type = CASE WHEN $14 THEN EXCLUDED.user_type ELSE users.user_type END,
       last_synced_at = now(), updated_at = now()
     RETURNING id,enabled,session_version AS "sessionVersion",user_type AS type
-  `, [
-    detail.externalUserId, detail.username, detail.nickname, detail.email, detail.mobile, detail.avatarPath,
-    detail.company, detail.country, detail.city, detail.languageCode, detail.enabled, detail.roles, detail.permissions, updateLoginTime, loginSource ?? null, type ?? null,
-  ]);
+  `,
+    [
+      detail.externalUserId,
+      detail.username,
+      detail.nickname,
+      detail.email,
+      detail.mobile,
+      detail.avatarPath,
+      detail.company,
+      detail.country,
+      detail.city,
+      detail.languageCode,
+      detail.enabled,
+      detail.roles,
+      detail.permissions,
+      updateLoginTime,
+      loginSource ?? null,
+      type ?? null,
+    ],
+  );
   const account = result.rows[0];
   if (!account?.id) throw new Error('User synchronization did not return an ID');
   if (!account.enabled) throw errorWithStatus('Account is disabled', 403);
@@ -50,7 +73,12 @@ export async function syncClientUser(pool: pg.Pool, detail: ExternalUserDetail, 
 export type ClientSignedIn = (account: { userId: string; email: string | null; visitorId: string | null }) => Promise<void>;
 
 async function establishClientSession(
-  config: Config, pool: pg.Pool, redis: Redis, detail: ExternalUserDetail, externalJwt: string, visitorId: string | null,
+  config: Config,
+  pool: pg.Pool,
+  redis: Redis,
+  detail: ExternalUserDetail,
+  externalJwt: string,
+  visitorId: string | null,
   loginSource: 'password' | 'sso_token',
   type: UserType,
   onSignedIn: ClientSignedIn,
@@ -59,16 +87,31 @@ async function establishClientSession(
   const { id: localId, sessionVersion, type: userType } = await syncClientUser(pool, detail, true, loginSource, type);
   await onSignedIn({ userId: localId, email: detail.email, visitorId });
   const expiresAt = jwtExpiresAt(externalJwt, config.sessionTtlSeconds);
-  const accessToken = await createSession(redis, {
-    site: 'client', localId, externalUserId: detail.externalUserId, username: detail.username,
-    externalJwtCiphertext: encryptJwt(externalJwt, config.sessionSecret),
-    loginSource, sessionVersion,
-  }, config.sessionTtlSeconds, expiresAt);
+  const accessToken = await createSession(
+    redis,
+    {
+      site: 'client',
+      localId,
+      externalUserId: detail.externalUserId,
+      username: detail.username,
+      externalJwtCiphertext: encryptJwt(externalJwt, config.sessionSecret),
+      loginSource,
+      sessionVersion,
+    },
+    config.sessionTtlSeconds,
+    expiresAt,
+  );
   return { accessToken, expiresAt, user: toCurrentUser(localId, detail, 'client', loginSource, userType) };
 }
 
 export async function loginClient(
-  config: Config, pool: pg.Pool, redis: Redis, username: string, password: string, visitorId: string | null, onSignedIn: ClientSignedIn,
+  config: Config,
+  pool: pg.Pool,
+  redis: Redis,
+  username: string,
+  password: string,
+  visitorId: string | null,
+  onSignedIn: ClientSignedIn,
 ) {
   const login = await loginExternal(config, 'client', username, password);
   const detail = await fetchExternalUserDetail(config, login.username, login.externalJwt);
@@ -77,8 +120,14 @@ export async function loginClient(
 }
 
 export async function syncClientSession(
-  config: Config, pool: pg.Pool, redis: Redis, username: string, token: string, visitorId: string | null,
-  type: UserType, onSignedIn: ClientSignedIn,
+  config: Config,
+  pool: pg.Pool,
+  redis: Redis,
+  username: string,
+  token: string,
+  visitorId: string | null,
+  type: UserType,
+  onSignedIn: ClientSignedIn,
 ) {
   let subject: unknown;
   let tokenExpiresAt: number;

@@ -3,10 +3,23 @@ import type { MessageLocale } from '../selection/messages/index.js';
 
 // 在线客服领域类型与 DTO 映射（设计：docs/一期功能拆分/在线客服模块详细设计.md，实施：在线客服模块开发计划.md §6）。
 
-export const CS_LOCALES = ['zh', 'en', 'fr', 'de', 'ja', 'ru', 'it', 'es', 'ar', 'hi', 'pt', 'ms'] as const satisfies readonly MessageLocale[];
-export type CsLocale = typeof CS_LOCALES[number];
+export const CS_LOCALES = [
+  'zh',
+  'en',
+  'fr',
+  'de',
+  'ja',
+  'ru',
+  'it',
+  'es',
+  'ar',
+  'hi',
+  'pt',
+  'ms',
+] as const satisfies readonly MessageLocale[];
+export type CsLocale = (typeof CS_LOCALES)[number];
 export const ENTRY_POINTS = ['scheme_detail', 'quote_receipt', 'my_project', 'floating'] as const;
-export type EntryPoint = typeof ENTRY_POINTS[number];
+export type EntryPoint = (typeof ENTRY_POINTS)[number];
 export type ConversationStatus = 'queued' | 'active' | 'closed';
 export type EventCode = 'claimed' | 'released' | 'transferred' | 'closed' | 'merged' | 'agent_unavailable';
 export const MAX_BODY_LENGTH = 2000;
@@ -27,7 +40,9 @@ export function subjectKey(subject: Subject): string {
 
 /** 会话属于主体的 SQL 条件；$n 为主体 ID */
 export function subjectCondition(subject: Subject, alias: string, param: number): [string, string] {
-  return subject.kind === 'user' ? [`${alias}.customer_user_id=$${param}`, subject.userId] : [`${alias}.visitor_id=$${param}`, subject.visitorId];
+  return subject.kind === 'user'
+    ? [`${alias}.customer_user_id=$${param}`, subject.userId]
+    : [`${alias}.visitor_id=$${param}`, subject.visitorId];
 }
 
 // 去掉首尾空白、统一换行；拒绝换行与制表符以外的控制字符
@@ -46,42 +61,85 @@ export function normalizeEmail(raw: string | null | undefined): string | null {
 
 /** themeResultId：卡片展示的 AI 换主题效果图（发送时选定的那张），无则展示方案原图 */
 export interface SchemeSnapshot {
-  schemeCode: string; name: string; lengthMm: number | null; widthMm: number | null; openingCount: number | null; themeResultId?: string;
+  schemeCode: string;
+  name: string;
+  lengthMm: number | null;
+  widthMm: number | null;
+  openingCount: number | null;
+  themeResultId?: string;
 }
 export interface ProjectSnapshot {
-  projectNo: string; schemeCode: string | null; sourceType: 'quote_request' | 'manual_request'; status: string;
-  customerType: 'individual' | 'company'; countryCode: string; city: string; exhibitionName: string; submittedAt: string;
+  projectNo: string;
+  schemeCode: string | null;
+  sourceType: 'quote_request' | 'manual_request';
+  status: string;
+  customerType: 'individual' | 'company';
+  countryCode: string;
+  city: string;
+  exhibitionName: string;
+  submittedAt: string;
 }
-export type ContextDto = { id: string; entryPoint: EntryPoint; createdAt: string } &
-  ({ kind: 'scheme'; schemeCode: string; snapshot: SchemeSnapshot } | { kind: 'project'; projectId: string; snapshot: ProjectSnapshot });
+export type ContextDto = { id: string; entryPoint: EntryPoint; createdAt: string } & (
+  | { kind: 'scheme'; schemeCode: string; snapshot: SchemeSnapshot }
+  | { kind: 'project'; projectId: string; snapshot: ProjectSnapshot }
+);
 
 export interface ConversationDto {
-  id: string; conversationNo: string; status: ConversationStatus;
+  id: string;
+  conversationNo: string;
+  status: ConversationStatus;
   /** displayName 为空时由前端显示“客服” */
   agent: { displayName: string | null } | null;
-  contactEmail: string | null; hasOfflineMessage: boolean;
-  lastPublicSeq: number | null; customerReadSeq: number; agentReadSeq: number;
-  createdAt: string; closedAt: string | null;
+  contactEmail: string | null;
+  hasOfflineMessage: boolean;
+  lastPublicSeq: number | null;
+  customerReadSeq: number;
+  agentReadSeq: number;
+  createdAt: string;
+  closedAt: string | null;
 }
 export interface AdminConversationDto extends ConversationDto {
-  customer: { kind: 'user'; userId: string; username: string; displayName: string | null; email: string | null } | { kind: 'visitor'; visitorId: string };
-  customerLocale: CsLocale; agentAdminId: string | null; agentName: string | null;
-  awaitingSince: string | null; claimedAt: string | null; lastMessageAt: string | null;
-  lastMessagePreview: string | null; unreadCount: number; contextSummary: string[];
+  customer:
+    | { kind: 'user'; userId: string; username: string; displayName: string | null; email: string | null }
+    | { kind: 'visitor'; visitorId: string };
+  customerLocale: CsLocale;
+  agentAdminId: string | null;
+  agentName: string | null;
+  awaitingSince: string | null;
+  claimedAt: string | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  unreadCount: number;
+  contextSummary: string[];
 }
 
-export interface TranslationDto { locale: CsLocale; status: 'pending' | 'done' | 'failed'; body: string | null }
+export interface TranslationDto {
+  locale: CsLocale;
+  status: 'pending' | 'done' | 'failed';
+  body: string | null;
+}
 export interface MessageDto {
-  id: string; seq: number; conversationId: string; conversationNo: string;
-  senderType: 'customer' | 'agent' | 'system'; senderName: string | null;
-  kind: 'text' | 'offline' | 'context' | 'event'; body: string; locale: CsLocale;
-  context: ContextDto | null; eventCode: EventCode | null; eventParams: Record<string, unknown> | null;
+  id: string;
+  seq: number;
+  conversationId: string;
+  conversationNo: string;
+  senderType: 'customer' | 'agent' | 'system';
+  senderName: string | null;
+  kind: 'text' | 'offline' | 'context' | 'event';
+  body: string;
+  locale: CsLocale;
+  context: ContextDto | null;
+  eventCode: EventCode | null;
+  eventParams: Record<string, unknown> | null;
   /** 仅坐席消息，目标为客户语言 */
   translation: TranslationDto | null;
-  clientMessageId: string | null; createdAt: string;
+  clientMessageId: string | null;
+  createdAt: string;
 }
 export interface AdminMessageDto extends Omit<MessageDto, 'kind' | 'translation'> {
-  kind: MessageDto['kind'] | 'note'; visibility: 'public' | 'internal'; senderAdminId: string | null;
+  kind: MessageDto['kind'] | 'note';
+  visibility: 'public' | 'internal';
+  senderAdminId: string | null;
   translations: TranslationDto[];
 }
 
@@ -89,13 +147,29 @@ const iso = (value: Date | string | null): string | null => (value === null ? nu
 const num = (value: string | number | null): number | null => (value === null ? null : Number(value));
 
 export interface ConversationRow {
-  id: string; conversationNo: string; status: ConversationStatus; agentAdminId: string | null;
-  agentNickname: string | null; agentUsername: string | null;
-  customerUserId: string | null; visitorId: string | null; customerUsername: string | null; customerNickname: string | null; customerEmail: string | null;
-  customerLocale: CsLocale; contactEmail: string | null; hasOfflineMessage: boolean;
-  lastMessageSeq: string | null; lastPublicSeq: string | null; lastMessageAt: Date | null;
-  customerReadSeq: string; agentReadSeq: string; awaitingSince: Date | null; claimedAt: Date | null;
-  createdAt: Date; closedAt: Date | null;
+  id: string;
+  conversationNo: string;
+  status: ConversationStatus;
+  agentAdminId: string | null;
+  agentNickname: string | null;
+  agentUsername: string | null;
+  customerUserId: string | null;
+  visitorId: string | null;
+  customerUsername: string | null;
+  customerNickname: string | null;
+  customerEmail: string | null;
+  customerLocale: CsLocale;
+  contactEmail: string | null;
+  hasOfflineMessage: boolean;
+  lastMessageSeq: string | null;
+  lastPublicSeq: string | null;
+  lastMessageAt: Date | null;
+  customerReadSeq: string;
+  agentReadSeq: string;
+  awaitingSince: Date | null;
+  claimedAt: Date | null;
+  createdAt: Date;
+  closedAt: Date | null;
 }
 
 /** 会话查询列：FROM cs_conversations c LEFT JOIN admins a ON a.id=c.agent_admin_id LEFT JOIN users u ON u.id=c.customer_user_id */
@@ -112,28 +186,54 @@ const nickname = (value: string | null) => value?.trim() || null;
 
 export function toCustomerConversation(row: ConversationRow): ConversationDto {
   return {
-    id: row.id, conversationNo: row.conversationNo, status: row.status,
+    id: row.id,
+    conversationNo: row.conversationNo,
+    status: row.status,
     agent: row.agentAdminId ? { displayName: nickname(row.agentNickname) } : null,
-    contactEmail: row.contactEmail, hasOfflineMessage: row.hasOfflineMessage,
-    lastPublicSeq: num(row.lastPublicSeq), customerReadSeq: Number(row.customerReadSeq), agentReadSeq: Number(row.agentReadSeq),
-    createdAt: iso(row.createdAt)!, closedAt: iso(row.closedAt),
+    contactEmail: row.contactEmail,
+    hasOfflineMessage: row.hasOfflineMessage,
+    lastPublicSeq: num(row.lastPublicSeq),
+    customerReadSeq: Number(row.customerReadSeq),
+    agentReadSeq: Number(row.agentReadSeq),
+    createdAt: iso(row.createdAt)!,
+    closedAt: iso(row.closedAt),
   };
 }
 
-export function toAdminConversation(row: ConversationRow & { lastMessagePreview?: string | null; unreadCount?: number | string; contextSummary?: string[] | null }): AdminConversationDto {
+export function toAdminConversation(
+  row: ConversationRow & { lastMessagePreview?: string | null; unreadCount?: number | string; contextSummary?: string[] | null },
+): AdminConversationDto {
   return {
     ...toCustomerConversation(row),
     customer: row.customerUserId
-      ? { kind: 'user', userId: row.customerUserId, username: row.customerUsername ?? '', displayName: nickname(row.customerNickname), email: row.customerEmail }
+      ? {
+          kind: 'user',
+          userId: row.customerUserId,
+          username: row.customerUsername ?? '',
+          displayName: nickname(row.customerNickname),
+          email: row.customerEmail,
+        }
       : { kind: 'visitor', visitorId: row.visitorId! },
-    customerLocale: row.customerLocale, agentAdminId: row.agentAdminId,
-    agentName: row.agentAdminId ? nickname(row.agentNickname) ?? row.agentUsername : null,
-    awaitingSince: iso(row.awaitingSince), claimedAt: iso(row.claimedAt), lastMessageAt: iso(row.lastMessageAt),
-    lastMessagePreview: row.lastMessagePreview ?? null, unreadCount: Number(row.unreadCount ?? 0), contextSummary: row.contextSummary ?? [],
+    customerLocale: row.customerLocale,
+    agentAdminId: row.agentAdminId,
+    agentName: row.agentAdminId ? (nickname(row.agentNickname) ?? row.agentUsername) : null,
+    awaitingSince: iso(row.awaitingSince),
+    claimedAt: iso(row.claimedAt),
+    lastMessageAt: iso(row.lastMessageAt),
+    lastMessagePreview: row.lastMessagePreview ?? null,
+    unreadCount: Number(row.unreadCount ?? 0),
+    contextSummary: row.contextSummary ?? [],
   };
 }
 
-export interface ContextRow { id: string; kind: 'scheme' | 'project'; ref: string; entryPoint: EntryPoint; snapshot: SchemeSnapshot | ProjectSnapshot; createdAt: Date | string }
+export interface ContextRow {
+  id: string;
+  kind: 'scheme' | 'project';
+  ref: string;
+  entryPoint: EntryPoint;
+  snapshot: SchemeSnapshot | ProjectSnapshot;
+  createdAt: Date | string;
+}
 
 export function toContext(row: ContextRow): ContextDto {
   const base = { id: row.id, entryPoint: row.entryPoint, createdAt: iso(row.createdAt)! };
@@ -143,11 +243,25 @@ export function toContext(row: ContextRow): ContextDto {
 }
 
 export interface MessageRow {
-  id: string; seq: string; conversationId: string; conversationNo: string;
-  senderType: 'customer' | 'agent' | 'system'; senderAdminId: string | null; agentNickname: string | null; agentUsername: string | null;
-  customerUsername: string | null; kind: AdminMessageDto['kind']; visibility: 'public' | 'internal'; body: string; locale: CsLocale;
-  context: ContextRow | null; eventCode: EventCode | null; eventParams: Record<string, unknown> | null;
-  clientMessageId: string | null; createdAt: Date; translations: TranslationDto[];
+  id: string;
+  seq: string;
+  conversationId: string;
+  conversationNo: string;
+  senderType: 'customer' | 'agent' | 'system';
+  senderAdminId: string | null;
+  agentNickname: string | null;
+  agentUsername: string | null;
+  customerUsername: string | null;
+  kind: AdminMessageDto['kind'];
+  visibility: 'public' | 'internal';
+  body: string;
+  locale: CsLocale;
+  context: ContextRow | null;
+  eventCode: EventCode | null;
+  eventParams: Record<string, unknown> | null;
+  clientMessageId: string | null;
+  createdAt: Date;
+  translations: TranslationDto[];
 }
 
 /** 消息查询列：FROM cs_messages m JOIN cs_conversations c ON c.id=m.conversation_id + messageJoins */
@@ -163,32 +277,65 @@ export const messageJoins = `LEFT JOIN admins sa ON sa.id=m.sender_admin_id LEFT
 
 // 客户端只看得到事件参数的白名单（改派原因等内部信息不外泄）
 const customerEventParams: Record<EventCode, readonly string[]> = {
-  claimed: ['agentName'], transferred: ['agentName'], released: [], closed: [], merged: [], agent_unavailable: [],
+  claimed: ['agentName'],
+  transferred: ['agentName'],
+  released: [],
+  closed: [],
+  merged: [],
+  agent_unavailable: [],
 };
 
 /** 客户端 DTO；internal 消息（内部备注等）一律返回 null，调用方必须过滤 */
 export function toCustomerMessage(row: MessageRow): MessageDto | null {
   if (row.visibility !== 'public' || row.kind === 'note') return null;
-  const params = row.eventCode && row.eventParams
-    ? Object.fromEntries(customerEventParams[row.eventCode].filter(key => key in row.eventParams!).map(key => [key, row.eventParams![key]]))
-    : null;
+  const params =
+    row.eventCode && row.eventParams
+      ? Object.fromEntries(
+          customerEventParams[row.eventCode].filter(key => key in row.eventParams!).map(key => [key, row.eventParams![key]]),
+        )
+      : null;
   return {
-    id: row.id, seq: Number(row.seq), conversationId: row.conversationId, conversationNo: row.conversationNo,
-    senderType: row.senderType, senderName: row.senderType === 'agent' ? nickname(row.agentNickname) : null,
-    kind: row.kind, body: row.body, locale: row.locale, context: row.context ? toContext(row.context) : null,
-    eventCode: row.eventCode, eventParams: params,
-    translation: row.senderType === 'agent' ? row.translations[0] ?? null : null,
-    clientMessageId: row.senderType === 'customer' ? row.clientMessageId : null, createdAt: iso(row.createdAt)!,
+    id: row.id,
+    seq: Number(row.seq),
+    conversationId: row.conversationId,
+    conversationNo: row.conversationNo,
+    senderType: row.senderType,
+    senderName: row.senderType === 'agent' ? nickname(row.agentNickname) : null,
+    kind: row.kind,
+    body: row.body,
+    locale: row.locale,
+    context: row.context ? toContext(row.context) : null,
+    eventCode: row.eventCode,
+    eventParams: params,
+    translation: row.senderType === 'agent' ? (row.translations[0] ?? null) : null,
+    clientMessageId: row.senderType === 'customer' ? row.clientMessageId : null,
+    createdAt: iso(row.createdAt)!,
   };
 }
 
 export function toAdminMessage(row: MessageRow): AdminMessageDto {
   return {
-    id: row.id, seq: Number(row.seq), conversationId: row.conversationId, conversationNo: row.conversationNo,
+    id: row.id,
+    seq: Number(row.seq),
+    conversationId: row.conversationId,
+    conversationNo: row.conversationNo,
     senderType: row.senderType,
-    senderName: row.senderType === 'agent' ? nickname(row.agentNickname) ?? row.agentUsername : row.senderType === 'customer' ? row.customerUsername : null,
-    senderAdminId: row.senderAdminId, kind: row.kind, visibility: row.visibility, body: row.body, locale: row.locale,
-    context: row.context ? toContext(row.context) : null, eventCode: row.eventCode, eventParams: row.eventParams,
-    translations: row.translations, clientMessageId: row.clientMessageId, createdAt: iso(row.createdAt)!,
+    senderName:
+      row.senderType === 'agent'
+        ? (nickname(row.agentNickname) ?? row.agentUsername)
+        : row.senderType === 'customer'
+          ? row.customerUsername
+          : null,
+    senderAdminId: row.senderAdminId,
+    kind: row.kind,
+    visibility: row.visibility,
+    body: row.body,
+    locale: row.locale,
+    context: row.context ? toContext(row.context) : null,
+    eventCode: row.eventCode,
+    eventParams: row.eventParams,
+    translations: row.translations,
+    clientMessageId: row.clientMessageId,
+    createdAt: iso(row.createdAt)!,
   };
 }

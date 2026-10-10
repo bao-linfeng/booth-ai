@@ -21,13 +21,25 @@ interface SearchGeneration {
   artwork: SearchArtwork | null;
 }
 
-export async function listSearchJobs(pool: pg.Pool, storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>,
-  userId: string, searchIds: string[]): Promise<Map<string, Map<string, SearchGeneration>>> {
+export async function listSearchJobs(
+  pool: pg.Pool,
+  storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>,
+  userId: string,
+  searchIds: string[],
+): Promise<Map<string, Map<string, SearchGeneration>>> {
   const searches = new Map<string, Map<string, SearchGeneration>>();
   if (!searchIds.length) return searches;
   const result = await pool.query<{
-    searchId: string; schemeCode: string; jobId: string; status: string; createdAt: string; objectKey: string | null;
-    artworkJobId: string | null; artworkStatus: string; deliveryStatus: string; artworkCreatedAt: string;
+    searchId: string;
+    schemeCode: string;
+    jobId: string;
+    status: string;
+    createdAt: string;
+    objectKey: string | null;
+    artworkJobId: string | null;
+    artworkStatus: string;
+    deliveryStatus: string;
+    artworkCreatedAt: string;
     views: Array<{ direction: string; objectKey: string }>;
   }>(
     `WITH latest_theme AS (
@@ -58,16 +70,29 @@ export async function listSearchJobs(pool: pg.Pool, storage: Pick<ReturnType<typ
      ) views ON true`,
     [userId, searchIds],
   );
-  await Promise.all(result.rows.map(async row => {
-    const schemeJobs = searches.get(row.searchId) ?? new Map<string, SearchGeneration>();
-    searches.set(row.searchId, schemeJobs);
-    const theme = { jobId: row.jobId, status: row.status, createdAt: row.createdAt,
-      previewUrl: row.objectKey ? await storage.signDownload(row.objectKey, 900) : null };
-    const artwork = row.artworkJobId ? {
-      jobId: row.artworkJobId, status: row.artworkStatus, deliveryStatus: row.deliveryStatus, createdAt: row.artworkCreatedAt,
-      views: await Promise.all(row.views.map(async view => ({ direction: view.direction, previewUrl: await storage.signDownload(view.objectKey, 900) }))),
-    } : null;
-    schemeJobs.set(row.schemeCode, { theme, artwork });
-  }));
+  await Promise.all(
+    result.rows.map(async row => {
+      const schemeJobs = searches.get(row.searchId) ?? new Map<string, SearchGeneration>();
+      searches.set(row.searchId, schemeJobs);
+      const theme = {
+        jobId: row.jobId,
+        status: row.status,
+        createdAt: row.createdAt,
+        previewUrl: row.objectKey ? await storage.signDownload(row.objectKey, 900) : null,
+      };
+      const artwork = row.artworkJobId
+        ? {
+            jobId: row.artworkJobId,
+            status: row.artworkStatus,
+            deliveryStatus: row.deliveryStatus,
+            createdAt: row.artworkCreatedAt,
+            views: await Promise.all(
+              row.views.map(async view => ({ direction: view.direction, previewUrl: await storage.signDownload(view.objectKey, 900) })),
+            ),
+          }
+        : null;
+      schemeJobs.set(row.schemeCode, { theme, artwork });
+    }),
+  );
   return searches;
 }

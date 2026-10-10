@@ -13,8 +13,11 @@ export async function createArtworkOffer(pool: pg.Pool, redis: Pick<Redis, 'set'
   const expiresAt = new Date(Date.now() + OFFER_TTL_SECONDS * 1000).toISOString();
   const offer: ArtworkOffer = { ...context, userId, snapshot, unitCredits: snapshot.model.unitCredits!, expiresAt };
   await redis.set(`artwork-offer:${id}`, JSON.stringify(offer), 'EX', OFFER_TTL_SECONDS);
-  return { available: true, offer: { id, expiresAt, unitCredits: offer.unitCredits, maxCredits: offer.unitCredits * 4,
-    settlementRule: 'per_usable_direction' }, quality: ARTWORK_QUALITY };
+  return {
+    available: true,
+    offer: { id, expiresAt, unitCredits: offer.unitCredits, maxCredits: offer.unitCredits * 4, settlementRule: 'per_usable_direction' },
+    quality: ARTWORK_QUALITY,
+  };
 }
 
 export async function loadArtworkOffer(redis: Pick<Redis, 'get'>, offerId: string): Promise<ArtworkOffer> {

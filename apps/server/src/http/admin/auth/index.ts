@@ -9,17 +9,27 @@ import { rateLimit } from '../../rate-limits.js';
 import { currentUserSchema, sessionSchema, successResponse } from '../../schemas.js';
 
 export async function registerAdminAuthRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.post('/auth/login', {
-    config: { authentication: 'public' }, onRequest: rateLimit(redis, 'login'),
-    schema: {
-      tags: ['admin-auth'],
-      response: { 200: successResponse(sessionSchema(currentUserSchema)) },
-      body: { type: 'object', required: ['username', 'password'], additionalProperties: false, properties: { username: { type: 'string', minLength: 1 }, password: { type: 'string', minLength: 1 } } },
+  app.post(
+    '/auth/login',
+    {
+      config: { authentication: 'public' },
+      onRequest: rateLimit(redis, 'login'),
+      schema: {
+        tags: ['admin-auth'],
+        response: { 200: successResponse(sessionSchema(currentUserSchema)) },
+        body: {
+          type: 'object',
+          required: ['username', 'password'],
+          additionalProperties: false,
+          properties: { username: { type: 'string', minLength: 1 }, password: { type: 'string', minLength: 1 } },
+        },
+      },
     },
-  }, async request => {
-    const { username, password } = request.body as { username: string; password: string };
-    return { code: 0, message: 'ok', data: await loginAdmin(config, pool, redis, username, password) };
-  });
+    async request => {
+      const { username, password } = request.body as { username: string; password: string };
+      return { code: 0, message: 'ok', data: await loginAdmin(config, pool, redis, username, password) };
+    },
+  );
 
   app.post('/auth/logout', { config: { authentication: 'public' } }, async request => {
     const token = authorizationToken(request.headers.authorization);

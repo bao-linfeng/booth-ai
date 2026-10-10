@@ -22,19 +22,57 @@ test('number protection replaces project, conversation, request and scheme codes
 });
 
 function fakePool(t: TestContext, options: { status?: string } = {}) {
-  const state = { status: options.status ?? 'pending', body: null as string | null, modelId: null as string | null, attempts: 0, error: null as string | null };
-  const pool = { query: async (sql: string, params: unknown[]) => {
-    if (sql.includes('FROM cs_message_translations t JOIN cs_messages m')) {
-      return { rows: [{ body: '请确认 PJ-00000012 的 2 面开口', locale: 'zh', seq: '7', senderType: 'agent', conversationId: 'c1', customerLocale: 'ja',
-        status: state.status, agentAdminId: 'a1', conversationStatus: 'active', schemeCodes: [] }] };
-    }
-    if (sql.includes("SET status='done'")) { Object.assign(state, { status: 'done', body: params[2], modelId: params[3] }); state.attempts++; return { rowCount: 1, rows: [] }; }
-    if (sql.includes("SET status='failed'")) { Object.assign(state, { status: 'failed', error: params[2] }); return { rowCount: 1, rows: [] }; }
-    if (sql.includes('SET attempts=attempts+1')) { state.attempts++; state.error = params[2] as string; return { rowCount: 1, rows: [] }; }
-    throw new Error(`Unexpected query: ${sql}`);
-  } } as unknown as pg.Pool;
+  const state = {
+    status: options.status ?? 'pending',
+    body: null as string | null,
+    modelId: null as string | null,
+    attempts: 0,
+    error: null as string | null,
+  };
+  const pool = {
+    query: async (sql: string, params: unknown[]) => {
+      if (sql.includes('FROM cs_message_translations t JOIN cs_messages m')) {
+        return {
+          rows: [
+            {
+              body: '请确认 PJ-00000012 的 2 面开口',
+              locale: 'zh',
+              seq: '7',
+              senderType: 'agent',
+              conversationId: 'c1',
+              customerLocale: 'ja',
+              status: state.status,
+              agentAdminId: 'a1',
+              conversationStatus: 'active',
+              schemeCodes: [],
+            },
+          ],
+        };
+      }
+      if (sql.includes("SET status='done'")) {
+        Object.assign(state, { status: 'done', body: params[2], modelId: params[3] });
+        state.attempts++;
+        return { rowCount: 1, rows: [] };
+      }
+      if (sql.includes("SET status='failed'")) {
+        Object.assign(state, { status: 'failed', error: params[2] });
+        return { rowCount: 1, rows: [] };
+      }
+      if (sql.includes('SET attempts=attempts+1')) {
+        state.attempts++;
+        state.error = params[2] as string;
+        return { rowCount: 1, rows: [] };
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  } as unknown as pg.Pool;
   const published: { channel: string; payload: Record<string, unknown> }[] = [];
-  const redis = { publish: async (channel: string, payload: string) => { published.push({ channel, payload: JSON.parse(payload) }); return 1; } };
+  const redis = {
+    publish: async (channel: string, payload: string) => {
+      published.push({ channel, payload: JSON.parse(payload) });
+      return 1;
+    },
+  };
   const answers: string[] = [];
   t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit) => {
     const body = JSON.parse(String(init.body)) as { model: string; messages: { role: string; content: string }[] };
@@ -54,7 +92,13 @@ test('placeholder loss falls back to the next model; the translation is publishe
   assert.equal(state.status, 'done');
   assert.equal(state.body, 'PJ-00000012 の 2 面の開口をご確認ください');
   assert.equal(state.modelId, models[1]!.id);
-  assert.deepEqual(published.map(item => [item.channel, item.payload.type]), [['cs:conv:c1', 'message.translated'], ['cs:agents', 'message.translated']]);
+  assert.deepEqual(
+    published.map(item => [item.channel, item.payload.type]),
+    [
+      ['cs:conv:c1', 'message.translated'],
+      ['cs:agents', 'message.translated'],
+    ],
+  );
   assert.deepEqual(published[0]!.payload.translation, { locale: 'ja', status: 'done', body: state.body });
   assert.equal(published[1]!.payload.agentAdminId, 'a1');
 });

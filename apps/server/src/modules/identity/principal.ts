@@ -13,7 +13,10 @@ export interface Principal {
 }
 
 class AuthenticationError extends Error {
-  constructor(readonly statusCode: number, readonly reason: string) {
+  constructor(
+    readonly statusCode: number,
+    readonly reason: string,
+  ) {
     super('Authentication failed');
   }
 }
@@ -31,9 +34,12 @@ export async function resolvePrincipal(pool: pg.Pool, redis: Redis, token: strin
   const session = await getSession(redis, token, site);
   if (!session) throw authenticationError();
   const table = site === 'client' ? 'users' : 'admins';
-  const account = (await pool.query<{ enabled: boolean; roles: string[]; sessionVersion: number }>(
-    `SELECT enabled,roles,session_version AS "sessionVersion" FROM ${table} WHERE id=$1`, [session.localId],
-  )).rows[0];
+  const account = (
+    await pool.query<{ enabled: boolean; roles: string[]; sessionVersion: number }>(
+      `SELECT enabled,roles,session_version AS "sessionVersion" FROM ${table} WHERE id=$1`,
+      [session.localId],
+    )
+  ).rows[0];
   if (!account?.enabled) {
     await destroySession(redis, token);
     throw authenticationError(403, 'ACCESS_DENIED');

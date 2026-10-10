@@ -25,7 +25,13 @@ export interface ParseRecordInput {
     dictionaryVersion: string;
   };
   durationMs: number;
-  promptSnapshot?: { source: string; templateId: string | null; revision: number | null; defaultVersion: number; messages: { role: string; content: string }[] } | null;
+  promptSnapshot?: {
+    source: string;
+    templateId: string | null;
+    revision: number | null;
+    defaultVersion: number;
+    messages: { role: string; content: string }[];
+  } | null;
 }
 
 export interface SearchRecordInput {

@@ -44,7 +44,8 @@ export const en: Messages = {
   parseHeightNeedsSize: 'The design height must be selected together with an explicit length and width as a complete size. Please confirm.',
   parseHeightNoSize: 'There is no matching complete design size. Please select an existing size or hand over to an advisor.',
   parseAreaMultiple: 'Multiple areas were found. Please confirm the final area.',
-  parseDirection: 'The length and width directions of "{text}" are unclear. Please confirm, taking left-right as length and front-back as width.',
+  parseDirection:
+    'The length and width directions of "{text}" are unclear. Please confirm, taking left-right as length and front-back as width.',
   parseOpeningConflict: 'The number of open sides is conflicting. Please confirm.',
   parseNoConstraints: 'This category does not support negation or mandatory criteria. Please confirm.',
   parseCandidates: '"{text}" has multiple candidates. Please confirm.',

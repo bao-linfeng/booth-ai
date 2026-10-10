@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildThemePrompt } from '../../src/modules/generation/theme/prompt.js';
 
-const input = { industryId: 'industry-id', styleId: 'style-id', brandColors: ['#123456', '#ABCDEF'],
-  brandKeywords: '灵通新能源，主墙展示储能产品，不要树叶，标语“绿色未来”' };
+const input = {
+  industryId: 'industry-id',
+  styleId: 'style-id',
+  brandColors: ['#123456', '#ABCDEF'],
+  brandKeywords: '灵通新能源，主墙展示储能产品，不要树叶，标语“绿色未来”',
+};
 
 test('theme prompt carries explicit requirements and ordered colors with structure constraints', () => {
   const prompt = buildThemePrompt(input, '新能源', '极简');
@@ -30,8 +34,12 @@ test('missing optional requirements have explicit fallbacks for omitted and empt
 
 test('templates cannot omit the user brief and variable-like user text is not expanded recursively', () => {
   const keywords = '标语为“{{styleLabel}}”，不要红色';
-  const prompt = buildThemePrompt({ ...input, brandKeywords: keywords }, '新能源', '极简',
-    '{{industryLabel}}/{{styleLabel}}/{{brandColors}}/{{brandKeywords}}');
+  const prompt = buildThemePrompt(
+    { ...input, brandKeywords: keywords },
+    '新能源',
+    '极简',
+    '{{industryLabel}}/{{styleLabel}}/{{brandColors}}/{{brandKeywords}}',
+  );
   assert.ok(prompt.includes(`新能源/极简/#123456, #ABCDEF/${keywords}`));
   assert.equal(JSON.parse(prompt.split('\n')[2]!).品牌关键词及补充要求, keywords);
   const noVariables = buildThemePrompt(input, '新能源', '极简', '采用有层次的平面构成');

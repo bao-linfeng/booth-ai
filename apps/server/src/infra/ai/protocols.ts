@@ -3,8 +3,18 @@ import { arkImage, arkSuggestedModels } from './providers/ark.js';
 import { geminiImage, geminiImageParams, listGeminiModels } from './providers/gemini.js';
 import { listOpenAiModels, openAiChat, openAiChatParams, openAiImage, openAiImageParams } from './providers/openai.js';
 import { qwenImage, qwenImageSuggestedModels } from './providers/qwen-image.js';
-import { isTextPurpose, type AiPurpose, type DiscoveredModel, type ImageModelAdapter, type ImagePurpose, type ModelKind, type ModelParams,
-  type ParamField, type ProviderProtocol, type TextModelAdapter } from './types.js';
+import {
+  isTextPurpose,
+  type AiPurpose,
+  type DiscoveredModel,
+  type ImageModelAdapter,
+  type ImagePurpose,
+  type ModelKind,
+  type ModelParams,
+  type ParamField,
+  type ProviderProtocol,
+  type TextModelAdapter,
+} from './types.js';
 
 interface Capability<Adapter> {
   adapter: Adapter;
@@ -30,19 +40,42 @@ export interface ProtocolDefinition {
  * code changes are only needed for a new protocol or a new capability of an existing one.
  */
 export const PROTOCOLS: readonly ProtocolDefinition[] = [
-  { id: 'openai', label: 'OpenAI 及兼容接口', description: 'OpenAI、DeepSeek、通义千问兼容模式及各类中转服务',
-    defaultBaseUrl: 'https://api.openai.com/v1', listModels: listOpenAiModels, suggestedModels: [],
+  {
+    id: 'openai',
+    label: 'OpenAI 及兼容接口',
+    description: 'OpenAI、DeepSeek、通义千问兼容模式及各类中转服务',
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    listModels: listOpenAiModels,
+    suggestedModels: [],
     text: { adapter: openAiChat, params: openAiChatParams },
-    image: { adapter: openAiImage, params: openAiImageParams, purposes: ['theme', 'artwork'] } },
-  { id: 'gemini', label: 'Google Gemini', description: 'Gemini API（Nano Banana 图像模型）',
-    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta', listModels: listGeminiModels, suggestedModels: [],
-    image: { adapter: geminiImage, params: geminiImageParams, purposes: ['theme', 'artwork'] } },
-  { id: 'qwen-image', label: '阿里云百炼 Qwen-Image / 万相 2.7', description: 'Qwen-Image 与万相 2.7 图像编辑（百炼 multimodal-generation 接口，同步返回）；通义千问文本请用「OpenAI 及兼容接口」+ 兼容模式地址',
-    defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1', suggestedModels: qwenImageSuggestedModels,
-    image: { adapter: qwenImage, params: [], purposes: ['theme', 'artwork'] } },
-  { id: 'ark', label: '火山方舟 Doubao Seedream', description: 'Seedream 图像编辑（images/generations，同步返回）；豆包文本模型请用「OpenAI 及兼容接口」+ 方舟 /api/v3 地址',
-    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', suggestedModels: arkSuggestedModels,
-    image: { adapter: arkImage, params: [], purposes: ['theme', 'artwork'] } },
+    image: { adapter: openAiImage, params: openAiImageParams, purposes: ['theme', 'artwork'] },
+  },
+  {
+    id: 'gemini',
+    label: 'Google Gemini',
+    description: 'Gemini API（Nano Banana 图像模型）',
+    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    listModels: listGeminiModels,
+    suggestedModels: [],
+    image: { adapter: geminiImage, params: geminiImageParams, purposes: ['theme', 'artwork'] },
+  },
+  {
+    id: 'qwen-image',
+    label: '阿里云百炼 Qwen-Image / 万相 2.7',
+    description:
+      'Qwen-Image 与万相 2.7 图像编辑（百炼 multimodal-generation 接口，同步返回）；通义千问文本请用「OpenAI 及兼容接口」+ 兼容模式地址',
+    defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+    suggestedModels: qwenImageSuggestedModels,
+    image: { adapter: qwenImage, params: [], purposes: ['theme', 'artwork'] },
+  },
+  {
+    id: 'ark',
+    label: '火山方舟 Doubao Seedream',
+    description: 'Seedream 图像编辑（images/generations，同步返回）；豆包文本模型请用「OpenAI 及兼容接口」+ 方舟 /api/v3 地址',
+    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    suggestedModels: arkSuggestedModels,
+    image: { adapter: arkImage, params: [], purposes: ['theme', 'artwork'] },
+  },
 ];
 
 export function protocolDefinition(protocol: string): ProtocolDefinition | undefined {
@@ -69,13 +102,17 @@ export function normalizeParams(protocol: string, kind: ModelKind, input: Record
   if (!fields) throw new Error('Unsupported model kind');
   const unknown = Object.keys(input).filter(key => !fields.some(field => field.key === key));
   if (unknown.length) throw new Error('Unknown model parameter');
-  return Object.fromEntries(fields.map(field => {
-    const value = input[field.key] ?? field.default;
-    if (field.type === 'number') {
-      if (typeof value !== 'number' || !Number.isFinite(value) || value < field.min || value > field.max) throw new Error('Invalid model parameter');
-    } else if (typeof value !== 'string' || !field.options.some(option => option.value === value)) throw new Error('Invalid model parameter');
-    return [field.key, value];
-  }));
+  return Object.fromEntries(
+    fields.map(field => {
+      const value = input[field.key] ?? field.default;
+      if (field.type === 'number') {
+        if (typeof value !== 'number' || !Number.isFinite(value) || value < field.min || value > field.max)
+          throw new Error('Invalid model parameter');
+      } else if (typeof value !== 'string' || !field.options.some(option => option.value === value))
+        throw new Error('Invalid model parameter');
+      return [field.key, value];
+    }),
+  );
 }
 
 export function imageAdapter(model: { protocol: string; kind: ModelKind }): ImageModelAdapter {

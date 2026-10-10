@@ -10,9 +10,22 @@ class Subscriber extends EventEmitter {
   active = new Set<string>();
   commands: string[] = [];
   disconnected = false;
-  async subscribe(channel: string) { this.commands.push(`+${channel}`); this.active.add(channel); return 1; }
-  async unsubscribe(channel: string) { this.commands.push(`-${channel}`); this.active.delete(channel); this.emit('unsubscribed', channel); return 0; }
-  disconnect() { this.disconnected = true; this.status = 'end'; this.emit('disconnected'); }
+  async subscribe(channel: string) {
+    this.commands.push(`+${channel}`);
+    this.active.add(channel);
+    return 1;
+  }
+  async unsubscribe(channel: string) {
+    this.commands.push(`-${channel}`);
+    this.active.delete(channel);
+    this.emit('unsubscribed', channel);
+    return 0;
+  }
+  disconnect() {
+    this.disconnected = true;
+    this.status = 'end';
+    this.emit('disconnected');
+  }
 }
 
 async function setup(options: Omit<EventStreamOptions, 'channels'> = {}) {
@@ -21,13 +34,17 @@ async function setup(options: Omit<EventStreamOptions, 'channels'> = {}) {
     duplicate: () => {
       const subscriber = new Subscriber();
       created.push(subscriber);
-      setImmediate(() => { subscriber.status = 'ready'; subscriber.emit('ready'); });
+      setImmediate(() => {
+        subscriber.status = 'ready';
+        subscriber.emit('ready');
+      });
       return subscriber;
     },
   } as unknown as Redis;
   const app = Fastify({ forceCloseConnections: true });
   app.get<{ Querystring: { channels?: string } }>('/events', async (request, reply) =>
-    streamEvents(redis, reply, { channels: (request.query.channels ?? 'a,b').split(','), ...options }));
+    streamEvents(redis, reply, { channels: (request.query.channels ?? 'a,b').split(','), ...options }),
+  );
   const address = await app.listen({ host: '127.0.0.1', port: 0 });
   return { app, created, redis, address };
 }
@@ -73,7 +90,10 @@ test('shared SSE subscribes all channels, replays before buffered live events an
     filter: (channel, payload) => (channel === 'b' && payload.includes('drop') ? null : payload),
   });
   const abort = new AbortController();
-  t.after(async () => { abort.abort(); await app.close(); });
+  t.after(async () => {
+    abort.abort();
+    await app.close();
+  });
   const response = await fetch(`${address}/events`, { signal: abort.signal });
   const reader = response.body!.getReader();
   let { text } = await readUntil(reader, '"live":1');
@@ -133,7 +153,13 @@ test('shared subscriber failure closes every stream and the next stream reconnec
 
 test('shared SSE closes the stream when the heartbeat callback reports the subscriber is no longer valid', { timeout: 5000 }, async t => {
   let beats = 0;
-  const { app, created, address } = await setup({ heartbeatMs: 20, onHeartbeat: async () => { beats += 1; return beats < 2; } });
+  const { app, created, address } = await setup({
+    heartbeatMs: 20,
+    onHeartbeat: async () => {
+      beats += 1;
+      return beats < 2;
+    },
+  });
   t.after(() => app.close());
   const response = await fetch(`${address}/events?channels=a`);
   const reader = response.body!.getReader();
@@ -150,12 +176,23 @@ test('shared SSE runs onOpen before replay and treats heartbeat callback errors 
   let beats = 0;
   const { app, address } = await setup({
     heartbeatMs: 20,
-    onOpen: async () => { calls.push('open'); },
-    replay: async () => { calls.push('replay'); return [{ ready: true }]; },
-    onHeartbeat: async () => { beats += 1; throw new Error('transient'); },
+    onOpen: async () => {
+      calls.push('open');
+    },
+    replay: async () => {
+      calls.push('replay');
+      return [{ ready: true }];
+    },
+    onHeartbeat: async () => {
+      beats += 1;
+      throw new Error('transient');
+    },
   });
   const abort = new AbortController();
-  t.after(async () => { abort.abort(); await app.close(); });
+  t.after(async () => {
+    abort.abort();
+    await app.close();
+  });
   const response = await fetch(`${address}/events`, { signal: abort.signal });
   const reader = response.body!.getReader();
   const { text } = await readUntil(reader, '"ready":true');
@@ -171,11 +208,20 @@ test('shared SSE writes heartbeat events as updates, buffered behind the replay'
   const { app, address } = await setup({
     heartbeatMs: 20,
     // 补发期间触发的心跳事件要排在补发之后，避免客户端先收到新状态再被补发覆盖
-    replay: async () => { await new Promise(resolve => setTimeout(resolve, 60)); return [{ replay: 1 }]; },
-    onHeartbeat: async send => { beats += 1; send({ type: 'presence', beat: beats }); },
+    replay: async () => {
+      await new Promise(resolve => setTimeout(resolve, 60));
+      return [{ replay: 1 }];
+    },
+    onHeartbeat: async send => {
+      beats += 1;
+      send({ type: 'presence', beat: beats });
+    },
   });
   const abort = new AbortController();
-  t.after(async () => { abort.abort(); await app.close(); });
+  t.after(async () => {
+    abort.abort();
+    await app.close();
+  });
   const response = await fetch(`${address}/events`, { signal: abort.signal });
   const reader = response.body!.getReader();
   const { text } = await readUntil(reader, '"beat":3');

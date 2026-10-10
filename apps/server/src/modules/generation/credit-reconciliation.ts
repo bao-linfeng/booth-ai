@@ -2,8 +2,15 @@ import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
 import { errorCode } from '../../infra/logger.js';
 import {
-  availableCredits, findJobCharge, lockJobReservation, setJobReservation, terminalCreditJob,
-  type CreditJob, type JobCharge, type JobReservation, type LockedCreditJob,
+  availableCredits,
+  findJobCharge,
+  lockJobReservation,
+  setJobReservation,
+  terminalCreditJob,
+  type CreditJob,
+  type JobCharge,
+  type JobReservation,
+  type LockedCreditJob,
 } from '../credits/service.js';
 import { jobLedger, lockCreditJob } from './credit-jobs.js';
 
@@ -29,8 +36,11 @@ export type CreditIssueReason =
 type CreditIssue = CreditJob & { reason: CreditIssueReason; error?: string };
 type Verdict = { reason?: CreditIssueReason; repaired: boolean };
 type LedgerState = {
-  client: pg.PoolClient; job: CreditJob; current: LockedCreditJob;
-  reservation: JobReservation | undefined; charge: JobCharge | undefined;
+  client: pg.PoolClient;
+  job: CreditJob;
+  current: LockedCreditJob;
+  reservation: JobReservation | undefined;
+  charge: JobCharge | undefined;
 };
 
 const clean: Verdict = { repaired: false };
@@ -39,18 +49,23 @@ const issue = (reason: CreditIssueReason): Verdict => ({ reason, repaired: false
 
 // Persist the latest verdict so operators can see what automatic reconciliation could not repair; a clean pass clears it.
 async function recordCreditIssue(db: Pick<pg.Pool | pg.PoolClient, 'query'>, job: CreditJob, reason: CreditIssueReason | null) {
-  await db.query(`UPDATE ${job.kind}_jobs SET credit_issue = $2::text, credit_issue_at = CASE WHEN $2::text IS NULL THEN NULL ELSE now() END
-    WHERE id = $1 AND credit_issue IS DISTINCT FROM $2::text`, [job.id, reason]);
+  await db.query(
+    `UPDATE ${job.kind}_jobs SET credit_issue = $2::text, credit_issue_at = CASE WHEN $2::text IS NULL THEN NULL ELSE now() END
+    WHERE id = $1 AND credit_issue IS DISTINCT FROM $2::text`,
+    [job.id, reason],
+  );
 }
 
 export async function reconcileJobCredits(database: pg.Pool): Promise<{ checked: number; repaired: number; issues: CreditIssue[] }> {
   const report = { checked: 0, repaired: 0, issues: [] as CreditIssue[] };
   for (const kind of ['theme', 'artwork'] as const) {
-    const jobs = (await database.query<{ id: string }>(
-      `SELECT id FROM ${kind}_jobs
+    const jobs = (
+      await database.query<{ id: string }>(
+        `SELECT id FROM ${kind}_jobs
        WHERE credit_checked_at IS NULL OR credit_checked_at < now() - interval '1 minute'
        ORDER BY credit_checked_at NULLS FIRST, id LIMIT 100`,
-    )).rows;
+      )
+    ).rows;
     for (const candidate of jobs) {
       const job = { kind, id: candidate.id };
       try {
@@ -75,7 +90,13 @@ async function reconcileLockedJob(client: pg.PoolClient, job: CreditJob): Promis
   const current = await lockCreditJob(client, job);
   if (!current) return clean;
   await client.query(`UPDATE ${job.kind}_jobs SET credit_checked_at = now() WHERE id = $1`, [job.id]);
-  const ledger: LedgerState = { client, job, current, reservation: await lockJobReservation(client, job), charge: await findJobCharge(client, job) };
+  const ledger: LedgerState = {
+    client,
+    job,
+    current,
+    reservation: await lockJobReservation(client, job),
+    charge: await findJobCharge(client, job),
+  };
   if (ledger.reservation && ledger.reservation.userId !== current.userId) return issue('RESERVATION_OWNER_MISMATCH');
   if (current.status === 'failed') return reconcileFailedJob(ledger);
   if (current.cacheHit) return reconcileCachedJob(ledger);
@@ -112,17 +133,29 @@ async function reconcileSucceededJob({ client, job, current, reservation, charge
   if (current.usableCount === 0 && !charge) {
     const results = await client.query(`SELECT 1 FROM ${job.kind}_job_results WHERE job_id = $1 LIMIT 1`, [job.id]);
     if (results.rows.length) return issue('TERMINAL_RESULT_MISMATCH');
-    await client.query(`UPDATE ${job.kind}_jobs SET status = 'failed', phase = NULL, lease_token = NULL,
-      lease_until = NULL, updated_at = now()${job.kind === 'artwork' ? ", delivery_status = 'incomplete'" : ''} WHERE id = $1`, [job.id]);
+    await client.query(
+      `UPDATE ${job.kind}_jobs SET status = 'failed', phase = NULL, lease_token = NULL,
+      lease_until = NULL, updated_at = now()${job.kind === 'artwork' ? ", delivery_status = 'incomplete'" : ''} WHERE id = $1`,
+      [job.id],
+    );
     if (job.kind === 'artwork') {
-      await client.query(`UPDATE artwork_job_directions SET status = 'failed',
-        reason = COALESCE(reason, 'PROCESSING_FAILED'), generated_url = NULL, updated_at = now() WHERE job_id = $1`, [job.id]);
+      await client.query(
+        `UPDATE artwork_job_directions SET status = 'failed',
+        reason = COALESCE(reason, 'PROCESSING_FAILED'), generated_url = NULL, updated_at = now() WHERE job_id = $1`,
+        [job.id],
+      );
     }
     await jobLedger.release(client, job);
     return repaired;
   }
-  if (!charge || current.unitCredits === null || charge.amount !== -current.usableCount * current.unitCredits ||
-      charge.userId !== current.userId || charge.kind !== `${job.kind}_consume`) return issue('TERMINAL_CHARGE_MISMATCH');
+  if (
+    !charge ||
+    current.unitCredits === null ||
+    charge.amount !== -current.usableCount * current.unitCredits ||
+    charge.userId !== current.userId ||
+    charge.kind !== `${job.kind}_consume`
+  )
+    return issue('TERMINAL_CHARGE_MISMATCH');
   if (!reservation) return issue('TERMINAL_RESERVATION_MISSING');
   if (reservation.amount !== current.requestedCount * current.unitCredits) return issue('RESERVATION_AMOUNT_MISMATCH');
   if (reservation.status !== 'settled') {
@@ -141,7 +174,7 @@ async function reconcileActiveJob({ client, job, current, reservation, charge }:
   if (current.unitCredits === null) return issue('JOB_PRICE_MISSING');
   const amount = current.unitCredits * current.requestedCount;
   if (reservation?.status === 'reserved') return reservation.amount === amount ? clean : issue('RESERVATION_AMOUNT_MISMATCH');
-  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 2147483647 || await availableCredits(client, current.userId) < amount) {
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 2147483647 || (await availableCredits(client, current.userId)) < amount) {
     return issue('RESERVATION_RESTORE_INSUFFICIENT_CREDITS');
   }
   if (reservation) {

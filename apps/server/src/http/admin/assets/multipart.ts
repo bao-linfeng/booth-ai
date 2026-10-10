@@ -63,7 +63,10 @@ export function parseCreateAssetFields(schemeCode: string, fields: Record<string
   }
   const metadata = parseMetadata(fields.metadata);
   return {
-    schemeCode, type, name, relatedAssetId,
+    schemeCode,
+    type,
+    name,
+    relatedAssetId,
     ...(sortOrder === undefined ? {} : { sortOrder }),
     ...(metadata === undefined ? {} : { metadata }),
   };

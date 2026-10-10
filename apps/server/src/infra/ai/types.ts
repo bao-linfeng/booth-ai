@@ -1,7 +1,7 @@
 export type AiPurpose = 'selection_parse' | 'theme' | 'artwork' | 'cs_translation';
 /** Text purposes call text models and never charge credits (`unitCredits` is null). */
 export const TEXT_PURPOSES = ['selection_parse', 'cs_translation'] as const;
-export type TextPurpose = typeof TEXT_PURPOSES[number];
+export type TextPurpose = (typeof TEXT_PURPOSES)[number];
 export type ImagePurpose = Exclude<AiPurpose, TextPurpose>;
 export function isTextPurpose(purpose: AiPurpose): purpose is TextPurpose {
   return (TEXT_PURPOSES as readonly AiPurpose[]).includes(purpose);

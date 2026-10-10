@@ -1,10 +1,20 @@
-import { S3Client, HeadBucketCommand, HeadObjectCommand, CreateBucketCommand, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  CreateBucketCommand,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Config } from '../config.js';
 
 export function createStorage(config: Config) {
   const options = {
-    region: config.s3.region, forcePathStyle: true, maxAttempts: 2,
+    region: config.s3.region,
+    forcePathStyle: true,
+    maxAttempts: 2,
     credentials: { accessKeyId: config.s3.accessKeyId, secretAccessKey: config.s3.secretAccessKey },
     requestHandler: { connectionTimeout: 3000, requestTimeout: 5000 },
   };
@@ -41,13 +51,23 @@ export function createStorage(config: Config) {
     })();
   }
   return {
-    async check() { await client.send(new HeadBucketCommand({ Bucket })); },
+    async check() {
+      await client.send(new HeadBucketCommand({ Bucket }));
+    },
     async ensureBucket() {
-      try { await client.send(new HeadBucketCommand({ Bucket })); }
-      catch (error) {
+      try {
+        await client.send(new HeadBucketCommand({ Bucket }));
+      } catch (error) {
         if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode !== 404) throw error;
         try {
-          await client.send(new CreateBucketCommand({ Bucket, ...(config.s3.region === 'us-east-1' ? {} : { CreateBucketConfiguration: { LocationConstraint: config.s3.region as 'eu-west-1' } }) }));
+          await client.send(
+            new CreateBucketCommand({
+              Bucket,
+              ...(config.s3.region === 'us-east-1'
+                ? {}
+                : { CreateBucketConfiguration: { LocationConstraint: config.s3.region as 'eu-west-1' } }),
+            }),
+          );
         } catch (createError) {
           if ((createError as { name?: string }).name !== 'BucketAlreadyOwnedByYou') throw createError;
         }
@@ -78,7 +98,9 @@ export function createStorage(config: Config) {
       if (response.ContentLength === undefined) throw new Error('Object size unavailable');
       return response.ContentLength;
     },
-    async delete(key: string) { await client.send(new DeleteObjectCommand({ Bucket, Key: key })); },
+    async delete(key: string) {
+      await client.send(new DeleteObjectCommand({ Bucket, Key: key }));
+    },
     async deleteObject(key: string): Promise<void> {
       await client.send(new DeleteObjectCommand({ Bucket, Key: key }));
     },
@@ -93,6 +115,9 @@ export function createStorage(config: Config) {
       const disposition = `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`;
       return getSignedUrl(publicClient, new GetObjectCommand({ Bucket, Key: key, ResponseContentDisposition: disposition }), { expiresIn });
     },
-    close() { client.destroy(); publicClient.destroy(); },
+    close() {
+      client.destroy();
+      publicClient.destroy();
+    },
   };
 }

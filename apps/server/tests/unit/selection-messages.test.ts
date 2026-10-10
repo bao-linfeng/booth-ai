@@ -9,14 +9,32 @@ import { parseRequirement } from '../../src/modules/selection/parse.js';
 const candidate: Candidate = {
   code: 'BOOTH-1',
   specifications: {
-    lengthMm: 6000, widthMm: 3000, heightMm: 3500, areaM2: 18,
-    openingCount: 2, productSystemId: 'fs62', productSystemLabel: 'FS62',
+    lengthMm: 6000,
+    widthMm: 3000,
+    heightMm: 3500,
+    areaM2: 18,
+    openingCount: 2,
+    productSystemId: 'fs62',
+    productSystemLabel: 'FS62',
   },
-  images: [], styleId: null, industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
+  images: [],
+  styleId: null,
+  industryIds: [],
+  budgetTierId: null,
+  zoneIds: [],
+  featureIds: [],
+  keywords: [],
   description: '',
 };
 const catalog = {
-  boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [],
+  boothSpaces: [],
+  openingCounts: [],
+  productSystems: [],
+  styles: [],
+  industries: [],
+  budgetTiers: [],
+  zones: [],
+  features: [],
 } as unknown as Parameters<typeof parseRequirement>[2];
 
 test('message locale resolves from Accept-Language tags and falls back to Chinese', () => {
@@ -29,19 +47,35 @@ test('message locale resolves from Accept-Language tags and falls back to Chines
 });
 
 test('every locale carries the same placeholders as the Chinese source', () => {
-  const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort().join();
+  const placeholders = (text: string) =>
+    [...text.matchAll(/\{(\w+)\}/g)]
+      .map(match => match[1])
+      .sort()
+      .join();
   const locales: MessageLocale[] = ['en', 'fr', 'de', 'ja', 'ru', 'it', 'es', 'ar', 'hi', 'pt', 'ms'];
   for (const locale of locales) {
     for (const [key, source] of Object.entries(zh)) {
-      const probe = message(locale, key as keyof typeof zh, { field: '{field}', label: '{label}', id: '{id}', count: '{count}', text: '{text}' });
-      assert.equal(placeholders(probe), placeholders(message('zh', key as keyof typeof zh, { field: '{field}', label: '{label}', id: '{id}', count: '{count}', text: '{text}' })),
-        `${locale}.${key} placeholders differ from zh (${source})`);
+      const probe = message(locale, key as keyof typeof zh, {
+        field: '{field}',
+        label: '{label}',
+        id: '{id}',
+        count: '{count}',
+        text: '{text}',
+      });
+      assert.equal(
+        placeholders(probe),
+        placeholders(
+          message('zh', key as keyof typeof zh, { field: '{field}', label: '{label}', id: '{id}', count: '{count}', text: '{text}' }),
+        ),
+        `${locale}.${key} placeholders differ from zh (${source})`,
+      );
     }
   }
 });
 
 test('random match pending note follows the requested locale', () => {
-  const random = (locale?: MessageLocale) => matchSchemes([candidate], emptyRequirement(), 'random', false, undefined, [], locale).items[0]!;
+  const random = (locale?: MessageLocale) =>
+    matchSchemes([candidate], emptyRequirement(), 'random', false, undefined, [], locale).items[0]!;
   assert.equal(random().pendingConfirmations[0]!.message, zh.matchRandomPending);
   assert.match(random('en').pendingConfirmations[0]!.message, /^Random recommendation/);
 });

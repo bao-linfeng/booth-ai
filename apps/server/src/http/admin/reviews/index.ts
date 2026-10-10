@@ -12,11 +12,17 @@ function mapReadinessResponse(readiness: SchemeReadiness) {
   };
 }
 
-interface CodeParams { code: string }
-interface UnpublishBody { reason?: string }
+interface CodeParams {
+  code: string;
+}
+interface UnpublishBody {
+  reason?: string;
+}
 
 const codeParams = {
-  type: 'object', required: ['code'], additionalProperties: false,
+  type: 'object',
+  required: ['code'],
+  additionalProperties: false,
   properties: { code: { type: 'string', minLength: 1 } },
 };
 
@@ -29,36 +35,69 @@ function decodedCode(params: CodeParams): string {
 }
 
 export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
-  app.get('/schemes/:code/readiness', { config: { permissions: ['schemes.readiness'] }, schema: { tags: ['admin-reviews'], params: codeParams } }, async request => {
-    return { code: 0, data: mapReadinessResponse(await getSchemeReadiness(pool, decodedCode(request.params as CodeParams))) };
-  });
-  app.post('/schemes/:code/reviews', { config: { permissions: ['schemes.review'] },
-    schema: {
-      tags: ['admin-reviews'], params: codeParams,
-      body: {
-        type: 'object', required: ['requestKey', 'schemeRevision', 'phase', 'decision', 'checks'], additionalProperties: false,
-        properties: {
-          requestKey: { type: 'string', minLength: 1 },
-          schemeRevision: { type: 'integer', minimum: 0 },
-          phase: { type: 'string', enum: ['asset_verification', 'overall'] },
-          decision: { type: 'string', enum: ['pass', 'reject'] },
-          checks: { type: 'object', additionalProperties: { type: 'boolean' } },
-          notes: { type: ['string', 'null'] },
+  app.get(
+    '/schemes/:code/readiness',
+    { config: { permissions: ['schemes.readiness'] }, schema: { tags: ['admin-reviews'], params: codeParams } },
+    async request => {
+      return { code: 0, data: mapReadinessResponse(await getSchemeReadiness(pool, decodedCode(request.params as CodeParams))) };
+    },
+  );
+  app.post(
+    '/schemes/:code/reviews',
+    {
+      config: { permissions: ['schemes.review'] },
+      schema: {
+        tags: ['admin-reviews'],
+        params: codeParams,
+        body: {
+          type: 'object',
+          required: ['requestKey', 'schemeRevision', 'phase', 'decision', 'checks'],
+          additionalProperties: false,
+          properties: {
+            requestKey: { type: 'string', minLength: 1 },
+            schemeRevision: { type: 'integer', minimum: 0 },
+            phase: { type: 'string', enum: ['asset_verification', 'overall'] },
+            decision: { type: 'string', enum: ['pass', 'reject'] },
+            checks: { type: 'object', additionalProperties: { type: 'boolean' } },
+            notes: { type: ['string', 'null'] },
+          },
         },
       },
     },
-  }, async request => {
-    return { code: 0, data: await createReview(pool, decodedCode(request.params as CodeParams), adminUserId(request), request.body as CreateReviewInput) };
-  });
-  app.post('/schemes/:code/publish', { config: { permissions: ['schemes.publish'] }, schema: { tags: ['admin-reviews'], params: codeParams } }, async request => {
-    return { code: 0, data: await publishScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request)) };
-  });
-  app.post('/schemes/:code/unpublish', { config: { permissions: ['schemes.unpublish'] },
-    schema: {
-      tags: ['admin-reviews'], params: codeParams,
-      body: { type: 'object', additionalProperties: false, properties: { reason: { type: 'string' } } },
+    async request => {
+      return {
+        code: 0,
+        data: await createReview(pool, decodedCode(request.params as CodeParams), adminUserId(request), request.body as CreateReviewInput),
+      };
     },
-  }, async request => {
-    return { code: 0, data: await unpublishScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request), (request.body as UnpublishBody | undefined)?.reason) };
-  });
+  );
+  app.post(
+    '/schemes/:code/publish',
+    { config: { permissions: ['schemes.publish'] }, schema: { tags: ['admin-reviews'], params: codeParams } },
+    async request => {
+      return { code: 0, data: await publishScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request)) };
+    },
+  );
+  app.post(
+    '/schemes/:code/unpublish',
+    {
+      config: { permissions: ['schemes.unpublish'] },
+      schema: {
+        tags: ['admin-reviews'],
+        params: codeParams,
+        body: { type: 'object', additionalProperties: false, properties: { reason: { type: 'string' } } },
+      },
+    },
+    async request => {
+      return {
+        code: 0,
+        data: await unpublishScheme(
+          pool,
+          decodedCode(request.params as CodeParams),
+          adminUserId(request),
+          (request.body as UnpublishBody | undefined)?.reason,
+        ),
+      };
+    },
+  );
 }

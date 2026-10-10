@@ -68,13 +68,19 @@ export function registerAuthentication(app: FastifyInstance, pool: pg.Pool, redi
       const id = (request.query as { ticket?: string }).ticket;
       if (!id) return;
       const raw = await redis.getdel(`${policy.eventTicketPrefix}-events-ticket:${id}`);
-      try { ticket = raw ? JSON.parse(raw) as EventTicket : null; } catch { throw authenticationError(); }
+      try {
+        ticket = raw ? (JSON.parse(raw) as EventTicket) : null;
+      } catch {
+        throw authenticationError();
+      }
       const param = policy.eventTicketParam === undefined ? 'jobId' : policy.eventTicketParam;
       const subject = param === null ? 'workbench' : (request.params as Record<string, string | undefined>)[param];
       if (!ticket || typeof ticket.subject !== 'string' || ticket.subject !== subject) throw authenticationError();
       if (typeof ticket.token === 'string') token = ticket.token;
-      else if (site === 'client' && typeof ticket.visitorId === 'string') { request.csVisitorId = ticket.visitorId; return; }
-      else throw authenticationError();
+      else if (site === 'client' && typeof ticket.visitorId === 'string') {
+        request.csVisitorId = ticket.visitorId;
+        return;
+      } else throw authenticationError();
     }
     if (!token) {
       if (site === 'admin' || request.headers.authorization) throw authenticationError();

@@ -16,15 +16,17 @@ export type ItemOutcome = 'next' | 'halt';
  * Returns the number of released rows.
  */
 export async function processLeased<T extends { id: string }>(
-  items: T[], options: { startedAt: number; budget: LeaseBudget; now: () => number },
-  handle: (item: T) => Promise<ItemOutcome>, release: (ids: string[]) => Promise<void>,
+  items: T[],
+  options: { startedAt: number; budget: LeaseBudget; now: () => number },
+  handle: (item: T) => Promise<ItemOutcome>,
+  release: (ids: string[]) => Promise<void>,
 ): Promise<number> {
   const { startedAt, budget, now } = options;
   const deadline = startedAt + budget.leaseMs - (budget.marginMs ?? 10_000);
   for (const [index, item] of items.entries()) {
     let rest = items.slice(index);
     if (now() + budget.itemMs <= deadline) {
-      if (await handle(item) === 'next') continue;
+      if ((await handle(item)) === 'next') continue;
       rest = items.slice(index + 1);
     }
     if (rest.length) await release(rest.map(row => row.id));
