@@ -33,7 +33,7 @@ const modelId = { type: 'string', minLength: 1, maxLength: 200 } as const;
 const params = {
   type: 'object',
   maxProperties: 20,
-  additionalProperties: { anyOf: [{ type: 'string', maxLength: 100 }, { type: 'number' }] },
+  additionalProperties: { type: ['string', 'number'], maxLength: 100 },
 } as const;
 const revision = { type: 'integer', minimum: 1 } as const;
 
