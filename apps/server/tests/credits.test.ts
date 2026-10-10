@@ -3,7 +3,7 @@ import test from 'node:test';
 import type pg from 'pg';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import { getCreditBalance, getSignInConfig, signInForCredits } from '../src/modules/credits/account-service.js';
+import { getCreditBalance, getSignInConfig, signInForCredits, updateSignInConfig } from '../src/modules/credits/account-service.js';
 import { getUserCreditBalance, listCreditTransactions, rechargeCredits } from '../src/modules/credits/management-service.js';
 
 test('sign-in awards ten credits once, relying on the unique sign-in record', async () => {
@@ -60,6 +60,38 @@ test('sign-in uses the configured timezone and daily credit amount', async () =>
     return { rows: [{ balance: 100 }] };
   } } as unknown as pg.Pool;
   assert.deepEqual(await signInForCredits(pool, 'user-id'), { amount: 25, balance: 100 });
+});
+
+test('sign-in configuration rejects unknown timezones before writing and audits accepted changes in one transaction', async () => {
+  const statements: string[] = [];
+  const run = async (sql: string, args: unknown[]) => {
+    statements.push(sql.trim().split(/\s+/).slice(0, 2).join(' '));
+    if (sql.includes('pg_timezone_names')) return { rows: args[0] === 'Asia/Shanghai' ? [{ '?column?': 1 }] : [] };
+    if (sql.includes('FOR UPDATE')) return { rows: [{ enabled: true, dailyAmount: 10, timezone: 'UTC' }] };
+    if (sql.includes('INSERT INTO sign_in_config')) {
+      assert.deepEqual(args, [false, 25, 'Asia/Shanghai']);
+      return { rows: [{ enabled: false, dailyAmount: 25, timezone: 'Asia/Shanghai' }] };
+    }
+    if (sql.includes('INSERT INTO admin_audit_logs')) {
+      assert.deepEqual(args.slice(0, 4), ['admin-id', 'sign_in_config.update', 'sign_in_config', 'default']);
+      assert.deepEqual(JSON.parse(args[4] as string), {
+        before: { enabled: true, dailyAmount: 10, timezone: 'UTC' }, after: { enabled: false, dailyAmount: 25, timezone: 'Asia/Shanghai' },
+      });
+    }
+    return { rows: [] };
+  };
+  let connections = 0;
+  const pool = { query: run, connect: async () => { connections++; return { query: run, release: () => {} }; } } as unknown as pg.Pool;
+
+  await assert.rejects(updateSignInConfig(pool, { enabled: true, dailyAmount: 10, timezone: 'Asia/Shanghia' }, 'admin-id'),
+    { statusCode: 400, reason: 'INVALID_TIMEZONE' });
+  assert.equal(connections, 0);
+  assert.deepEqual(statements, ['SELECT 1']);
+
+  statements.length = 0;
+  assert.deepEqual(await updateSignInConfig(pool, { enabled: false, dailyAmount: 25, timezone: 'Asia/Shanghai' }, 'admin-id'),
+    { enabled: false, dailyAmount: 25, timezone: 'Asia/Shanghai' });
+  assert.deepEqual(statements, ['SELECT 1', 'BEGIN', 'SELECT enabled,', 'INSERT INTO', 'INSERT INTO', 'COMMIT']);
 });
 
 test('admin credit service validates recharge and filters transactions', async () => {

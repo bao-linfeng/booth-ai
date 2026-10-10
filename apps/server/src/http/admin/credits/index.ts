@@ -3,7 +3,7 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
 import { getUserCreditBalance, listCreditTransactions, rechargeCredits, type CreditKind } from '../../../modules/credits/management-service.js';
-import { getSignInConfig } from '../../../modules/credits/account-service.js';
+import { getSignInConfig, updateSignInConfig } from '../../../modules/credits/account-service.js';
 
 interface CreditListQuery {
   page?: number;
@@ -64,14 +64,5 @@ export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.P
       dailyAmount: { type: 'integer', minimum: 1, maximum: 10000 },
       timezone: { type: 'string', minLength: 1, maxLength: 100 },
     } },
-  } }, async request => {
-    const { enabled, dailyAmount, timezone } = request.body;
-    await pool.query(
-      `INSERT INTO sign_in_config (id, enabled, daily_amount, timezone)
-       VALUES (TRUE, $1, $2, $3)
-       ON CONFLICT (id) DO UPDATE SET enabled=$1, daily_amount=$2, timezone=$3`,
-      [enabled, dailyAmount, timezone],
-    );
-    return { code: 0, data: { enabled, dailyAmount, timezone } };
-  });
+  } }, async request => ({ code: 0, data: await updateSignInConfig(pool, request.body, adminUserId(request)) }));
 }
