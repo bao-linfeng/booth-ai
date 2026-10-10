@@ -1,4 +1,4 @@
-import type { JsonSchemaToTsProvider } from '@fastify/type-provider-json-schema-to-ts';
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
@@ -12,7 +12,7 @@ import { resolveVisitor } from '../../../modules/customer-service/visitors.js';
 import { visitorToken } from '../customer-service/visitor-cookie.js';
 
 export async function registerQuoteRequestRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis) {
-  const routes = app.withTypeProvider<JsonSchemaToTsProvider>();
+  const routes = app.withTypeProvider<TypeProvider>();
   routes.get(
     '/schemes/:code/quote-context',
     {

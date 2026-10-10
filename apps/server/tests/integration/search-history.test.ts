@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
 import type { createStorage } from '../../src/infra/storage.js';
@@ -70,10 +70,10 @@ test('search history returns one inline theme and its artwork previews per searc
     get: async () =>
       JSON.stringify({ site: 'client', localId: userId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }),
   } as unknown as Redis;
-  const app = Fastify();
+  const app = contractApp();
   registerAuthentication(app, pool, redis, 'client');
   t.after(() => app.close());
-  await registerClientSearchRoutes(app, pool, redis, storage);
+  await registerClientSearchRoutes(app, pool, storage);
   const response = await app.inject({
     url: '/me/searches',
     headers: { authorization: 'Bearer test', 'x-visitor-id': 'v_another_browser_123456' },
@@ -95,14 +95,14 @@ test('search history returns one inline theme and its artwork previews per searc
 });
 
 test('search history rejects missing or invalid visitor identity before querying records', async t => {
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   const pool = {
     query: async () => {
       assert.fail('Unauthenticated request queried the database');
     },
   } as unknown as pg.Pool;
-  await registerClientSearchRoutes(app, pool, { get: async () => null } as unknown as Redis, storage);
+  await registerClientSearchRoutes(app, pool, storage);
   for (const visitorId of [undefined, 'short', 'invalid visitor id']) {
     assert.equal((await app.inject({ url: '/me/searches', headers: visitorId ? { 'x-visitor-id': visitorId } : {} })).statusCode, 400);
   }
@@ -150,10 +150,10 @@ test('visitor search history uses browser identity and pagination without readin
       assert.fail('Visitor request read a session');
     },
   } as unknown as Redis;
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   registerAuthentication(app, pool, redis, 'client');
-  await registerClientSearchRoutes(app, pool, redis, storage);
+  await registerClientSearchRoutes(app, pool, storage);
   const response = await app.inject({ url: '/me/searches?page=2&pageSize=2', headers: { 'x-visitor-id': visitorId } });
   assert.equal(response.statusCode, 200);
   assert.equal(response.headers['cache-control'], 'private, no-store');
@@ -168,7 +168,7 @@ test('visitor search history uses browser identity and pagination without readin
 });
 
 test('search history does not downgrade an invalid session to browser identity', async t => {
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   const pool = {
     query: async () => {
@@ -177,7 +177,7 @@ test('search history does not downgrade an invalid session to browser identity',
   } as unknown as pg.Pool;
   const redis = { get: async () => null } as unknown as Redis;
   registerAuthentication(app, pool, redis, 'client');
-  await registerClientSearchRoutes(app, pool, redis, storage);
+  await registerClientSearchRoutes(app, pool, storage);
   const response = await app.inject({
     url: '/me/searches',
     headers: { authorization: 'Bearer expired', 'x-visitor-id': 'v_browser_1234567890' },
@@ -198,10 +198,10 @@ test('visitor query excludes records written under a logged-in user (B-08)', asy
     },
   } as unknown as pg.Pool;
   const redis = { get: async () => null } as unknown as Redis;
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   registerAuthentication(app, pool, redis, 'client');
-  await registerClientSearchRoutes(app, pool, redis, storage);
+  await registerClientSearchRoutes(app, pool, storage);
   const response = await app.inject({ url: '/me/searches', headers: { 'x-visitor-id': visitorId } });
   assert.equal(response.statusCode, 200);
   const searchSqls = capturedSqls.filter(sql => sql.includes('FROM selection_searches'));

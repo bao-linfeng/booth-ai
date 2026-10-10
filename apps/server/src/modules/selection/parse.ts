@@ -83,7 +83,7 @@ export function parseRequirement(
   }
 
   return {
-    status: ctx.clarifications.length ? 'needs_clarification' : 'ready',
+    status: ctx.clarifications.length ? ('needs_clarification' as const) : ('ready' as const),
     requirement: ctx.requirement,
     parser: 'rules',
     degraded: true,

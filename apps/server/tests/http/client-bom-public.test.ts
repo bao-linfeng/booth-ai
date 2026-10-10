@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type pg from 'pg';
 import { registerClientBomRoutes } from '../../src/http/client/bill-of-materials/index.js';
 
@@ -16,7 +16,7 @@ function createPool(published: boolean) {
 }
 
 test('anonymous requests reach published BOM routes and unpublished schemes return 404', async t => {
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   await registerClientBomRoutes(app, createPool(true));
   const list = await app.inject('/schemes/S-1/bill-of-materials');
@@ -25,7 +25,7 @@ test('anonymous requests reach published BOM routes and unpublished schemes retu
   const download = await app.inject('/schemes/S-1/bill-of-materials/download?revision=1');
   assert.equal(download.statusCode, 409);
 
-  const unpublished = Fastify();
+  const unpublished = contractApp();
   t.after(() => unpublished.close());
   await registerClientBomRoutes(unpublished, createPool(false));
   assert.equal((await unpublished.inject('/schemes/S-1/bill-of-materials')).statusCode, 404);
@@ -77,7 +77,7 @@ test('verified BOM is returned in the { code, data } envelope without internal p
       throw new Error(`Unexpected query: ${sql}`);
     },
   } as unknown as pg.Pool;
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   await registerClientBomRoutes(app, pool);
 

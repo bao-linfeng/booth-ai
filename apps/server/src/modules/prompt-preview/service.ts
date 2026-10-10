@@ -40,7 +40,7 @@ const brandVariables = [
 export function promptDefinitions() {
   return [
     {
-      purpose: 'filter',
+      purpose: 'filter' as const,
       label: 'AI 智选 · 需求解析',
       defaultBody: extractionInstruction,
       defaultVersion: PROMPT_DEFAULT_VERSION,
@@ -54,7 +54,7 @@ export function promptDefinitions() {
       ],
     },
     {
-      purpose: 'theme',
+      purpose: 'theme' as const,
       label: 'AI 换主题',
       defaultBody: DEFAULT_THEME_BODY,
       defaultVersion: PROMPT_DEFAULT_VERSION,
@@ -64,7 +64,7 @@ export function promptDefinitions() {
       inputs: ['行业、风格、品牌色和补充要求总会注入，不依赖正文是否引用变量。', '原始效果图和可用蒙版由任务资产绑定，经图像接口发送。'],
     },
     {
-      purpose: 'artwork',
+      purpose: 'artwork' as const,
       label: 'AI 四向图',
       defaultBody: DEFAULT_ARTWORK_BODY,
       defaultVersion: PROMPT_DEFAULT_VERSION,

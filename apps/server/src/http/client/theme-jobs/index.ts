@@ -1,4 +1,4 @@
-import type { JsonSchemaToTsProvider } from '@fastify/type-provider-json-schema-to-ts';
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
@@ -26,7 +26,7 @@ export async function registerThemeModelRoutes(
   redis: Redis,
   storage: ReturnType<typeof createStorage>,
 ) {
-  const routes = app.withTypeProvider<JsonSchemaToTsProvider>();
+  const routes = app.withTypeProvider<TypeProvider>();
   routes.post('/theme-jobs/:jobId/events-ticket', { schema: { params: themeJobSchema.params, ...eventsTicketSchema } }, async request => {
     const userId = clientUserId(request);
     await ownedThemeJob(pool, userId, request.params.jobId);

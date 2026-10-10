@@ -1,4 +1,4 @@
-import type { JsonSchemaToTsProvider } from '@fastify/type-provider-json-schema-to-ts';
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
@@ -50,7 +50,7 @@ const manualSchema = {
 } as const;
 
 export async function registerClientManualRequestRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.withTypeProvider<JsonSchemaToTsProvider>().post(
+  app.withTypeProvider<TypeProvider>().post(
     '/manual-requests',
     {
       preHandler: rateLimit(redis, 'manual', 'anonymousProject'),

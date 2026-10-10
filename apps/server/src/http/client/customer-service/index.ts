@@ -1,3 +1,4 @@
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
@@ -5,14 +6,13 @@ import type { Config } from '../../../config.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { themeContextObjectKey } from '../../../modules/customer-service/contexts.js';
 import { currentConversation, openConversation, ownedConversation, sendContext } from '../../../modules/customer-service/conversations.js';
-import { notFound, type ContextInput, type EntryPoint, type Subject } from '../../../modules/customer-service/domain.js';
+import { notFound, type Subject } from '../../../modules/customer-service/domain.js';
 import { conversationChannel } from '../../../modules/customer-service/events.js';
 import {
   customerMessagesAfter,
   listCustomerMessages,
   markCustomerRead,
   postCustomerMessage,
-  type CustomerMessageInput,
 } from '../../../modules/customer-service/messages.js';
 import { agentsOnline, touchCustomer } from '../../../modules/customer-service/presence.js';
 import { issueVisitor, mergeVisitor, resolveVisitor, touchVisitor, visitorActive } from '../../../modules/customer-service/visitors.js';
@@ -37,8 +37,6 @@ import {
 } from './schema.js';
 import { requireSubject } from './subject.js';
 import { clearVisitorCookie, setVisitorCookie, visitorToken } from './visitor-cookie.js';
-
-type ConversationParams = { conversationId: string };
 
 /**
  * 客户流心跳：登录客户按建立时的令牌复核 Session，访客复核令牌仍有效；失效返回 false 断流。
@@ -73,7 +71,8 @@ export async function registerClientCustomerServiceRoutes(
 ): Promise<void> {
   const secureCookie = config.nodeEnv === 'production';
   await app.register(
-    async scope => {
+    async plugin => {
+      const scope = plugin.withTypeProvider<TypeProvider>();
       scope.addHook('onRequest', async (_request, reply) => {
         reply.header('Cache-Control', 'private, no-store');
       });
@@ -98,52 +97,40 @@ export async function registerClientCustomerServiceRoutes(
         const mergedConversations = visitorId ? await mergeVisitor(pool, redis, userId, visitorId) : 0;
         // 合并成功或令牌已失效（已合并、已删除）后才清除 Cookie；合并失败时保留，前端可凭原令牌重试
         if (token) clearVisitorCookie(reply, secureCookie);
-        return { code: 0, data: { mergedConversations } };
+        return { code: 0, data: { mergedConversations } } as const;
       });
 
-      scope.post<{ Body: { context?: ContextInput; entryPoint: EntryPoint } }>(
-        '/conversations',
-        { schema: openConversationSchema },
-        async (request, reply) => {
-          const subject = await requireSubject(request, pool);
-          // 带上下文时每次都会追加卡片，与消息共用限流额度；只打开面板不计入
-          if (request.body.context) await enforceMessageLimits(request, reply, subject);
-          const { created, ...data } = await openConversation(pool, redis, subject, request.body, requestMessageLocale(request));
-          return reply.code(created ? 201 : 200).send({ code: 0, data });
-        },
-      );
+      scope.post('/conversations', { schema: openConversationSchema }, async (request, reply) => {
+        const subject = await requireSubject(request, pool);
+        // 带上下文时每次都会追加卡片，与消息共用限流额度；只打开面板不计入
+        if (request.body.context) await enforceMessageLimits(request, reply, subject);
+        const { created, ...data } = await openConversation(pool, redis, subject, request.body, requestMessageLocale(request));
+        return reply.code(created ? 201 : 200).send({ code: 0, data });
+      });
 
       scope.get('/conversations/current', { schema: currentConversationSchema }, async request => {
-        return { code: 0, data: await currentConversation(pool, redis, await requireSubject(request, pool)) };
+        return { code: 0, data: await currentConversation(pool, redis, await requireSubject(request, pool)) } as const;
       });
 
-      scope.get<{ Querystring: { before?: number; after?: number; limit: number } }>(
-        '/messages',
-        { schema: messagesQuerySchema },
-        async request => {
-          return { code: 0, data: await listCustomerMessages(pool, await requireSubject(request, pool), request.query) };
-        },
-      );
+      scope.get('/messages', { schema: messagesQuerySchema }, async request => {
+        return { code: 0, data: await listCustomerMessages(pool, await requireSubject(request, pool), request.query) } as const;
+      });
 
-      scope.post<{ Params: ConversationParams; Body: CustomerMessageInput }>(
-        '/conversations/:conversationId/messages',
-        { schema: postMessageSchema },
-        async (request, reply) => {
-          const subject = await requireSubject(request, pool);
-          await enforceMessageLimits(request, reply, subject, request.body.kind === 'offline');
-          const { created, ...data } = await postCustomerMessage(
-            pool,
-            redis,
-            subject,
-            request.params.conversationId,
-            request.body,
-            requestMessageLocale(request),
-          );
-          return reply.code(created ? 201 : 200).send({ code: 0, data });
-        },
-      );
+      scope.post('/conversations/:conversationId/messages', { schema: postMessageSchema }, async (request, reply) => {
+        const subject = await requireSubject(request, pool);
+        await enforceMessageLimits(request, reply, subject, request.body.kind === 'offline');
+        const { created, ...data } = await postCustomerMessage(
+          pool,
+          redis,
+          subject,
+          request.params.conversationId,
+          request.body,
+          requestMessageLocale(request),
+        );
+        return reply.code(created ? 201 : 200).send({ code: 0, data });
+      });
 
-      scope.post<{ Params: ConversationParams; Body: { context: ContextInput; entryPoint: EntryPoint } }>(
+      scope.post(
         '/conversations/:conversationId/contexts',
         {
           schema: sendContextSchema,
@@ -157,43 +144,31 @@ export async function registerClientCustomerServiceRoutes(
       );
 
       // 客户与坐席的 <img> 都带不了 Bearer，凭只在会话内可见的上下文 ID 换签；浏览器缓存短于签名有效期
-      scope.get<{ Params: { contextId: string } }>(
-        '/contexts/:contextId/theme-cover',
-        { schema: contextThemeCoverSchema },
-        async (request, reply) => {
-          const url = await storage.signDownload(await themeContextObjectKey(pool, request.params.contextId), 300);
-          reply.header('Cache-Control', 'private, max-age=240');
-          return reply.redirect(url, 302);
-        },
-      );
+      scope.get('/contexts/:contextId/theme-cover', { schema: contextThemeCoverSchema }, async (request, reply) => {
+        const url = await storage.signDownload(await themeContextObjectKey(pool, request.params.contextId), 300);
+        reply.header('Cache-Control', 'private, max-age=240');
+        return reply.redirect(url, 302);
+      });
 
-      scope.post<{ Params: ConversationParams; Body: { seq: number } }>(
-        '/conversations/:conversationId/read',
-        { schema: readSchema },
-        async request => {
-          const subject = await requireSubject(request, pool);
-          return { code: 0, data: await markCustomerRead(pool, redis, subject, request.params.conversationId, request.body.seq) };
-        },
-      );
+      scope.post('/conversations/:conversationId/read', { schema: readSchema }, async request => {
+        const subject = await requireSubject(request, pool);
+        return { code: 0, data: await markCustomerRead(pool, redis, subject, request.params.conversationId, request.body.seq) } as const;
+      });
 
-      scope.post<{ Params: ConversationParams }>(
-        '/conversations/:conversationId/events-ticket',
-        { schema: ticketSchema },
-        async request => {
-          const subject = await requireSubject(request, pool);
-          await ownedConversation(pool, subject, request.params.conversationId);
-          const ticket = await issueEventTicket(
-            redis,
-            'cs',
-            subject.kind === 'user'
-              ? { subject: request.params.conversationId, userId: subject.userId, token: requirePrincipal(request, 'client').token }
-              : { subject: request.params.conversationId, visitorId: subject.visitorId },
-          );
-          return { code: 0, data: { ticket } };
-        },
-      );
+      scope.post('/conversations/:conversationId/events-ticket', { schema: ticketSchema }, async request => {
+        const subject = await requireSubject(request, pool);
+        await ownedConversation(pool, subject, request.params.conversationId);
+        const ticket = await issueEventTicket(
+          redis,
+          'cs',
+          subject.kind === 'user'
+            ? { subject: request.params.conversationId, userId: subject.userId, token: requirePrincipal(request, 'client').token }
+            : { subject: request.params.conversationId, visitorId: subject.visitorId },
+        );
+        return { code: 0, data: { ticket } } as const;
+      });
 
-      scope.get<{ Params: ConversationParams; Querystring: { ticket: string; after?: number } }>(
+      scope.get(
         '/conversations/:conversationId/events',
         {
           config: { authentication: 'events', eventTicketPrefix: 'cs', eventTicketParam: 'conversationId' },

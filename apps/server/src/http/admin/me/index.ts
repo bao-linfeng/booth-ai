@@ -1,3 +1,4 @@
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
@@ -20,40 +21,42 @@ function authenticationError(): Error & { statusCode: number } {
 }
 
 export async function registerAdminMeRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get(
-    '/me',
-    { config: { permissions: [] }, schema: { tags: ['admin-auth'], response: { 200: successResponse(adminCurrentUserSchema) } } },
-    async request => {
-      const { token, session, localId: accountId } = requirePrincipal(request, 'admin');
-      let externalJwt: string;
-      try {
-        externalJwt = decryptJwt(session.externalJwtCiphertext, config.sessionSecret);
-      } catch {
-        await destroySession(redis, token);
-        throw authenticationError();
-      }
-      try {
-        const detail = await fetchExternalUserDetail(config, session.username, externalJwt);
-        if (detail.externalUserId !== session.externalUserId) throw authenticationError();
-        const permissions = await requireAdminAccess(pool, detail.roles);
-        const { id: localId } = await syncAdmin(pool, detail, false);
-        return {
-          code: 0,
-          message: 'ok',
-          data: {
-            ...toCurrentUser(localId, { ...detail, permissions }, 'admin', session.loginSource),
-            homePath: accessSummary(permissions).homePath,
-          },
-        };
-      } catch (error) {
-        const statusCode = (error as Partial<{ statusCode: number }>).statusCode;
-        if (statusCode === 403 || statusCode === 401) {
-          await revokeAccountSessions(pool, 'admin', accountId);
+  app
+    .withTypeProvider<TypeProvider>()
+    .get(
+      '/me',
+      { config: { permissions: [] }, schema: { tags: ['admin-auth'], response: { 200: successResponse(adminCurrentUserSchema) } } },
+      async request => {
+        const { token, session, localId: accountId } = requirePrincipal(request, 'admin');
+        let externalJwt: string;
+        try {
+          externalJwt = decryptJwt(session.externalJwtCiphertext, config.sessionSecret);
+        } catch {
           await destroySession(redis, token);
           throw authenticationError();
         }
-        throw error;
-      }
-    },
-  );
+        try {
+          const detail = await fetchExternalUserDetail(config, session.username, externalJwt);
+          if (detail.externalUserId !== session.externalUserId) throw authenticationError();
+          const permissions = await requireAdminAccess(pool, detail.roles);
+          const { id: localId } = await syncAdmin(pool, detail, false);
+          return {
+            code: 0 as const,
+            message: 'ok',
+            data: {
+              ...toCurrentUser(localId, { ...detail, permissions }, 'admin', session.loginSource),
+              homePath: accessSummary(permissions).homePath,
+            },
+          };
+        } catch (error) {
+          const statusCode = (error as Partial<{ statusCode: number }>).statusCode;
+          if (statusCode === 403 || statusCode === 401) {
+            await revokeAccountSessions(pool, 'admin', accountId);
+            await destroySession(redis, token);
+            throw authenticationError();
+          }
+          throw error;
+        }
+      },
+    );
 }

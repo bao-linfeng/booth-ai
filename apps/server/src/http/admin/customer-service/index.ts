@@ -1,3 +1,4 @@
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
@@ -10,13 +11,12 @@ import {
   listConversations,
   releaseConversation,
   transferConversation,
-  type ConversationTab,
   type Viewer,
 } from '../../../modules/customer-service/conversations.js';
 import { AGENTS_CHANNEL, agentEventVisible } from '../../../modules/customer-service/events.js';
-import { listAdminMessages, markAgentRead, postAgentMessage, type AgentMessageInput } from '../../../modules/customer-service/messages.js';
+import { listAdminMessages, markAgentRead, postAgentMessage } from '../../../modules/customer-service/messages.js';
 import { agentsOnline, removeAgent, setAway, touchAgent } from '../../../modules/customer-service/presence.js';
-import { settingsView, updateSettings, type CsSettingsInput } from '../../../modules/customer-service/settings.js';
+import { settingsView, updateSettings } from '../../../modules/customer-service/settings.js';
 import { revalidatePrincipal, type Principal } from '../../../modules/identity/principal.js';
 import { adminUserId, issueEventTicket, requirePrincipal } from '../../authentication.js';
 import { streamEvents } from '../../sse.js';
@@ -37,8 +37,6 @@ import {
   ticketSchema,
   transferSchema,
 } from './schema.js';
-
-type ConversationParams = { conversationId: string };
 
 function has(request: FastifyRequest, code: PermissionCode): boolean {
   try {
@@ -82,56 +80,53 @@ function viewer(request: FastifyRequest, code?: PermissionCode): Viewer {
 // 在线客服管理端接口（开发计划 §6.3）
 export async function registerAdminCustomerServiceRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
   await app.register(
-    async scope => {
-      scope.get<{ Querystring: { tab: ConversationTab; page: number; pageSize: number; projectId?: string } }>(
-        '/conversations',
-        { config: { permissions: ['customer-service.read'] }, schema: listSchema },
-        async request => {
-          const current = viewer(request, 'customer-service.read');
-          if (request.query.projectId) requireAdminPermission(request, 'projects.read');
-          return { code: 0, data: await listConversations(pool, current, request.query) };
-        },
-      );
+    async plugin => {
+      const scope = plugin.withTypeProvider<TypeProvider>();
+      scope.get('/conversations', { config: { permissions: ['customer-service.read'] }, schema: listSchema }, async request => {
+        const current = viewer(request, 'customer-service.read');
+        if (request.query.projectId) requireAdminPermission(request, 'projects.read');
+        return { code: 0, data: await listConversations(pool, current, request.query) } as const;
+      });
 
-      scope.get<{ Params: ConversationParams }>(
+      scope.get(
         '/conversations/:conversationId',
         { config: { permissions: ['customer-service.read'] }, schema: detailSchema },
         async request => {
           return {
-            code: 0,
+            code: 0 as const,
             data: await getConversationDetail(pool, viewer(request, 'customer-service.read'), request.params.conversationId),
           };
         },
       );
 
-      scope.get<{ Params: ConversationParams; Querystring: { before?: number; after?: number; limit: number } }>(
+      scope.get(
         '/conversations/:conversationId/messages',
         { config: { permissions: ['customer-service.read'] }, schema: messagesSchema },
         async request => {
           return {
-            code: 0,
+            code: 0 as const,
             data: await listAdminMessages(pool, viewer(request, 'customer-service.read'), request.params.conversationId, request.query),
           };
         },
       );
 
-      scope.post<{ Params: ConversationParams }>(
+      scope.post(
         '/conversations/:conversationId/claim',
         { config: { permissions: ['customer-service.reply'] }, schema: actionSchema('抢接') },
         async request => {
           return {
-            code: 0,
+            code: 0 as const,
             data: await claimConversation(pool, redis, viewer(request, 'customer-service.reply'), request.params.conversationId),
           };
         },
       );
 
-      scope.post<{ Params: ConversationParams }>(
+      scope.post(
         '/conversations/:conversationId/release',
         { config: { permissions: ['customer-service.reply'] }, schema: actionSchema('释放回队列（仅当前坐席）') },
         async request => {
           return {
-            code: 0,
+            code: 0 as const,
             data: await releaseConversation(pool, redis, viewer(request, 'customer-service.reply'), request.params.conversationId),
           };
         },
@@ -139,15 +134,15 @@ export async function registerAdminCustomerServiceRoutes(app: FastifyInstance, p
 
       scope.get('/agents', { config: { permissions: ['customer-service.supervise'] }, schema: agentsSchema }, async request => {
         requireAdminPermission(request, 'customer-service.supervise');
-        return { code: 0, data: await listAgents(pool, redis) };
+        return { code: 0, data: await listAgents(pool, redis) } as const;
       });
 
-      scope.post<{ Params: ConversationParams; Body: { adminId?: string | null; reason: string } }>(
+      scope.post(
         '/conversations/:conversationId/transfer',
         { config: { permissions: ['customer-service.supervise'] }, schema: transferSchema },
         async request => {
           return {
-            code: 0,
+            code: 0 as const,
             data: await transferConversation(
               pool,
               redis,
@@ -159,18 +154,18 @@ export async function registerAdminCustomerServiceRoutes(app: FastifyInstance, p
         },
       );
 
-      scope.post<{ Params: ConversationParams }>(
+      scope.post(
         '/conversations/:conversationId/close',
         { config: { permissions: ['customer-service.reply'] }, schema: actionSchema('结束会话') },
         async request => {
           return {
-            code: 0,
+            code: 0 as const,
             data: await closeConversation(pool, redis, viewer(request, 'customer-service.reply'), request.params.conversationId),
           };
         },
       );
 
-      scope.post<{ Params: ConversationParams; Body: AgentMessageInput }>(
+      scope.post(
         '/conversations/:conversationId/messages',
         { config: { permissions: ['customer-service.reply'] }, schema: postMessageSchema },
         async (request, reply) => {
@@ -185,12 +180,12 @@ export async function registerAdminCustomerServiceRoutes(app: FastifyInstance, p
         },
       );
 
-      scope.post<{ Params: ConversationParams; Body: { seq: number } }>(
+      scope.post(
         '/conversations/:conversationId/read',
         { config: { permissions: ['customer-service.reply'] }, schema: readSchema },
         async request => {
           return {
-            code: 0,
+            code: 0 as const,
             data: await markAgentRead(
               pool,
               redis,
@@ -202,20 +197,16 @@ export async function registerAdminCustomerServiceRoutes(app: FastifyInstance, p
         },
       );
 
-      scope.put<{ Body: { status: 'online' | 'away' } }>(
-        '/presence',
-        { config: { permissions: ['customer-service.reply'] }, schema: presenceSchema },
-        async request => {
-          const { adminId } = viewer(request, 'customer-service.reply');
-          await setAway(redis, adminId, request.body.status === 'away');
-          return { code: 0, data: { status: request.body.status, agentsOnline: await agentsOnline(redis) } };
-        },
-      );
+      scope.put('/presence', { config: { permissions: ['customer-service.reply'] }, schema: presenceSchema }, async request => {
+        const { adminId } = viewer(request, 'customer-service.reply');
+        await setAway(redis, adminId, request.body.status === 'away');
+        return { code: 0, data: { status: request.body.status, agentsOnline: await agentsOnline(redis) } } as const;
+      });
 
       scope.post('/events-ticket', { config: { permissions: ['customer-service.read'] }, schema: ticketSchema }, async request => {
         const { adminId } = viewer(request, 'customer-service.read');
         return {
-          code: 0,
+          code: 0 as const,
           data: {
             ticket: await issueEventTicket(redis, 'cs-admin', {
               subject: 'workbench',
@@ -227,7 +218,7 @@ export async function registerAdminCustomerServiceRoutes(app: FastifyInstance, p
       });
 
       // 工作台流：只订阅 cs:agents；坐席连接存活且未设为离开时计入在线，心跳时复核登录状态、权限与坐席有效性
-      scope.get<{ Querystring: { ticket: string } }>(
+      scope.get(
         '/events',
         {
           config: {
@@ -256,17 +247,13 @@ export async function registerAdminCustomerServiceRoutes(app: FastifyInstance, p
 
       scope.get('/settings', { config: { permissions: ['customer-service.read'] }, schema: getSettingsSchema }, async request => {
         requireAdminPermission(request, 'customer-service.read');
-        return { code: 0, data: await settingsView(pool) };
+        return { code: 0, data: await settingsView(pool) } as const;
       });
 
-      scope.put<{ Body: CsSettingsInput }>(
-        '/settings',
-        { config: { permissions: ['customer-service.settings'] }, schema: putSettingsSchema },
-        async request => {
-          requireAdminPermission(request, 'customer-service.settings');
-          return { code: 0, data: await updateSettings(pool, request.body, adminUserId(request)) };
-        },
-      );
+      scope.put('/settings', { config: { permissions: ['customer-service.settings'] }, schema: putSettingsSchema }, async request => {
+        requireAdminPermission(request, 'customer-service.settings');
+        return { code: 0, data: await updateSettings(pool, request.body, adminUserId(request)) } as const;
+      });
     },
     { prefix: '/customer-service' },
   );

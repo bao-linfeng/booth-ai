@@ -63,7 +63,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
     );
   });
   registerErrorContract(app);
-  if (config.nodeEnv !== 'production') registerResponseGuard(app, config.nodeEnv === 'test' ? 'throw' : 'log');
+  registerResponseGuard(app, config.nodeEnv === 'test' ? 'throw' : config.nodeEnv === 'development' ? 'log' : 'repair');
 
   app.get(
     '/health/live',

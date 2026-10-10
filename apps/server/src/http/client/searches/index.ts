@@ -1,11 +1,12 @@
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import type { Redis } from 'ioredis';
 import type { createStorage } from '../../../infra/storage.js';
 import { getProvidedVisitorId } from '../selection/identity.js';
 import { listClientSearches } from '../../../modules/selection/analytics/queries.js';
 import { listSearchJobs } from '../../../modules/generation/search-jobs.js';
 import { latestVersionKeys } from '../../../modules/assets/queries.js';
+import { successResponse } from '../../schemas.js';
 
 type SearchSnapshotItem = {
   code?: unknown;
@@ -31,13 +32,92 @@ function getFirstImageAssetId(item: SearchSnapshotItem): string | null {
   return typeof image?.assetId === 'string' ? image.assetId : null;
 }
 
-export async function registerClientSearchRoutes(
-  app: FastifyInstance,
-  pool: pg.Pool,
-  _redis: Redis,
-  storage: ReturnType<typeof createStorage>,
-) {
-  app.get<{ Querystring: { page?: number; pageSize?: number } }>(
+const nullableString = { type: ['string', 'null'] } as const;
+const dateTime = { type: 'string', format: 'date-time' } as const;
+// 检索时冻结的结果快照，字段随智选版本变化，原样返回
+const snapshotValue = { description: '检索时冻结的快照字段，原样返回' } as const;
+const themeSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['jobId', 'status', 'createdAt', 'previewUrl'],
+  properties: { jobId: { type: 'string' }, status: { type: 'string' }, createdAt: dateTime, previewUrl: nullableString },
+} as const;
+const artworkSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['jobId', 'status', 'deliveryStatus', 'createdAt', 'views'],
+  properties: {
+    jobId: { type: 'string' },
+    status: { type: 'string' },
+    deliveryStatus: { type: 'string' },
+    createdAt: dateTime,
+    views: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['direction', 'previewUrl'],
+        properties: { direction: { type: 'string' }, previewUrl: { type: 'string' } },
+      },
+    },
+  },
+} as const;
+const searchHistorySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['items', 'total', 'page', 'pageSize'],
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'status', 'mode', 'inputText', 'finalRequirement', 'counts', 'items', 'createdAt'],
+        properties: {
+          id: { type: 'string' },
+          status: { type: 'string' },
+          mode: { type: 'string' },
+          inputText: { type: 'string' },
+          finalRequirement: snapshotValue,
+          counts: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['direct', 'reference', 'random', 'total'],
+            properties: {
+              direct: { type: 'integer' },
+              reference: { type: 'integer' },
+              random: { type: 'integer' },
+              total: { type: 'integer' },
+            },
+          },
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['thumbnail', 'theme', 'artwork'],
+              properties: {
+                code: snapshotValue,
+                matchType: snapshotValue,
+                specifications: snapshotValue,
+                thumbnail: { type: 'string' },
+                theme: { anyOf: [themeSchema, { type: 'null' }] },
+                artwork: { anyOf: [artworkSchema, { type: 'null' }] },
+              },
+            },
+          },
+          createdAt: dateTime,
+        },
+      },
+    },
+    total: { type: 'integer' },
+    page: { type: 'integer' },
+    pageSize: { type: 'integer' },
+  },
+} as const;
+
+export async function registerClientSearchRoutes(app: FastifyInstance, pool: pg.Pool, storage: ReturnType<typeof createStorage>) {
+  app.withTypeProvider<TypeProvider>().get(
     '/me/searches',
     {
       schema: {
@@ -49,6 +129,7 @@ export async function registerClientSearchRoutes(
             pageSize: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
           },
         },
+        response: { 200: successResponse(searchHistorySchema) },
       },
     },
     async (request, reply) => {
@@ -75,7 +156,7 @@ export async function registerClientSearchRoutes(
       );
 
       return {
-        code: 0,
+        code: 0 as const,
         data: {
           items: result.data.map(search => ({
             id: search.id,

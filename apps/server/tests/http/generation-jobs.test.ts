@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type pg from 'pg';
 import { registerAdminGenerationJobRoutes } from '../../src/http/admin/generation-jobs/index.js';
 import { getGenerationJob, listGenerationJobs } from '../../src/modules/generation/queries.js';
@@ -24,6 +24,11 @@ const row = {
   selectionRevision: 0,
   selectedResultId: null,
   input: { industryId: userId, styleId: resultId, brandColors: [], brandKeywords: '' },
+  username: null,
+  cacheHit: false,
+  creditIssue: null,
+  creditIssueAt: null,
+  aiModels: [],
   // 选定效果等后续操作会刷新 updatedAt；耗时只看 completedAt。
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-01T00:02:00Z'),
@@ -204,7 +209,7 @@ test('admin generation job detail route forwards storage for original preview', 
       return { rows: [] };
     },
   } as unknown as pg.Pool;
-  const app = Fastify();
+  const app = contractApp();
   await registerAdminGenerationJobRoutes(app, pool, {
     signDownload: async (key, expiresIn) => {
       assert.equal(key, 'original/key');
@@ -222,7 +227,7 @@ test('admin generation job routes validate queries and params, and return 404 fo
   const pool = {
     query: async (sql: string) => (sql.includes('count(*)') ? { rows: [{ total: '0' }] } : { rows: [] }),
   } as unknown as pg.Pool;
-  const app = Fastify();
+  const app = contractApp();
   await registerAdminGenerationJobRoutes(app, pool, { signDownload: async () => 'https://example.test/original' });
   t.after(() => app.close());
 
@@ -234,5 +239,5 @@ test('admin generation job routes validate queries and params, and return 404 fo
   assert.equal((await app.inject('/generation-jobs/not-a-uuid')).statusCode, 400);
   const missing = await app.inject(`/generation-jobs/${jobId}`);
   assert.equal(missing.statusCode, 404);
-  assert.equal(missing.json().message, 'RESOURCE_NOT_FOUND');
+  assert.equal(missing.json().error.reason, 'RESOURCE_NOT_FOUND');
 });

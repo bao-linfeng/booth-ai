@@ -14,7 +14,7 @@ import { getThemeJob, ownedThemeJob, selectThemeResult } from '../../src/modules
 import { rateLimitPolicies } from '../../src/http/rate-limits.js';
 import { allPermissionCodes } from '../../src/modules/identity/permissions.js';
 import { issueEventTicket, registerAuthentication } from '../../src/http/authentication.js';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import { resolveAdminPermissions } from '../../src/modules/identity/roles.js';
 
 const config = loadConfig({
@@ -311,7 +311,7 @@ test('theme and artwork event tickets cannot outlive disabled accounts, logout o
 test('generalized event tickets bind subject, support visitor tickets on client routes and fixed workbench subject on admin routes', async t => {
   for (const site of ['client', 'admin'] as const) {
     const { pool, redis, token } = await setup(t, site);
-    const app = Fastify();
+    const app = contractApp();
     registerAuthentication(app, pool, redis, site);
     const echo = async (request: { principal: { localId: string } | null; csVisitorId: string | null }) => ({
       user: request.principal?.localId ?? null,

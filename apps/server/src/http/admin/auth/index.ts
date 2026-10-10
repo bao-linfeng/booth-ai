@@ -1,3 +1,4 @@
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
@@ -6,10 +7,11 @@ import { destroySession } from '../../../infra/session.js';
 import { loginAdmin } from '../../../modules/identity/admin-service.js';
 import { authorizationToken } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
-import { currentUserSchema, sessionSchema, successResponse } from '../../schemas.js';
+import { currentUserSchema, okResponse, sessionSchema, successResponse } from '../../schemas.js';
 
 export async function registerAdminAuthRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.post(
+  const routes = app.withTypeProvider<TypeProvider>();
+  routes.post(
     '/auth/login',
     {
       config: { authentication: 'public' },
@@ -26,14 +28,14 @@ export async function registerAdminAuthRoutes(app: FastifyInstance, config: Conf
       },
     },
     async request => {
-      const { username, password } = request.body as { username: string; password: string };
-      return { code: 0, message: 'ok', data: await loginAdmin(config, pool, redis, username, password) };
+      const { username, password } = request.body;
+      return { code: 0, message: 'ok', data: await loginAdmin(config, pool, redis, username, password) } as const;
     },
   );
 
-  app.post('/auth/logout', { config: { authentication: 'public' } }, async request => {
+  routes.post('/auth/logout', { config: { authentication: 'public' }, schema: { response: { 200: okResponse } } }, async request => {
     const token = authorizationToken(request.headers.authorization);
     if (token) await destroySession(redis, token);
-    return { code: 0 };
+    return { code: 0 } as const;
   });
 }

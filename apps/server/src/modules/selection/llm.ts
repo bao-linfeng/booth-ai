@@ -172,7 +172,7 @@ export function mergeExtraction(
     clarifications.push({ field: 'text', reason: 'NEEDS_CONFIRMATION', question: message(locale, 'llmUnhandled'), candidates: [] });
   return {
     ...rules,
-    status: clarifications.length ? 'needs_clarification' : 'ready',
+    status: clarifications.length ? ('needs_clarification' as const) : ('ready' as const),
     requirement,
     parser: 'llm',
     degraded: false,

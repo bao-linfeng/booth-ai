@@ -1,4 +1,4 @@
-import type { JsonSchemaToTsProvider } from '@fastify/type-provider-json-schema-to-ts';
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { clientUserId } from '../../authentication.js';
@@ -19,7 +19,7 @@ const signInSchema = {
 } as const;
 
 export async function registerClientCreditRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
-  const routes = app.withTypeProvider<JsonSchemaToTsProvider>();
+  const routes = app.withTypeProvider<TypeProvider>();
   routes.get(
     '/credits/balance',
     { schema: { tags: ['client-credits'], response: { 200: successResponse(balanceSchema) } } },

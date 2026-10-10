@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
 import type { Queue } from 'bullmq';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
 import sharp from 'sharp';
@@ -504,7 +504,7 @@ test(
         (await pool.query('SELECT SUM(amount)::int AS balance FROM credit_transactions WHERE user_id=$1', [owner])).rows[0].balance,
         50,
       );
-      const app = Fastify();
+      const app = contractApp();
       const redis = {
         get: async () =>
           JSON.stringify({ site: 'admin', localId: operatorId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }),

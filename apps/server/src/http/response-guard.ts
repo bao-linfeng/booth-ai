@@ -2,11 +2,15 @@ import { isDeepStrictEqual } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 
 /**
- * 开发与测试环境下比对 JSON 响应序列化前后的内容：response schema 未声明的字段会被 Fastify 丢弃、类型不符会被强制转换，
- * 这里把这类契约漂移暴露出来。test 环境抛错让路由测试失败；development 只记录错误日志。生产环境不注册。
+ * 比对 JSON 响应序列化前后的内容：response schema 未声明的字段会被 Fastify 丢弃、类型不符会被强制转换，这里把这类契约漂移暴露出来。
+ * - throw（test）：抛错，路由测试失败。
+ * - log（development）：记录错误日志，响应照常。
+ * - repair（production）：记录错误日志，并改为发送序列化前的原始 JSON，响应 schema 写漏时不让客户端丢数据。
  * 只比较对象响应，文件流、Buffer 与字符串原样跳过。
  */
-export function registerResponseGuard(app: FastifyInstance, mode: 'throw' | 'log') {
+export type ResponseGuardMode = 'throw' | 'log' | 'repair';
+
+export function registerResponseGuard(app: FastifyInstance, mode: ResponseGuardMode) {
   const before = new WeakMap<object, unknown>();
   app.addHook('preSerialization', async (request, _reply, payload) => {
     if (payload && typeof payload === 'object' && !Buffer.isBuffer(payload)) before.set(request, JSON.parse(JSON.stringify(payload)));
@@ -28,7 +32,7 @@ export function registerResponseGuard(app: FastifyInstance, mode: 'throw' | 'log
     if (mode === 'throw')
       throw new Error(`Response schema changed the payload of ${route} (status ${reply.statusCode}): ${paths.join(', ')}`);
     request.log.error({ route, statusCode: reply.statusCode, paths }, 'Response schema changed the payload; declare the missing fields');
-    return payload;
+    return mode === 'repair' ? JSON.stringify(expected) : payload;
   });
 }
 

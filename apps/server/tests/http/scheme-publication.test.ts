@@ -4,6 +4,7 @@ import type pg from 'pg';
 import { createScheme, updateScheme } from '../../src/modules/schemes/service.js';
 import { commitImport } from '../../src/modules/schemes/imports/commit.js';
 import { validateSchemeDictionaryIds } from '../../src/modules/schemes/dictionary-ids.js';
+import { contractApp } from '../helpers/http-app.js';
 
 const adminId = '00000000-0000-4000-8000-000000000001';
 
@@ -40,9 +41,8 @@ test('scheme CRUD rejects fractional millimeters and conflicting area before wri
 });
 
 test('draft route schema excludes publication and verification writes', async () => {
-  const { default: Fastify } = await import('fastify');
   const { registerAdminSchemesRoutes } = await import('../../src/http/admin/schemes/index.js');
-  const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
+  const app = contractApp();
   await registerAdminSchemesRoutes(app, {
     query: async () => {
       throw new Error('must not access database');

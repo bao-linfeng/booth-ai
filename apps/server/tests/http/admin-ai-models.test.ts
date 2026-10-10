@@ -16,6 +16,9 @@ async function schemaApp(t: TestContext, kind: ModelKind = 'text') {
   app.addHook('onRoute', route => {
     if (route.url !== '/ai-models' && route.url !== '/ai-models/:id') return;
     if (route.method !== 'POST' && route.method !== 'PUT') return;
+    // 替换后的 handler 直接返回规范化后的参数，不再符合路由的成功响应 schema，只保留请求校验
+    const { response: _response, ...schema } = route.schema ?? {};
+    route.schema = schema;
     route.handler = async request => {
       const body = request.body as { params: Record<string, unknown> };
       received.push(structuredClone(body.params));

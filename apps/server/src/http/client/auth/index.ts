@@ -1,3 +1,4 @@
+import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
@@ -7,11 +8,11 @@ import { getProvidedVisitorId } from '../selection/identity.js';
 import { signInClient, signInClientWithToken } from '../../../modules/client-sign-in/service.js';
 import { authorizationToken } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
-import { currentUserSchema, sessionSchema, successResponse } from '../../schemas.js';
-import type { UserType } from '../../../modules/identity/service.js';
+import { currentUserSchema, okResponse, sessionSchema, successResponse } from '../../schemas.js';
 
 export async function registerClientAuthRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.post(
+  const routes = app.withTypeProvider<TypeProvider>();
+  routes.post(
     '/auth/login',
     {
       config: { authentication: 'public' },
@@ -32,13 +33,13 @@ export async function registerClientAuthRoutes(app: FastifyInstance, config: Con
       },
     },
     async request => {
-      const { username, password } = request.body as { username: string; password: string };
+      const { username, password } = request.body;
       const data = await signInClient(config, pool, redis, username, password, getProvidedVisitorId(request));
-      return { code: 0, message: 'ok', data };
+      return { code: 0, message: 'ok', data } as const;
     },
   );
 
-  app.post(
+  routes.post(
     '/auth/sync',
     {
       config: { authentication: 'public' },
@@ -60,15 +61,15 @@ export async function registerClientAuthRoutes(app: FastifyInstance, config: Con
       },
     },
     async request => {
-      const { username, token, type } = request.body as { username: string; token: string; type: UserType };
+      const { username, token, type } = request.body;
       const data = await signInClientWithToken(config, pool, redis, username, token, getProvidedVisitorId(request), type);
-      return { code: 0, message: 'ok', data };
+      return { code: 0, message: 'ok', data } as const;
     },
   );
 
-  app.post('/auth/logout', { config: { authentication: 'public' } }, async request => {
+  routes.post('/auth/logout', { config: { authentication: 'public' }, schema: { response: { 200: okResponse } } }, async request => {
     const token = authorizationToken(request.headers.authorization);
     if (token) await destroySession(redis, token);
-    return { code: 0 };
+    return { code: 0 } as const;
   });
 }

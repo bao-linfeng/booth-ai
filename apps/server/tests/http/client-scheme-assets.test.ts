@@ -4,7 +4,7 @@ import type { TestContext } from 'node:test';
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 import type pg from 'pg';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type { createStorage } from '../../src/infra/storage.js';
 import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
@@ -57,7 +57,7 @@ function setup(options: { published?: boolean; empty?: boolean } = {}) {
 
 test('published scheme deliverables are accessible anonymously without exposing object keys', async t => {
   const deps = setup();
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   await registerClientSchemeAssetRoutes(app, deps.pool, deps.storage);
   const anonymous = await app.inject('/schemes/S-1/drawings');
@@ -316,7 +316,7 @@ test('changed membership, versions, ordering or publication during packaging dis
 
 test('anonymous downloads validate publication and asset membership', async t => {
   const deps = setup();
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   await registerClientSchemeAssetRoutes(app, deps.pool, deps.storage);
   assert.equal((await app.inject('/schemes/S-1/model/download')).json().data.filename, '平面图.pdf');
@@ -327,13 +327,13 @@ test('anonymous downloads validate publication and asset membership', async t =>
   assert.equal(preview.json().data.mimeType, 'application/pdf');
   assert.equal((await app.inject(`/schemes/S-1/drawings/aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa/download`)).statusCode, 404);
   const unpublished = setup({ published: false });
-  const unpublishedApp = Fastify();
+  const unpublishedApp = contractApp();
   t.after(() => unpublishedApp.close());
   await registerClientSchemeAssetRoutes(unpublishedApp, unpublished.pool, unpublished.storage);
   assert.equal((await unpublishedApp.inject('/schemes/S-1/drawings')).statusCode, 404);
   assert.equal((await unpublishedApp.inject(`/schemes/S-1/drawings/${assetId}/download`)).statusCode, 404);
   const missing = setup({ empty: true });
-  const missingApp = Fastify();
+  const missingApp = contractApp();
   t.after(() => missingApp.close());
   await registerClientSchemeAssetRoutes(missingApp, missing.pool, missing.storage);
   assert.deepEqual((await missingApp.inject('/schemes/S-1/artworks')).json().data.items, []);

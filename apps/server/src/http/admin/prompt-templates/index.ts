@@ -1,43 +1,121 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
+import type { TypeProvider } from '../../type-provider.js';
 import { adminUserId } from '../../authentication.js';
 import {
   createPromptTemplate,
   getPromptTemplate,
   listPromptTemplates,
   updatePromptTemplate,
-  type CreateTemplateInput,
-  type UpdateTemplateInput,
 } from '../../../modules/prompts/management-service.js';
-import { promptDefinitions, previewPrompt, type PreviewInput } from '../../../modules/prompt-preview/service.js';
+import { promptDefinitions, previewPrompt } from '../../../modules/prompt-preview/service.js';
 import { PROMPT_PURPOSES } from '../../../modules/prompts/template.js';
 import { domainError } from '../../../lib/errors.js';
+import { successResponse } from '../../schemas.js';
 import { requireAdminPermission } from '../authorization.js';
 
-interface ListQuery {
-  purpose?: string;
-  industryId?: string;
-  styleId?: string;
-  enabled?: boolean;
-  page?: number;
-  pageSize?: number;
-}
-interface IdParams {
-  id: string;
-}
-
 const tags = ['admin-prompt-templates'];
-const idSchema = { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'string', format: 'uuid' } } };
-const bodySchema = { type: 'string', minLength: 1, maxLength: 30000 };
-const purposeSchema = { type: 'string', enum: [...PROMPT_PURPOSES] };
-const uuidSchema = { type: 'string', format: 'uuid' };
+const idSchema = {
+  type: 'object',
+  required: ['id'],
+  additionalProperties: false,
+  properties: { id: { type: 'string', format: 'uuid' } },
+} as const;
+const bodySchema = { type: 'string', minLength: 1, maxLength: 30000 } as const;
+const purposeSchema = { type: 'string', enum: PROMPT_PURPOSES } as const;
+const uuidSchema = { type: 'string', format: 'uuid' } as const;
+const string = { type: 'string' } as const;
+const strings = { type: 'array', items: string } as const;
+const nullableString = { type: ['string', 'null'] } as const;
+
+const templateSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'purpose', 'industryId', 'styleId', 'body', 'variables', 'enabled', 'revision', 'createdAt', 'updatedAt'],
+  properties: {
+    id: string,
+    purpose: purposeSchema,
+    industryId: nullableString,
+    styleId: nullableString,
+    body: string,
+    variables: strings,
+    enabled: { type: 'boolean' },
+    revision: { type: 'integer' },
+    createdAt: string,
+    updatedAt: string,
+  },
+} as const;
+
+const definitionsSchema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['purpose', 'label', 'defaultBody', 'defaultVersion', 'fixedInstructions', 'variables', 'scope', 'inputs'],
+    properties: {
+      purpose: purposeSchema,
+      label: string,
+      defaultBody: string,
+      defaultVersion: { type: 'integer' },
+      fixedInstructions: string,
+      variables: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['name', 'label', 'source', 'example', 'fallback'],
+          properties: { name: string, label: string, source: string, example: string, fallback: string },
+        },
+      },
+      scope: string,
+      inputs: strings,
+    },
+  },
+} as const;
+
+const previewSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['variables', 'issues', 'messages', 'directionPrompts', 'attachments'],
+  properties: {
+    variables: strings,
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['code', 'message'],
+        properties: { code: string, message: string, variable: string, offset: { type: 'integer' } },
+      },
+    },
+    messages: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: false, required: ['role', 'content'], properties: { role: string, content: string } },
+    },
+    directionPrompts: {
+      anyOf: [
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['front', 'back', 'left', 'right'],
+          properties: { front: string, back: string, left: string, right: string },
+        },
+        { type: 'null' },
+      ],
+    },
+    attachments: strings,
+    dictionaryVersion: string,
+  },
+} as const;
 
 export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
-  app.get('/prompt-templates/definitions', { config: { permissions: ['prompts.read'] }, schema: { tags } }, async () => ({
-    code: 0,
-    data: promptDefinitions(),
-  }));
-  app.post<{ Body: PreviewInput }>(
+  const routes = app.withTypeProvider<TypeProvider>();
+  routes.get(
+    '/prompt-templates/definitions',
+    { config: { permissions: ['prompts.read'] }, schema: { tags, response: { 200: successResponse(definitionsSchema) } } },
+    async () => ({ code: 0, data: promptDefinitions() }) as const,
+  );
+  routes.post(
     '/prompt-templates/preview',
     {
       config: { permissions: ['prompts.preview'] },
@@ -63,11 +141,12 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
             },
           },
         },
+        response: { 200: successResponse(previewSchema) },
       },
     },
-    async request => ({ code: 0, data: await previewPrompt(pool, request.body) }),
+    async request => ({ code: 0, data: await previewPrompt(pool, request.body) }) as const,
   );
-  app.get<{ Querystring: ListQuery }>(
+  routes.get(
     '/prompt-templates',
     {
       config: { permissions: ['prompts.read'] },
@@ -85,19 +164,28 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
             pageSize: { type: 'integer', minimum: 1, maximum: 100 },
           },
         },
+        response: {
+          200: successResponse({
+            type: 'object',
+            additionalProperties: false,
+            required: ['items', 'total'],
+            properties: { items: { type: 'array', items: templateSchema }, total: { type: 'integer' } },
+          }),
+        },
       },
     },
-    async request => ({
-      code: 0,
-      data: await listPromptTemplates(pool, {
-        ...request.query,
-        page: request.query.page ?? 1,
-        pageSize: request.query.pageSize ?? 20,
-      }),
-    }),
+    async request =>
+      ({
+        code: 0,
+        data: await listPromptTemplates(pool, {
+          ...request.query,
+          page: request.query.page ?? 1,
+          pageSize: request.query.pageSize ?? 20,
+        }),
+      }) as const,
   );
 
-  app.post<{ Body: CreateTemplateInput }>(
+  routes.post(
     '/prompt-templates',
     {
       config: { permissions: ['prompts.create'] },
@@ -114,22 +202,23 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
             body: bodySchema,
           },
         },
+        response: { 200: successResponse(templateSchema) },
       },
     },
-    async request => ({ code: 0, data: await createPromptTemplate(pool, request.body, adminUserId(request)) }),
+    async request => ({ code: 0, data: await createPromptTemplate(pool, request.body, adminUserId(request)) }) as const,
   );
 
-  app.get<{ Params: IdParams }>(
+  routes.get(
     '/prompt-templates/:id',
-    { config: { permissions: ['prompts.read'] }, schema: { tags, params: idSchema } },
+    { config: { permissions: ['prompts.read'] }, schema: { tags, params: idSchema, response: { 200: successResponse(templateSchema) } } },
     async request => {
       const template = await getPromptTemplate(pool, request.params.id);
       if (!template) throw domainError('RESOURCE_NOT_FOUND', 404);
-      return { code: 0, data: template };
+      return { code: 0, data: template } as const;
     },
   );
 
-  app.patch<{ Params: IdParams; Body: UpdateTemplateInput }>(
+  routes.patch(
     '/prompt-templates/:id',
     {
       config: { permissions: ['prompts.update', 'prompts.enable', 'prompts.disable'] },
@@ -146,6 +235,7 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
             expectedRevision: { type: 'integer', minimum: 1 },
           },
         },
+        response: { 200: successResponse(templateSchema) },
       },
       // 字段级权限：修改正文需要 update，启用 / 停用分别需要 enable / disable
       preHandler: async request => {
@@ -155,6 +245,6 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
         if (body.enabled !== undefined) requireAdminPermission(request, body.enabled ? 'prompts.enable' : 'prompts.disable');
       },
     },
-    async request => ({ code: 0, data: await updatePromptTemplate(pool, request.params.id, request.body, adminUserId(request)) }),
+    async request => ({ code: 0, data: await updatePromptTemplate(pool, request.params.id, request.body, adminUserId(request)) }) as const,
   );
 }
