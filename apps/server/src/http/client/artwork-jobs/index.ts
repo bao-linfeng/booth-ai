@@ -69,7 +69,8 @@ export async function registerArtworkJobRoutes(
     reply.header('Cache-Control', 'private, no-store');
     return { code: 0, data: await getArtworkJob(pool, storage, clientUserId(request), request.params.jobId) } as const;
   });
-  routes.get('/artwork-jobs/:jobId/download', { schema: artworkDownloadSchema }, async (request, reply) => {
+  // 下载返回 zip / png 文件，不走类型化的 JSON 响应
+  app.get<{ Params: { jobId: string } }>('/artwork-jobs/:jobId/download', { schema: artworkDownloadSchema }, async (request, reply) => {
     const archive = await artworkArchive(pool, storage, clientUserId(request), request.params.jobId);
     return reply
       .header('Cache-Control', 'private, no-store')
@@ -77,13 +78,17 @@ export async function registerArtworkJobRoutes(
       .header('Content-Disposition', `attachment; filename="artworks.zip"; filename*=UTF-8''${encodeURIComponent(archive.filename)}`)
       .send(archive.stream);
   });
-  routes.get('/artwork-jobs/:jobId/assets/:assetId/download', { schema: artworkAssetSchema }, async (request, reply) => {
-    const userId = clientUserId(request);
-    const { bytes, filename } = await downloadArtworkAsset(pool, storage, userId, request.params.jobId, request.params.assetId);
-    return reply
-      .header('Cache-Control', 'private, no-store')
-      .type('image/png')
-      .header('Content-Disposition', `attachment; filename="${filename}"`)
-      .send(bytes);
-  });
+  app.get<{ Params: { jobId: string; assetId: string } }>(
+    '/artwork-jobs/:jobId/assets/:assetId/download',
+    { schema: artworkAssetSchema },
+    async (request, reply) => {
+      const userId = clientUserId(request);
+      const { bytes, filename } = await downloadArtworkAsset(pool, storage, userId, request.params.jobId, request.params.assetId);
+      return reply
+        .header('Cache-Control', 'private, no-store')
+        .type('image/png')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(bytes);
+    },
+  );
 }

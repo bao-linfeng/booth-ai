@@ -1,8 +1,8 @@
 import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { fileResponse, measurementKindSchema } from '../../bom-schemas.js';
-import { successResponse } from '../../schemas.js';
+import { measurementKindSchema } from '../../bom-schemas.js';
+import { fileResponse, successResponse } from '../../schemas.js';
 import { bomError } from '../../../modules/schemes/bill-of-materials/errors.js';
 import { getBom } from '../../../modules/schemes/bill-of-materials/repository.js';
 import { assertCurrentPublishedBom, assertSchemePublished } from '../../../modules/schemes/bill-of-materials/publication.js';

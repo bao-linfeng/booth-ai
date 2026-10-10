@@ -3,8 +3,7 @@ import type pg from 'pg';
 import type { createStorage } from '../../../infra/storage.js';
 import type { TypeProvider } from '../../type-provider.js';
 import { adminUserId } from '../../authentication.js';
-import { fileResponse } from '../../bom-schemas.js';
-import { successResponse } from '../../schemas.js';
+import { fileResponse, successResponse } from '../../schemas.js';
 import {
   assignProject,
   followUpProject,

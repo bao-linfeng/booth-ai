@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import type pg from 'pg';
 import sharp from 'sharp';
-import Fastify from 'fastify';
 import multipart from '@fastify/multipart';
 import type { createStorage } from '../../src/infra/storage.js';
 import type { Principal } from '../../src/modules/identity/principal.js';
@@ -12,6 +11,7 @@ import { uploadAsset, uploadAssetVersion, type AssetUploadFile } from '../../src
 import { createAssetWithVersion, updateAsset } from '../../src/modules/assets/service.js';
 import { validateAssetMetadata } from '../../src/modules/assets/metadata.js';
 import { allPermissionCodes } from '../../src/modules/identity/permissions.js';
+import { contractApp } from '../helpers/http-app.js';
 
 function dependencies(
   options: {
@@ -318,9 +318,14 @@ function multipartBody(fields: Record<string, string>, files: AssetUploadFile[],
 
 test('admin upload routes share multipart parsing for either field order and reject invalid requests before writes', async t => {
   const deps = dependencies();
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   await app.register(multipart);
+  // 错误契约只返回通用文案，按抛出的异常信息断言具体的校验分支
+  let errorMessage: string | undefined;
+  app.addHook('onError', async (_request, _reply, error) => {
+    errorMessage = error.message;
+  });
   app.decorateRequest('principal', null);
   app.addHook('onRequest', async request => {
     request.principal = { site: 'admin', localId: 'admin-id', permissions: allPermissionCodes } as Principal;
@@ -375,6 +380,7 @@ test('admin upload routes share multipart parsing for either field order and rej
   ];
   for (const { url, fields, files, message } of invalidRequests) {
     deps.events.length = 0;
+    errorMessage = undefined;
     const response = await app.inject({
       method: 'POST',
       url,
@@ -382,7 +388,7 @@ test('admin upload routes share multipart parsing for either field order and rej
       payload: multipartBody(fields, files),
     });
     assert.equal(response.statusCode, 400, response.body);
-    assert.equal(response.json().message, message);
+    assert.equal(errorMessage, message);
     assert.ok(
       deps.events.every(sql => sql.includes('FROM scheme_baseline_assets sa')),
       'invalid requests must not write to storage or the database',
@@ -392,7 +398,7 @@ test('admin upload routes share multipart parsing for either field order and rej
 
 test('deleting a rendering together with its paired masks also requires the mask delete permission', async t => {
   const deps = dependencies();
-  const app = Fastify();
+  const app = contractApp();
   t.after(() => app.close());
   app.decorateRequest('principal', null);
   app.addHook('onRequest', async request => {
@@ -456,7 +462,7 @@ test('mask pairing candidates list renderings with size, order and occupying mas
     },
   };
   async function request(permissions: string[]) {
-    const app = Fastify();
+    const app = contractApp();
     t.after(() => app.close());
     app.decorateRequest('principal', null);
     app.addHook('onRequest', async req => {

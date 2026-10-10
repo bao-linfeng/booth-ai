@@ -220,10 +220,11 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - 新增业务路由：在对应 `src/http/{admin|client}/<功能>/index.ts` 实现并在门户 `index.ts` 注册；复杂请求/响应契约可拆到同目录 `schema.ts`。不要再新增 `*.controller.ts` 这类平铺文件
 - Controller 保持薄：只做解析和响应，业务逻辑放 service 层；`src/http` 内不得直接执行 SQL 或开启事务（边界测试检查）
 - 管理端路由权限在路由配置就近声明：`config: { permissions: ['schemes.read'] }`（类型为 `PermissionCode`，拼错会编译失败）。语义是任一权限码已授予即可进入，`[]` 表示任何已登录管理员；未声明的非公开路由一律 403。hook 只检查声明的权限码本身，不复核依赖闭包；需要依赖闭包或细粒度判断（资产类型、修改字段、对象归属）时，在 handler / route preHandler 里调用 `requireAdminPermission`。依赖闭包由角色保存校验和 `admin-roles-integration` 的迁移断言保证
-- 新写或改动的路由用 `app.withTypeProvider<JsonSchemaToTsProvider>()` 注册，schema 写成 `as const`。这样请求类型从 schema 推导，不要再手写 `<{ Body: ... }>` 泛型；业务函数的入参类型会自动和 schema 互相校验。schema 辅助函数要返回字面量类型，参考 `modules/projects/schema.ts` 的 `text()`。已迁移的模块：client 端积分、询价、人工需求、换主题、四向图、我的项目
+- 路由一律用 `app.withTypeProvider<TypeProvider>()` 注册（`src/http/type-provider.ts`，`date-time` 字段的返回值可以是 `Date` 或字符串），schema 写成 `as const`。这样请求类型从 schema 推导，不要再手写 `<{ Body: ... }>` 泛型；业务函数的入参类型会自动和 schema 互相校验。schema 辅助函数要返回字面量类型，参考 `modules/projects/schema.ts` 的 `text()`。client 与管理端路由已全部迁移；例外是返回 Buffer / 文件流的下载接口，它们用未类型化的 `app.get<{ Params }>` 注册，并声明 `response: fileResponse(...)`
 - 成功响应 schema 用 `src/http/schemas.ts` 的 `successResponse(...)`，对象一律写 `additionalProperties: false`；handler 返回值会按 schema 做类型检查（返回 `as const` 才能匹配 `code: 0`）
   - 只把一定存在的字段列进 `required`，缺字段时序列化会抛错并返回 500。幂等重放返回的历史回执、旧快照里的结构不要设 required；结构随版本变化的快照片段用不带 type 的 schema 原样透传
-  - 非生产环境注册了 `src/http/response-guard.ts`：序列化丢字段或改类型时，test 环境直接 500、development 记错误日志。路由测试用 `tests/helpers/http-app.ts` 的 `contractApp()` 或 `buildApp`，才能让守卫生效
+  - `src/http/response-guard.ts` 比对序列化前后的 JSON：丢字段或改类型时，test 环境直接 500，development 记错误日志，production 记错误日志并改发原始 JSON。路由测试用 `tests/helpers/http-app.ts` 的 `contractApp()` 或 `buildApp`，才能让守卫生效
+  - `tests/http/app.test.ts` 检查每条 `/api/v1` 路由都声明了 2xx/3xx 响应 schema，只豁免 SSE 的 `/events`
 - 错误响应 schema 由 `src/http/errors.ts` 自动挂到所有路由，路由不要再自定义 errorHandler 或手写错误体
 - 共享业务放 `src/modules/` 领域模块，禁止导入 HTTP 门户、Fastify 或 Worker 调度实现；`infra/` 禁止反向导入业务模块
 - 业务代码按领域放进 `src/modules/<领域>/`，不要按门户（admin/client/su）建目录

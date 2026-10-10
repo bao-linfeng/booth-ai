@@ -63,7 +63,3 @@ export const bomRecordSchema = {
     updatedAt: { type: 'string' },
   },
 } as const;
-
-/** 文件下载响应：二进制内容，不经 JSON 序列化 */
-export const fileResponse = (contentType: string) =>
-  ({ 200: { description: `文件内容（${contentType}）`, type: 'string', format: 'binary' } }) as const;

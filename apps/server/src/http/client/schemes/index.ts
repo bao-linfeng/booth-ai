@@ -2,8 +2,7 @@ import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { createStorage } from '../../../infra/storage.js';
-import { fileResponse } from '../../bom-schemas.js';
-import { successResponse } from '../../schemas.js';
+import { fileResponse, successResponse } from '../../schemas.js';
 import {
   buildDeliverableArchive,
   getDeliverableSet,

@@ -544,3 +544,20 @@ test('requirements parse inject uses the enabled filter template, model messages
   );
   assert.deepEqual(snapshot.messages, requestBody.messages);
 });
+
+test('every business route declares a success response schema except SSE streams', async t => {
+  const app = await buildApp(config, healthy, { pool: {}, redis: {}, storage: {} } as never);
+  t.after(() => app.close());
+  const spec = (await app.inject('/openapi.json')).json<{
+    paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>;
+  }>();
+  const undeclared = Object.entries(spec.paths).flatMap(([url, methods]) =>
+    url.startsWith('/api/v1/') && !url.endsWith('/events')
+      ? Object.entries(methods)
+          .filter(([, operation]) => !Object.keys(operation.responses ?? {}).some(code => /^[23]/.test(code)))
+          .map(([method]) => `${method.toUpperCase()} ${url}`)
+      : [],
+  );
+  // 未声明响应 schema 时字段不受契约约束，前端类型也无从生成
+  assert.deepEqual(undeclared, []);
+});

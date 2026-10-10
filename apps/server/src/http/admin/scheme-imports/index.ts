@@ -7,8 +7,7 @@ import { commitImport } from '../../../modules/schemes/imports/commit.js';
 import { previewImport } from '../../../modules/schemes/imports/preview.js';
 import { buildImportTemplate } from '../../../modules/schemes/imports/template.js';
 import { domainError } from '../../../lib/errors.js';
-import { fileResponse } from '../../bom-schemas.js';
-import { successResponse } from '../../schemas.js';
+import { fileResponse, successResponse } from '../../schemas.js';
 
 const string = { type: 'string' } as const;
 const nullableString = { type: ['string', 'null'] } as const;

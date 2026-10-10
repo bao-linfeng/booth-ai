@@ -1,4 +1,4 @@
-import { successResponse } from '../../schemas.js';
+import { fileResponse, successResponse } from '../../schemas.js';
 import { eventsTicketSchema, generationCreditsSchema } from '../theme-jobs/schema.js';
 
 const uuid = { type: 'string', format: 'uuid' } as const;
@@ -100,7 +100,7 @@ export const artworkJobSchema = {
     }),
   },
 } as const;
-export const artworkDownloadSchema = { params: jobParams } as const;
+export const artworkDownloadSchema = { params: jobParams, response: fileResponse('zip') } as const;
 export const artworkTicketSchema = { params: jobParams, ...eventsTicketSchema } as const;
 export const artworkEventsSchema = {
   params: jobParams,
@@ -170,4 +170,5 @@ export const artworkAssetSchema = {
     required: ['jobId', 'assetId'],
     properties: { jobId: uuid, assetId: uuid },
   },
+  response: fileResponse('png'),
 } as const;
