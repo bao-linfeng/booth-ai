@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
 import { readUploadedFile, workbookUploadMaxBytes } from '../../uploads.js';
@@ -13,7 +12,7 @@ interface ImportParams {
   importId: string;
 }
 
-export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
+export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   app.get('/scheme-imports/template', { config: { permissions: ['schemes.import'] },
     schema: { tags: ['admin-scheme-imports'], summary: '下载与当前解析规则和启用字典一致的方案导入模板' },
   }, async (_request, reply) => {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { EventEmitter, once } from 'node:events';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import Fastify from 'fastify';
 import type { Redis } from 'ioredis';

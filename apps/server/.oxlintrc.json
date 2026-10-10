@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": { "correctness": "error" },
+  "env": { "node": true, "es2024": true },
+  "ignorePatterns": ["dist", "coverage", "node_modules", "migrations"],
+  "rules": {
+    "no-control-regex": "off",
+    "unicorn/no-empty-file": "off"
+  }
+}

@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
 import { createReview, publishScheme, unpublishScheme, type CreateReviewInput } from '../../../modules/schemes/reviews.js';
@@ -29,7 +28,7 @@ function decodedCode(params: CodeParams): string {
   }
 }
 
-export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
+export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   app.get('/schemes/:code/readiness', { config: { permissions: ['schemes.readiness'] }, schema: { tags: ['admin-reviews'], params: codeParams } }, async request => {
     return { code: 0, data: mapReadinessResponse(await getSchemeReadiness(pool, decodedCode(request.params as CodeParams))) };
   });

@@ -104,7 +104,7 @@ test('theme result cache: actual SQL, provider calls, free reuse, isolation, ref
     globalThis.fetch = async (input, init) => {
       const url = String(input);
       assert.equal(url, 'https://api.openai.com/v1/images/edits');
-      assert.equal((init?.body as FormData).get('prompt'), acceptedPrompt);
+      assert.equal((init!.body as FormData).get('prompt'), acceptedPrompt);
       providerCalls++;
       return Response.json({ data: [{ b64_json: image.toString('base64') }] });
     };

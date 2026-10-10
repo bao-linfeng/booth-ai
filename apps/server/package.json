@@ -12,6 +12,9 @@
     "start:api": "node dist/api.js",
     "start:worker": "node dist/worker.js",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint": "oxlint --deny-warnings src tests",
+    "format": "oxfmt src tests",
+    "format:check": "oxfmt --check src tests",
     "build": "tsc",
     "test": "tsx --test \"tests/**/*.test.ts\"",
     "migrate": "tsx src/scripts/migrate.ts",
@@ -39,6 +42,8 @@
   "devDependencies": {
     "@types/node": "24.13.6",
     "@types/pg": "8.23.1",
+    "oxfmt": "0.65.0",
+    "oxlint": "1.87.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3"
   }

@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import type { Redis } from 'ioredis';
 import type { createStorage } from '../../../infra/storage.js';
 import { adminUserId } from '../../authentication.js';
 import {
@@ -31,7 +30,7 @@ const listQuerySchema = {
 const revisionProperty = { revision: { type: 'integer', minimum: 1 } };
 const assetVersionParams = { ...projectParams, required: ['projectId', 'versionId'], properties: { ...projectParams.properties, versionId: uuid } };
 
-export async function registerAdminProjectRoutes(app: FastifyInstance, pool: pg.Pool, _redis: Redis, storage: ReturnType<typeof createStorage>) {
+export async function registerAdminProjectRoutes(app: FastifyInstance, pool: pg.Pool, storage: ReturnType<typeof createStorage>) {
   await app.register(async routes => {
     routes.addHook('onRequest', async (request, reply) => {
       reply.header('Cache-Control', 'private, no-store');

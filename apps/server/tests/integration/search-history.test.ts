@@ -117,7 +117,7 @@ test('search history does not downgrade an invalid session to browser identity',
 test('visitor query excludes records written under a logged-in user (B-08)', async t => {
   const visitorId = 'v_shared_browser_abc';
   const capturedSqls: string[] = [];
-  const pool = { query: async (sql: string, params: unknown[]) => {
+  const pool = { query: async (sql: string) => {
     capturedSqls.push(sql);
     if (sql.includes('count(*)')) return { rows: [{ total: 0 }] };
     if (sql.includes('FROM selection_searches')) return { rows: [] };

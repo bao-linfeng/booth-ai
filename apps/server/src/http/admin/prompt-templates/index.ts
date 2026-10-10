@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
 import { createPromptTemplate, getPromptTemplate, listPromptTemplates, updatePromptTemplate,
@@ -18,7 +17,7 @@ const bodySchema = { type: 'string', minLength: 1, maxLength: 30000 };
 const purposeSchema = { type: 'string', enum: [...PROMPT_PURPOSES] };
 const uuidSchema = { type: 'string', format: 'uuid' };
 
-export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
+export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   app.get('/prompt-templates/definitions', { config: { permissions: ['prompts.read'] }, schema: { tags } }, async () => ({ code: 0, data: promptDefinitions() }));
   app.post<{ Body: PreviewInput }>('/prompt-templates/preview', { config: { permissions: ['prompts.preview'] },
     schema: { tags, body: { type: 'object', additionalProperties: false, required: ['purpose', 'body'], properties: {

@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
 import { getUserCreditBalance, listCreditTransactions, rechargeCredits, type CreditKind } from '../../../modules/credits/management-service.js';
@@ -22,7 +21,7 @@ interface RechargeBody {
 
 const userIdSchema = { type: 'string', format: 'uuid' };
 
-export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
+export async function registerAdminCreditRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   app.get<{ Querystring: CreditListQuery }>('/credits', { config: { permissions: ['credits.read'] }, schema: {
     tags: ['admin-credits'],
     querystring: { type: 'object', additionalProperties: false, properties: {

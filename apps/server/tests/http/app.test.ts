@@ -199,7 +199,7 @@ test('prompt template routes expose definitions, preview real builders, and isol
   const redis = { get: async (key: string) => key.startsWith('session:') ? JSON.stringify({ site: 'admin', localId: 'admin-id', externalUserId: 1, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 60 }) : null } as never;
   const app = await buildApp(config, healthy, { pool, redis, storage: {} } as never);
   t.after(() => app.close());
-  await registerAdminPromptTemplateRoutes(app, pool, redis);
+  await registerAdminPromptTemplateRoutes(app, pool);
 
   const definitions = await app.inject({ url: '/api/v1/admin/prompt-templates/definitions', headers: { authorization: 'Bearer test-token' } });
   assert.equal(definitions.statusCode, 200);

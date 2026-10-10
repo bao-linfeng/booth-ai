@@ -70,7 +70,7 @@ test('theme worker persists generation, accepts real images and settles once des
   t.after(() => { globalThis.fetch = oldFetch; });
   globalThis.fetch = async (input, init) => {
     assert.equal(String(input), 'https://api.openai.com/v1/images/edits');
-    assert.ok(init?.signal); assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer api-key');
+    assert.ok(init!.signal); assert.equal((init!.headers as Record<string, string>).Authorization, 'Bearer api-key');
     const body = init?.body as FormData;
     assert.equal(body.get('n'), '2'); assert.match(String(body.get('prompt')), /保持原图相机角度/);
     calls++; return Response.json({ data: [1, 2].map(() => ({ b64_json: f.image.toString('base64') })) });
@@ -162,7 +162,7 @@ test('theme worker sends the accepted prompt unchanged', async t => {
   const f = await fixture(1, prompt); const oldFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = oldFetch; });
   globalThis.fetch = async (_input, init) => {
-    assert.equal((init?.body as FormData).get('prompt'), prompt);
+    assert.equal((init!.body as FormData).get('prompt'), prompt);
     return Response.json({ data: [{ b64_json: f.image.toString('base64') }] });
   };
   await processThemeJob(f.pool, f.jobId, config, f.storage as never);

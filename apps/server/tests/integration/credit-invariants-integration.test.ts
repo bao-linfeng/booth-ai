@@ -364,7 +364,7 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
     const app = Fastify();
     const redis = { get: async () => JSON.stringify({ site: 'admin', localId: operatorId, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }) } as unknown as Redis;
     registerAuthentication(app, pool, redis, 'admin');
-    await registerAdminCreditRoutes(app, pool, redis);
+    await registerAdminCreditRoutes(app, pool);
     try {
       const { operatorId: _operator, ...body } = input;
       const options = { method: 'POST' as const, url: '/credits/recharge', headers: { authorization: 'Bearer test' } };

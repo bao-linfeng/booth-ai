@@ -1,6 +1,6 @@
 import { assertPublicEndpoint } from '../endpoint.js';
 import { fetchModelListing, ModelDiscoveryError } from '../discovery.js';
-import { ImageGenerationError, OUTPUT_ASPECT, imageMimeType, providerEndpoint, providerJson } from '../image.js';
+import { ImageGenerationError, imageMimeType, providerEndpoint, providerJson } from '../image.js';
 import type { DiscoveredModel, ImageModelAdapter, ParamField, TextModelAdapter } from '../types.js';
 
 // OpenAI and every service exposing the same REST surface (DeepSeek, DashScope compatible mode, relays).

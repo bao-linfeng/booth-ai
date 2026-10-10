@@ -5,7 +5,6 @@ import type pg from 'pg';
 import sharp from 'sharp';
 import Fastify from 'fastify';
 import multipart from '@fastify/multipart';
-import type { Redis } from 'ioredis';
 import type { createStorage } from '../../src/infra/storage.js';
 import type { Principal } from '../../src/modules/identity/principal.js';
 import { registerAdminAssetsRoutes } from '../../src/http/admin/assets/index.js';
@@ -245,7 +244,7 @@ test('admin upload routes share multipart parsing for either field order and rej
   app.addHook('onRequest', async request => {
     request.principal = { site: 'admin', localId: 'admin-id', permissions: allPermissionCodes } as Principal;
   });
-  await registerAdminAssetsRoutes(app, deps.pool, deps.storage as unknown as ReturnType<typeof createStorage>, {} as Redis);
+  await registerAdminAssetsRoutes(app, deps.pool, deps.storage as unknown as ReturnType<typeof createStorage>);
   const file = await imageFile('png');
   const versionUrl = '/schemes/S-1/assets/123e4567-e89b-42d3-a456-426614174000/versions';
   for (const fileFirst of [false, true]) {
@@ -288,7 +287,7 @@ test('deleting a rendering together with its paired masks also requires the mask
   app.addHook('onRequest', async request => {
     request.principal = { site: 'admin', localId: 'admin-id', permissions: allPermissionCodes.filter(code => code !== 'assets-masks.delete') } as Principal;
   });
-  await registerAdminAssetsRoutes(app, deps.pool, deps.storage as unknown as ReturnType<typeof createStorage>, {} as Redis);
+  await registerAdminAssetsRoutes(app, deps.pool, deps.storage as unknown as ReturnType<typeof createStorage>);
   const url = '/schemes/S-1/assets/123e4567-e89b-42d3-a456-426614174000';
 
   const forbidden = await app.inject({ method: 'DELETE', url, payload: { expectedRevision: 1, withPairedMasks: true } });
@@ -315,7 +314,7 @@ test('mask pairing candidates list renderings with size, order and occupying mas
     t.after(() => app.close());
     app.decorateRequest('principal', null);
     app.addHook('onRequest', async req => { req.principal = { site: 'admin', localId: 'admin-id', permissions } as Principal; });
-    await registerAdminAssetsRoutes(app, pool, storage as unknown as ReturnType<typeof createStorage>, {} as Redis);
+    await registerAdminAssetsRoutes(app, pool, storage as unknown as ReturnType<typeof createStorage>);
     return app.inject({ method: 'GET', url: '/schemes/S-1/assets/mask-candidates' });
   }
 

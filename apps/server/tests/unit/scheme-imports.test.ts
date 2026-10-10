@@ -159,7 +159,7 @@ test('commit rejects duplicate rows when the preview revision is stale or missin
         { rowId: 3, sheetName: '方案', rowNumber: 4, code: 'S3', name: 'Scheme', status: 'duplicate', data: { ...data, code: 'S3' }, snapshotRevision: 4 },
       ] }] };
       if (sql.includes('FROM schemes WHERE code = ANY')) {
-        const code = (params?.[0] as string[])[0];
+        const code = (params![0] as string[])[0];
         assert.match(sql, /FOR UPDATE/);
         return { rows: code === 'S1' ? [schemeRecord(data, { name: 'Old', editRevision: 4 })] : code === 'S3' ? [schemeRecord(data, { code: 'S3', editRevision: 9 })] : [] };
       }
@@ -377,7 +377,7 @@ test('commit skips unchanged rows, keeps notes-only edits published and fully ov
         { rowId: 3, sheetName: '方案', rowNumber: 4, code: 'NOTES', name: 'Scheme', status: 'duplicate', data: { ...base, code: 'NOTES', notes: '新备注' }, snapshotRevision: 7 },
         { rowId: 4, sheetName: '方案', rowNumber: 5, code: 'FULL', name: 'Scheme', status: 'duplicate', data: { ...base, code: 'FULL' }, snapshotRevision: 7 },
       ] }] };
-      if (sql.includes('FROM schemes WHERE code = ANY')) return { rows: [current.get((params?.[0] as string[])[0]!)] };
+      if (sql.includes('FROM schemes WHERE code = ANY')) return { rows: [current.get((params![0] as string[])[0]!)] };
       if (sql.includes('UPDATE schemes')) {
         writes.push({ code: params?.[0], sql });
         return { rowCount: 1, rows: [] };

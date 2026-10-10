@@ -34,10 +34,10 @@ test('customer DTO drops internal notes, hides agent login names and strips inte
 });
 
 test('context snapshots contain exactly the whitelisted fields', () => {
-  const scheme = schemeSnapshot({ code: 'S-001', name: '方案', lengthMm: 6000, widthMm: 3000, openingCount: 2, ...{ cost: 1 } } as never);
+  const scheme = schemeSnapshot({ code: 'S-001', name: '方案', lengthMm: 6000, widthMm: 3000, openingCount: 2, cost: 1 } as never);
   assert.deepEqual(Object.keys(scheme).sort(), ['lengthMm', 'name', 'openingCount', 'schemeCode', 'widthMm']);
   const project = projectSnapshot({ projectNo: 'PJ-00000001', schemeCode: null, sourceType: 'manual_request', status: 'pending', customerType: 'company',
-    countryCode: 'DE', city: 'Berlin', exhibitionName: 'IFA', createdAt: new Date('2026-10-08T00:00:00Z'), ...{ contact: { email: 'x@y.z' }, materialBudget: 1 } } as never);
+    countryCode: 'DE', city: 'Berlin', exhibitionName: 'IFA', createdAt: new Date('2026-10-08T00:00:00Z'), contact: { email: 'x@y.z' }, materialBudget: 1 } as never);
   assert.deepEqual(Object.keys(project).sort(),
     ['city', 'countryCode', 'customerType', 'exhibitionName', 'projectNo', 'schemeCode', 'sourceType', 'status', 'submittedAt']);
   assert.equal(projectSnapshot({ ...project, projectNo: 'PJ-1', createdAt: new Date(), customerType: null, countryCode: null, city: null, exhibitionName: null } as never).customerType, 'individual');

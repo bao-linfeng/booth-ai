@@ -58,7 +58,7 @@ test('unified projects: manual acceptance, assignment, immutable quotation, stat
   const storage={signDownload:async()=>'/test-preview',signDownloadWithName:async()=>'/test-download'} as unknown as ReturnType<typeof createStorage>;
   const app=Fastify({ajv:{customOptions:{removeAdditional:false}}});t.after(()=>app.close());
   await app.register(async clientRoutes=>{registerAuthentication(clientRoutes,pool,redis,'client');await registerClientProjectRoutes(clientRoutes,pool,redis,storage);await registerClientManualRequestRoutes(clientRoutes,pool,redis);});
-  await app.register(async adminRoutes=>{registerAuthentication(adminRoutes,pool,redis,'admin');await registerAdminProjectRoutes(adminRoutes,pool,redis,storage);},{prefix:'/admin'});
+  await app.register(async adminRoutes=>{registerAuthentication(adminRoutes,pool,redis,'admin');await registerAdminProjectRoutes(adminRoutes,pool,storage);},{prefix:'/admin'});
   const headers={authorization:'Bearer test-token'};
   const replay=await app.inject({method:'POST',url:'/manual-requests',headers,payload:input});assert.equal(replay.statusCode,200);assert.equal(replay.json().data.projectId,id);
   assert.equal((await app.inject({method:'POST',url:'/manual-requests',payload:{...input,contact:{name:'访客',phone:'+86 138 0000 0000'}}})).statusCode,400);

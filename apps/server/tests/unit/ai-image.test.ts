@@ -200,7 +200,7 @@ test('qwen-image edits send the multimodal payload synchronously and collect eve
   assert.equal(request?.headers.get('x-dashscope-async'), null);
   assert.equal(request?.body.model, 'qwen-image-3.0-pro');
   assert.deepEqual(request?.body.parameters, { n: 2, size: '2048*1152', prompt_extend: false, watermark: false });
-  const [image, text] = request?.body.input.messages[0].content;
+  const [image, text] = request!.body.input.messages[0].content;
   assert.deepEqual(text, { text: 'artwork prompt' });
   assert.equal(image.image, `data:image/png;base64,${reference.toString('base64')}`);
   assert.equal(supportsPurpose('qwen-image', 'image', 'artwork'), true);
@@ -253,7 +253,7 @@ test('ark seedream edits send one inline reference per call and return base64 re
   const [request] = requests;
   assert.equal(request?.url, 'https://ark.cn-beijing.volces.com/api/v3/images/generations');
   assert.equal(request?.headers.get('authorization'), 'Bearer ark-secret');
-  const { image, ...rest } = request?.body;
+  const { image, ...rest } = request!.body;
   assert.deepEqual(rest, { model: 'doubao-seedream-5-0-flash-260915', prompt: 'artwork prompt', size: '2560x1440',
     response_format: 'b64_json', watermark: false, stream: false });
   assert.equal(image, `data:image/png;base64,${reference.toString('base64')}`);

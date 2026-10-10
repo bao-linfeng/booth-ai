@@ -14,7 +14,7 @@ const assetId = '123e4567-e89b-42d3-a456-426614174000';
 const originalContent = Buffer.from('%PDF-1.7\n报馆图原件');
 function setup(options: { published?: boolean; empty?: boolean } = {}) {
   const queries: string[] = [];
-  const pool = { query: async (sql: string, params?: unknown[]) => {
+  const pool = { query: async (sql: string) => {
     queries.push(sql);
     if (sql.includes('SELECT 1 FROM schemes')) return { rows: options.published === false ? [] : [{ '?column?': 1 }] };
     if (sql.includes('FROM schemes s')) return { rows: options.empty ? [] : [{ assetId, name: '平面图', sortOrder: 1,

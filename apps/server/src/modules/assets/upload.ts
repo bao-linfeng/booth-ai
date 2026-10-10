@@ -57,7 +57,7 @@ async function storeAssetUpload<T>(
     mimeType: file.mimeType,
     byteSize: file.buffer.byteLength,
     checksum,
-    ...(dimensions ?? {}),
+    ...dimensions,
   };
   await storage.putBuffer(objectKey, file.buffer, file.mimeType);
   try {

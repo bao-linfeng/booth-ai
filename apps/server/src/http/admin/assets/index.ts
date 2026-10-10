@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { createStorage } from '../../../infra/storage.js';
 import { adminUserId, requirePrincipal } from '../../authentication.js';
@@ -35,7 +34,7 @@ function decodedCode(params: CodeParams): string {
   }
 }
 
-export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.Pool, storage: ReturnType<typeof createStorage>, redis: Redis): Promise<void> {
+export async function registerAdminAssetsRoutes(app: FastifyInstance, pool: pg.Pool, storage: ReturnType<typeof createStorage>): Promise<void> {
   app.get('/assets', { config: { permissions: ['assets-renderings.read', 'assets-masks.read', 'assets-drawings.read', 'assets-artworks.read', 'assets-models.read', 'assets-checklists.read'] },
     schema: { tags: ['admin-assets'], querystring: { type: 'object', additionalProperties: false, properties: {
       type: assetTypeSchema, schemeCode: { type: 'string', minLength: 1 }, schemeName: { type: 'string', minLength: 1 },

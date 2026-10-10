@@ -1,12 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { createStorage } from '../../../infra/storage.js';
 import { adminUserId } from '../../authentication.js';
 import { readUploadedFile, workbookUploadMaxBytes } from '../../uploads.js';
-import type { Config } from '../../../config.js';
 import { bomError } from '../../../modules/schemes/bill-of-materials/errors.js';
 import { assertImportBaseline, createBomImport, createOrReplaceBomFromImport } from '../../../modules/schemes/bill-of-materials/imports.js';
 import { deleteBom, deleteBomItem, updateBomItems } from '../../../modules/schemes/bill-of-materials/items.js';
@@ -31,7 +29,7 @@ const itemSchema = { type:'object',required:['productName','sourceQuantity','sou
 } };
 function code(request: FastifyRequest): string { try { return decodeURIComponent((request.params as CodeParams).code); } catch { throw bomError('INVALID_INPUT',400); } }
 function integer(value: unknown): number { const parsed = typeof value === 'string' && /^\d{1,9}$/.test(value) ? Number(value) : NaN; if (!Number.isSafeInteger(parsed)) throw bomError('INVALID_INPUT',400); return parsed; }
-export async function registerAdminBomRoutes(app: FastifyInstance, pool: pg.Pool, storage: ReturnType<typeof createStorage>, redis: Redis, config: Config): Promise<void> {
+export async function registerAdminBomRoutes(app: FastifyInstance, pool: pg.Pool, storage: ReturnType<typeof createStorage>): Promise<void> {
   app.get('/bill-of-materials',{config:{permissions:['bom.read']},schema:{tags:['admin-bill-of-materials'],querystring:{type:'object',additionalProperties:false,properties:{code:{type:'string'},page:{type:'integer',minimum:1,default:1},pageSize:{type:'integer',minimum:1,maximum:100,default:20}}}}},async request => {
     const query=request.query as {code?:string;page:number;pageSize:number};
     return {code:0,data:await listBoms(pool,query)};

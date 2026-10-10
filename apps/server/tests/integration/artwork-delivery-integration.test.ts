@@ -229,8 +229,8 @@ test('four-direction delivery: real SQL, reservations, provider recovery, owners
         return new Response(new Uint8Array(jpeg));
       }
       calls++;
-      assert.ok(init?.signal);
-      prompts.push(String((init?.body as FormData).get('prompt')));
+      assert.ok(init!.signal);
+      prompts.push(String((init!.body as FormData).get('prompt')));
       return Response.json({ data: [{ url: 'https://assets.openai.com/image.png' }] });
     }) as typeof fetch;
     await assert.rejects(processArtworkJob(pool, downloadId, config, storage), /IMAGE_DOWNLOAD_UNAVAILABLE/);

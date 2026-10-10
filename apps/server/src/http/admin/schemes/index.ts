@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
 import { createScheme, deleteScheme, getScheme, listSchemes, schemeFormOptions, updateScheme, type ListSchemesOptions, type SchemeInput } from '../../../modules/schemes/service.js';
@@ -110,7 +109,7 @@ function listOptions(query: SchemeQuery): ListSchemesOptions {
   };
 }
 
-export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
+export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   app.get('/schemes/options', { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'] } }, async () => ({ code: 0, data: await schemeFormOptions(pool) }));
   app.get('/schemes', { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'], querystring: listQuerySchema } }, async request => {
     return { code: 0, data: await listSchemes(pool, listOptions(request.query as SchemeQuery)) };

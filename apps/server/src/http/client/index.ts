@@ -23,7 +23,7 @@ export async function registerClientModule(app: FastifyInstance, config: Config,
     registerAuthentication(client, pool, redis, 'client');
     await registerClientAuthRoutes(client, config, pool, redis);
     await registerClientMeRoutes(client, config, pool, redis);
-    await registerClientCreditRoutes(client, pool, redis);
+    await registerClientCreditRoutes(client, pool);
     await registerQuoteRequestRoutes(client, pool, redis);
     await registerClientProjectRoutes(client, pool, redis, storage);
     await registerClientSearchRoutes(client, pool, redis, storage);
