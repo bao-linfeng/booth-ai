@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { isRenderingAspect } from '../assets/image-spec.js';
+import { isRenderingAspect } from './image-spec.js';
 
 type DbClient = pg.Pool | pg.PoolClient;
 

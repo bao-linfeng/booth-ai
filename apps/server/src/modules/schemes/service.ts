@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
-import { ensureSelectionSizes } from '../selection/sizes.js';
+import { ensureSelectionSizes } from '../dictionaries/sizes.js';
 import { writeAuditLog } from '../../infra/audit.js';
 import { validateSchemeDictionaryIds } from './dictionary-ids.js';
 

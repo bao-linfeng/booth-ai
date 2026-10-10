@@ -14,7 +14,7 @@ import { settleThemeJob, processThemeJob } from './modules/generation/theme/exec
 import { processArtworkJob, settleArtworkJob } from './modules/generation/artwork/execution.js';
 import { dispatchGenerationOutbox } from './workers/generation-outbox.js';
 import { GenerationInterruptedError } from './modules/generation/execution.js';
-import { reconcileJobCredits } from './modules/credits/reconciliation.js';
+import { reconcileJobCredits } from './modules/generation/credit-reconciliation.js';
 import { recoverGenerationJobs } from './workers/generation-recovery.js';
 import { deliverProjectNotifications } from './workers/project-notifications.js';
 import { deliverReceiptEmails } from './workers/receipt-emails.js';

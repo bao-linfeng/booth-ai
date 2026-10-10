@@ -4,7 +4,7 @@ import {
   createDictionary, createDictionaryItem, deleteDictionary, deleteDictionaryItem,
   getDictionary, listDictionaries, listDictionaryItems, updateDictionary, updateDictionaryItem,
   type DictionaryInput, type DictionaryItemInput, type ListDictionariesOptions,
-} from '../../../modules/selection/dictionaries.js';
+} from '../../../modules/dictionaries/service.js';
 
 interface DictionaryQuery extends Partial<ListDictionariesOptions> {}
 interface IdParams { id: string; }

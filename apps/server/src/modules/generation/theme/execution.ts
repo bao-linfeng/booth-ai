@@ -1,7 +1,8 @@
 import type pg from 'pg';
 import { ImageGenerationError } from '../../../infra/ai/image.js';
 import { transaction } from '../../../infra/database.js';
-import { CreditInvariantError, lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../../credits/service.js';
+import { CreditInvariantError, terminalCreditJob } from '../../credits/service.js';
+import { jobLedger, lockCreditJob } from '../credit-jobs.js';
 import { claimGeneration, publishGeneration, refreshGeneration } from '../execution.js';
 import { logger } from '../../../infra/logger.js';
 import { generateTheme } from './attempts.js';
@@ -26,11 +27,11 @@ export async function settleThemeJob(database: pg.Pool, jobId: string, lease?: s
       updated_at = now() WHERE job_id = $1 AND status = 'submitting'`, [jobId]);
     if (usable) {
       if (job.unitCredits === null) throw new CreditInvariantError('CREDIT_JOB_PRICE_MISSING', 'Theme job price missing', { kind: 'theme', id: jobId });
-      await settleJobCredits(client, { kind: 'theme', id: jobId }, usable * job.unitCredits);
+      await jobLedger.settle(client, { kind: 'theme', id: jobId }, usable * job.unitCredits);
     }
     const status = usable === job.requestedCount ? 'succeeded' : usable ? 'partially_succeeded' : 'failed';
     await client.query('UPDATE theme_jobs SET status = $1, phase = NULL, usable_count = $2, lease_token = NULL, lease_until = NULL, updated_at = now() WHERE id = $3', [status, usable, jobId]);
-    if (!usable) await releaseJobCredits(client, { kind: 'theme', id: jobId });
+    if (!usable) await jobLedger.release(client, { kind: 'theme', id: jobId });
     return { status, results: results.rows };
   });
   if (event) await publishGeneration(publish, jobId, event);

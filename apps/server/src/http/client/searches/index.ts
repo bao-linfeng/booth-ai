@@ -3,7 +3,7 @@ import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import type { createStorage } from '../../../infra/storage.js';
 import { getProvidedVisitorId } from '../selection/identity.js';
-import { listClientSearches } from '../../../modules/selection-analytics/queries.js';
+import { listClientSearches } from '../../../modules/selection/analytics/queries.js';
 import { listSearchJobs } from '../../../modules/generation/search-jobs.js';
 
 type SearchSnapshotItem = {

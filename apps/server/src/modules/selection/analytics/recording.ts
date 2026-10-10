@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
-import type { Catalog, Requirement } from '../selection/domain.js';
+import type { Catalog, Requirement } from '../domain.js';
 import type { ParseRecordInput, RecordedMatchItem, SearchRecordInput, SelectionIdentity } from './types.js';
 
 const visitorPattern = /^[a-zA-Z0-9_-]{16,128}$/;

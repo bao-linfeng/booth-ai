@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
 import { createPromptTemplate, getPromptTemplate, listPromptTemplates, updatePromptTemplate,
   type CreateTemplateInput, type UpdateTemplateInput } from '../../../modules/prompts/management-service.js';
-import { promptDefinitions, previewPrompt, type PreviewInput } from '../../../modules/prompts/preview.js';
+import { promptDefinitions, previewPrompt, type PreviewInput } from '../../../modules/prompt-preview/service.js';
 import { PROMPT_PURPOSES, type PromptIssue } from '../../../modules/prompts/template.js';
 
 interface ListQuery { purpose?: string; industryId?: string; styleId?: string; enabled?: boolean; page?: number; pageSize?: number }

@@ -38,17 +38,12 @@ export async function lockCreditUser(client: pg.PoolClient, userId: string): Pro
   if (!user.rows[0]) throw Object.assign(new Error('User not found'), { statusCode: 404, reason: 'USER_NOT_FOUND' });
 }
 
-/** Locks the owning user before the job row, so every ledger writer acquires locks in the same order. */
-export async function lockCreditJob(client: pg.PoolClient, job: CreditJob): Promise<LockedCreditJob | undefined> {
-  const peek = (await client.query<{ userId: string }>(`SELECT user_id AS "userId" FROM ${job.kind}_jobs WHERE id = $1`, [job.id])).rows[0];
-  if (!peek) return;
-  await lockCreditUser(client, peek.userId);
-  return (await client.query<LockedCreditJob>(
-    `SELECT user_id AS "userId", status, unit_credits AS "unitCredits", requested_count AS "requestedCount",
-      usable_count AS "usableCount", ${job.kind === 'theme' ? 'cache_hit' : 'false'} AS "cacheHit",
-      lease_token AS "leaseToken", lease_until AS "leaseUntil"
-    FROM ${job.kind}_jobs WHERE id = $1 FOR UPDATE`, [job.id])).rows[0];
-}
+/**
+ * Reads and row-locks a job for the ledger. The credits module does not know the job tables: the module that owns
+ * them implements this, and must lock the owner with `lockCreditUser` before the job row so every ledger writer
+ * acquires locks in the same order.
+ */
+export type CreditJobLocker = (client: pg.PoolClient, job: CreditJob) => Promise<LockedCreditJob | undefined>;
 
 export async function lockJobReservation(client: pg.PoolClient, job: CreditJob): Promise<JobReservation | undefined> {
   return (await client.query<JobReservation>(
@@ -72,14 +67,26 @@ export async function availableCredits(client: pg.PoolClient, userId: string): P
   return Number(result?.availableBalance ?? 0);
 }
 
-async function setReservationStatus(client: pg.PoolClient, job: CreditJob, status: JobReservation['status']) {
-  await client.query(`UPDATE credit_reservations SET status = $2, updated_at = now() WHERE ${job.kind}_job_id = $1`, [job.id, status]);
+/** Sets the hold of a job directly. Only for reconciliation repairs whose preconditions the caller verified under the job lock. */
+export async function setJobReservation(client: pg.PoolClient, job: CreditJob, status: JobReservation['status'], amount?: number): Promise<void> {
+  await client.query(`UPDATE credit_reservations SET status = $2, reserved_amount = COALESCE($3, reserved_amount), updated_at = now()
+    WHERE ${job.kind}_job_id = $1`, [job.id, status, amount ?? null]);
 }
 
+/** Ledger operations whose job-side checks read the job through `lockJob`. Every call runs inside the caller's transaction. */
+export function createJobLedger(lockJob: CreditJobLocker) {
+  return {
+    reserve: (client: pg.PoolClient, job: CreditJob, userId: string, amount: number) => reserveJobCredits(lockJob, client, job, userId, amount),
+    settle: (client: pg.PoolClient, job: CreditJob, amount: number) => settleJobCredits(lockJob, client, job, amount),
+    release: (client: pg.PoolClient, job: CreditJob) => releaseJobCredits(lockJob, client, job),
+  };
+}
+export type JobLedger = ReturnType<typeof createJobLedger>;
+
 /** Holds the full price of an active job. Replaying with identical parameters is a no-op. */
-export async function reserveJobCredits(client: pg.PoolClient, job: CreditJob, userId: string, amount: number): Promise<void> {
+async function reserveJobCredits(lockJob: CreditJobLocker, client: pg.PoolClient, job: CreditJob, userId: string, amount: number): Promise<void> {
   if (!validCreditAmount(amount)) throw new CreditInvariantError('CREDIT_AMOUNT_INVALID', 'Invalid credit reservation amount', job);
-  const current = await lockCreditJob(client, job);
+  const current = await lockJob(client, job);
   if (!current || current.userId !== userId || terminalCreditJob(current.status) || current.cacheHit ||
       current.unitCredits === null || current.unitCredits * current.requestedCount !== amount) {
     throw new CreditInvariantError('CREDIT_RESERVATION_INVALID_JOB', 'Invalid credit reservation job', job);
@@ -101,8 +108,8 @@ export async function reserveJobCredits(client: pg.PoolClient, job: CreditJob, u
  * Converts the hold into a single consume transaction for the usable results; `amount = 0` releases it instead.
  * Replaying after a lost COMMIT finds the same charge and only re-settles the reservation.
  */
-export async function settleJobCredits(client: pg.PoolClient, job: CreditJob, amount: number): Promise<void> {
-  const current = await lockCreditJob(client, job);
+async function settleJobCredits(lockJob: CreditJobLocker, client: pg.PoolClient, job: CreditJob, amount: number): Promise<void> {
+  const current = await lockJob(client, job);
   if (!current || current.cacheHit || terminalCreditJob(current.status)) {
     throw new CreditInvariantError('CREDIT_SETTLEMENT_INVALID_JOB', 'Invalid credit settlement job', job);
   }
@@ -116,7 +123,7 @@ export async function settleJobCredits(client: pg.PoolClient, job: CreditJob, am
   const charge = await findJobCharge(client, job);
   if (amount === 0) {
     if (charge) throw new CreditInvariantError('CREDIT_CHARGE_CONFLICT', 'Zero-usable job cannot have a credit charge', job);
-    await setReservationStatus(client, job, 'released');
+    await setJobReservation(client, job, 'released');
     return;
   }
   if (charge) {
@@ -127,12 +134,12 @@ export async function settleJobCredits(client: pg.PoolClient, job: CreditJob, am
     await client.query(`INSERT INTO credit_transactions (user_id, kind, amount, note, ${job.kind}_job_id)
       VALUES ($1, '${job.kind}_consume', $2, $3, $4)`, [current.userId, -amount, `${job.kind}_job:${job.id}`, job.id]);
   }
-  await setReservationStatus(client, job, 'settled');
+  await setJobReservation(client, job, 'settled');
 }
 
 /** Returns the hold of a failed, uncharged job. Idempotent. */
-export async function releaseJobCredits(client: pg.PoolClient, job: CreditJob): Promise<void> {
-  const current = await lockCreditJob(client, job);
+async function releaseJobCredits(lockJob: CreditJobLocker, client: pg.PoolClient, job: CreditJob): Promise<void> {
+  const current = await lockJob(client, job);
   if (!current || current.status !== 'failed') throw new CreditInvariantError('CREDIT_RELEASE_NOT_FAILED', 'Only failed jobs can release credits', job);
   if (await findJobCharge(client, job)) throw new CreditInvariantError('CREDIT_RELEASE_CHARGED', 'Charged job cannot release credits', job);
   await client.query(`UPDATE credit_reservations SET status = 'released', updated_at = now()

@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { sameImageSize, type MaybeImageSize } from './image-spec.js';
+import { sameImageSize, type MaybeImageSize } from '../schemes/image-spec.js';
 import type { AssetType, SchemeAsset, UpdateAssetInput } from './types.js';
 
 function requestError(message: string, statusCode: number, reason?: string): Error & { statusCode: number } {

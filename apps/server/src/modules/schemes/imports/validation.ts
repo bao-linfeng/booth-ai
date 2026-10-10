@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { ImportDictionaryLabels, ImportPreviewRow, ImportRow } from './types.js';
-import { indexDictionaryTerms, resolveIndexedTerms, type DictionaryAlias, type DictionaryTermIndex } from '../../selection/dictionary-language.js';
+import { indexDictionaryTerms, resolveIndexedTerms, type DictionaryAlias, type DictionaryTermIndex } from '../../dictionaries/language.js';
 
 export const importDictionaries = {
   productSystemId: 'product_system', styleId: 'style', industryIds: 'industry',

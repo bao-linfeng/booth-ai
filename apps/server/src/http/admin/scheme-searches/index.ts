@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import { getSearch, listSearchVisitors, listSearches } from '../../../modules/selection-analytics/queries.js';
-import { getStatistics } from '../../../modules/selection-analytics/statistics.js';
+import { getSearch, listSearchVisitors, listSearches } from '../../../modules/selection/analytics/queries.js';
+import { getStatistics } from '../../../modules/selection/analytics/statistics.js';
 
 interface SearchQuery {
   page?: number;

@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { ensureDictionaryItems } from './dictionaries.js';
+import { ensureDictionaryItems } from './service.js';
 
 export interface SizeSource {
   lengthMm: number | null;

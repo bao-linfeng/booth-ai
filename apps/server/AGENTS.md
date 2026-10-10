@@ -6,9 +6,9 @@
 
 深入修改前先读对应代码：
 
-- 模块依赖规则：`tests/module-boundaries.test.ts` 用 AST 静态检查强制执行，反向依赖会导致测试失败（规则摘要见下文“模块开发规范”）
+- 模块依赖规则：`tests/module-boundaries.test.ts` 用 AST 静态检查强制执行：技术层方向、业务模块间依赖白名单（必须无环）与对外公开文件、关键表写入归属（规则摘要见下文“模块开发规范”）
 - 认证体系：`src/http/authentication.ts` 统一建立请求级 principal，`src/modules/identity/principal.ts` 校验账户与 Session 版本
-- 积分账本（预占、结算、释放、对账）：`src/modules/credits/`，对账见 `reconciliation.ts`；违反账本不变量抛 `CreditInvariantError`（稳定 `code`，日志按 code 定位，不要改回普通 `Error`）
+- 积分账本（预占、结算、释放）：`src/modules/credits/`，不读写生成任务表；job 行加锁由 `generation/credit-jobs.ts` 注入（`createJobLedger`，先锁用户再锁 job），任务与账本对账在 `generation/credit-reconciliation.ts`；违反账本不变量抛 `CreditInvariantError`（稳定 `code`，日志按 code 定位，不要改回普通 `Error`）
 - 生成任务 Outbox 与恢复：`src/workers/generation-outbox.ts`（主题/画稿共用分发）、`generation-recovery.ts`（恢复矩阵 `decideRecovery`）
 - 方案基线资产与用户生成素材的作用域隔离：`migrations/050_asset_scope.sql`（`scheme_baseline_assets` 视图）
 - Worker 调度隔离、健康状态、指标与项目通知投递：`src/worker.ts`、`src/workers/scheduler.ts`、`metrics.ts`、`project-notifications.ts`
@@ -107,8 +107,9 @@ src/
 │   ├── admin/           # 管理端路由、校验、身份提取与响应映射
 │   ├── client/          # 参展商路由、校验、身份提取与响应映射
 │   └── su/              # SU HTTP 入口
-├── modules/             # identity / schemes / assets / selection / selection-analytics
-│                        # generation / prompts / credits / projects / tasks 业务模块
+├── modules/             # identity / dictionaries / schemes / assets / selection（含 analytics 搜索记录）
+│                        # generation / prompts / credits / projects / customer-service / dashboard / tasks 业务模块
+│                        # client-sign-in、prompt-preview 是跨模块用例的编排模块
 ├── workers/             # Outbox 分发、队列恢复与调度
 └── scripts/
     ├── migrate.ts       # advisory lock 19002401 + SHA-256 校验和，按文件名字母序执行
@@ -213,6 +214,8 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - Controller 保持薄：只做解析和响应，业务逻辑放 service 层
 - 共享业务放 `src/modules/` 领域模块，禁止导入 HTTP 门户、Fastify 或 Worker 调度实现；`infra/` 禁止反向导入业务模块
 - `src/modules/{admin,client,su}/` 只剩重构遗留的空目录，不要往里放代码；按业务领域放入对应模块
+- 业务模块之间的依赖在 `tests/module-boundaries.test.ts` 的 `moduleRules` 中声明：`dependsOn` 必须无环，其他模块只能导入 `exposes` 列出的文件。新增跨模块依赖时，先确认被依赖方不需要了解调用方；跨模块用例放到上层编排模块，例如登录后的游客数据归属放在 `client-sign-in`，不要放进 identity
+- 表写入归属：`credit_transactions`/`credit_reservations` 只由 `modules/credits` 写入，生成任务表（`theme_job*`/`artwork_job*`）只由 `modules/generation` 与 `workers/generation-*` 写入，其他模块只能读；同一测试会检查
 - `tests/module-boundaries.test.ts` 检查上述依赖边界
 - 新 Job 类型：在 `src/infra/queue.ts` 追加 `TASK_NAME` 常量，Worker 在 `src/worker.ts` 注册处理器
 - 智选匹配/解析返回给用户的提示文案（理由、差异、澄清问题等）集中在 `src/modules/selection/messages/`（12 种语言，以 `zh.ts` 的 key 为准，缺 key 会编译失败），按 `Accept-Language` 输出；新增文案不要在 match/parse/llm 里写死中文。

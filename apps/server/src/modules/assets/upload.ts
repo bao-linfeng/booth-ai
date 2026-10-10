@@ -3,7 +3,7 @@ import type pg from 'pg';
 import sharp from 'sharp';
 import type { createStorage } from '../../infra/storage.js';
 import { assetUploadRequest, findAssetUploadReplay, isUploadKeyCollision } from './idempotency.js';
-import { isRenderingAspect } from './image-spec.js';
+import { isRenderingAspect } from '../schemes/image-spec.js';
 import { validateAssetMetadata } from './metadata.js';
 import { getAsset } from './queries.js';
 import { addAssetVersion, createAssetWithVersion } from './service.js';

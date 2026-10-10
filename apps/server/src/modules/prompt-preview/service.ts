@@ -4,7 +4,7 @@ import { loadCatalog } from '../selection/repository.js';
 import { buildThemePrompt, DEFAULT_THEME_BODY, THEME_FIXED_INSTRUCTIONS } from '../generation/theme/prompt.js';
 import { normalizeThemeInput } from '../generation/theme/domain.js';
 import { ARTWORK_FIXED_INSTRUCTIONS, buildArtworkPrompts, DEFAULT_ARTWORK_BODY } from '../generation/artwork/prompt.js';
-import { inspectPrompt, PROMPT_DEFAULT_VERSION, type PromptPurpose } from './template.js';
+import { inspectPrompt, PROMPT_DEFAULT_VERSION, type PromptPurpose } from '../prompts/template.js';
 
 const brandVariables = [
   { name: 'industryLabel', label: '行业名称', source: '用户选择的行业字典项；四向图继承所选主题任务', example: '医疗器械', fallback: '换主题必填；四向图以参考图为准' },

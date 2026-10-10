@@ -4,7 +4,7 @@ import type pg from 'pg';
 import type { Config } from '../../../config.js';
 import { destroySession } from '../../../infra/session.js';
 import { getProvidedVisitorId } from '../selection/identity.js';
-import { loginClient, syncClientSession } from '../../../modules/identity/client-service.js';
+import { signInClient, signInClientWithToken } from '../../../modules/client-sign-in/service.js';
 import { authorizationToken } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
 import type { UserType } from '../../../modules/identity/service.js';
@@ -18,7 +18,7 @@ export async function registerClientAuthRoutes(app: FastifyInstance, config: Con
     },
   }, async request => {
     const { username, password } = request.body as { username: string; password: string };
-    const data = await loginClient(config, pool, redis, username, password, getProvidedVisitorId(request));
+    const data = await signInClient(config, pool, redis, username, password, getProvidedVisitorId(request));
     return { code: 0, message: 'ok', data };
   });
 
@@ -31,7 +31,7 @@ export async function registerClientAuthRoutes(app: FastifyInstance, config: Con
     },
   }, async request => {
     const { username, token, type } = request.body as { username: string; token: string; type: UserType };
-    const data = await syncClientSession(config, pool, redis, username, token, getProvidedVisitorId(request), type);
+    const data = await signInClientWithToken(config, pool, redis, username, token, getProvidedVisitorId(request), type);
     return { code: 0, message: 'ok', data };
   });
 

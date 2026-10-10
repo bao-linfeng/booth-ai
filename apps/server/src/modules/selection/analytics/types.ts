@@ -1,4 +1,4 @@
-import type { Catalog, MatchDiagnostics, MatchItem, PublicImage, Requirement } from '../selection/domain.js';
+import type { Catalog, MatchDiagnostics, MatchItem, PublicImage, Requirement } from '../domain.js';
 
 export type RecordedMatchItem = MatchItem<Pick<PublicImage, 'assetId' | 'order' | 'width' | 'height'>>;
 

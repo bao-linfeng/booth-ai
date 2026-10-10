@@ -8,7 +8,7 @@ import sharp from 'sharp';
 import { seedAiModel } from './ai-fixtures.js';
 import type { createStorage } from '../src/infra/storage.js';
 import { transaction } from '../src/infra/database.js';
-import { reserveJobCredits } from '../src/modules/credits/service.js';
+import { jobLedger } from '../src/modules/generation/credit-jobs.js';
 import { processThemeJob } from '../src/modules/generation/theme/execution.js';
 import { recoverGenerationJobs } from '../src/workers/generation-recovery.js';
 
@@ -45,7 +45,7 @@ test('generation recovery: durable submissions, partial uploads, lease exclusion
       await client.query(`INSERT INTO theme_jobs(id,user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,unit_credits,generation_snapshot)
         VALUES($1::uuid,$2,'RECOVERY',$3,'offer',$1::text,'{}',$4,3,$5)`, [id, user, source, count, JSON.stringify({ prompt: 'frozen prompt', mask: null,
         source: { assetId: source, versionId: version, objectKey: 'source.png', checksum }, models: [{ id: models[protocol], revision: 1 }] })]);
-      await reserveJobCredits(client, { kind: 'theme', id }, user, count * 3);
+      await jobLedger.reserve(client, { kind: 'theme', id }, user, count * 3);
     });
     return id;
   }

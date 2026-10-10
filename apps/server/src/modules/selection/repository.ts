@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../infra/storage.js';
 import { rulesVersion, type BoothSpace, type Candidate, type CandidateImage, type Catalog, type MatchDiagnostics, type MatchItem, type Option, type PublicImage } from './domain.js';
-import { localizedLabel, type DictionaryAlias } from './dictionary-language.js';
+import { localizedLabel, type DictionaryAlias } from '../dictionaries/language.js';
 
 interface CandidateRow {
   id: string;

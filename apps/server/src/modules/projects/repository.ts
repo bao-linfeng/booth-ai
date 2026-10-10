@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { projectError, type ProjectStatus } from './domain.js';
 import type { MaterialsSnapshot, SchemeSnapshot } from './snapshot.js';
 import { assigneeStatusSql, type AssigneeStatus } from './assignment.js';
-import { dictionaryItemLabels } from '../selection/dictionaries.js';
+import { dictionaryItemLabels } from '../dictionaries/service.js';
 
 export interface RequestSnapshot {
   exhibition?: { name: string; countryCode: string; city: string; startDate: string; endDate: string };

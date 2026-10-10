@@ -12,8 +12,9 @@ import type { createStorage } from '../src/infra/storage.js';
 import { getJobCreditLedger, listCreditTransactions, rechargeCredits } from '../src/modules/credits/management-service.js';
 import { registerAdminCreditRoutes } from '../src/http/admin/credits/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';
-import { reconcileJobCredits } from '../src/modules/credits/reconciliation.js';
-import { lockCreditUser, reserveJobCredits, releaseJobCredits, type CreditJob } from '../src/modules/credits/service.js';
+import { reconcileJobCredits } from '../src/modules/generation/credit-reconciliation.js';
+import { lockCreditUser, type CreditJob } from '../src/modules/credits/service.js';
+import { jobLedger } from '../src/modules/generation/credit-jobs.js';
 import { settleThemeJob, processThemeJob } from '../src/modules/generation/theme/execution.js';
 import { settleArtworkJob } from '../src/modules/generation/artwork/execution.js';
 import { recoverGenerationJobs } from '../src/workers/generation-recovery.js';
@@ -49,7 +50,7 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
       await lockCreditUser(client, userId);
       await client.query(`INSERT INTO ${kind}_jobs(id,user_id,scheme_code,source_asset_id,offer_id,request_key,input,requested_count,unit_credits)
         VALUES($1,$2,'CREDIT-TEST',$3,'offer',$6,'{}',$4,$5)`, [id, userId, source, count, price, id]);
-      if (reserve) await reserveJobCredits(client, { kind, id }, userId, count * price);
+      if (reserve) await jobLedger.reserve(client, { kind, id }, userId, count * price);
     });
     return { kind, id };
   }
@@ -108,7 +109,7 @@ test('credit invariants against PostgreSQL: rollback, concurrency, terminal reco
 
   await t.test('release rejects retryable tasks and settlement rejects prematurely released holds', async () => {
     const task = await job(await user()); await generated(task);
-    await assert.rejects(transaction(pool, client => releaseJobCredits(client, task)),
+    await assert.rejects(transaction(pool, client => jobLedger.release(client, task)),
       { name: 'CreditInvariantError', code: 'CREDIT_RELEASE_NOT_FAILED', message: new RegExp(`theme_job ${task.id}`) });
     await pool.query("UPDATE credit_reservations SET status='released' WHERE theme_job_id=$1", [task.id]);
     await assert.rejects(run(task), { code: 'CREDIT_RESERVATION_INACTIVE', message: /Active credit reservation required/ });

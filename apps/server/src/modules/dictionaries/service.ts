@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { canonicalLocale, normalizeDictionaryTerm, type DictionaryAlias } from './dictionary-language.js';
+import { canonicalLocale, normalizeDictionaryTerm, type DictionaryAlias } from './language.js';
 
 export interface DictionaryInput {
   code?: string;

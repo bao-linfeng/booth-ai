@@ -4,7 +4,8 @@ import { transaction } from '../../../infra/database.js';
 import { digest } from '../../../lib/digest.js';
 import { domainError as projectError } from '../../../lib/errors.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
-import { lockCreditUser, reserveJobCredits } from '../../credits/service.js';
+import { lockCreditUser } from '../../credits/service.js';
+import { jobLedger } from '../credit-jobs.js';
 import { buildArtworkPrompts } from './prompt.js';
 import { artworkHash, assertThemeSelection, receipt } from './queries.js';
 import { ARTWORK_QUALITY, DIRECTIONS, type ArtworkContext, type ArtworkOffer, type ArtworkSnapshot, type Database, type JobSummary } from './types.js';
@@ -57,7 +58,7 @@ export async function createArtworkJob(pool: pg.Pool, userId: string, requestKey
         context.themeJobId, context.resultId, context.selectionRevision, artworkHash(context), JSON.stringify(snapshot), requestId])).rows[0];
     if (!job) throw new Error('Artwork task creation failed');
     for (const direction of DIRECTIONS) await client.query('INSERT INTO artwork_job_directions(job_id,direction) VALUES($1,$2)', [job.id, direction]);
-    await reserveJobCredits(client, { kind: 'artwork', id: job.id }, userId, offer.unitCredits * 4);
+    await jobLedger.reserve(client, { kind: 'artwork', id: job.id }, userId, offer.unitCredits * 4);
     await client.query('INSERT INTO artwork_job_outbox(job_id) VALUES($1)', [job.id]);
     return receipt(job, false);
   });

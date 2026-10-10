@@ -1,5 +1,5 @@
 import { emptyRequirement, rulesVersion, type Catalog, type Option, type Requirement } from './domain.js';
-import { dictionaryTerms, normalizeDictionaryTerm } from './dictionary-language.js';
+import { dictionaryTerms, normalizeDictionaryTerm } from '../dictionaries/language.js';
 import { DEFAULT_MESSAGE_LOCALE, message, type MessageKey, type MessageLocale } from './messages/index.js';
 
 type FieldSource = { source: 'form' | 'text' | 'derived'; evidence?: string };

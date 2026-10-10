@@ -2,7 +2,6 @@ import type pg from 'pg';
 import { digest } from '../../../lib/digest.js';
 import { domainError as projectError } from '../../../lib/errors.js';
 import type { createStorage } from '../../../infra/storage.js';
-import type { AssetSnapshot } from '../../projects/snapshot.js';
 import type { ThemeInput } from '../theme/service.js';
 import { ARTWORK_QUALITY, DIRECTIONS, type ArtworkContext, type ArtworkSnapshot, type Database, type Direction, type JobSummary } from './types.js';
 
@@ -36,7 +35,12 @@ export async function assertThemeSelection(database: Database, userId: string, c
   return job;
 }
 
-export interface ArtworkFile extends AssetSnapshot { direction: Direction; width: number; height: number; byteSize: number }
+// The asset version fields match the project asset snapshot structurally, so projects can freeze these files as-is.
+export interface ArtworkFile {
+  assetId: string; versionId: string; type: string; name: string; revision: number; objectKey: string;
+  checksum: string; filename: string; mimeType: string; metadata: Record<string, unknown>;
+  direction: Direction; width: number; height: number; byteSize: number;
+}
 export async function artworkFiles(database: Database, jobId: string): Promise<ArtworkFile[]> {
   return (await database.query<ArtworkFile>(`SELECT r.direction,r.width,r.height,a.id AS "assetId",a.type,a.name,a.revision,a.metadata,
     v.id AS "versionId",v.object_key AS "objectKey",v.checksum,v.original_filename AS filename,v.mime_type AS "mimeType",v.byte_size::float8 AS "byteSize"

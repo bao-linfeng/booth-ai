@@ -9,7 +9,7 @@ import type { createStorage } from '../src/infra/storage.js';
 import { registerClientSearchRoutes } from '../src/http/client/searches/index.js';
 import { registerAuthentication } from '../src/http/authentication.js';
 import { listSearchJobs } from '../src/modules/generation/search-jobs.js';
-import { listClientSearches } from '../src/modules/selection-analytics/queries.js';
+import { listClientSearches } from '../src/modules/selection/analytics/queries.js';
 import { assertThemeSearch, themeRequestHash, type ThemeParameters } from '../src/modules/generation/theme/service.js';
 
 const storage = { signDownload: async (key: string) => `https://assets.example/${key}` } as ReturnType<typeof createStorage>;

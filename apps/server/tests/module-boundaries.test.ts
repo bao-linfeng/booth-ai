@@ -56,3 +56,84 @@ test('domain modules and infrastructure cannot depend on HTTP portals or worker 
   }
   assert.deepEqual(violations, []);
 });
+
+// 业务模块之间的依赖白名单。dependsOn 必须无环；其他模块只能导入 exposes 列出的文件（相对模块目录）。
+// 新增跨模块依赖时先确认方向：被依赖的一方不应了解调用方，跨模块用例放到上层编排模块（如 client-sign-in、prompt-preview）。
+const moduleRules: Record<string, { dependsOn: string[]; exposes: string[] }> = {
+  'ai-models': { dependsOn: [], exposes: [] },
+  assets: { dependsOn: ['schemes'], exposes: ['deliverables.ts'] },
+  'client-sign-in': { dependsOn: ['identity', 'projects', 'selection'], exposes: [] },
+  credits: { dependsOn: [], exposes: ['service.ts', 'management-service.ts'] },
+  'customer-service': { dependsOn: ['selection'], exposes: [] },
+  dashboard: { dependsOn: ['projects'], exposes: [] },
+  dictionaries: { dependsOn: [], exposes: ['service.ts', 'language.ts', 'sizes.ts'] },
+  generation: { dependsOn: ['credits', 'prompts'], exposes: ['artwork/queries.ts', 'artwork/prompt.ts', 'theme/prompt.ts', 'theme/domain.ts'] },
+  identity: { dependsOn: [], exposes: ['service.ts', 'client-service.ts', 'roles.ts'] },
+  projects: { dependsOn: ['dictionaries', 'generation', 'identity', 'schemes', 'selection'], exposes: ['claims.ts', 'domain.ts'] },
+  'prompt-preview': { dependsOn: ['generation', 'prompts', 'selection'], exposes: [] },
+  prompts: { dependsOn: [], exposes: ['service.ts', 'template.ts'] },
+  schemes: { dependsOn: ['dictionaries'], exposes: ['publication.ts', 'image-spec.ts', 'readiness.ts', 'bill-of-materials/repository.ts'] },
+  selection: { dependsOn: ['assets', 'dictionaries', 'prompts'], exposes: ['domain.ts', 'match.ts', 'prompt.ts', 'repository.ts', 'messages/index.ts', 'analytics/recording.ts'] },
+  tasks: { dependsOn: [], exposes: [] },
+};
+
+test('business modules depend on each other only through declared, acyclic edges and exposed files', async () => {
+  const modulesRoot = path.join(sourceRoot, 'modules');
+  const present = new Set<string>();
+  const used = new Set<string>();
+  const violations: string[] = [];
+  for (const filename of await sourceFiles(modulesRoot)) {
+    const relative = path.relative(modulesRoot, filename).replaceAll('\\', '/');
+    const owner = relative.split('/')[0]!;
+    present.add(owner);
+    const source = ts.createSourceFile(filename, await readFile(filename, 'utf8'), ts.ScriptTarget.Latest, true);
+    for (const specifier of imports(source)) {
+      if (!specifier.startsWith('.')) continue;
+      const target = path.relative(modulesRoot, path.resolve(path.dirname(filename), specifier)).replaceAll('\\', '/');
+      if (target.startsWith('..')) continue;
+      const [dependency, ...rest] = target.split('/');
+      if (!dependency || dependency === owner) continue;
+      const file = rest.join('/').replace(/\.js$/, '.ts');
+      used.add(`${owner} -> ${dependency}`);
+      if (!moduleRules[owner]?.dependsOn.includes(dependency)) violations.push(`${relative}: undeclared dependency on ${dependency}`);
+      if (!moduleRules[dependency]?.exposes.includes(file)) violations.push(`${relative}: ${dependency}/${file} is not exposed`);
+    }
+  }
+  assert.deepEqual(violations, []);
+  assert.deepEqual([...present].sort(), Object.keys(moduleRules).sort(), 'every business module must declare its rules');
+  const declared = Object.entries(moduleRules).flatMap(([owner, rule]) => rule.dependsOn.map(dependency => `${owner} -> ${dependency}`));
+  assert.deepEqual(declared.filter(edge => !used.has(edge)), [], 'remove dependencies that are no longer used');
+
+  const visiting = new Set<string>();
+  const done = new Set<string>();
+  const visit = (name: string, trail: string[]) => {
+    if (done.has(name)) return;
+    assert.ok(!visiting.has(name), `module dependency cycle: ${[...trail, name].join(' -> ')}`);
+    visiting.add(name);
+    for (const dependency of moduleRules[name]?.dependsOn ?? []) visit(dependency, [...trail, name]);
+    visiting.delete(name);
+    done.add(name);
+  };
+  for (const name of Object.keys(moduleRules)) visit(name, []);
+});
+
+// 关键表只允许归属模块写入；其他模块可以读（报表、快照），写入必须调用归属模块的能力。
+const tableOwners: { tables: RegExp; writers: string[] }[] = [
+  { tables: /^credit_(transactions|reservations)$/, writers: ['modules/credits/'] },
+  { tables: /^(theme|artwork)_job(s|_[a-z_]+)$|^\$\{[a-z.]+\}_job(s|_[a-z_]+)$/, writers: ['modules/generation/', 'workers/generation-'] },
+];
+
+test('ledger and generation job tables are only written by their owning module', async () => {
+  const violations: string[] = [];
+  for (const filename of await sourceFiles(sourceRoot)) {
+    const relative = path.relative(sourceRoot, filename).replaceAll('\\', '/');
+    if (relative.startsWith('scripts/')) continue;
+    const text = await readFile(filename, 'utf8');
+    for (const match of text.matchAll(/\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+([\w${}.]+)/gi)) {
+      const table = match[1]!;
+      const owner = tableOwners.find(rule => rule.tables.test(table));
+      if (owner && !owner.writers.some(prefix => relative.startsWith(prefix))) violations.push(`${relative}: writes ${table}`);
+    }
+  }
+  assert.deepEqual(violations, []);
+});

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { localizedLabel, resolveDictionaryTerms } from '../src/modules/selection/dictionary-language.js';
+import { localizedLabel, resolveDictionaryTerms } from '../src/modules/dictionaries/language.js';
 import { emptyRequirement, validateRequirement, type Catalog } from '../src/modules/selection/domain.js';
 import { parseRequirement } from '../src/modules/selection/parse.js';
 import { mergeExtraction } from '../src/modules/selection/llm.js';

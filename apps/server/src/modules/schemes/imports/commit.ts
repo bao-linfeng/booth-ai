@@ -4,7 +4,7 @@ import { transaction } from '../../../infra/database.js';
 import { domainError } from '../../../lib/errors.js';
 import { validateSchemeDictionaryIds } from '../dictionary-ids.js';
 import { findSchemesByCodes } from '../service.js';
-import { ensureSelectionSizes } from '../../selection/sizes.js';
+import { ensureSelectionSizes } from '../../dictionaries/sizes.js';
 import { importRowChanges, onlyNotesChanged } from './changes.js';
 import type { CommitImportOptions, CommitImportResult, ImportPreviewRow, ImportRow } from './types.js';
 import { importRowFromJson, validateImportedSize } from './validation.js';

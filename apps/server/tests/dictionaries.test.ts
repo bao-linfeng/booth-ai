@@ -4,7 +4,7 @@ import type pg from 'pg';
 import {
   createDictionary, createDictionaryItem, deleteDictionary, deleteDictionaryItem,
   getDictionary, listDictionaries, listDictionaryItems, updateDictionary, updateDictionaryItem,
-} from '../src/modules/selection/dictionaries.js';
+} from '../src/modules/dictionaries/service.js';
 
 const dictionary = {
   id: 'dictionary-id', code: 'gender', name: 'Gender', type: 'default', description: null, enabled: true,

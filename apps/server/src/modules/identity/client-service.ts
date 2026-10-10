@@ -3,8 +3,6 @@ import type pg from 'pg';
 import type { Config } from '../../config.js';
 import { fetchExternalUserDetail, loginExternal, type ExternalUserDetail } from '../../infra/external-auth.js';
 import { createSession, encryptJwt } from '../../infra/session.js';
-import { linkVisitorToUser } from '../selection-analytics/recording.js';
-import { claimAnonymousProjects } from '../projects/claims.js';
 import { jwtExpiresAt, toCurrentUser, type UserType } from './service.js';
 
 interface LocalIdRow {
@@ -45,15 +43,21 @@ export async function syncClientUser(pool: pg.Pool, detail: ExternalUserDetail, 
   return account;
 }
 
+/**
+ * 本地账户同步成功、会话创建之前调用。身份模块不了解其他业务数据；登录后要归属的游客数据由调用方
+ * （`modules/client-sign-in`）在这里处理，回调失败时不创建会话。
+ */
+export type ClientSignedIn = (account: { userId: string; email: string | null; visitorId: string | null }) => Promise<void>;
+
 async function establishClientSession(
   config: Config, pool: pg.Pool, redis: Redis, detail: ExternalUserDetail, externalJwt: string, visitorId: string | null,
   loginSource: 'password' | 'sso_token',
   type: UserType,
+  onSignedIn: ClientSignedIn,
 ) {
   if (!detail.enabled) throw errorWithStatus('Account is disabled', 403);
   const { id: localId, sessionVersion, type: userType } = await syncClientUser(pool, detail, true, loginSource, type);
-  if (visitorId) await linkVisitorToUser(pool, visitorId, localId);
-  await claimAnonymousProjects(pool, localId, detail.email);
+  await onSignedIn({ userId: localId, email: detail.email, visitorId });
   const expiresAt = jwtExpiresAt(externalJwt, config.sessionTtlSeconds);
   const accessToken = await createSession(redis, {
     site: 'client', localId, externalUserId: detail.externalUserId, username: detail.username,
@@ -64,17 +68,17 @@ async function establishClientSession(
 }
 
 export async function loginClient(
-  config: Config, pool: pg.Pool, redis: Redis, username: string, password: string, visitorId: string | null,
+  config: Config, pool: pg.Pool, redis: Redis, username: string, password: string, visitorId: string | null, onSignedIn: ClientSignedIn,
 ) {
   const login = await loginExternal(config, 'client', username, password);
   const detail = await fetchExternalUserDetail(config, login.username, login.externalJwt);
   if (detail.externalUserId !== login.externalUserId) throw errorWithStatus('External user identity mismatch', 502);
-  return establishClientSession(config, pool, redis, detail, login.externalJwt, visitorId, 'password', 'client');
+  return establishClientSession(config, pool, redis, detail, login.externalJwt, visitorId, 'password', 'client', onSignedIn);
 }
 
 export async function syncClientSession(
   config: Config, pool: pg.Pool, redis: Redis, username: string, token: string, visitorId: string | null,
-  type: UserType = 'client',
+  type: UserType, onSignedIn: ClientSignedIn,
 ) {
   let subject: unknown;
   let tokenExpiresAt: number;
@@ -94,5 +98,5 @@ export async function syncClientSession(
   const detail = await fetchExternalUserDetail(config, username, token);
   if (detail.username !== subject) throw errorWithStatus('External user identity mismatch', 401);
   if (tokenExpiresAt <= Math.floor(Date.now() / 1000)) throw errorWithStatus('Expired external token', 401);
-  return establishClientSession(config, pool, redis, detail, token, visitorId, 'sso_token', type);
+  return establishClientSession(config, pool, redis, detail, token, visitorId, 'sso_token', type, onSignedIn);
 }

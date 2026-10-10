@@ -2,9 +2,13 @@ import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
 import { errorCode } from '../../infra/logger.js';
 import {
-  availableCredits, findJobCharge, lockCreditJob, lockJobReservation, releaseJobCredits, reserveJobCredits, terminalCreditJob,
+  availableCredits, findJobCharge, lockJobReservation, setJobReservation, terminalCreditJob,
   type CreditJob, type JobCharge, type JobReservation, type LockedCreditJob,
-} from './service.js';
+} from '../credits/service.js';
+import { jobLedger, lockCreditJob } from './credit-jobs.js';
+
+// Cross-module consistency check between generation jobs and the credit ledger. Job rows are written here because
+// generation owns them; ledger rows only change through the credits module.
 
 /** Unrepairable findings, persisted as `credit_issue`; the admin generation job page maps each code to a label. */
 export type CreditIssueReason =
@@ -24,7 +28,7 @@ export type CreditIssueReason =
 /** `error` carries the stable code of the exception behind RECONCILIATION_FAILED. */
 type CreditIssue = CreditJob & { reason: CreditIssueReason; error?: string };
 type Verdict = { reason?: CreditIssueReason; repaired: boolean };
-type JobLedger = {
+type LedgerState = {
   client: pg.PoolClient; job: CreditJob; current: LockedCreditJob;
   reservation: JobReservation | undefined; charge: JobCharge | undefined;
 };
@@ -71,7 +75,7 @@ async function reconcileLockedJob(client: pg.PoolClient, job: CreditJob): Promis
   const current = await lockCreditJob(client, job);
   if (!current) return clean;
   await client.query(`UPDATE ${job.kind}_jobs SET credit_checked_at = now() WHERE id = $1`, [job.id]);
-  const ledger: JobLedger = { client, job, current, reservation: await lockJobReservation(client, job), charge: await findJobCharge(client, job) };
+  const ledger: LedgerState = { client, job, current, reservation: await lockJobReservation(client, job), charge: await findJobCharge(client, job) };
   if (ledger.reservation && ledger.reservation.userId !== current.userId) return issue('RESERVATION_OWNER_MISMATCH');
   if (current.status === 'failed') return reconcileFailedJob(ledger);
   if (current.cacheHit) return reconcileCachedJob(ledger);
@@ -81,20 +85,20 @@ async function reconcileLockedJob(client: pg.PoolClient, job: CreditJob): Promis
 }
 
 /** Failed: never charged; any remaining hold is released. */
-async function reconcileFailedJob({ client, job, reservation, charge }: JobLedger): Promise<Verdict> {
+async function reconcileFailedJob({ client, job, reservation, charge }: LedgerState): Promise<Verdict> {
   if (charge) return issue('FAILED_JOB_CHARGED');
   if (reservation && reservation.status !== 'released') {
-    await releaseJobCredits(client, job);
+    await jobLedger.release(client, job);
     return repaired;
   }
   return clean;
 }
 
 /** Cache hit: served for free; a stray hold is released without changing the job status. */
-async function reconcileCachedJob({ client, job, reservation, charge }: JobLedger): Promise<Verdict> {
+async function reconcileCachedJob({ client, job, reservation, charge }: LedgerState): Promise<Verdict> {
   if (charge) return issue('CACHED_JOB_CHARGED');
   if (reservation && reservation.status !== 'released') {
-    await client.query(`UPDATE credit_reservations SET status = 'released', updated_at = now() WHERE ${job.kind}_job_id = $1`, [job.id]);
+    await setJobReservation(client, job, 'released');
     return repaired;
   }
   return clean;
@@ -104,7 +108,7 @@ async function reconcileCachedJob({ client, job, reservation, charge }: JobLedge
  * (Partially) succeeded: exactly one charge of usable × price, and a settled hold for the full price.
  * A success without usable results or charge is a half-finished failure; downgrade it unless result rows contradict that.
  */
-async function reconcileSucceededJob({ client, job, current, reservation, charge }: JobLedger): Promise<Verdict> {
+async function reconcileSucceededJob({ client, job, current, reservation, charge }: LedgerState): Promise<Verdict> {
   if (current.usableCount === 0 && !charge) {
     const results = await client.query(`SELECT 1 FROM ${job.kind}_job_results WHERE job_id = $1 LIMIT 1`, [job.id]);
     if (results.rows.length) return issue('TERMINAL_RESULT_MISMATCH');
@@ -114,7 +118,7 @@ async function reconcileSucceededJob({ client, job, current, reservation, charge
       await client.query(`UPDATE artwork_job_directions SET status = 'failed',
         reason = COALESCE(reason, 'PROCESSING_FAILED'), generated_url = NULL, updated_at = now() WHERE job_id = $1`, [job.id]);
     }
-    await releaseJobCredits(client, job);
+    await jobLedger.release(client, job);
     return repaired;
   }
   if (!charge || current.unitCredits === null || charge.amount !== -current.usableCount * current.unitCredits ||
@@ -122,7 +126,7 @@ async function reconcileSucceededJob({ client, job, current, reservation, charge
   if (!reservation) return issue('TERMINAL_RESERVATION_MISSING');
   if (reservation.amount !== current.requestedCount * current.unitCredits) return issue('RESERVATION_AMOUNT_MISMATCH');
   if (reservation.status !== 'settled') {
-    await client.query(`UPDATE credit_reservations SET status = 'settled', updated_at = now() WHERE ${job.kind}_job_id = $1`, [job.id]);
+    await setJobReservation(client, job, 'settled');
     return repaired;
   }
   return clean;
@@ -132,7 +136,7 @@ async function reconcileSucceededJob({ client, job, current, reservation, charge
  * Pending/queued/running: uncharged with an active hold for the full price. A lost hold is restored only from
  * genuinely available credits, never from money another job has since spent.
  */
-async function reconcileActiveJob({ client, job, current, reservation, charge }: JobLedger): Promise<Verdict> {
+async function reconcileActiveJob({ client, job, current, reservation, charge }: LedgerState): Promise<Verdict> {
   if (charge) return issue('NONTERMINAL_JOB_CHARGED');
   if (current.unitCredits === null) return issue('JOB_PRICE_MISSING');
   const amount = current.unitCredits * current.requestedCount;
@@ -141,9 +145,9 @@ async function reconcileActiveJob({ client, job, current, reservation, charge }:
     return issue('RESERVATION_RESTORE_INSUFFICIENT_CREDITS');
   }
   if (reservation) {
-    await client.query(`UPDATE credit_reservations SET status = 'reserved', reserved_amount = $2, updated_at = now() WHERE ${job.kind}_job_id = $1`, [job.id, amount]);
+    await setJobReservation(client, job, 'reserved', amount);
   } else {
-    await reserveJobCredits(client, job, current.userId, amount);
+    await jobLedger.reserve(client, job, current.userId, amount);
   }
   return repaired;
 }

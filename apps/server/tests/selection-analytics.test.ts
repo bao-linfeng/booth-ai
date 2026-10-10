@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Catalog } from '../src/modules/selection/domain.js';
 import { emptyRequirement } from '../src/modules/selection/domain.js';
-import { extractDemandTerms } from '../src/modules/selection-analytics/recording.js';
+import { extractDemandTerms } from '../src/modules/selection/analytics/recording.js';
 
 const emptyCatalog: Catalog = {
   boothSpaces: [],

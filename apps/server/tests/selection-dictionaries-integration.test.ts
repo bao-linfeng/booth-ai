@@ -8,7 +8,7 @@ import { previewImport } from '../src/modules/schemes/imports/preview.js';
 import { commitImport } from '../src/modules/schemes/imports/commit.js';
 import { loadImportDictionaries, validateImportRow } from '../src/modules/schemes/imports/validation.js';
 import { parseWorkbook } from '../src/modules/schemes/imports/workbook.js';
-import { createDictionaryItem, deleteDictionaryItem, updateDictionaryItem } from '../src/modules/selection/dictionaries.js';
+import { createDictionaryItem, deleteDictionaryItem, updateDictionaryItem } from '../src/modules/dictionaries/service.js';
 import { loadCatalog } from '../src/modules/selection/repository.js';
 
 test('size migration, Excel import, transactional CRUD and dictionary language persistence against PostgreSQL', {

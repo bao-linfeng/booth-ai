@@ -5,7 +5,8 @@ import type { AssignedAiModel } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
 import { buildThemePrompt } from './prompt.js';
-import { lockCreditUser, reserveJobCredits } from '../../credits/service.js';
+import { lockCreditUser } from '../../credits/service.js';
+import { jobLedger } from '../credit-jobs.js';
 import { normalizeThemeInput, type ThemeInput } from './domain.js';
 
 export type { ThemeInput } from './domain.js';
@@ -177,7 +178,7 @@ export async function createThemeJob(pool: pg.Pool, userId: string, requestKey: 
       if (copied.rowCount !== parameters.requestedCount) throw Object.assign(new Error('Cached result unavailable'), { statusCode: 409, reason: 'OFFER_STALE' });
     } else {
       await client.query('INSERT INTO theme_job_outbox (job_id) VALUES ($1) ON CONFLICT DO NOTHING', [job.id]);
-      await reserveJobCredits(client, { kind: 'theme', id: job.id }, userId, requiredCredits);
+      await jobLedger.reserve(client, { kind: 'theme', id: job.id }, userId, requiredCredits);
     }
     return submission(job, false);
   });
