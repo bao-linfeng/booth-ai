@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onBeforeUnmount, onMounted, watch } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import { useI18n } from 'vue-i18n';
 import { useResizeObserver } from "@vueuse/core";
 import { useRoute } from "vue-router";
@@ -16,7 +16,7 @@ import {
   ArrowUpRight,
   MessageCircle,
 } from "lucide-vue-next";
-import { openWith as openCustomerService, setPageContext } from "@/features/customer-service/useCustomerService";
+import { useSchemeCustomerService } from "@/features/customer-service/useCustomerServiceContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import ImagePreviewDialog from "@/components/ImagePreviewDialog.vue";
@@ -329,14 +329,9 @@ const specifications = computed(() => {
     { label: t('schemeDetail.specProductSystem'), value: spec.productSystemLabel },
   ];
 });
-function consultCustomerService() {
-  if (item.value?.code) void openCustomerService({ kind: 'scheme', schemeCode: item.value.code }, 'scheme_detail');
-}
 // 客服输入框的“发送当前方案”：只登记已加载的正式方案，预览示例方案服务端不存在
-watch(() => (preview.value ? null : liveData.value?.code ?? null), (code) => {
-  setPageContext(code ? { context: { kind: 'scheme', schemeCode: code }, entryPoint: 'scheme_detail', label: code } : null);
-}, { immediate: true });
-onBeforeUnmount(() => setPageContext(null));
+const { consult: consultCustomerService } = useSchemeCustomerService(() =>
+  !preview.value && liveData.value?.code ? { schemeCode: liveData.value.code } : null);
 const quoteLocation = computed(() => ({
   path: `/schemes/${encodeURIComponent(item.value?.code ?? '')}/quote`,
   query: {

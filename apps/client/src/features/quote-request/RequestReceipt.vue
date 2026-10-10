@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { CheckCircle2, MessageCircle } from 'lucide-vue-next'
-import { openWith as openCustomerService } from '@/features/customer-service/useCustomerService'
+import { useProjectCustomerService } from '@/features/customer-service/useCustomerServiceContext'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import type { ProjectReceipt } from '@/services/api/quote-requests'
 
 // 受理回执；未登录提交时提示按联系邮箱认领，并引导登录查看项目
-defineProps<{ receipt: ProjectReceipt; loggedIn: boolean; guestEmail: string; artworkFixed: boolean }>()
+const props = defineProps<{ receipt: ProjectReceipt; loggedIn: boolean; guestEmail: string; artworkFixed: boolean }>()
 defineEmits<{ login: []; 'new-request': [] }>()
 const { t } = useI18n()
+
+const { consult } = useProjectCustomerService(() => props.receipt, 'quote_receipt')
 </script>
 
 <template>
@@ -22,6 +24,6 @@ const { t } = useI18n()
     <template v-if="loggedIn"><Button as-child><RouterLink :to="`/my-projects/${receipt.projectId}`">{{ t('quoteRequest.viewProjects') }}</RouterLink></Button></template>
     <template v-else><p class="text-sm leading-6">{{ t('quoteRequest.successGuestNote', { email: guestEmail }) }}</p><Button @click="$emit('login')">{{ t('quoteRequest.loginToTrack') }}</Button></template>
     <Button variant="outline" class="ml-3" @click="$emit('new-request')">{{ t('quoteRequest.submitAnother') }}</Button>
-    <Button variant="outline" class="ml-3" @click="openCustomerService({ kind: 'project', projectId: receipt.projectId }, 'quote_receipt')"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
+    <Button variant="outline" class="ml-3" @click="consult"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
   </CardContent></Card>
 </template>

@@ -50,6 +50,8 @@ const server = await createServer({
 after(async () => { delete globalThis.__quoteRequest; await server.close(); await window.happyDOM.close() })
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: QuoteRequest } = await server.ssrLoadModule('/src/pages/QuoteRequest.vue')
+const { default: SendContextButton } = await server.ssrLoadModule('/src/features/customer-service/SendContextButton.vue')
+const cs = await server.ssrLoadModule('/src/features/customer-service/useCustomerService.ts')
 const { emptyRequirement } = await server.ssrLoadModule('/src/features/selection/types.ts')
 const { selectionSnapshot, writeSelectionSession } = await server.ssrLoadModule('/src/features/selection/session.ts')
 const { writeManualHandoff } = await server.ssrLoadModule('/src/features/selection/handoff.ts')
@@ -59,7 +61,7 @@ const validForm = { exhibitionName: '上海测试展', countryCode: 'CN', city: 
 const draftKey = (manual, themeJobId = 'standard', artworkJobId = 'pending') => manual ? 'booth:manual-draft' : `booth:quote-draft:SC-6030:${themeJobId}:${artworkJobId}`
 async function settle() { for (let i = 0; i < 4; i++) { await nextTick(); await new Promise(resolve => setTimeout(resolve, 5)) } }
 async function mount({ manual = false, form = {}, description = '需要科技感展台', restore = false, selection, query = '', respond, themeJob, artworkJob, draft = {},
-  auth = { isLoggedIn: true, currentUser: user }, context, failures = {}, dictionary } = {}) {
+  auth = { isLoggedIn: true, currentUser: user }, context, failures = {}, dictionary, customerService = false } = {}) {
   if (!restore) {
     sessionStorage.clear()
     sessionStorage.setItem(draftKey(manual, themeJob?.jobId, artworkJob?.jobId), JSON.stringify({ owner: user.id, form: { ...validForm, ...form }, pending: null, pendingManual: null, originalDescription: description, ...draft }))
@@ -73,6 +75,15 @@ async function mount({ manual = false, form = {}, description = '需要科技感
     apiFetch: async (path, options) => {
       calls.push({ path, method: options?.method ?? 'GET', body: options?.body ? JSON.parse(JSON.stringify(options.body)) : undefined })
       if (failures[path]) throw failures[path]
+      if (customerService && path.startsWith('/api/v1/client/customer-service/')) {
+        const conversation = { id: 'conversation-1', status: 'active', agentReadSeq: 0 }
+        if (path.endsWith('/visitors')) return { code: 0, data: { visitorId: 'visitor-1' } }
+        if (path.endsWith('/conversations')) return { code: 0, data: { conversation, contexts: [], agentsOnline: true } }
+        if (path.endsWith('/messages')) return { code: 0, data: { items: [], hasMore: false } }
+        if (path.endsWith('/events-ticket')) return { code: 0, data: { ticket: 'ticket-1' } }
+        if (path.endsWith('/contexts')) return { code: 0, data: { conversation, message: { id: 'context-message-1', seq: 1, conversationId: conversation.id, kind: 'context', context: options.body.context } } }
+        throw new Error(`Unexpected customer service request: ${path}`)
+      }
       if (path.endsWith('/quote-context')) {
         if (context) await context(++contextReads)
         return { code: 0, data: { schemeCode: 'SC-6030', schemeRevision: 1, bomRevision: 7, drawingRevision: 1, artworkRevision: 1, materialsStatus: { bom: 'available', drawings: 'available', artworks: 'available' } } }
@@ -93,12 +104,56 @@ async function mount({ manual = false, form = {}, description = '需要科技感
     { path: '/:pathMatch(.*)*', component: { render: () => null } },
   ] })
   await router.push(manual ? '/manual-request' : `/schemes/SC-6030/quote${query}`); await router.isReady()
-  const app = createApp({ render: () => h(QuoteRequest) }); app.use(router); app.mount(container); await settle()
+  const app = createApp({ render: () => customerService ? h('div', [h(QuoteRequest), h(SendContextButton)]) : h(QuoteRequest) }); app.use(router); app.mount(container); await settle()
   return { container, calls, close: async () => { app.unmount(); container.remove(); await settle() } }
 }
 function input(container, selector, value) { const e = container.querySelector(selector); assert.ok(e, selector); e.value = value; e.dispatchEvent(new Event('input', { bubbles: true })) }
 async function submit(mounted) { mounted.container.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await settle() }
 const posts = mounted => mounted.calls.filter(call => call.method === 'POST')
+for (const manual of [false, true]) {
+  test(`${manual ? 'manual guest' : 'quote'} receipt: customer service can send the current project after submission and restoration, and clears it on reset or exit`, async () => {
+    const originalEventSource = globalThis.EventSource
+    globalThis.EventSource = class { addEventListener() {} close() {} }
+    cs.resetCustomerService()
+    cs.setPageContext(null)
+    const options = { manual, customerService: true, ...(manual ? { auth: { isLoggedIn: false, currentUser: null }, draft: { owner: null } } : {}) }
+    let mounted = await mount(options)
+    try {
+      assertNoNode(mounted.container.querySelector('[data-cs-send-context]'), 'no project before submission')
+      await submit(mounted)
+      assert.match(mounted.container.textContent, /申请已受理/)
+      const button = mounted.container.querySelector('[data-cs-send-context]')
+      assert.equal(button?.textContent.trim(), '发送当前项目')
+      assert.match(button.title, /PJ-001/)
+      mounted.container.querySelector('[data-cs-nav]').click()
+      await settle()
+      assert.equal(cs.useCustomerService().state.open, true)
+      assert.equal(cs.useCustomerService().state.notice, '')
+      button.click()
+      await settle()
+      assert.deepEqual(mounted.calls.find(call => call.path.endsWith('/contexts'))?.body, {
+        entryPoint: 'quote_receipt', context: { kind: 'project', projectId: 'project-1' },
+      })
+      assert.equal(cs.useCustomerService().state.messages.at(-1)?.context.projectId, 'project-1')
+      await mounted.close()
+      assert.equal(cs.useCustomerService().pageContext.value, null, 'leaving the receipt clears its project')
+      cs.resetCustomerService()
+      mounted = await mount({ ...options, restore: true })
+      assert.equal(mounted.container.querySelector('[data-cs-send-context]')?.textContent.trim(), '发送当前项目')
+      assert.equal(cs.useCustomerService().pageContext.value?.context.projectId, 'project-1')
+      buttonByText(mounted.container, '填写另一份申请').click()
+      await settle()
+      assertNoNode(mounted.container.querySelector('[data-cs-send-context]'), 'starting another request removes the button')
+      assert.equal(cs.useCustomerService().pageContext.value, null)
+    } finally {
+      await mounted.close()
+      cs.resetCustomerService()
+      localStorage.removeItem('booth-ai:cs-visitor')
+      if (originalEventSource === undefined) delete globalThis.EventSource
+      else globalThis.EventSource = originalEventSource
+    }
+  })
+}
 function error(container, selector, errorId) {
   const e = container.querySelector(selector), message = container.querySelector('#' + errorId)
   assert.ok(e); assert.ok(message); assert.equal(message.getAttribute('role'), 'alert')
