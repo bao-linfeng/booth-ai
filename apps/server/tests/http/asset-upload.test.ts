@@ -243,7 +243,7 @@ test('stale version upload removes the uploaded object without inserting a versi
   const deps = dependencies({ revision: 2 });
   await assert.rejects(uploadAssetVersion(deps.pool, deps.storage, null, 'S-1', 'asset-id', await imageFile('png'), 1), {
     statusCode: 409,
-    message: 'Asset revision conflict',
+    reason: 'ASSET_REVISION_CONFLICT',
   });
   assert.equal(deps.objects.size, 0);
   assert.ok(deps.events.includes('ROLLBACK'));
@@ -281,11 +281,27 @@ test('metadata rules and required upload pairing are enforced outside HTTP', asy
     { statusCode: 400 },
   );
   assert.deepEqual(deps.events, []);
-  for (const metadata of [{ viewCodes: [1] }, { purpose: 1 }, { modelAssetVersionId: 'bad' }]) {
-    assert.throws(() => validateAssetMetadata('drawing', metadata), { statusCode: 400 });
+  for (const [metadata, field, rule] of [
+    [{ viewCodes: [1] }, 'viewCodes', 'string_array'],
+    [{ purpose: 1 }, 'purpose', 'string'],
+    [{ modelAssetVersionId: 'bad' }, 'modelAssetVersionId', 'uuid'],
+  ] as const) {
+    assert.throws(() => validateAssetMetadata('drawing', metadata), {
+      statusCode: 400,
+      reason: 'ASSET_METADATA_INVALID',
+      details: { field, rule },
+    });
   }
-  for (const metadata of [{ physicalWidth: 0 }, { dimensionUnit: 'inch' }, { wallPosition: 1 }]) {
-    assert.throws(() => validateAssetMetadata('artwork', { artworkKey: 'front', ...metadata }), { statusCode: 400 });
+  for (const [metadata, field, rule] of [
+    [{ physicalWidth: 0 }, 'physicalWidth', 'positive_number'],
+    [{ dimensionUnit: 'inch' }, 'dimensionUnit', 'unit'],
+    [{ wallPosition: 1 }, 'wallPosition', 'string'],
+  ] as const) {
+    assert.throws(() => validateAssetMetadata('artwork', { artworkKey: 'front', ...metadata }), {
+      statusCode: 400,
+      reason: 'ASSET_METADATA_INVALID',
+      details: { field, rule },
+    });
   }
   validateAssetMetadata('drawing', { viewCodes: ['front'], purpose: '施工' });
   validateAssetMetadata('artwork', { artworkKey: 'front', physicalWidth: 100, dimensionUnit: 'mm' });
@@ -321,11 +337,6 @@ test('admin upload routes share multipart parsing for either field order and rej
   const app = contractApp();
   t.after(() => app.close());
   await app.register(multipart);
-  // 错误契约只返回通用文案，按抛出的异常信息断言具体的校验分支
-  let errorMessage: string | undefined;
-  app.addHook('onError', async (_request, _reply, error) => {
-    errorMessage = error.message;
-  });
   app.decorateRequest('principal', null);
   app.addHook('onRequest', async request => {
     request.principal = { site: 'admin', localId: 'admin-id', permissions: allPermissionCodes } as Principal;
@@ -348,39 +359,54 @@ test('admin upload routes share multipart parsing for either field order and rej
       assert.equal(response.json().code, 0);
     }
   }
-  const invalidRequests: Array<{ url: string; fields: Record<string, string>; files: AssetUploadFile[]; message: string }> = [
-    { url: '/schemes/S-1/assets', fields: { type: 'rendering', name: '效果图' }, files: [], message: 'File is required' },
-    { url: '/schemes/S-1/assets', fields: { type: 'rendering', name: '效果图' }, files: [file, file], message: 'Only one file is allowed' },
+  const assets = '/schemes/S-1/assets';
+  const invalidRequests: Array<{
+    fields: Record<string, string>;
+    files: AssetUploadFile[];
+    reason: string;
+    details?: object;
+    url?: string;
+  }> = [
+    { fields: { type: 'rendering', name: '效果图' }, files: [], reason: 'FILE_REQUIRED' },
+    { fields: { type: 'rendering', name: '效果图' }, files: [file, file], reason: 'TOO_MANY_FILES' },
+    { fields: { type: 'drawing', name: '图纸', metadata: '[]' }, files: [file], reason: 'ASSET_METADATA_INVALID' },
     {
-      url: '/schemes/S-1/assets',
-      fields: { type: 'drawing', name: '图纸', metadata: '[]' },
-      files: [file],
-      message: 'Metadata must be a JSON object',
-    },
-    {
-      url: '/schemes/S-1/assets',
       fields: { type: 'artwork', name: '画稿' },
       files: [file],
-      message: 'artwork metadata.artworkKey is required',
+      reason: 'ASSET_METADATA_INVALID',
+      details: { field: 'artworkKey', rule: 'required' },
     },
     {
-      url: '/schemes/S-1/assets',
-      fields: { type: 'mask', name: '蒙版' },
+      fields: { type: 'artwork', name: '画稿', metadata: '{"artworkKey":"front","dimensionUnit":"inch"}' },
       files: [file],
-      message: 'relatedAssetId is required for mask assets',
+      reason: 'ASSET_METADATA_INVALID',
+      details: { field: 'dimensionUnit', rule: 'unit' },
     },
+    { fields: { type: 'mask', name: '蒙版' }, files: [file], reason: 'MASK_RENDERING_REQUIRED' },
+    { fields: { type: 'poster', name: '海报' }, files: [file], reason: 'ASSET_FIELD_INVALID', details: { field: 'type' } },
     {
-      url: '/schemes/S-1/assets',
       fields: { type: 'rendering', name: '效果图', idempotencyKey: 'retry-1' },
       files: [file],
-      message: 'idempotencyKey must be a valid UUID',
+      reason: 'ASSET_FIELD_INVALID',
+      details: { field: 'idempotencyKey' },
     },
-    { url: versionUrl, fields: { expectedRevision: '0' }, files: [file], message: 'expectedRevision is required' },
-    { url: versionUrl, fields: { expectedRevision: '1.5' }, files: [file], message: 'expectedRevision must be an integer' },
+    {
+      url: versionUrl,
+      fields: { expectedRevision: '0' },
+      files: [file],
+      reason: 'ASSET_FIELD_INVALID',
+      details: { field: 'expectedRevision' },
+    },
+    {
+      url: versionUrl,
+      fields: { expectedRevision: '1.5' },
+      files: [file],
+      reason: 'ASSET_FIELD_INVALID',
+      details: { field: 'expectedRevision' },
+    },
   ];
-  for (const { url, fields, files, message } of invalidRequests) {
+  for (const { url = assets, fields, files, reason, details } of invalidRequests) {
     deps.events.length = 0;
-    errorMessage = undefined;
     const response = await app.inject({
       method: 'POST',
       url,
@@ -388,7 +414,9 @@ test('admin upload routes share multipart parsing for either field order and rej
       payload: multipartBody(fields, files),
     });
     assert.equal(response.statusCode, 400, response.body);
-    assert.equal(errorMessage, message);
+    const { error } = response.json();
+    assert.equal(error.reason, reason, response.body);
+    assert.deepEqual(error.details, details, response.body);
     assert.ok(
       deps.events.every(sql => sql.includes('FROM scheme_baseline_assets sa')),
       'invalid requests must not write to storage or the database',

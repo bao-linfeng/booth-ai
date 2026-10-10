@@ -42,7 +42,7 @@ async function storeAssetUpload<T>(
   save: (version: UploadVersionInput) => Promise<T>,
   checksum = fileChecksum(file),
 ): Promise<T> {
-  if (!file.buffer.length) throw Object.assign(new Error('File is required'), { statusCode: 400 });
+  if (!file.buffer.length) throw Object.assign(new Error('File is required'), { statusCode: 400, reason: 'FILE_REQUIRED' });
   const dimensions = await imageDimensions(file);
   if ((type === 'rendering' || type === 'mask') && !dimensions) {
     throw Object.assign(new Error('Unsupported or invalid image'), { statusCode: 400, reason: 'IMAGE_INVALID' });
@@ -81,7 +81,7 @@ export async function uploadAsset(
   idempotencyKey?: string,
 ): Promise<SchemeAsset> {
   if (input.type === 'mask' && !input.relatedAssetId) {
-    throw Object.assign(new Error('relatedAssetId is required for mask assets'), { statusCode: 400 });
+    throw Object.assign(new Error('relatedAssetId is required for mask assets'), { statusCode: 400, reason: 'MASK_RENDERING_REQUIRED' });
   }
   validateAssetMetadata(input.type, input.metadata);
   const checksum = fileChecksum(file);

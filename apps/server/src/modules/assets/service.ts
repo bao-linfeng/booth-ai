@@ -15,14 +15,14 @@ import {
 import { assetVersionColumns, findAsset, getAsset, toAssetVersion, type AssetVersionRow } from './queries.js';
 import type { AssetVersion, CreateAssetInput, DeleteAssetOptions, SchemeAsset, UpdateAssetInput, UploadVersionInput } from './types.js';
 
-function requestError(message: string, statusCode: number): Error & { statusCode: number } {
-  return Object.assign(new Error(message), { statusCode });
+function requestError(message: string, statusCode: number, reason?: string): Error & { statusCode: number } {
+  return Object.assign(new Error(message), { statusCode }, reason ? { reason } : {});
 }
 
 async function lockScheme(client: pg.PoolClient, schemeCode: string): Promise<string> {
   const result = await client.query<{ id: string }>('SELECT id::text AS id FROM schemes WHERE code = $1 FOR UPDATE', [schemeCode]);
   const scheme = result.rows[0];
-  if (!scheme) throw requestError('Scheme not found', 404);
+  if (!scheme) throw requestError('Scheme not found', 404, 'RESOURCE_NOT_FOUND');
   return scheme.id;
 }
 
@@ -122,7 +122,7 @@ export async function addAssetVersion(
   return transaction(pool, async client => {
     const schemeId = await lockScheme(client, schemeCode);
     const asset = await getAsset(client, schemeCode, assetId);
-    if (asset.revision !== expectedRevision) throw requestError('Asset revision conflict', 409);
+    if (asset.revision !== expectedRevision) throw requestError('Asset revision conflict', 409, 'ASSET_REVISION_CONFLICT');
     if (asset.type === 'mask') await ensureMaskMatchesRendering(client, asset.relatedAssetId, versionInput);
     const version = await insertVersion(client, adminId, assetId, versionInput);
     const updated = await client.query(
@@ -132,7 +132,7 @@ export async function addAssetVersion(
     `,
       [adminId, assetId, expectedRevision],
     );
-    if (!updated.rowCount) throw requestError('Asset revision conflict', 409);
+    if (!updated.rowCount) throw requestError('Asset revision conflict', 409, 'ASSET_REVISION_CONFLICT');
     await invalidatePublication(client, schemeId, adminId);
     return version;
   });
@@ -176,7 +176,7 @@ export async function updateAsset(
       values.push(input.metadata);
       updates.push(`metadata = $${values.length}`);
     }
-    if (updates.length === 0) throw requestError('No fields to update', 400);
+    if (updates.length === 0) throw requestError('No fields to update', 400, 'ASSET_NO_CHANGES');
     values.push(adminId);
     updates.push(`updated_by = $${values.length}`, 'updated_at = now()', 'revision = revision + 1');
     values.push(assetId, expectedRevision);
@@ -186,7 +186,7 @@ export async function updateAsset(
     );
     if (!updated.rowCount) {
       await getAsset(client, schemeCode, assetId);
-      throw requestError('Asset revision conflict', 409);
+      throw requestError('Asset revision conflict', 409, 'ASSET_REVISION_CONFLICT');
     }
     await invalidatePublication(client, schemeId, adminId);
   });
@@ -208,7 +208,7 @@ export async function deleteAsset(
         'UPDATE scheme_baseline_assets SET is_active=false,revision=revision+1,updated_by=$1,updated_at=now() WHERE id=$2 AND scheme_id=$3 AND revision=$4 AND is_active=true RETURNING revision',
         [adminId, assetId, schemeId, expectedRevision],
       );
-      if (!result.rows[0]) throw requestError('Asset revision conflict', 409);
+      if (!result.rows[0]) throw requestError('Asset revision conflict', 409, 'ASSET_REVISION_CONFLICT');
       await invalidatePublication(client, schemeId, adminId);
       return result.rows[0].revision;
     });
@@ -224,7 +224,7 @@ export async function deleteAsset(
     `,
       [adminId, assetId, expectedRevision],
     );
-    if (!result.rows[0]) throw requestError('Asset revision conflict', 409);
+    if (!result.rows[0]) throw requestError('Asset revision conflict', 409, 'ASSET_REVISION_CONFLICT');
     await invalidatePublication(client, schemeId, adminId);
     return result.rows[0].revision;
   });

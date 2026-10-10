@@ -10,7 +10,14 @@ import { getAsset, getAssetVersion, listAssets, listMaskPairingCandidates, listS
 import { deleteAsset, updateAsset } from '../../../modules/assets/service.js';
 import type { ListAssetsOptions } from '../../../modules/assets/types.js';
 import { uploadAsset, uploadAssetVersion } from '../../../modules/assets/upload.js';
-import { assetTypes, parseCreateAssetFields, parseIdempotencyKey, parseOptionalInteger, readAssetMultipart } from './multipart.js';
+import {
+  assetTypes,
+  fieldError,
+  parseCreateAssetFields,
+  parseIdempotencyKey,
+  parseOptionalInteger,
+  readAssetMultipart,
+} from './multipart.js';
 
 const tags = ['admin-assets'];
 const readPermissions = [
@@ -143,8 +150,8 @@ const maskCandidateSchema = {
   },
 } as const;
 
-function requestError(message: string, statusCode: number): Error & { statusCode: number } {
-  return Object.assign(new Error(message), { statusCode });
+function requestError(message: string, statusCode: number, reason?: string): Error & { statusCode: number } {
+  return Object.assign(new Error(message), { statusCode }, reason ? { reason } : {});
 }
 
 function decodedCode(code: string): string {
@@ -316,7 +323,7 @@ export async function registerAdminAssetsRoutes(
       requireAdminPermission(request, assetPermissionCode(asset.type, 'replace'));
       const { file, fields } = await readAssetMultipart(request);
       const expectedRevision = parseOptionalInteger(fields.expectedRevision, 'expectedRevision');
-      if (!expectedRevision || expectedRevision < 1) throw requestError('expectedRevision is required', 400);
+      if (!expectedRevision || expectedRevision < 1) throw fieldError('expectedRevision is required', 'expectedRevision');
       return {
         code: 0,
         data: await uploadAssetVersion(pool, storage, adminUserId(request), schemeCode, params.assetId, file, expectedRevision),
@@ -389,7 +396,7 @@ export async function registerAdminAssetsRoutes(
       const query = request.query;
       requireAdminPermission(request, assetPermissionCode(asset.type, query.disposition === 'preview' ? 'preview' : 'download'));
       const version = query.assetVersionId ? await getAssetVersion(pool, asset.id, query.assetVersionId) : asset.currentVersion;
-      if (!version) throw requestError('Asset has no uploaded version', 404);
+      if (!version) throw requestError('Asset has no uploaded version', 404, 'ASSET_FILE_MISSING');
       const expiresIn = 300;
       const url =
         query.disposition === 'preview'

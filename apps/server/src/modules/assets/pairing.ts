@@ -13,7 +13,7 @@ export async function ensureRelatedAsset(
 ): Promise<void> {
   if (!relatedAssetId) return;
   const related = await client.query('SELECT 1 FROM scheme_baseline_assets WHERE id = $1 AND scheme_id = $2', [relatedAssetId, schemeId]);
-  if (!related.rowCount) throw requestError('Related asset must belong to the same scheme', 400);
+  if (!related.rowCount) throw requestError('Related asset must belong to the same scheme', 400, 'RELATED_ASSET_INVALID');
 }
 
 export async function ensureMaskRelatedAsset(
@@ -32,7 +32,8 @@ export async function ensureMaskRelatedAsset(
   `,
     [relatedAssetId, schemeId],
   );
-  if (related.rows[0]?.type !== 'rendering') throw requestError('Related asset for a mask must be a rendering', 400);
+  if (related.rows[0]?.type !== 'rendering')
+    throw requestError('Related asset for a mask must be a rendering', 400, 'RELATED_ASSET_INVALID');
   const paired = await client.query(
     `
     SELECT 1
@@ -42,7 +43,7 @@ export async function ensureMaskRelatedAsset(
   `,
     assetId ? [schemeId, relatedAssetId, assetId] : [schemeId, relatedAssetId],
   );
-  if (paired.rowCount) throw requestError('This rendering is already paired with another mask', 409);
+  if (paired.rowCount) throw requestError('This rendering is already paired with another mask', 409, 'RENDERING_ALREADY_PAIRED');
 }
 
 /** 蒙版像素尺寸必须与配对效果图的当前版本一致；需在已锁定方案的事务内调用。 */

@@ -174,7 +174,7 @@ export async function listSchemeAssets(pool: pg.Pool, schemeCode: string, type?:
 
 export async function getAsset(pool: pg.Pool | pg.PoolClient, schemeCode: string, assetId: string): Promise<SchemeAsset> {
   const asset = await findAsset(pool, schemeCode, assetId);
-  if (!asset) throw Object.assign(new Error('Asset not found'), { statusCode: 404 });
+  if (!asset) throw Object.assign(new Error('Asset not found'), { statusCode: 404, reason: 'RESOURCE_NOT_FOUND' });
   return asset;
 }
 
@@ -188,7 +188,7 @@ export async function getAssetVersion(pool: pg.Pool, assetId: string, versionId:
     [versionId, assetId],
   );
   const row = result.rows[0];
-  if (!row) throw Object.assign(new Error('Asset version not found'), { statusCode: 404 });
+  if (!row) throw Object.assign(new Error('Asset version not found'), { statusCode: 404, reason: 'RESOURCE_NOT_FOUND' });
   return toAssetVersion(row);
 }
 

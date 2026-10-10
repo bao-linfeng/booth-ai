@@ -331,14 +331,20 @@ test(
       await published();
       const beforeConflict = await state();
       const publishedState = await publication();
-      await assert.rejects(updateAsset(pool, admin, code, renderingA, { sortOrder: 0 }, 1), { statusCode: 409 });
+      await assert.rejects(updateAsset(pool, admin, code, renderingA, { sortOrder: 0 }, 1), {
+        statusCode: 409,
+        reason: 'ASSET_REVISION_CONFLICT',
+      });
       assert.deepEqual(await state(), beforeConflict);
       assert.deepEqual(await publication(), publishedState);
       await assert.rejects(updateAsset(pool, admin, code, maskA, { relatedAssetId: renderingB }, 2), { statusCode: 409 });
       assert.deepEqual(await state(), beforeConflict);
       assert.deepEqual(await publication(), publishedState);
 
-      await assert.rejects(updateAsset(pool, admin, code, maskA, { sortOrder: 0 }, 1), { statusCode: 409 });
+      await assert.rejects(updateAsset(pool, admin, code, maskA, { sortOrder: 0 }, 1), {
+        statusCode: 409,
+        reason: 'ASSET_REVISION_CONFLICT',
+      });
       assert.deepEqual(await state(), beforeConflict);
       assert.deepEqual(await publication(), publishedState);
 
@@ -442,6 +448,7 @@ test(
       });
       await assert.rejects(deleteAsset(pool, admin, code, rendering.id, rendering.revision + 1, { withPairedMasks: true }), {
         statusCode: 409,
+        reason: 'ASSET_REVISION_CONFLICT',
       });
       assert.deepEqual(await getAsset(pool, code, rendering.id), rendering);
       assert.deepEqual(await getAsset(pool, code, mask.id), mask);
