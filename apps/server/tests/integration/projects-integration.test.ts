@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { projectTestPool } from '../helpers/project-fixtures.js';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type { Redis } from 'ioredis';
 import { registerQuoteRequestRoutes } from '../../src/http/client/quote-requests/index.js';
 import { registerAuthentication } from '../../src/http/authentication.js';
@@ -118,7 +118,7 @@ test(
         JSON.stringify({ site: 'client', localId: user, sessionVersion: 1, expiresAt: Math.floor(Date.now() / 1000) + 3600 }),
       eval: async () => 1,
     } as unknown as Redis;
-    const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
+    const app = contractApp();
     registerAuthentication(app, pool, redis, 'client');
     t.after(() => app.close());
     await registerQuoteRequestRoutes(app, pool, redis);

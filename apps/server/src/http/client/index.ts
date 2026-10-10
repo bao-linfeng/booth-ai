@@ -32,7 +32,7 @@ export async function registerClientModule(
       await registerClientMeRoutes(client, config, pool, redis);
       await registerClientCreditRoutes(client, pool);
       await registerQuoteRequestRoutes(client, pool, redis);
-      await registerClientProjectRoutes(client, pool, redis, storage);
+      await registerClientProjectRoutes(client, pool, storage);
       await registerClientSearchRoutes(client, pool, redis, storage);
       await registerSelectionRoutes(client, pool, redis, storage, config);
       await registerClientManualRequestRoutes(client, pool, redis);

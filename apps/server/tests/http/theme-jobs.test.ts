@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import Fastify from 'fastify';
-import { registerErrorContract } from '../../src/http/errors.js';
+import { contractApp } from '../helpers/http-app.js';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { registerThemeModelRoutes } from '../../src/http/client/theme-jobs/index.js';
@@ -77,9 +76,8 @@ async function setup(query: Query) {
   const storage = {
     signDownload: async (key: string) => `https://assets.example/${key}`,
   } as unknown as ReturnType<typeof createStorage>;
-  const app = Fastify();
+  const app = contractApp();
   registerAuthentication(app, pool, redis, 'client');
-  registerErrorContract(app);
   await registerThemeModelRoutes(app, pool, redis, storage);
   await app.ready();
   return { app, statements, offers };
@@ -116,8 +114,10 @@ test('theme job details include ordered results with nullable fields normalized'
             selectedResultId: null,
             selectionRevision: 0,
             unitCredits: 10,
-            createdAt: '2026-01-01',
-            updatedAt: '2026-01-01',
+            cacheHit: false,
+            searchId: null,
+            createdAt: new Date('2026-01-01T00:00:00Z'),
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
           },
         ],
       };
@@ -395,10 +395,16 @@ test('cached job detail returns not_charged and fresh signed URLs', async t => {
             sourceAssetId: 'source',
             sourceObjectKey: 'old-source.png',
             status: 'succeeded',
+            phase: null,
             cacheHit: true,
             requestedCount: 1,
             usableCount: 1,
             unitCredits: 10,
+            selectedResultId: null,
+            selectionRevision: 0,
+            searchId: null,
+            createdAt: new Date('2026-01-01T00:00:00Z'),
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
           },
         ],
       };

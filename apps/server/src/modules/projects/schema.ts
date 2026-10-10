@@ -1,15 +1,25 @@
 import { currencyScales } from './domain.js';
-export const text = (maxLength: number, minLength = 0) => ({
+
+// 请求 schema 都以字面量类型声明（as const），路由经 json-schema-to-ts 推导请求类型，并与领域输入类型互相校验。
+type TextSchema = { readonly type: 'string'; readonly minLength: number; readonly maxLength: number; readonly pattern?: string };
+/** minLength > 0 时要求至少一个非空白字符 */
+export const text = (maxLength: number, minLength = 0): TextSchema => ({
   type: 'string',
   minLength,
   maxLength,
   ...(minLength ? { pattern: '\\S' } : {}),
 });
-export const keySchema = { type: 'string', minLength: 8, maxLength: 128, pattern: '^[a-zA-Z0-9_-]+$' };
-export const revisionSchema = { type: 'integer', minimum: 1 };
-export const uuid = { type: 'string', format: 'uuid' };
-export const projectParams = { type: 'object', additionalProperties: false, required: ['projectId'], properties: { projectId: uuid } };
-export const statuses = ['pending', 'following', 'quoted', 'won', 'lost', 'closed'];
+export const keySchema = { type: 'string', minLength: 8, maxLength: 128, pattern: '^[a-zA-Z0-9_-]+$' } as const;
+export const revisionSchema = { type: 'integer', minimum: 1 } as const;
+export const uuid = { type: 'string', format: 'uuid' } as const;
+export const projectParams = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['projectId'],
+  properties: { projectId: uuid },
+} as const;
+export const statuses = ['pending', 'following', 'quoted', 'won', 'lost', 'closed'] as const;
+export const currencyCodes = Object.keys(currencyScales);
 export const queryProperties = {
   page: { type: 'integer', minimum: 1, default: 1 },
   pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
@@ -20,18 +30,18 @@ export const queryProperties = {
   exhibitionName: text(200),
   createdFrom: { type: 'string', format: 'date' },
   createdTo: { type: 'string', format: 'date' },
-};
-const change = { requestKey: keySchema, expectedRevision: revisionSchema };
+} as const;
+const change = { requestKey: keySchema, expectedRevision: revisionSchema } as const;
 export const assignmentSchema = {
   type: 'object',
   additionalProperties: false,
-  required: [...Object.keys(change), 'assigneeAdminId', 'reason'],
+  required: ['requestKey', 'expectedRevision', 'assigneeAdminId', 'reason'],
   properties: { ...change, assigneeAdminId: uuid, reason: text(2000, 1) },
-};
+} as const;
 export const linkSchema = {
   type: 'object',
   additionalProperties: false,
-  required: [...Object.keys(change), 'schemeCode', 'confirmationNote'],
+  required: ['requestKey', 'expectedRevision', 'schemeCode', 'confirmationNote'],
   properties: {
     ...change,
     schemeCode: text(200, 1),
@@ -39,12 +49,12 @@ export const linkSchema = {
     drawingRevision: revisionSchema,
     confirmationNote: text(2000, 1),
   },
-};
-const sent = { sentAt: { type: 'string', format: 'date-time' }, channel: text(100, 1) };
+} as const;
+const sent = { sentAt: { type: 'string', format: 'date-time' }, channel: text(100, 1) } as const;
 export const followUpSchema = {
   type: 'object',
   additionalProperties: false,
-  required: [...Object.keys(change), 'contactMethod', 'contactedAt', 'content'],
+  required: ['requestKey', 'expectedRevision', 'contactMethod', 'contactedAt', 'content'],
   properties: {
     ...change,
     contactMethod: { type: 'string', enum: ['phone', 'email', 'customer_service', 'meeting', 'other'] },
@@ -72,13 +82,14 @@ export const followUpSchema = {
       ],
     },
   },
-};
-const decimal = { type: 'string', pattern: '^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,6})?$' };
+} as const;
+const decimal = { type: 'string', pattern: '^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,6})?$' } as const;
 export const quotationSchema = {
   type: 'object',
   additionalProperties: false,
   required: [
-    ...Object.keys(change),
+    'requestKey',
+    'expectedRevision',
     'expectedQuotationRevision',
     'currency',
     'priceBasis',
@@ -93,7 +104,7 @@ export const quotationSchema = {
   properties: {
     ...change,
     expectedQuotationRevision: { type: 'integer', minimum: 0 },
-    currency: { type: 'string', enum: Object.keys(currencyScales) },
+    currency: { type: 'string', enum: currencyCodes },
     priceBasis: { type: 'string', enum: ['included', 'excluded', 'not_applicable'] },
     validUntil: { type: 'string', format: 'date' },
     validityTimeZone: text(100, 1),
@@ -125,4 +136,4 @@ export const quotationSchema = {
       },
     },
   },
-};
+} as const;

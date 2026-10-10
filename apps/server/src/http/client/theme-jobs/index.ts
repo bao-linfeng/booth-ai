@@ -1,3 +1,4 @@
+import type { JsonSchemaToTsProvider } from '@fastify/type-provider-json-schema-to-ts';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
@@ -6,6 +7,7 @@ import { rateLimit } from '../../rate-limits.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { streamThemeJobEvents } from './events.js';
 import {
+  eventsTicketSchema,
   themeEventsSchema,
   themeJobSchema,
   themeModelsSchema,
@@ -15,8 +17,8 @@ import {
 } from './schema.js';
 import { getThemeJob, ownedThemeJob, selectThemeResult } from '../../../modules/generation/theme/queries.js';
 import { themeCredits } from '../../../modules/generation/theme/service.js';
-import { createThemeOffer, listThemeModels, type ThemeOfferInput } from '../../../modules/generation/theme/offers.js';
-import { submitThemeJob, type ThemeSubmissionInput } from '../../../modules/generation/theme/submission.js';
+import { createThemeOffer, listThemeModels } from '../../../modules/generation/theme/offers.js';
+import { submitThemeJob } from '../../../modules/generation/theme/submission.js';
 
 export async function registerThemeModelRoutes(
   app: FastifyInstance,
@@ -24,7 +26,8 @@ export async function registerThemeModelRoutes(
   redis: Redis,
   storage: ReturnType<typeof createStorage>,
 ) {
-  app.post<{ Params: { jobId: string } }>('/theme-jobs/:jobId/events-ticket', async request => {
+  const routes = app.withTypeProvider<JsonSchemaToTsProvider>();
+  routes.post('/theme-jobs/:jobId/events-ticket', { schema: { params: themeJobSchema.params, ...eventsTicketSchema } }, async request => {
     const userId = clientUserId(request);
     await ownedThemeJob(pool, userId, request.params.jobId);
     const ticket = await issueEventTicket(redis, 'theme', {
@@ -32,14 +35,14 @@ export async function registerThemeModelRoutes(
       userId,
       token: requirePrincipal(request, 'client').token,
     });
-    return { code: 0, data: { ticket } };
+    return { code: 0, data: { ticket } } as const;
   });
 
-  app.get<{ Params: { jobId: string }; Querystring: { ticket: string } }>(
+  routes.get(
     '/theme-jobs/:jobId/events',
     {
       config: { authentication: 'events', eventTicketPrefix: 'theme' },
-      schema: themeEventsSchema,
+      schema: { params: themeJobSchema.params, ...themeEventsSchema },
     },
     async (request, reply) => {
       const userId = clientUserId(request);
@@ -48,22 +51,22 @@ export async function registerThemeModelRoutes(
     },
   );
 
-  app.get('/theme-models', { schema: themeModelsSchema }, async () => {
-    return { code: 0, data: await listThemeModels(pool) };
+  routes.get('/theme-models', { schema: themeModelsSchema }, async () => {
+    return { code: 0, data: await listThemeModels(pool) } as const;
   });
 
-  app.post<{ Body: ThemeOfferInput }>(
+  routes.post(
     '/theme-offers',
     {
       preHandler: rateLimit(redis, 'generation'),
       schema: themeOfferSchema,
     },
     async request => {
-      return { code: 0, data: await createThemeOffer(pool, redis, clientUserId(request), request.body) };
+      return { code: 0, data: await createThemeOffer(pool, redis, clientUserId(request), request.body) } as const;
     },
   );
 
-  app.post<{ Body: ThemeSubmissionInput }>(
+  routes.post(
     '/theme-jobs',
     {
       preHandler: rateLimit(redis, 'generation'),
@@ -76,11 +79,11 @@ export async function registerThemeModelRoutes(
         request.log.info({ jobKind: 'theme', jobId: data.jobId, cacheHit: data.cacheHit }, 'generation job accepted');
       reply.status(data.cacheHit || data.reusedRequest ? 200 : 202);
       reply.header('Location', `/api/v1/client/theme-jobs/${data.jobId}`);
-      return { code: 0, data };
+      return { code: 0, data } as const;
     },
   );
 
-  app.get<{ Params: { jobId: string } }>('/theme-jobs/:jobId', { schema: themeJobSchema }, async request => {
+  routes.get('/theme-jobs/:jobId', { schema: themeJobSchema }, async request => {
     const userId = clientUserId(request);
     const { jobId } = request.params;
     const { job, results: rows } = await getThemeJob(pool, userId, jobId);
@@ -96,7 +99,7 @@ export async function registerThemeModelRoutes(
     const originalPreviewUrl = job.sourceObjectKey ? await storage.signDownload(job.sourceObjectKey, 900) : null;
 
     return {
-      code: 0,
+      code: 0 as const,
       data: {
         jobId: job.id,
         schemeCode: job.schemeCode,
@@ -118,14 +121,10 @@ export async function registerThemeModelRoutes(
     };
   });
 
-  app.put<{ Params: { jobId: string }; Body: { resultId: string; expectedRevision: number } }>(
-    '/theme-jobs/:jobId/selection',
-    { schema: themeSelectionSchema },
-    async request => {
-      const userId = clientUserId(request);
-      const { jobId } = request.params;
-      const { resultId, expectedRevision } = request.body;
-      return { code: 0, data: await selectThemeResult(pool, userId, jobId, resultId, expectedRevision) };
-    },
-  );
+  routes.put('/theme-jobs/:jobId/selection', { schema: themeSelectionSchema }, async request => {
+    const userId = clientUserId(request);
+    const { jobId } = request.params;
+    const { resultId, expectedRevision } = request.body;
+    return { code: 0, data: await selectThemeResult(pool, userId, jobId, resultId, expectedRevision) } as const;
+  });
 }

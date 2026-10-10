@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { projectTestPool } from '../helpers/project-fixtures.js';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type { Redis } from 'ioredis';
 import { createManualProject } from '../../src/modules/projects/service.js';
 import { assignProject, followUpProject, saveQuotation, quotationRevision } from '../../src/modules/projects/admin-service.js';
@@ -182,11 +182,11 @@ test(
       signDownload: async () => '/test-preview',
       signDownloadWithName: async () => '/test-download',
     } as unknown as ReturnType<typeof createStorage>;
-    const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
+    const app = contractApp();
     t.after(() => app.close());
     await app.register(async clientRoutes => {
       registerAuthentication(clientRoutes, pool, redis, 'client');
-      await registerClientProjectRoutes(clientRoutes, pool, redis, storage);
+      await registerClientProjectRoutes(clientRoutes, pool, storage);
       await registerClientManualRequestRoutes(clientRoutes, pool, redis);
     });
     await app.register(

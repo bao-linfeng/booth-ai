@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { EventEmitter, once } from 'node:events';
 import test from 'node:test';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import cors from '@fastify/cors';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
@@ -95,7 +95,7 @@ async function setup(options: { status?: string; subscribeError?: boolean; snaps
       return { rows: params[0] === jobId && params[1] === userId ? [{ id: jobId }] : [] };
     },
   } as unknown as pg.Pool;
-  const app = Fastify();
+  const app = contractApp();
   await app.register(cors, { origin: ['http://localhost:5173'] });
   registerAuthentication(app, pool, redis, 'client');
   await registerArtworkJobRoutes(app, pool, redis, {} as ReturnType<typeof createStorage>);

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
 import { ERROR_CODES } from '../../src/http/errors.js';
-import { adminCurrentUserSchema, currentUserSchema } from '../../src/http/schemas.js';
+import { adminCurrentUserSchema, currentUserSchema, successResponse } from '../../src/http/schemas.js';
 import { toCurrentUser } from '../../src/modules/identity/service.js';
 import { domainError } from '../../src/lib/errors.js';
 
@@ -106,4 +106,18 @@ test('current user schemas declare every field the identity module produces, so 
     [],
   );
   assert.ok('homePath' in adminCurrentUserSchema.properties);
+});
+
+test('in tests the response guard fails a route whose response schema drops or coerces fields', async t => {
+  const app = await buildApp(config, healthy);
+  t.after(() => app.close());
+  const response = { 200: successResponse({ type: 'object', properties: { id: { type: 'string' } } }) };
+  app.get('/test-drops', { schema: { response } }, async () => ({ code: 0, data: { id: 'a', secretlyAdded: true } }));
+  app.get('/test-coerces', { schema: { response } }, async () => ({ code: 0, data: { id: 1 } }));
+  app.get('/test-matches', { schema: { response } }, async () => ({ code: 0, data: { id: 'a' } }));
+  assert.equal((await app.inject('/test-drops')).statusCode, 500);
+  assert.equal((await app.inject('/test-coerces')).statusCode, 500);
+  const ok = await app.inject('/test-matches');
+  assert.equal(ok.statusCode, 200);
+  assert.deepEqual(ok.json(), { code: 0, data: { id: 'a' } });
 });

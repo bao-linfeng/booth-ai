@@ -12,11 +12,12 @@ import {
   type Direction,
   type JobSummary,
 } from './types.js';
+import type { GenerationCredits } from '../credits-view.js';
 
 export function artworkHash(context: ArtworkContext): string {
   return digest([context.schemeCode, context.themeJobId, context.resultId, context.selectionRevision]);
 }
-export function artworkCredits(job: Pick<JobSummary, 'status' | 'unitCredits' | 'usableCount'>) {
+export function artworkCredits(job: Pick<JobSummary, 'status' | 'unitCredits' | 'usableCount'>): GenerationCredits {
   const price = job.unitCredits ?? 0;
   const terminal = ['succeeded', 'partially_succeeded', 'failed'].includes(job.status);
   return {

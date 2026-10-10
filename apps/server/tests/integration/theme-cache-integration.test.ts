@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
 import sharp from 'sharp';
@@ -146,7 +146,7 @@ test(
       putBuffer: async () => {},
       signDownload: async (key: string) => `https://assets.example/${key}`,
     } as unknown as ReturnType<typeof createStorage>;
-    const app = Fastify();
+    const app = contractApp();
     registerAuthentication(app, pool, redis, 'client');
     await registerThemeModelRoutes(app, pool, redis, storage);
     t.after(() => app.close());

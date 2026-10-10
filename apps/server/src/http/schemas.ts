@@ -1,8 +1,11 @@
 // 业务接口成功响应统一为 { code: 0, data }。声明 response schema 后 Fastify 按 schema 序列化，未声明的字段会被丢弃，
-// 因此补 schema 时必须覆盖前端用到的全部字段，并在路由测试里比对序列化结果。
-export function successResponse(data: Record<string, unknown>) {
+// 因此补 schema 时必须覆盖前端用到的全部字段；开发与测试环境的 response-guard 会在字段被丢弃或被强制转换时报错。
+// 响应对象一律写 additionalProperties: false（序列化行为不变，推导出的类型才不带索引签名）。
+// schema 用 `as const` 声明，路由经 `app.withTypeProvider<JsonSchemaToTsProvider>()` 注册后，请求与响应类型都从 schema 推导。
+export function successResponse<const D extends object>(data: D) {
   return {
     type: 'object',
+    additionalProperties: false,
     required: ['code', 'data'],
     properties: { code: { type: 'integer', const: 0 }, message: { type: 'string' }, data },
   } as const;

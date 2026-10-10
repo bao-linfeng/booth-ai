@@ -1,29 +1,37 @@
+import type { JsonSchemaToTsProvider } from '@fastify/type-provider-json-schema-to-ts';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import { optionalClientUserId } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
 import { requestMessageLocale } from '../../locale.js';
+import { successResponse } from '../../schemas.js';
 import { createQuoteRequest, loadQuoteContext } from '../../../modules/projects/service.js';
-import type { QuoteInput } from '../../../modules/projects/domain.js';
-import { quoteSchema } from './schema.js';
+import { quoteContextSchema, quoteReceiptSchema, quoteSchema } from './schema.js';
 import { resolveVisitor } from '../../../modules/customer-service/visitors.js';
 import { visitorToken } from '../customer-service/visitor-cookie.js';
 
 export async function registerQuoteRequestRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis) {
-  app.get<{ Params: { code: string } }>(
+  const routes = app.withTypeProvider<JsonSchemaToTsProvider>();
+  routes.get(
     '/schemes/:code/quote-context',
     {
-      schema: { params: { type: 'object', required: ['code'], properties: { code: { type: 'string', minLength: 1, maxLength: 200 } } } },
+      schema: {
+        params: { type: 'object', required: ['code'], properties: { code: { type: 'string', minLength: 1, maxLength: 200 } } } as const,
+        response: { 200: successResponse(quoteContextSchema) },
+      },
     },
     async (request, reply) => {
       reply.header('Cache-Control', 'private, no-store');
-      return { code: 0, data: await loadQuoteContext(pool, request.params.code) };
+      return { code: 0, data: await loadQuoteContext(pool, request.params.code) } as const;
     },
   );
-  app.post<{ Body: QuoteInput }>(
+  routes.post(
     '/quote-requests',
-    { preHandler: rateLimit(redis, 'quote', 'anonymousProject'), schema: { tags: ['client-quote-requests'], body: quoteSchema } },
+    {
+      preHandler: rateLimit(redis, 'quote', 'anonymousProject'),
+      schema: { tags: ['client-quote-requests'], body: quoteSchema, response: { '2xx': successResponse(quoteReceiptSchema) } },
+    },
     async (request, reply) => {
       reply.header('Cache-Control', 'private, no-store');
       const userId = optionalClientUserId(request);

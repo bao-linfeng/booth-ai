@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
 import { buffer as streamBuffer } from 'node:stream/consumers';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type { Redis } from 'ioredis';
 import pg from 'pg';
 import sharp from 'sharp';
@@ -175,7 +175,7 @@ test(
         return 'OK';
       },
     } as unknown as Redis;
-    const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
+    const app = contractApp();
     registerAuthentication(app, pool, redis, 'client');
     await registerArtworkJobRoutes(app, pool, redis, storage);
     t.after(() => app.close());

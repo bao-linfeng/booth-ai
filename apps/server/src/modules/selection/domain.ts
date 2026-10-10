@@ -186,15 +186,38 @@ export function validateRequirement(input: Requirement, catalog: Catalog): Requi
   return r;
 }
 
-const nullableDimension = { anyOf: [{ type: 'integer', minimum: 1, maximum: 1_000_000 }, { type: 'null' }] };
-const id = { type: 'string', minLength: 1, maxLength: 100 };
-const ids = { type: 'array', maxItems: 50, uniqueItems: true, items: id };
-const nullableId = { anyOf: [id, { type: 'null' }] };
+const nullableDimension = { anyOf: [{ type: 'integer', minimum: 1, maximum: 1_000_000 }, { type: 'null' }] } as const;
+const id = { type: 'string', minLength: 1, maxLength: 100 } as const;
+const ids = { type: 'array', maxItems: 50, uniqueItems: true, items: id } as const;
+const nullableId = { anyOf: [id, { type: 'null' }] } as const;
+
+const requirementKeys = [
+  'boothSpaceId',
+  'lengthMm',
+  'widthMm',
+  'maxHeightMm',
+  'areaM2',
+  'openingCount',
+  'productSystemId',
+  'styleIds',
+  'industryIds',
+  'budgetTierId',
+  'zoneIds',
+  'featureIds',
+  'keywords',
+  'requiredZoneIds',
+  'requiredFeatureIds',
+  'excludedZoneIds',
+  'excludedFeatureIds',
+] as const satisfies readonly (keyof Requirement)[];
+// 编译期保证 requirementKeys 覆盖 Requirement 的全部字段：漏写时类型参数不满足 never 约束
+type AssertNone<T extends never> = T;
+export type MissingRequirementKeys = AssertNone<Exclude<keyof Requirement, (typeof requirementKeys)[number]>>;
 
 export const requirementSchema = {
   type: 'object',
   additionalProperties: false,
-  required: Object.keys(emptyRequirement()),
+  required: requirementKeys,
   properties: {
     boothSpaceId: nullableId,
     lengthMm: nullableDimension,
@@ -214,4 +237,4 @@ export const requirementSchema = {
     excludedZoneIds: ids,
     excludedFeatureIds: ids,
   },
-};
+} as const;

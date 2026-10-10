@@ -13,6 +13,7 @@ import { registerAdminModule } from './http/admin/index.js';
 import { registerClientModule } from './http/client/index.js';
 import { defaultUploadMaxBytes } from './http/uploads.js';
 import { registerErrorContract } from './http/errors.js';
+import { registerResponseGuard } from './http/response-guard.js';
 
 export interface HealthDependencies {
   database: () => Promise<unknown>;
@@ -62,6 +63,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
     );
   });
   registerErrorContract(app);
+  if (config.nodeEnv !== 'production') registerResponseGuard(app, config.nodeEnv === 'test' ? 'throw' : 'log');
 
   app.get(
     '/health/live',

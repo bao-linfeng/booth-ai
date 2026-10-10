@@ -6,7 +6,7 @@ import { resolvePrincipal } from '../../src/modules/identity/principal.js';
 import { registerQuoteRequestRoutes } from '../../src/http/client/quote-requests/index.js';
 import { configuredAssignee } from '../../src/modules/projects/assignment.js';
 import { statusTransitions } from '../../src/modules/projects/admin-service.js';
-import Fastify from 'fastify';
+import { contractApp } from '../helpers/http-app.js';
 import type pg from 'pg';
 import type { Redis } from 'ioredis';
 
@@ -60,7 +60,7 @@ test('quote identity rejects anonymous, disabled and wrong-site sessions', async
   await assert.rejects(resolvePrincipal(pool, wrongSite, 'token', 'client'), { statusCode: 401 });
 });
 test('quote route requires a claim email and own theme results from visitors, and rejects unknown fields and invalid partial theme references', async t => {
-  const app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
+  const app = contractApp();
   await registerQuoteRequestRoutes(
     app,
     { query: async () => ({ rows: [] }) } as unknown as pg.Pool,
@@ -73,7 +73,7 @@ test('quote route requires a claim email and own theme results from visitors, an
     payload: { ...quoteInput, contact: { name: '访客', phone: '+86 138 0000 0000' } },
   });
   assert.equal(phoneOnly.statusCode, 400);
-  assert.equal(phoneOnly.json().message, 'CLAIM_EMAIL_REQUIRED');
+  assert.equal(phoneOnly.json().error.reason, 'CLAIM_EMAIL_REQUIRED');
   const themeSelection = { themeJobId: randomUUID(), resultId: randomUUID(), selectionRevision: 1 };
   assert.equal(
     (await app.inject({ method: 'POST', url: '/quote-requests', payload: { ...quoteInput, entryPoint: 'theme_result', themeSelection } }))

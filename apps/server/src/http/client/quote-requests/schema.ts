@@ -1,6 +1,6 @@
 import { requirementSchema } from '../../../modules/selection/domain.js';
-import { currencyScales, scopeCodes } from '../../../modules/projects/domain.js';
-import { keySchema, revisionSchema, text } from '../../../modules/projects/schema.js';
+import { scopeCodes } from '../../../modules/projects/domain.js';
+import { currencyCodes, keySchema, revisionSchema, text } from '../../../modules/projects/schema.js';
 
 export const quoteSchema = {
   type: 'object',
@@ -34,7 +34,7 @@ export const quoteSchema = {
       additionalProperties: false,
       required: ['currency', 'amount'],
       properties: {
-        currency: { type: 'string', enum: Object.keys(currencyScales) },
+        currency: { type: 'string', enum: currencyCodes },
         amount: { type: 'string', pattern: '^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,6})?$' },
       },
     },
@@ -67,4 +67,59 @@ export const quoteSchema = {
       },
     },
   },
-};
+} as const;
+
+// 回执可能来自幂等重放（project_operations 中保存的历史回执），字段只声明不设 required，避免旧回执缺字段时序列化失败
+const materialsStatus = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { bom: { type: 'string' }, drawings: { type: 'string' }, artworks: { type: 'string' } },
+} as const;
+const nullableRevision = { type: ['integer', 'null'] } as const;
+
+export const quoteReceiptSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    quoteRequestId: { type: 'string' },
+    requestNo: { type: 'string' },
+    projectId: { type: 'string' },
+    projectNo: { type: 'string' },
+    status: { type: 'string' },
+    revision: { type: 'integer' },
+    schemeCode: { type: 'string' },
+    bomRevision: nullableRevision,
+    drawingRevision: nullableRevision,
+    materialsStatus,
+    createdAt: { type: 'string' },
+  },
+} as const;
+
+export const manualReceiptSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    manualRequestId: { type: 'string' },
+    requestNo: { type: 'string' },
+    projectId: { type: 'string' },
+    projectNo: { type: 'string' },
+    status: { type: 'string' },
+    revision: { type: 'integer' },
+    schemeCode: { type: 'null' },
+    createdAt: { type: 'string' },
+  },
+} as const;
+
+export const quoteContextSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['schemeCode', 'schemeRevision', 'bomRevision', 'drawingRevision', 'artworkRevision', 'materialsStatus'],
+  properties: {
+    schemeCode: { type: 'string' },
+    schemeRevision: { type: 'integer' },
+    bomRevision: nullableRevision,
+    drawingRevision: nullableRevision,
+    artworkRevision: nullableRevision,
+    materialsStatus,
+  },
+} as const;

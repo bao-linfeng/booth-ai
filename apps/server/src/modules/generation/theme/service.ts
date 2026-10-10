@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
+import type { GenerationCredits } from '../credits-view.js';
 import { assignedAiModels } from '../../../infra/ai/config.js';
 import type { AssignedAiModel } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
@@ -150,7 +151,9 @@ export async function findCachedThemeJob(
   return result.rows[0]?.id ?? null;
 }
 
-export function themeCredits(job: Pick<JobSummary, 'cacheHit' | 'status' | 'requestedCount' | 'usableCount' | 'unitCredits'>) {
+export function themeCredits(
+  job: Pick<JobSummary, 'cacheHit' | 'status' | 'requestedCount' | 'usableCount' | 'unitCredits'>,
+): GenerationCredits {
   if (job.cacheHit) return { status: 'not_charged', reservedCredits: 0, heldCredits: 0, chargedCredits: 0, releasedCredits: 0 };
   const unitCredits = job.unitCredits ?? 0;
   const terminal = ['succeeded', 'partially_succeeded', 'failed'].includes(job.status);
