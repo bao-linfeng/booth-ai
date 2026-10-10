@@ -87,10 +87,7 @@ function toPublishedScheme(row: SchemeRow): PublishedScheme {
 }
 
 async function findScheme(client: DbClient, code: string, lock = false): Promise<SchemeRow> {
-  const result = await client.query<SchemeRow>(
-    `SELECT ${schemeColumns} FROM schemes WHERE code = $1${lock ? ' FOR UPDATE' : ''}`,
-    [code],
-  );
+  const result = await client.query<SchemeRow>(`SELECT ${schemeColumns} FROM schemes WHERE code = $1${lock ? ' FOR UPDATE' : ''}`, [code]);
   const scheme = result.rows[0];
   if (!scheme) throw requestError('Scheme not found', 404);
   return scheme;
@@ -99,10 +96,9 @@ async function findScheme(client: DbClient, code: string, lock = false): Promise
 export async function createReview(pool: pg.Pool, code: string, adminId: string, input: CreateReviewInput): Promise<ReviewRecord> {
   return transaction(pool, async client => {
     const scheme = await findScheme(client, code, true);
-    const previous = await client.query<ReviewRow>(
-      `SELECT ${reviewColumns} FROM scheme_reviews WHERE request_key = $1`,
-      [input.requestKey],
-    );
+    const previous = await client.query<ReviewRow>(`SELECT ${reviewColumns} FROM scheme_reviews WHERE request_key = $1`, [
+      input.requestKey,
+    ]);
     if (previous.rows[0]) return toReviewRecord(previous.rows[0]);
     if (scheme.revision !== input.schemeRevision) throw requestError('Scheme revision conflict', 409);
     if (input.phase === 'overall' && input.decision === 'pass') {
@@ -117,7 +113,16 @@ export async function createReview(pool: pg.Pool, code: string, adminId: string,
     const inserted = await client.query<ReviewRow>(
       `INSERT INTO scheme_reviews (scheme_id, request_key, scheme_revision, phase, decision, checks, notes, admin_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (request_key) DO NOTHING RETURNING ${reviewColumns}`,
-      [scheme.id, input.requestKey, input.schemeRevision, input.phase, input.decision, JSON.stringify(input.checks), input.notes ?? null, adminId],
+      [
+        scheme.id,
+        input.requestKey,
+        input.schemeRevision,
+        input.phase,
+        input.decision,
+        JSON.stringify(input.checks),
+        input.notes ?? null,
+        adminId,
+      ],
     );
     if (inserted.rows[0]) {
       await writeAuditLog(client, {
@@ -129,10 +134,9 @@ export async function createReview(pool: pg.Pool, code: string, adminId: string,
       });
       return toReviewRecord(inserted.rows[0]);
     }
-    const existing = await client.query<ReviewRow>(
-      `SELECT ${reviewColumns} FROM scheme_reviews WHERE request_key = $1`,
-      [input.requestKey],
-    );
+    const existing = await client.query<ReviewRow>(`SELECT ${reviewColumns} FROM scheme_reviews WHERE request_key = $1`, [
+      input.requestKey,
+    ]);
     if (!existing.rows[0]) throw requestError('Failed to create review', 500);
     return toReviewRecord(existing.rows[0]);
   });

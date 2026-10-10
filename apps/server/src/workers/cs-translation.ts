@@ -8,7 +8,10 @@ export async function dispatchCsTranslations(database: Pick<pg.Pool, 'query'>, q
   const claimed = await claimPendingTranslations(database);
   for (const item of claimed) {
     await queue.add(CS_TRANSLATE_TASK_NAME, item, {
-      jobId: `cs-translate-${item.messageId}-${item.locale}`, attempts: 3, removeOnComplete: true, removeOnFail: true,
+      jobId: `cs-translate-${item.messageId}-${item.locale}`,
+      attempts: 3,
+      removeOnComplete: true,
+      removeOnFail: true,
     });
   }
   return claimed.length;

@@ -12,8 +12,11 @@
     "start:api": "node dist/api.js",
     "start:worker": "node dist/worker.js",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "lint": "oxlint --deny-warnings src tests",
+    "format": "oxfmt src tests",
+    "format:check": "oxfmt --check src tests",
     "build": "tsc",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test \"tests/**/*.test.ts\"",
     "migrate": "tsx src/scripts/migrate.ts",
     "storage:init": "tsx src/scripts/storage-init.ts",
     "smoke": "tsx src/scripts/smoke.ts"
@@ -37,8 +40,11 @@
     "sharp": "^0.35.5"
   },
   "devDependencies": {
+    "@fastify/type-provider-json-schema-to-ts": "5.0.0",
     "@types/node": "24.13.6",
     "@types/pg": "8.23.1",
+    "oxfmt": "0.65.0",
+    "oxlint": "1.87.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3"
   }

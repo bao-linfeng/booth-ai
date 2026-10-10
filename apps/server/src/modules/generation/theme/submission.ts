@@ -9,8 +9,13 @@ export type ThemeSubmissionInput = Omit<ThemeParameters, 'cacheMode'> & {
   cacheMode?: ThemeParameters['cacheMode'];
 };
 
-export async function submitThemeJob(pool: pg.Pool, redis: Pick<Redis, 'get'>, userId: string,
-  input: ThemeSubmissionInput, requestId: string | null = null) {
+export async function submitThemeJob(
+  pool: pg.Pool,
+  redis: Pick<Redis, 'get'>,
+  userId: string,
+  input: ThemeSubmissionInput,
+  requestId: string | null = null,
+) {
   const { requestKey, offerId, schemeCode, sourceAssetId, requestedCount, cacheMode = 'reuse', searchId } = input;
   const parameters = { schemeCode, sourceAssetId, input: normalizeThemeInput(input.input), requestedCount, cacheMode, searchId };
   const replay = await replayThemeRequest(pool, userId, requestKey, parameters);

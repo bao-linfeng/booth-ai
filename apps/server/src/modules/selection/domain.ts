@@ -34,8 +34,20 @@ export interface Requirement {
   excludedFeatureIds: string[];
 }
 
-export interface Option { id: string; label: string; value?: string; labels?: Record<string, string>; aliases?: { locale: string; text: string }[]; }
-export interface BoothSpace { id: string; label: string; lengthMm: number; widthMm: number; heightMm: number; }
+export interface Option {
+  id: string;
+  label: string;
+  value?: string;
+  labels?: Record<string, string>;
+  aliases?: { locale: string; text: string }[];
+}
+export interface BoothSpace {
+  id: string;
+  label: string;
+  lengthMm: number;
+  widthMm: number;
+  heightMm: number;
+}
 
 export interface Catalog {
   boothSpaces: BoothSpace[];
@@ -101,7 +113,7 @@ export interface MatchItem<Image = CandidateImage> {
   images: Image[];
   specifications: Specifications;
   reasons: string[];
-  differences: { field: string; requested: string; actual: string; reason: string; }[];
+  differences: { field: string; requested: string; actual: string; reason: string }[];
   pendingConfirmations: PendingConfirmation[];
   preferenceMisses: string[];
 }
@@ -109,10 +121,22 @@ export interface MatchItem<Image = CandidateImage> {
 export function emptyRequirement(): Requirement {
   return {
     boothSpaceId: null,
-    lengthMm: null, widthMm: null, maxHeightMm: null, areaM2: null,
-    openingCount: null, productSystemId: null,
-    styleIds: [], industryIds: [], budgetTierId: null, zoneIds: [], featureIds: [], keywords: [],
-    requiredZoneIds: [], requiredFeatureIds: [], excludedZoneIds: [], excludedFeatureIds: []
+    lengthMm: null,
+    widthMm: null,
+    maxHeightMm: null,
+    areaM2: null,
+    openingCount: null,
+    productSystemId: null,
+    styleIds: [],
+    industryIds: [],
+    budgetTierId: null,
+    zoneIds: [],
+    featureIds: [],
+    keywords: [],
+    requiredZoneIds: [],
+    requiredFeatureIds: [],
+    excludedZoneIds: [],
+    excludedFeatureIds: [],
   };
 }
 
@@ -129,17 +153,19 @@ export function validateRequirement(input: Requirement, catalog: Catalog): Requi
   if (r.boothSpaceId !== null) {
     const size = catalog.boothSpaces.find(space => space.id === r.boothSpaceId);
     if (!size) invalid('Unknown booth size');
-    if ((r.lengthMm !== null && r.lengthMm !== size.lengthMm) || (r.widthMm !== null && r.widthMm !== size.widthMm)) invalid('Selected size conflicts with dimensions');
+    if ((r.lengthMm !== null && r.lengthMm !== size.lengthMm) || (r.widthMm !== null && r.widthMm !== size.widthMm))
+      invalid('Selected size conflicts with dimensions');
     r.lengthMm = size.lengthMm;
     r.widthMm = size.widthMm;
   }
   if (r.lengthMm && r.widthMm) {
-    const area = r.lengthMm * r.widthMm / 1_000_000;
+    const area = (r.lengthMm * r.widthMm) / 1_000_000;
     if (r.areaM2 !== null && Math.abs(area - r.areaM2) > 0.0000001) invalid('Area conflicts with dimensions');
     r.areaM2 = area;
   }
-  if (r.openingCount !== null && !catalog.openingCounts.some(option => option.id === String(r.openingCount))) invalid('Unknown catalog option');
-  
+  if (r.openingCount !== null && !catalog.openingCounts.some(option => option.id === String(r.openingCount)))
+    invalid('Unknown catalog option');
+
   const groups = [
     [r.productSystemId ? [r.productSystemId] : [], catalog.productSystems],
     [r.styleIds, catalog.styles],
@@ -148,27 +174,50 @@ export function validateRequirement(input: Requirement, catalog: Catalog): Requi
     [[...r.zoneIds, ...r.requiredZoneIds, ...r.excludedZoneIds], catalog.zones],
     [[...r.featureIds, ...r.requiredFeatureIds, ...r.excludedFeatureIds], catalog.features],
   ] as const;
-  
+
   for (const [ids, options] of groups) {
     if (ids.some(id => !options.some(option => option.id === id))) invalid('Unknown catalog option');
   }
-  
+
   if (r.requiredZoneIds.some(id => r.excludedZoneIds.includes(id)) || r.requiredFeatureIds.some(id => r.excludedFeatureIds.includes(id))) {
     invalid('Contradictory required and excluded tags');
   }
-  
+
   return r;
 }
 
-const nullableDimension = { anyOf: [{ type: 'integer', minimum: 1, maximum: 1_000_000 }, { type: 'null' }] };
-const id = { type: 'string', minLength: 1, maxLength: 100 };
-const ids = { type: 'array', maxItems: 50, uniqueItems: true, items: id };
-const nullableId = { anyOf: [id, { type: 'null' }] };
+const nullableDimension = { anyOf: [{ type: 'integer', minimum: 1, maximum: 1_000_000 }, { type: 'null' }] } as const;
+const id = { type: 'string', minLength: 1, maxLength: 100 } as const;
+const ids = { type: 'array', maxItems: 50, uniqueItems: true, items: id } as const;
+const nullableId = { anyOf: [id, { type: 'null' }] } as const;
+
+const requirementKeys = [
+  'boothSpaceId',
+  'lengthMm',
+  'widthMm',
+  'maxHeightMm',
+  'areaM2',
+  'openingCount',
+  'productSystemId',
+  'styleIds',
+  'industryIds',
+  'budgetTierId',
+  'zoneIds',
+  'featureIds',
+  'keywords',
+  'requiredZoneIds',
+  'requiredFeatureIds',
+  'excludedZoneIds',
+  'excludedFeatureIds',
+] as const satisfies readonly (keyof Requirement)[];
+// 编译期保证 requirementKeys 覆盖 Requirement 的全部字段：漏写时类型参数不满足 never 约束
+type AssertNone<T extends never> = T;
+export type MissingRequirementKeys = AssertNone<Exclude<keyof Requirement, (typeof requirementKeys)[number]>>;
 
 export const requirementSchema = {
   type: 'object',
   additionalProperties: false,
-  required: Object.keys(emptyRequirement()),
+  required: requirementKeys,
   properties: {
     boothSpaceId: nullableId,
     lengthMm: nullableDimension,
@@ -188,4 +237,4 @@ export const requirementSchema = {
     excludedZoneIds: ids,
     excludedFeatureIds: ids,
   },
-};
+} as const;

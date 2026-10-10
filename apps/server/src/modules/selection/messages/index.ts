@@ -21,7 +21,7 @@ export const DEFAULT_MESSAGE_LOCALE: MessageLocale = 'zh';
 /** 把 Accept-Language / locale 参数（如 en-US、zh-CN）归一为受支持的文案语言，未知或缺省回退中文。 */
 export function resolveMessageLocale(tag?: string | null): MessageLocale {
   const base = tag?.trim().toLowerCase().split(/[-_]/)[0] ?? '';
-  return Object.hasOwn(catalogs, base) ? base as MessageLocale : DEFAULT_MESSAGE_LOCALE;
+  return Object.hasOwn(catalogs, base) ? (base as MessageLocale) : DEFAULT_MESSAGE_LOCALE;
 }
 
 export function message(locale: MessageLocale, key: MessageKey, params: Record<string, string | number> = {}): string {

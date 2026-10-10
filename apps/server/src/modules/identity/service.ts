@@ -28,14 +28,24 @@ export function jwtExpiresAt(jwt: string, fallbackTtlSeconds: number): number {
   try {
     const payload = jwt.split('.')[1];
     if (!payload) return fallback;
-    const parsed = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64url').toString('utf8')) as { exp?: unknown };
-    return typeof parsed.exp === 'number' && Number.isSafeInteger(parsed.exp) && parsed.exp > Math.floor(Date.now() / 1000) ? parsed.exp : fallback;
+    const parsed = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64url').toString('utf8')) as {
+      exp?: unknown;
+    };
+    return typeof parsed.exp === 'number' && Number.isSafeInteger(parsed.exp) && parsed.exp > Math.floor(Date.now() / 1000)
+      ? parsed.exp
+      : fallback;
   } catch {
     return fallback;
   }
 }
 
-export function toCurrentUser(localId: string, detail: ExternalUserDetail, accountType: 'client' | 'admin', loginSource: 'password' | 'sso_token', type?: UserType): CurrentUser {
+export function toCurrentUser(
+  localId: string,
+  detail: ExternalUserDetail,
+  accountType: 'client' | 'admin',
+  loginSource: 'password' | 'sso_token',
+  type?: UserType,
+): CurrentUser {
   return {
     id: localId,
     externalUserId: String(detail.externalUserId),

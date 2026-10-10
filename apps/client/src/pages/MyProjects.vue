@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { appLocale } from '@/plugins/i18n'
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, Loader2, MessageCircle } from 'lucide-vue-next'
-import { openWith as openCustomerService, setPageContext } from '@/features/customer-service/useCustomerService'
+import { useProjectCustomerService } from '@/features/customer-service/useCustomerServiceContext'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -109,10 +109,8 @@ watch(() => (auth.isLoggedIn ? auth.currentUser?.id ?? '' : null), (id, previous
   reset(); void load(1)
 })
 // 客服输入框的“发送当前项目”：只在项目详情加载成功后登记，回到列表或离开页面时清除
-watch(() => (route.params.projectId && !error.value ? detail.value : undefined), (project) => {
-  setPageContext(project ? { context: { kind: 'project', projectId: project.projectId }, entryPoint: 'my_project', label: project.projectNo } : null)
-}, { immediate: true })
-onBeforeUnmount(() => { loadSeq++; setPageContext(null) })
+const { consult } = useProjectCustomerService(() => route.params.projectId && !error.value ? detail.value : undefined)
+onBeforeUnmount(() => { loadSeq++ })
 </script>
 
 <template>
@@ -217,7 +215,7 @@ onBeforeUnmount(() => { loadSeq++; setPageContext(null) })
                 <StatusBadge domain="project" :status="detail.status" class="rounded-full px-3 py-1" />
               </div>
               <p class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="font-medium">{{ t('projects.itemNextStep') }}</span>{{ nextSteps[detail.status] }}</p>
-              <Button variant="outline" @click="openCustomerService({ kind: 'project', projectId: detail.projectId }, 'my_project')"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
+              <Button variant="outline" @click="consult"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
             </CardContent>
           </Card>
 
@@ -296,7 +294,7 @@ onBeforeUnmount(() => { loadSeq++; setPageContext(null) })
               <Button v-else-if="canSupplementArtworks" variant="outline" as-child>
                 <RouterLink :to="{ path: `/schemes/${encodeURIComponent(detail.schemeCode!)}/artwork`, query: { themeJobId: detail.selectedThemeSummary!.themeJobId, projectId: detail.projectId } }">{{ t('projects.addArtwork') }}<ArrowRight class="ml-2 size-4" /></RouterLink>
               </Button>
-              <p class="text-xs text-muted-foreground">{{ t('projects.schemeDisclaimer') }}</p>
+              <p class="text-sm text-muted-foreground">{{ t('projects.schemeDisclaimer') }}</p>
             </CardContent>
           </Card>
         </template>

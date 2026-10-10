@@ -2,8 +2,15 @@ import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { assignedAiModels } from '../../../infra/ai/config.js';
-import { assertThemeSearch, findCachedThemeJob, loadGenerationSnapshot, normalizeThemeInput,
-  themeCacheKey, type ThemeInput, type ThemeOfferData } from './service.js';
+import {
+  assertThemeSearch,
+  findCachedThemeJob,
+  loadGenerationSnapshot,
+  normalizeThemeInput,
+  themeCacheKey,
+  type ThemeInput,
+  type ThemeOfferData,
+} from './service.js';
 
 const OFFER_TTL_SECONDS = 300;
 
@@ -45,7 +52,7 @@ async function loadDictionaryOptions(pool: pg.Pool) {
     `SELECT d.code AS type, i.id::text AS id, i.item_label AS label
      FROM dictionaries d JOIN dictionary_items i ON i.dictionary_id = d.id
      WHERE d.enabled AND i.enabled AND d.code IN ('industry', 'style')
-     ORDER BY d.code, i.sort_order, i.id`
+     ORDER BY d.code, i.sort_order, i.id`,
   );
   return {
     industries: result.rows.filter(r => r.type === 'industry').map(({ id, label }) => ({ id, label })),
@@ -63,8 +70,14 @@ export async function createThemeOffer(pool: pg.Pool, redis: Pick<Redis, 'set'>,
   let offer: ThemeOfferQuote | null = null;
 
   if (available && input?.industryId && input?.styleId) {
-    const parameters = { schemeCode: request.schemeCode, sourceAssetId: request.sourceAssetId,
-      input: normalizeThemeInput(input), requestedCount, cacheMode: request.cacheMode ?? 'reuse', searchId: request.searchId };
+    const parameters = {
+      schemeCode: request.schemeCode,
+      sourceAssetId: request.sourceAssetId,
+      input: normalizeThemeInput(input),
+      requestedCount,
+      cacheMode: request.cacheMode ?? 'reuse',
+      searchId: request.searchId,
+    };
     await assertThemeSearch(pool, userId, parameters);
     const snapshot = await loadGenerationSnapshot(pool, parameters);
     const cacheKey = themeCacheKey(userId, parameters, snapshot);
@@ -73,11 +86,26 @@ export async function createThemeOffer(pool: pg.Pool, redis: Pick<Redis, 'set'>,
     const unitCredits = primaryModel.unitCredits!;
     const id = randomUUID();
     const expiresAt = new Date(Date.now() + OFFER_TTL_SECONDS * 1000).toISOString();
-    const data: ThemeOfferData = { ...parameters, userId, cacheKey, snapshot, cacheHit, unitCredits, expiresAt,
-      pricingRevision: primaryModel.revision };
+    const data: ThemeOfferData = {
+      ...parameters,
+      userId,
+      cacheKey,
+      snapshot,
+      cacheHit,
+      unitCredits,
+      expiresAt,
+      pricingRevision: primaryModel.revision,
+    };
     await redis.set(`theme-offer:${id}`, JSON.stringify(data), 'EX', OFFER_TTL_SECONDS);
-    offer = { id, expiresAt, pricingRevision: primaryModel.revision, unitCredits,
-      maxCredits: cacheHit ? 0 : unitCredits * requestedCount, settlementRule: 'per_usable_image', cacheHit };
+    offer = {
+      id,
+      expiresAt,
+      pricingRevision: primaryModel.revision,
+      unitCredits,
+      maxCredits: cacheHit ? 0 : unitCredits * requestedCount,
+      settlementRule: 'per_usable_image',
+      cacheHit,
+    };
   }
 
   return { available, blockedReasons, limits, supportedCombinations, offer };

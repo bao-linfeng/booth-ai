@@ -55,9 +55,15 @@ docker compose --env-file .env -f infra/compose.dev.yaml down                   
 
 改动以下任一处时，需同步检查另一端：
 
-- **路由前缀**：参展商接口 `/api/v1/client/*`、管理端接口 `/api/v1/admin/*`，SU 接口在 `apps/server/src/http/su/`。
+- **路由前缀**：参展商接口 `/api/v1/client/*`、管理端接口 `/api/v1/admin/*`。SU 门户 `/api/v1/su/*` 尚未实现：`apps/server/src/http/su/` 只有规划占位，SU 用户目前经 `/api/v1/client/auth/sync`（`type: 'su'`）登录。
 - **开发代理**：client 与 admin 的 Vite 都把 `/api` 代理到 `http://localhost:3000`；后端 dev 栈 `CORS_ORIGINS` 默认放行 `5173`/`5174`。
-- **响应包装**：业务接口成功返回 `{ code: 0, data }`（admin `requestClient` 依赖此格式拦截）；错误统一为 `{ error: { code, message, requestId } }`，code 只有 `VALIDATION_ERROR` / `REQUEST_ERROR` / `INTERNAL_ERROR`。
+- **响应包装**：业务接口成功返回 `{ code: 0, data }`（admin `requestClient` 依赖此格式拦截）。错误统一为 `{ error: { code, reason?, details?, message, requestId } }`，由 `apps/server/src/http/errors.ts` 统一生成，并以 `ErrorResponse` schema 挂到每条路由的 4xx/5xx 响应上：
+  - `code` 只区分大类：`VALIDATION_ERROR`（请求 schema 校验失败）、`REQUEST_ERROR`、`INTERNAL_ERROR`。
+  - `reason` 是前端区分具体业务错误的依据（如 `INSUFFICIENT_CREDITS`、`RESOURCE_NOT_FOUND`，未知路由为 `ROUTE_NOT_FOUND`）。
+  - `details` 是该 reason 的补充数据，只在带 reason 的 4xx 中出现。
+  - `message` 是通用文案，不透传异常信息。
+
+  路由里不要手写错误响应，抛带 `statusCode`/`reason`（可选 `details`）的错误即可。新增 reason 时，同步更新前端提示映射（admin：`api/reason-messages.ts`）。
 - **认证**：对接灵通企业已有用户系统（外部 SSO），本地只维护 `users`（参展商/SU）与 `admins`（管理端）两张同步表；登录后前端以 `Authorization: Bearer <token>` 访问。实现入口见 `apps/server/AGENTS.md` 的“关键架构入口”。
 - **文件访问**：前端拿到的只能是基于 `S3_PUBLIC_ENDPOINT` 的 presigned URL，**禁止把容器内部 hostname 暴露给前端**。
 - **接口文档**：以运行中的 Swagger（`/docs`、`/openapi.json`）为准，一期需求与 API 拆分在 `docs/一期功能拆分/`。
@@ -68,7 +74,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml down                   
 
 - 提交信息遵循 Conventional Commits。
 - **不写向后兼容 shim**：废弃接口直接删除（数据库 schema 变更除外，需迁移）。
-- 修改核心逻辑必须同步更新或新增测试；非平凡改动后必须跑对应子项目的类型检查和测试（client：`pnpm build` + `pnpm test`；admin：`typecheck` + `pnpm test:antd`；server：`check` 服务，命令见子项目文档）。Git hooks 统一在根目录 `lefthook.yml`：提交前对 admin 暂存文件做 lint 与类型检查，commit-msg 按根目录 `commitlint.config.mjs` 校验提交信息，推送前按改动范围执行上述检查；`LEFTHOOK=0` 可临时跳过，但跳过时需说明原因。GitHub Actions（`.github/workflows/ci.yml`）在 PR 与推送 `main` 时对三个子项目执行同样的检查，server 额外跑 `smoke`；改动任一子项目的检查命令时，需同步该子项目 `AGENTS.md`、`lefthook.yml` 与 CI。
+- 修改核心逻辑必须同步更新或新增测试；非平凡改动后必须跑对应子项目的类型检查和测试（client：`pnpm build` + `pnpm test`；admin：`typecheck` + `pnpm test:antd`；server：`check` 服务，命令见子项目文档）。Git hooks 统一在根目录 `lefthook.yml`：提交前对 admin 暂存文件做 lint 与类型检查、对 server 暂存文件做 oxlint 与 oxfmt（纯格式化提交登记在根目录 `.git-blame-ignore-revs`，本地可 `git config blame.ignoreRevsFile .git-blame-ignore-revs`），commit-msg 按根目录 `commitlint.config.mjs` 校验提交信息，推送前按改动范围执行上述检查；`LEFTHOOK=0` 可临时跳过，但跳过时需说明原因。GitHub Actions（`.github/workflows/ci.yml`）在 PR 与推送 `main` 时对三个子项目执行同样的检查，server 额外跑 `smoke`；改动任一子项目的检查命令时，需同步该子项目 `AGENTS.md`、`lefthook.yml` 与 CI。
 - 安全：禁止在日志或错误响应中输出凭据或 secret。
 
 ### PowerShell

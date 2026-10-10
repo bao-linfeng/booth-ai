@@ -54,7 +54,9 @@ export interface ImportSummary {
 export type ImportChangedField = Exclude<keyof ImportRow, 'code' | 'verificationStatus'>;
 
 /** 字典字段映射后的中文标签，供预览核对；键与 ImportRow 的字典字段一致。 */
-export type ImportDictionaryLabels = Partial<Record<'productSystemId' | 'styleId' | 'industryIds' | 'budgetTierId' | 'zoneIds' | 'featureIds', string[]>>;
+export type ImportDictionaryLabels = Partial<
+  Record<'productSystemId' | 'styleId' | 'industryIds' | 'budgetTierId' | 'zoneIds' | 'featureIds', string[]>
+>;
 
 /** rowId 在单次导入内唯一，作为提交时的选择键；sheetName + rowNumber 仅用于定位原文件。 */
 export interface ImportPreviewRow extends ImportRowSource {

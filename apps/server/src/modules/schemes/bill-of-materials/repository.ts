@@ -66,17 +66,20 @@ export async function findBom(client: DbClient, schemeId: string): Promise<BomRe
 }
 
 export async function schemeByCode(client: DbClient, code: string, lock = false): Promise<SchemeRow> {
-  const row = (await client.query<SchemeRow>(
-    `SELECT id::text AS id, publish_status AS "publishStatus" FROM schemes WHERE code = $1 ${lock ? 'FOR UPDATE' : ''}`,
-    [code],
-  )).rows[0];
+  const row = (
+    await client.query<SchemeRow>(
+      `SELECT id::text AS id, publish_status AS "publishStatus" FROM schemes WHERE code = $1 ${lock ? 'FOR UPDATE' : ''}`,
+      [code],
+    )
+  ).rows[0];
   if (!row) throw bomError('RESOURCE_NOT_FOUND', 404);
   return row;
 }
 
 /** 加锁读取清单并校验修订号；调用方需已持有方案行锁。 */
 export async function lockedBom(client: pg.PoolClient, schemeId: string, expected: number): Promise<BomRecord> {
-  const row = (await client.query<{ revision: number }>('SELECT revision FROM scheme_boms WHERE scheme_id = $1 FOR UPDATE', [schemeId])).rows[0];
+  const row = (await client.query<{ revision: number }>('SELECT revision FROM scheme_boms WHERE scheme_id = $1 FOR UPDATE', [schemeId]))
+    .rows[0];
   if (!row) throw bomError('BOM_NOT_AVAILABLE', 404);
   if (row.revision !== expected) throw bomError('BOM_REVISION_CHANGED', 409);
   const bom = await findBom(client, schemeId);
@@ -95,10 +98,14 @@ export async function listBoms(
 ): Promise<{ data: BomListItem[]; total: number }> {
   const filter = options.code ? 'WHERE s.code ILIKE $1' : '';
   const args = options.code ? [`%${options.code}%`] : [];
-  const total = Number((await pool.query<{ count: string }>(
-    `SELECT count(*)::text AS count FROM scheme_boms b JOIN schemes s ON s.id = b.scheme_id ${filter}`,
-    args,
-  )).rows[0]?.count ?? 0);
+  const total = Number(
+    (
+      await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM scheme_boms b JOIN schemes s ON s.id = b.scheme_id ${filter}`,
+        args,
+      )
+    ).rows[0]?.count ?? 0,
+  );
   const rows = await pool.query<Omit<BomListItem, 'updatedAt'> & { updatedAt: Date | string }>(
     `SELECT s.code AS "schemeCode", s.name AS "schemeName", b.revision, b.status,
             (SELECT count(*)::integer FROM scheme_bom_items i WHERE i.bom_id = b.id) AS "itemCount",

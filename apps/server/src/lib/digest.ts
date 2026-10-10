@@ -12,5 +12,7 @@ export function digest(value: unknown): string {
               .map(([k, v]) => [k, canonical(v)]),
           )
         : input;
-  return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+  return createHash('sha256')
+    .update(JSON.stringify(canonical(value)))
+    .digest('hex');
 }

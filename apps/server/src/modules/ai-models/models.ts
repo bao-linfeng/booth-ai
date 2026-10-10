@@ -13,47 +13,89 @@ function cleanModelId(value: string) {
 }
 
 function params(protocol: string, kind: ModelKind, input: Record<string, unknown>) {
-  try { return normalizeParams(protocol, kind, input); } catch (error) {
+  try {
+    return normalizeParams(protocol, kind, input);
+  } catch (error) {
     throw requestError(error instanceof Error ? error.message : 'Invalid model parameter', 400, 'PARAMS_INVALID');
   }
 }
 
-export interface ModelInput { providerId: string; kind: ModelKind; model: string; params: Record<string, unknown>; enabled: boolean }
+export interface ModelInput {
+  providerId: string;
+  kind: ModelKind;
+  model: string;
+  params: Record<string, unknown>;
+  enabled: boolean;
+}
 
 export async function createModel(pool: pg.Pool, input: ModelInput, adminId: string) {
   const id = randomUUID();
   const model = cleanModelId(input.model);
   await transaction(pool, async client => {
-    const provider = (await client.query<{ protocol: string }>('SELECT protocol FROM ai_providers WHERE id = $1 FOR SHARE', [input.providerId])).rows[0];
+    const provider = (
+      await client.query<{ protocol: string }>('SELECT protocol FROM ai_providers WHERE id = $1 FOR SHARE', [input.providerId])
+    ).rows[0];
     if (!provider) throw requestError('Provider not found', 404);
-    if (!supportsKind(provider.protocol, input.kind)) throw requestError('Protocol does not support this model kind', 400, 'KIND_UNSUPPORTED');
+    if (!supportsKind(provider.protocol, input.kind))
+      throw requestError('Protocol does not support this model kind', 400, 'KIND_UNSUPPORTED');
     const normalized = params(provider.protocol, input.kind, input.params);
     try {
-      await client.query(`INSERT INTO ai_models (id, provider_id, kind, model, params, enabled) VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, input.providerId, input.kind, model, JSON.stringify(normalized), input.enabled]);
-    } catch (error) { uniqueViolation(error, 'Model already added to this provider', 'MODEL_TAKEN'); }
-    await writeAuditLog(client, { adminId, action: 'ai_model.create', targetType: 'ai_model', targetId: id,
-      detail: { providerId: input.providerId, kind: input.kind, model, params: normalized, enabled: input.enabled } });
+      await client.query(`INSERT INTO ai_models (id, provider_id, kind, model, params, enabled) VALUES ($1, $2, $3, $4, $5, $6)`, [
+        id,
+        input.providerId,
+        input.kind,
+        model,
+        JSON.stringify(normalized),
+        input.enabled,
+      ]);
+    } catch (error) {
+      uniqueViolation(error, 'Model already added to this provider', 'MODEL_TAKEN');
+    }
+    await writeAuditLog(client, {
+      adminId,
+      action: 'ai_model.create',
+      targetType: 'ai_model',
+      targetId: id,
+      detail: { providerId: input.providerId, kind: input.kind, model, params: normalized, enabled: input.enabled },
+    });
   });
   return id;
 }
 
-export interface ModelUpdate { model: string; params: Record<string, unknown>; enabled: boolean; expectedRevision: number }
+export interface ModelUpdate {
+  model: string;
+  params: Record<string, unknown>;
+  enabled: boolean;
+  expectedRevision: number;
+}
 
 export async function updateModel(pool: pg.Pool, id: string, input: ModelUpdate, adminId: string) {
   const model = cleanModelId(input.model);
   await transaction(pool, async client => {
-    const current = (await client.query<{ revision: number; kind: ModelKind; protocol: string }>(
-      `SELECT m.revision, m.kind, p.protocol FROM ai_models m JOIN ai_providers p ON p.id = m.provider_id WHERE m.id = $1 FOR UPDATE OF m`, [id])).rows[0];
+    const current = (
+      await client.query<{ revision: number; kind: ModelKind; protocol: string }>(
+        `SELECT m.revision, m.kind, p.protocol FROM ai_models m JOIN ai_providers p ON p.id = m.provider_id WHERE m.id = $1 FOR UPDATE OF m`,
+        [id],
+      )
+    ).rows[0];
     if (!current) throw requestError('Model not found', 404);
     if (current.revision !== input.expectedRevision) throw requestError('Model changed', 409, 'REVISION_CONFLICT');
     const normalized = params(current.protocol, current.kind, input.params);
     try {
-      await client.query(`UPDATE ai_models SET model = $2, params = $3, enabled = $4, revision = revision + 1, updated_at = now() WHERE id = $1`,
-        [id, model, JSON.stringify(normalized), input.enabled]);
-    } catch (error) { uniqueViolation(error, 'Model already added to this provider', 'MODEL_TAKEN'); }
-    await writeAuditLog(client, { adminId, action: 'ai_model.update', targetType: 'ai_model', targetId: id,
-      detail: { model, params: normalized, enabled: input.enabled, expectedRevision: input.expectedRevision } });
+      await client.query(
+        `UPDATE ai_models SET model = $2, params = $3, enabled = $4, revision = revision + 1, updated_at = now() WHERE id = $1`,
+        [id, model, JSON.stringify(normalized), input.enabled],
+      );
+    } catch (error) {
+      uniqueViolation(error, 'Model already added to this provider', 'MODEL_TAKEN');
+    }
+    await writeAuditLog(client, {
+      adminId,
+      action: 'ai_model.update',
+      targetType: 'ai_model',
+      targetId: id,
+      detail: { model, params: normalized, enabled: input.enabled, expectedRevision: input.expectedRevision },
+    });
   });
 }
 

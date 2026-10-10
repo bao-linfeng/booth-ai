@@ -6,8 +6,13 @@ import type { ArtworkContext } from './types.js';
 
 export type ArtworkSubmissionInput = ArtworkContext & { requestKey: string; offerId: string };
 
-export async function submitArtworkJob(pool: pg.Pool, redis: Pick<Redis, 'get'>, userId: string,
-  input: ArtworkSubmissionInput, requestId: string | null = null) {
+export async function submitArtworkJob(
+  pool: pg.Pool,
+  redis: Pick<Redis, 'get'>,
+  userId: string,
+  input: ArtworkSubmissionInput,
+  requestId: string | null = null,
+) {
   const replay = await replayArtworkRequest(pool, userId, input.requestKey, input);
   if (replay) return replay;
   const offer = await loadArtworkOffer(redis, input.offerId);

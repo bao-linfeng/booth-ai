@@ -75,6 +75,15 @@ node --test tests/<file>.test.mjs  # 单文件
 - 轻量的跨组件状态优先用 composables（`src/composables/`）和 `@vueuse/core` 管理；需要持久化或全局共享的状态放 Store。
 - 全局初始化顺序（`main.ts`）：`initializeTheme()` → `useCollecty()` → 创建 app → 挂载 router → mount。不要改变此顺序。
 
+### 页面接入在线客服
+
+在组件 setup 中从 `@/features/customer-service/useCustomerServiceContext` 引用：
+
+- 方案：`useSchemeCustomerService(() => ({ schemeCode, themeJobId }))`，`themeJobId` 可省略，来源默认 `scheme_detail`。
+- 项目：`useProjectCustomerService(() => project)`，`project` 提供 `projectId`、`projectNo`，来源默认 `my_project`；创建成功回执传第二参 `quote_receipt`。
+- getter 读取响应式页面数据，未加载成功或不适用时返回 `null` / `undefined`。函数自动同步客服输入框上方的发送按钮，组件卸载时清理上下文。
+- 返回的 `consult` 可直接绑定 `@click="consult"`，打开客服并附带当前方案/项目卡片。页面不再自行拼接客服上下文或维护 `watch` / 卸载清理。
+
 ---
 
 ## 环境变量

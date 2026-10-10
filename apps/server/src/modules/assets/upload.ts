@@ -3,7 +3,7 @@ import type pg from 'pg';
 import sharp from 'sharp';
 import type { createStorage } from '../../infra/storage.js';
 import { assetUploadRequest, findAssetUploadReplay, isUploadKeyCollision } from './idempotency.js';
-import { isRenderingAspect } from './image-spec.js';
+import { isRenderingAspect } from '../schemes/image-spec.js';
 import { validateAssetMetadata } from './metadata.js';
 import { getAsset } from './queries.js';
 import { addAssetVersion, createAssetWithVersion } from './service.js';
@@ -42,7 +42,7 @@ async function storeAssetUpload<T>(
   save: (version: UploadVersionInput) => Promise<T>,
   checksum = fileChecksum(file),
 ): Promise<T> {
-  if (!file.buffer.length) throw Object.assign(new Error('File is required'), { statusCode: 400 });
+  if (!file.buffer.length) throw Object.assign(new Error('File is required'), { statusCode: 400, reason: 'FILE_REQUIRED' });
   const dimensions = await imageDimensions(file);
   if ((type === 'rendering' || type === 'mask') && !dimensions) {
     throw Object.assign(new Error('Unsupported or invalid image'), { statusCode: 400, reason: 'IMAGE_INVALID' });
@@ -57,7 +57,7 @@ async function storeAssetUpload<T>(
     mimeType: file.mimeType,
     byteSize: file.buffer.byteLength,
     checksum,
-    ...(dimensions ?? {}),
+    ...dimensions,
   };
   await storage.putBuffer(objectKey, file.buffer, file.mimeType);
   try {
@@ -72,9 +72,16 @@ async function storeAssetUpload<T>(
  * 新建资源并上传首个版本。带幂等键时，同一上传操作的重试（如响应丢失）重放首次创建的资源，
  * 不再新建；同键但内容不同返回 409 UPLOAD_KEY_CONFLICT。
  */
-export async function uploadAsset(pool: pg.Pool, storage: UploadStorage, adminId: string | null, input: CreateAssetInput, file: AssetUploadFile, idempotencyKey?: string): Promise<SchemeAsset> {
+export async function uploadAsset(
+  pool: pg.Pool,
+  storage: UploadStorage,
+  adminId: string | null,
+  input: CreateAssetInput,
+  file: AssetUploadFile,
+  idempotencyKey?: string,
+): Promise<SchemeAsset> {
   if (input.type === 'mask' && !input.relatedAssetId) {
-    throw Object.assign(new Error('relatedAssetId is required for mask assets'), { statusCode: 400 });
+    throw Object.assign(new Error('relatedAssetId is required for mask assets'), { statusCode: 400, reason: 'MASK_RENDERING_REQUIRED' });
   }
   validateAssetMetadata(input.type, input.metadata);
   const checksum = fileChecksum(file);
@@ -84,8 +91,14 @@ export async function uploadAsset(pool: pg.Pool, storage: UploadStorage, adminId
     if (replay) return replay;
   }
   try {
-    return await storeAssetUpload(storage, input.schemeCode, input.type, file,
-      version => createAssetWithVersion(pool, adminId, input, version, request), checksum);
+    return await storeAssetUpload(
+      storage,
+      input.schemeCode,
+      input.type,
+      file,
+      version => createAssetWithVersion(pool, adminId, input, version, request),
+      checksum,
+    );
   } catch (error) {
     // 并发重试同时通过了预检查：后到者撞键回滚（对象已清理），改为重放先到者的结果
     if (!request || !isUploadKeyCollision(error)) throw error;
@@ -95,8 +108,17 @@ export async function uploadAsset(pool: pg.Pool, storage: UploadStorage, adminId
   }
 }
 
-export async function uploadAssetVersion(pool: pg.Pool, storage: UploadStorage, adminId: string | null, schemeCode: string, assetId: string, file: AssetUploadFile, expectedRevision: number): Promise<AssetVersion> {
+export async function uploadAssetVersion(
+  pool: pg.Pool,
+  storage: UploadStorage,
+  adminId: string | null,
+  schemeCode: string,
+  assetId: string,
+  file: AssetUploadFile,
+  expectedRevision: number,
+): Promise<AssetVersion> {
   const asset = await getAsset(pool, schemeCode, assetId);
-  return storeAssetUpload(storage, schemeCode, asset.type, file,
-    version => addAssetVersion(pool, adminId, schemeCode, assetId, version, expectedRevision));
+  return storeAssetUpload(storage, schemeCode, asset.type, file, version =>
+    addAssetVersion(pool, adminId, schemeCode, assetId, version, expectedRevision),
+  );
 }

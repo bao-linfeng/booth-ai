@@ -1,8 +1,18 @@
 import type pg from 'pg';
 import { createHash } from 'node:crypto';
 import type { createStorage } from '../../infra/storage.js';
-import { rulesVersion, type BoothSpace, type Candidate, type CandidateImage, type Catalog, type MatchDiagnostics, type MatchItem, type Option, type PublicImage } from './domain.js';
-import { localizedLabel, type DictionaryAlias } from './dictionary-language.js';
+import {
+  rulesVersion,
+  type BoothSpace,
+  type Candidate,
+  type CandidateImage,
+  type Catalog,
+  type MatchDiagnostics,
+  type MatchItem,
+  type Option,
+  type PublicImage,
+} from './domain.js';
+import { localizedLabel, type DictionaryAlias } from '../dictionaries/language.js';
 
 interface CandidateRow {
   id: string;
@@ -35,15 +45,31 @@ interface AssetRow {
   mime: string;
 }
 
-export async function loadCatalog(pool: pg.Pool | pg.PoolClient, locale = 'zh-CN'): Promise<Catalog & { rulesVersion: string; dictionaryVersion: string }> {
-  const result = await pool.query<{ type: string; id: string; value: string; label: string; labels: Record<string, string>; aliases: DictionaryAlias[] }>(`SELECT d.code AS type, i.id::text AS id, i.item_value AS value, i.item_label AS label, i.labels, i.aliases
+export async function loadCatalog(
+  pool: pg.Pool | pg.PoolClient,
+  locale = 'zh-CN',
+): Promise<Catalog & { rulesVersion: string; dictionaryVersion: string }> {
+  const result = await pool.query<{
+    type: string;
+    id: string;
+    value: string;
+    label: string;
+    labels: Record<string, string>;
+    aliases: DictionaryAlias[];
+  }>(`SELECT d.code AS type, i.id::text AS id, i.item_value AS value, i.item_label AS label, i.labels, i.aliases
     FROM dictionaries d JOIN dictionary_items i ON i.dictionary_id = d.id
     WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','product_system','style','industry','budget_tier','functional_zone','key_feature')
     ORDER BY d.code, i.sort_order, i.id`);
-  const byType = (type: string, useValue = false): Option[] => result.rows
-    .filter(row => row.type === type)
-    .map(row => ({ id: useValue ? row.value : row.id, value: row.value, label: localizedLabel(row, locale),
-      labels: { 'zh-CN': row.label, ...row.labels }, aliases: row.aliases ?? [] }));
+  const byType = (type: string, useValue = false): Option[] =>
+    result.rows
+      .filter(row => row.type === type)
+      .map(row => ({
+        id: useValue ? row.value : row.id,
+        value: row.value,
+        label: localizedLabel(row, locale),
+        labels: { 'zh-CN': row.label, ...row.labels },
+        aliases: row.aliases ?? [],
+      }));
   const spaces = await pool.query<{ id: string; lengthMm: number; widthMm: number; heightMm: number }>(`
     SELECT i.id::text AS id, i.length_mm AS "lengthMm", i.width_mm AS "widthMm", i.height_mm AS "heightMm"
     FROM dictionary_items i JOIN dictionaries d ON d.id = i.dictionary_id
@@ -71,12 +97,20 @@ export async function loadCatalog(pool: pg.Pool | pg.PoolClient, locale = 'zh-CN
     zones: byType('functional_zone'),
     features: byType('key_feature'),
     rulesVersion,
-    dictionaryVersion: createHash('sha256').update(JSON.stringify([result.rows, spaces.rows])).digest('hex').slice(0, 16),
+    dictionaryVersion: createHash('sha256')
+      .update(JSON.stringify([result.rows, spaces.rows]))
+      .digest('hex')
+      .slice(0, 16),
   };
 }
 
-export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: Catalog, code?: string): Promise<{ candidates: Candidate[]; diagnostics: MatchDiagnostics }> {
-  const result = await pool.query<CandidateRow>(`
+export async function loadCandidatePool(
+  pool: pg.Pool | pg.PoolClient,
+  catalog: Catalog,
+  code?: string,
+): Promise<{ candidates: Candidate[]; diagnostics: MatchDiagnostics }> {
+  const result = await pool.query<CandidateRow>(
+    `
     SELECT s.id, s.code, s.length_mm AS "lengthMm", s.width_mm AS "widthMm",
       s.height_mm AS "heightMm", s.area_sqm::float8 AS "areaM2", s.opening_count AS "openingCount",
       s.product_system_id::text AS "productSystemId", s.style_id::text AS "styleId",
@@ -93,22 +127,28 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
          LEFT JOIN dictionary_items di ON di.id = selected.id AND di.enabled
          LEFT JOIN dictionaries d ON d.id = di.dictionary_id AND d.enabled WHERE d.id IS NULL)
       ${code === undefined ? '' : 'AND s.code = $1'}
-    ORDER BY s.code`, code === undefined ? [] : [code]);
-    
+    ORDER BY s.code`,
+    code === undefined ? [] : [code],
+  );
+
   const diagnostics: MatchDiagnostics = {
-    reviewedPublished: result.rows.length, ready: 0,
-    exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 }
+    reviewedPublished: result.rows.length,
+    ready: 0,
+    exclusions: { unverifiedChecklist: 0, incompleteAssets: 0, invalidData: 0, productSystem: 0, height: 0, tags: 0, dimensions: 0 },
   };
   if (!result.rows.length) return { candidates: [], diagnostics };
 
-  const assets = await pool.query<AssetRow>(`
+  const assets = await pool.query<AssetRow>(
+    `
     SELECT a.id, a.scheme_id AS "schemeId", a.type, a.sort_order AS "order", a.related_asset_id AS "relatedAssetId",
       v.object_key AS "objectKey", v.width_px AS width, v.height_px AS height, v.mime_type AS mime
     FROM scheme_baseline_assets a
     JOIN LATERAL (SELECT * FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
     WHERE a.scheme_id = ANY($1::uuid[]) AND a.is_active = true AND v.byte_size > 0
-    ORDER BY a.scheme_id, a.sort_order, a.id`, [result.rows.map(row => row.id)]);
-    
+    ORDER BY a.scheme_id, a.sort_order, a.id`,
+    [result.rows.map(row => row.id)],
+  );
+
   const assetsByScheme = new Map<string, AssetRow[]>();
   for (const asset of assets.rows) {
     const bound = assetsByScheme.get(asset.schemeId);
@@ -123,12 +163,34 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
     const bound = assetsByScheme.get(row.id) ?? [];
     const images = bound.filter(asset => asset.type === 'rendering');
     const masks = bound.filter(asset => asset.type === 'mask');
-    const invalidData = ![row.lengthMm, row.widthMm, row.heightMm].every(value => Number.isSafeInteger(value) && value > 0)
-      || row.areaM2 !== row.lengthMm * row.widthMm / 1_000_000
-      || !Number.isInteger(row.openingCount) || row.openingCount < 1 || row.openingCount > 4 || !product;
-    const incompleteAssets = !['model', 'checklist', 'rendering', 'mask', 'drawing', 'artwork'].every(type => bound.some(asset => asset.type === type))
-      || images.length !== 3 || masks.length !== 3 || new Set(images.map(image => image.objectKey)).size !== 3 || new Set(images.map(image => image.order)).size !== 3
-      || images.some(image => !image.width || !image.height || image.width * 9 !== image.height * 16 || !/^image\/(png|jpeg|webp)$/.test(image.mime) || masks.filter(mask => mask.relatedAssetId === image.id && mask.order === image.order && mask.width === image.width && mask.height === image.height && /^image\/(png|jpeg|webp)$/.test(mask.mime)).length !== 1);
+    const invalidData =
+      ![row.lengthMm, row.widthMm, row.heightMm].every(value => Number.isSafeInteger(value) && value > 0) ||
+      row.areaM2 !== (row.lengthMm * row.widthMm) / 1_000_000 ||
+      !Number.isInteger(row.openingCount) ||
+      row.openingCount < 1 ||
+      row.openingCount > 4 ||
+      !product;
+    const incompleteAssets =
+      !['model', 'checklist', 'rendering', 'mask', 'drawing', 'artwork'].every(type => bound.some(asset => asset.type === type)) ||
+      images.length !== 3 ||
+      masks.length !== 3 ||
+      new Set(images.map(image => image.objectKey)).size !== 3 ||
+      new Set(images.map(image => image.order)).size !== 3 ||
+      images.some(
+        image =>
+          !image.width ||
+          !image.height ||
+          image.width * 9 !== image.height * 16 ||
+          !/^image\/(png|jpeg|webp)$/.test(image.mime) ||
+          masks.filter(
+            mask =>
+              mask.relatedAssetId === image.id &&
+              mask.order === image.order &&
+              mask.width === image.width &&
+              mask.height === image.height &&
+              /^image\/(png|jpeg|webp)$/.test(mask.mime),
+          ).length !== 1,
+      );
     if (!row.bomVerified) diagnostics.exclusions.unverifiedChecklist++;
     if (incompleteAssets) diagnostics.exclusions.incompleteAssets++;
     if (invalidData) diagnostics.exclusions.invalidData++;
@@ -138,11 +200,21 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
     candidates.push({
       code: row.code,
       specifications: {
-        lengthMm: row.lengthMm, widthMm: row.widthMm, heightMm: row.heightMm, areaM2: row.areaM2,
+        lengthMm: row.lengthMm,
+        widthMm: row.widthMm,
+        heightMm: row.heightMm,
+        areaM2: row.areaM2,
         openingCount: row.openingCount,
-        productSystemId: product.id, productSystemLabel: product.label
+        productSystemId: product.id,
+        productSystemLabel: product.label,
       },
-      images: images.map(image => ({ assetId: image.id, objectKey: image.objectKey, order: image.order, width: image.width!, height: image.height! })),
+      images: images.map(image => ({
+        assetId: image.id,
+        objectKey: image.objectKey,
+        order: image.order,
+        width: image.width!,
+        height: image.height!,
+      })),
       styleId: row.styleId,
       industryIds: row.industryIds ?? [],
       budgetTierId: row.budgetTierId,
@@ -158,10 +230,12 @@ export async function loadCandidatePool(pool: pg.Pool | pg.PoolClient, catalog: 
 type Signer = Pick<ReturnType<typeof createStorage>, 'signDownload'>;
 
 export function signImages(storage: Signer, images: CandidateImage[]): Promise<PublicImage[]> {
-  return Promise.all(images.map(async ({ objectKey, ...image }) => {
-    const url = await storage.signDownload(objectKey, 300);
-    return { ...image, url, thumbnailUrl: url };
-  }));
+  return Promise.all(
+    images.map(async ({ objectKey, ...image }) => {
+      const url = await storage.signDownload(objectKey, 300);
+      return { ...image, url, thumbnailUrl: url };
+    }),
+  );
 }
 
 export function signMatchItems(storage: Signer, items: MatchItem[]): Promise<MatchItem<PublicImage>[]> {

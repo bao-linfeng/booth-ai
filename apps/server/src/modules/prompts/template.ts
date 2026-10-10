@@ -1,5 +1,5 @@
 export const PROMPT_PURPOSES = ['filter', 'theme', 'artwork'] as const;
-export type PromptPurpose = typeof PROMPT_PURPOSES[number];
+export type PromptPurpose = (typeof PROMPT_PURPOSES)[number];
 export const PROMPT_DEFAULT_VERSION = 1;
 
 export const promptVariables = {
@@ -8,7 +8,12 @@ export const promptVariables = {
   artwork: ['industryLabel', 'styleLabel', 'brandColors', 'brandKeywords', 'directionLabel'],
 } satisfies Record<PromptPurpose, string[]>;
 
-export interface PromptIssue { code: string; message: string; variable?: string; offset?: number }
+export interface PromptIssue {
+  code: string;
+  message: string;
+  variable?: string;
+  offset?: number;
+}
 
 export function inspectPrompt(purpose: PromptPurpose, body: string): { variables: string[]; issues: PromptIssue[] } {
   const issues: PromptIssue[] = [];
@@ -34,15 +39,18 @@ export function inspectPrompt(purpose: PromptPurpose, body: string): { variables
 
 export function assertPrompt(purpose: PromptPurpose, body: string): string[] {
   const { variables, issues } = inspectPrompt(purpose, body);
-  if (issues.length) throw Object.assign(new Error('Invalid prompt template'), { statusCode: 400, reason: 'INVALID_PROMPT_TEMPLATE', issues });
+  if (issues.length)
+    throw Object.assign(new Error('Invalid prompt template'), { statusCode: 400, reason: 'INVALID_PROMPT_TEMPLATE', details: { issues } });
   return variables;
 }
 
 export function renderPrompt(purpose: PromptPurpose, body: string, values: Record<string, string>): string {
   assertPrompt(purpose, body);
-  return body.replace(/{{([^{}]*)}}/g, (_match, name: string) => {
-    const value = values[name.trim()];
-    if (value === undefined) throw new Error(`Missing prompt value: ${name.trim()}`);
-    return value;
-  }).trim();
+  return body
+    .replace(/{{([^{}]*)}}/g, (_match, name: string) => {
+      const value = values[name.trim()];
+      if (value === undefined) throw new Error(`Missing prompt value: ${name.trim()}`);
+      return value;
+    })
+    .trim();
 }

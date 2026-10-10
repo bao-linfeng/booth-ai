@@ -71,34 +71,52 @@ export async function createBomImport(
     if ((bom?.revision ?? 0) !== baseRevision) throw bomError('BOM_REVISION_CHANGED', 409);
     assertBomEditable(bom);
     const canCommit = preview.errors.length === 0 && preview.items.length > 0;
-    const row = (await client.query<ImportRow>(
-      `INSERT INTO bom_imports (
+    const row = (
+      await client.query<ImportRow>(
+        `INSERT INTO bom_imports (
          scheme_id, created_by, source_hash, source_filename, source_object_key, source_byte_size,
          base_revision, preview, errors, warnings, can_commit, status
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING ${importReturning}`,
-      [
-        scheme.id, adminId, sourceHash, filename, objectKey, byteSize, baseRevision,
-        JSON.stringify(preview), JSON.stringify(preview.errors), JSON.stringify(preview.warnings),
-        canCommit, canCommit ? 'ready' : 'invalid',
-      ],
-    )).rows[0];
+        [
+          scheme.id,
+          adminId,
+          sourceHash,
+          filename,
+          objectKey,
+          byteSize,
+          baseRevision,
+          JSON.stringify(preview),
+          JSON.stringify(preview.errors),
+          JSON.stringify(preview.warnings),
+          canCommit,
+          canCommit ? 'ready' : 'invalid',
+        ],
+      )
+    ).rows[0];
     if (!row) throw bomError('INTERNAL_ERROR', 500);
     return importRecord(row);
   });
 }
 
 export async function getBomImport(pool: pg.Pool, schemeCode: string, importId: string): Promise<BomImportRecord> {
-  const row = (await pool.query<ImportRow>(
-    `SELECT ${importColumns} FROM bom_imports i JOIN schemes s ON s.id = i.scheme_id WHERE s.code = $1 AND i.id = $2`,
-    [schemeCode, importId],
-  )).rows[0];
+  const row = (
+    await pool.query<ImportRow>(
+      `SELECT ${importColumns} FROM bom_imports i JOIN schemes s ON s.id = i.scheme_id WHERE s.code = $1 AND i.id = $2`,
+      [schemeCode, importId],
+    )
+  ).rows[0];
   if (!row) throw bomError('RESOURCE_NOT_FOUND', 404);
   return importRecord(row);
 }
 
 /** 创建或重置清单主记录，返回清单 id；调用方已确认修订号与可编辑状态。 */
-async function prepareBomForImport(client: pg.PoolClient, schemeId: string, existingId: string | undefined, adminId: string): Promise<string> {
+async function prepareBomForImport(
+  client: pg.PoolClient,
+  schemeId: string,
+  existingId: string | undefined,
+  adminId: string,
+): Promise<string> {
   const bomId = existingId ?? randomUUID();
   if (existingId) {
     await client.query('DELETE FROM scheme_bom_items WHERE bom_id = $1', [bomId]);
@@ -107,13 +125,24 @@ async function prepareBomForImport(client: pg.PoolClient, schemeId: string, exis
       [bomId, adminId],
     );
   } else {
-    await client.query('INSERT INTO scheme_boms (id, scheme_id, created_by, updated_by) VALUES ($1, $2, $3, $3)', [bomId, schemeId, adminId]);
+    await client.query('INSERT INTO scheme_boms (id, scheme_id, created_by, updated_by) VALUES ($1, $2, $3, $3)', [
+      bomId,
+      schemeId,
+      adminId,
+    ]);
   }
   return bomId;
 }
 
 /** 把导入的源 Excel 登记为方案基线资产（checklist 类型）并返回资产 id。 */
-async function createSourceAsset(client: pg.PoolClient, schemeId: string, row: ImportRow, objectKey: string, byteSize: number, adminId: string): Promise<string> {
+async function createSourceAsset(
+  client: pg.PoolClient,
+  schemeId: string,
+  row: ImportRow,
+  objectKey: string,
+  byteSize: number,
+  adminId: string,
+): Promise<string> {
   const source = await client.query<{ id: string }>(
     "INSERT INTO scheme_baseline_assets (scheme_id, type, name, is_active, created_by, updated_by) VALUES ($1, 'checklist', $2, true, $3, $3) RETURNING id::text AS id",
     [schemeId, row.sourceFilename, adminId],
@@ -138,10 +167,12 @@ export async function createOrReplaceBomFromImport(
   const requestHash = digest([expected]);
   const result = await transaction(pool, async client => {
     const scheme = await schemeByCode(client, schemeCode, true);
-    const row = (await client.query<ImportRow>(
-      `SELECT ${importColumns} FROM bom_imports i WHERE i.id = $1 AND i.scheme_id = $2 FOR UPDATE`,
-      [importId, scheme.id],
-    )).rows[0];
+    const row = (
+      await client.query<ImportRow>(`SELECT ${importColumns} FROM bom_imports i WHERE i.id = $1 AND i.scheme_id = $2 FOR UPDATE`, [
+        importId,
+        scheme.id,
+      ])
+    ).rows[0];
     if (!row) throw bomError('RESOURCE_NOT_FOUND', 404);
     if (row.status === 'committed') {
       if (row.commitRequestHash !== requestHash || !row.committedResult) throw bomError('IDEMPOTENCY_CONFLICT', 409);

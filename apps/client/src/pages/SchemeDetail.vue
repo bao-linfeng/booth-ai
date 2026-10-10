@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onBeforeUnmount, onMounted, watch } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import { useI18n } from 'vue-i18n';
 import { useResizeObserver } from "@vueuse/core";
 import { useRoute } from "vue-router";
@@ -16,7 +16,7 @@ import {
   ArrowUpRight,
   MessageCircle,
 } from "lucide-vue-next";
-import { openWith as openCustomerService, setPageContext } from "@/features/customer-service/useCustomerService";
+import { useSchemeCustomerService } from "@/features/customer-service/useCustomerServiceContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import ImagePreviewDialog from "@/components/ImagePreviewDialog.vue";
@@ -329,14 +329,9 @@ const specifications = computed(() => {
     { label: t('schemeDetail.specProductSystem'), value: spec.productSystemLabel },
   ];
 });
-function consultCustomerService() {
-  if (item.value?.code) void openCustomerService({ kind: 'scheme', schemeCode: item.value.code }, 'scheme_detail');
-}
 // 客服输入框的“发送当前方案”：只登记已加载的正式方案，预览示例方案服务端不存在
-watch(() => (preview.value ? null : liveData.value?.code ?? null), (code) => {
-  setPageContext(code ? { context: { kind: 'scheme', schemeCode: code }, entryPoint: 'scheme_detail', label: code } : null);
-}, { immediate: true });
-onBeforeUnmount(() => setPageContext(null));
+const { consult: consultCustomerService } = useSchemeCustomerService(() =>
+  !preview.value && liveData.value?.code ? { schemeCode: liveData.value.code } : null);
 const quoteLocation = computed(() => ({
   path: `/schemes/${encodeURIComponent(item.value?.code ?? '')}/quote`,
   query: {
@@ -397,7 +392,7 @@ onMounted(() => {
         <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:gap-12">
           <section :aria-label="t('schemeDetail.galleryAriaLabel')" class="min-w-0">
             <SchemeGallery :images="item.images" :code="item.code" :preview="preview" :variant="Math.max(0, previewItems.findIndex(i => i.code === item?.code))" @image-error="imageLinks.onImageError" />
-            <p class="mt-3 text-xs leading-relaxed text-muted-foreground">{{ preview ? t('schemeDetail.galleryPreviewNote') : t('schemeDetail.galleryNote') }}</p>
+            <p class="mt-3 text-sm leading-relaxed text-muted-foreground">{{ preview ? t('schemeDetail.galleryPreviewNote') : t('schemeDetail.galleryNote') }}</p>
           </section>
 
           <aside aria-labelledby="scheme-summary" class="min-w-0 border-t pt-6 lg:border-t-0 lg:pt-0">
@@ -411,8 +406,8 @@ onMounted(() => {
             <div class="space-y-3 py-6">
               <h3 class="font-medium">{{ t('schemeDetail.quoteCallout') }}</h3>
               <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.quoteNote') }}</p>
-              <Button v-if="!preview" as-child size="lg" class="w-full"><RouterLink :to="quoteLocation">{{ t('schemeDetail.requestQuote') }}<ArrowUpRight class="ml-2 size-4" aria-hidden="true" /></RouterLink></Button>
-              <Button v-else disabled size="lg" class="w-full">{{ t('schemeDetail.previewNoQuote') }}</Button>
+              <Button v-if="!preview" as-child class="w-full"><RouterLink :to="quoteLocation">{{ t('schemeDetail.requestQuote') }}<ArrowUpRight class="ml-2 size-4" aria-hidden="true" /></RouterLink></Button>
+              <Button v-else disabled class="w-full">{{ t('schemeDetail.previewNoQuote') }}</Button>
               <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.quoteDisclaimer') }}</p>
               <Button v-if="!preview" variant="outline" class="w-full" @click="consultCustomerService"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
             </div>
@@ -453,7 +448,7 @@ onMounted(() => {
               <p v-else-if="!bomData" class="py-4 text-sm text-muted-foreground">{{ t('schemeDetail.bomEmpty') }}</p>
               <div v-else class="space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-3">
-                  <span class="text-xs text-muted-foreground">{{ t('schemeDetail.bomMeta', { count: bomData.items.length, revision: bomData.revision }) }}</span>
+                  <span class="text-sm text-muted-foreground">{{ t('schemeDetail.bomMeta', { count: bomData.items.length, revision: bomData.revision }) }}</span>
                   <Button size="sm" variant="outline" :aria-busy="bomDownloading" :disabled="bomDownloading" @click="handleBomDownload">
                     <Loader2 v-if="bomDownloading" class="mr-2 size-4 animate-spin" aria-hidden="true" /><FileText v-else class="mr-2 size-4" aria-hidden="true" />{{ bomDownloading ? t('schemeDetail.bomDownloading') : t('schemeDetail.bomDownload') }}
                   </Button>
@@ -485,7 +480,7 @@ onMounted(() => {
                     </tbody>
                   </table>
                 </div>
-                <p v-if="bomData.items.length > 50" class="text-xs text-muted-foreground">{{ t('schemeDetail.bomTruncated') }}</p>
+                <p v-if="bomData.items.length > 50" class="text-sm text-muted-foreground">{{ t('schemeDetail.bomTruncated') }}</p>
               </div>
             </template>
           </TabsContent>
@@ -494,7 +489,7 @@ onMounted(() => {
             <div class="space-y-1"><h2 class="text-lg font-semibold">{{ t('schemeDetail.assetsTitle') }}</h2><p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.assetsHint') }}</p></div>
             <div class="flex flex-wrap gap-3" role="group" :aria-label="t('schemeDetail.assetsTabsAriaLabel')">
               <Button v-for="resource in resources" :key="resource.type" :variant="activeResource === resource.type ? 'default' : 'outline'" :disabled="preview || !item.resources[resource.available]" :aria-expanded="activeResource === resource.type" aria-controls="scheme-resource-list" @click="toggleResource(resource.type)">
-                <component :is="resource.icon" class="mr-2 size-4" aria-hidden="true" />{{ resource.label }}<span v-if="!item.resources[resource.available]" class="ml-2 text-xs">{{ t('schemeDetail.assetsEmpty') }}</span>
+                <component :is="resource.icon" class="mr-2 size-4" aria-hidden="true" />{{ resource.label }}<span v-if="!item.resources[resource.available]" class="ml-2 text-sm">{{ t('schemeDetail.assetsEmpty') }}</span>
               </Button>
               <Button variant="outline" :disabled="preview || !item.resources.model || downloadBusy" :aria-busy="downloadingAsset === 'model'" @click="downloadResource('model')"><Box class="mr-2 size-4" aria-hidden="true" />{{ downloadingAsset === 'model' ? t('schemeDetail.assetDownloadingSkp') : t('schemeDetail.assetDownloadSkp') }}</Button>
             </div>
@@ -508,7 +503,7 @@ onMounted(() => {
                   <p v-if="!resourceError && !resourceItems.length" class="py-6 text-sm text-muted-foreground">{{ t('schemeDetail.assetsUnavailable') }}</p>
                   <template v-if="resourceItems.length">
                     <div class="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
-                      <div><h3 class="text-sm font-medium">{{ resources.find(resource => resource.type === activeResource)?.label }} · {{ t('schemeDetail.assetsCount', { count: resourceItems.length }) }}</h3><p class="mt-1 text-xs text-muted-foreground">{{ t('schemeDetail.assetsZipHint') }}</p></div>
+                      <div><h3 class="text-sm font-medium">{{ resources.find(resource => resource.type === activeResource)?.label }} · {{ t('schemeDetail.assetsCount', { count: resourceItems.length }) }}</h3><p class="mt-1 text-sm text-muted-foreground">{{ t('schemeDetail.assetsZipHint') }}</p></div>
                       <Button variant="outline" :disabled="downloadBusy || !resourceRevision" :aria-busy="downloadingArchive === activeResource" @click="downloadAllResources(activeResource)"><Loader2 v-if="downloadingArchive === activeResource" class="mr-2 size-4 animate-spin" aria-hidden="true" /><Download v-else class="mr-2 size-4" aria-hidden="true" />{{ downloadingArchive === activeResource ? t('schemeDetail.assetsPacking') : t('schemeDetail.assetsDownloadAll') }}</Button>
                     </div>
                     <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -550,7 +545,7 @@ onMounted(() => {
           <template #content v-if="previewAsset && previewAsset.mimeType === 'application/pdf'">
             <div class="space-y-4 rounded-lg bg-muted/40 p-4">
               <p class="text-sm leading-relaxed">{{ t('schemeDetail.pdfDialogNote') }}</p>
-              <Button as-child variant="outline" class="h-auto min-h-11 max-w-full whitespace-normal"><a :href="previewAsset.url" target="_blank" rel="noopener noreferrer">{{ t('schemeDetail.pdfOpenBtn') }}<ArrowUpRight class="size-4" aria-hidden="true" /></a></Button>
+              <Button as-child variant="outline" class="h-auto min-h-9 max-w-full whitespace-normal"><a :href="previewAsset.url" target="_blank" rel="noopener noreferrer">{{ t('schemeDetail.pdfOpenBtn') }}<ArrowUpRight class="size-4" aria-hidden="true" /></a></Button>
             </div>
           </template>
         </ImagePreviewDialog>

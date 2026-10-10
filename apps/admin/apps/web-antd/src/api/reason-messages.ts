@@ -35,6 +35,8 @@ export const REASON_MESSAGES: Record<string, string> = {
   SCHEME_ALREADY_LINKED: '项目已关联方案，无需重复确认',
   SCHEME_UNAVAILABLE: '方案不存在或尚未就绪（需已发布、清单已核验且资产齐全）',
   // 文件上传
+  FILE_REQUIRED: '请选择要上传的文件',
+  UNSUPPORTED_FILE_TYPE: '仅支持 .xlsx 文件',
   FILE_TOO_LARGE:
     '文件超过大小上限：方案与清单导入不超过 20MB，方案资源不超过 50MB',
   // 方案导入
@@ -48,9 +50,21 @@ export const REASON_MESSAGES: Record<string, string> = {
     '数据行超过上限：单次最多 2000 行（含空行），请删除多余内容或拆分文件',
   IMPORT_TOO_MANY_SHEETS:
     '数据工作表超过上限：单次最多 10 个（名称含“说明”“选项”的不计入）',
+  // 通用
+  RESOURCE_NOT_FOUND: '数据不存在或已被删除，请刷新后重试',
   // 权限
   ACCESS_DENIED: '没有执行此操作的权限，请联系管理员授权',
   // 方案资源
+  ASSET_FIELD_INVALID: '资源信息不完整或格式不正确，请检查后重试',
+  ASSET_FILE_MISSING: '该资源尚未上传文件',
+  ASSET_METADATA_INVALID: '资源附加信息格式不正确，请检查后重试',
+  ASSET_NO_CHANGES: '没有需要保存的修改',
+  ASSET_REVISION_CONFLICT: '资源已被他人修改，请刷新后重试',
+  MASK_RENDERING_REQUIRED: '上传蒙版需先选择配对的效果图',
+  RELATED_ASSET_INVALID: '配对资源需为同一方案下的效果图',
+  RENDERING_ALREADY_PAIRED:
+    '该效果图已配对其他蒙版，请选择其他效果图，或先将原蒙版改配',
+  TOO_MANY_FILES: '一次只能上传一个文件',
   IMAGE_INVALID: '图片无法识别，或文件格式与扩展名不符（支持 png、jpg、webp）',
   MASK_SIZE_MISMATCH: '蒙版像素尺寸需与配对效果图完全一致',
   RENDERING_ASPECT_INVALID: '效果图需为严格 16:9（如 1600×900、1920×1080）',
@@ -71,13 +85,73 @@ export const REASON_MESSAGES: Record<string, string> = {
   TRANSFER_REASON_REQUIRED: '请填写改派原因（最多 500 字）',
   CONTACT_EMAIL_INVALID: '邮箱格式不正确',
   TOO_MANY_EMAILS: '离线通知邮箱最多 20 个',
+  // 提示词模板
+  INVALID_PROMPT_TEMPLATE: '提示词模板校验失败，请检查正文与变量',
 };
+
+const ASSET_FIELD_LABELS: Record<string, string> = {
+  expectedRevision: '资源版本',
+  idempotencyKey: '上传标识',
+  name: '资源名称',
+  relatedAssetId: '配对效果图',
+  sortOrder: '排序',
+  type: '资源类型',
+};
+
+const ASSET_METADATA_LABELS: Record<string, string> = {
+  applicability: '适用范围',
+  artworkKey: '画面键',
+  dimensionEvidence: '尺寸依据',
+  dimensionUnit: '尺寸单位',
+  exportSpecVersion: '导出规范版本',
+  modelAssetVersionId: '关联模型版本',
+  physicalHeight: '物理高度',
+  physicalWidth: '物理宽度',
+  purpose: '用途',
+  viewCodes: '视向',
+  wallPosition: '墙面位置',
+};
+
+function assetFieldLabel(labels: Record<string, string>, details: unknown) {
+  const field = (details as null | { field?: string })?.field;
+  return field ? labels[field] : undefined;
+}
 
 /** 附带 details 时可生成更具体提示的原因；返回 undefined 时回退到 REASON_MESSAGES。 */
 export const REASON_DETAIL_MESSAGES: Record<
   string,
   (details: unknown) => string | undefined
 > = {
+  ASSET_FIELD_INVALID: (details) => {
+    const label = assetFieldLabel(ASSET_FIELD_LABELS, details);
+    return label ? `「${label}」缺失或格式不正确，请检查后重试` : undefined;
+  },
+  ASSET_METADATA_INVALID: (details) => {
+    const label = assetFieldLabel(ASSET_METADATA_LABELS, details);
+    if (!label) return undefined;
+    switch ((details as { rule?: string }).rule) {
+      case 'positive_number': {
+        return `${label}需为大于 0 的数字`;
+      }
+      case 'required': {
+        return `请填写${label}`;
+      }
+      case 'unit': {
+        return `${label}只能是 mm、cm 或 m`;
+      }
+      default: {
+        return `${label}格式不正确`;
+      }
+    }
+  },
+  INVALID_PROMPT_TEMPLATE: (details) => {
+    const issues = (details as null | { issues?: { message?: string }[] })
+      ?.issues;
+    const messages = issues
+      ?.map((issue) => issue.message)
+      .filter((message): message is string => !!message);
+    return messages?.length ? messages.join('；') : undefined;
+  },
   IMPORT_TEMPLATE_MISMATCH: (details) => {
     const mismatch = details as null | {
       actual?: string;

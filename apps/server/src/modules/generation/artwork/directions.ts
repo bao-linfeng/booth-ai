@@ -15,10 +15,19 @@ type SharedInputs = { model(): Promise<ActiveAiModel | undefined>; reference(): 
 
 const creditJob = (run: ArtworkRun) => ({ kind: 'artwork', id: run.jobId }) as const;
 
-async function updateDirection(run: ArtworkRun, direction: Direction, status: string, url: string | null = null, reason: string | null = null) {
+async function updateDirection(
+  run: ArtworkRun,
+  direction: Direction,
+  status: string,
+  url: string | null = null,
+  reason: string | null = null,
+) {
   await transaction(run.database, async client => {
     await lockRunningLease(client, creditJob(run), run.lease);
-    await client.query('UPDATE artwork_job_directions SET status=$3,generated_url=$4,reason=$5,updated_at=now() WHERE job_id=$1 AND direction=$2', [run.jobId, direction, status, url, reason]);
+    await client.query(
+      'UPDATE artwork_job_directions SET status=$3,generated_url=$4,reason=$5,updated_at=now() WHERE job_id=$1 AND direction=$2',
+      [run.jobId, direction, status, url, reason],
+    );
   });
 }
 
@@ -29,7 +38,10 @@ async function failDirection(run: ArtworkRun, direction: Direction, reason: stri
 
 /** 没有生成上下文快照的旧任务无法重放提示词与模型，未成功的方向直接判失败。 */
 async function failLegacyDirections(database: pg.Pool, jobId: string) {
-  await database.query(`UPDATE artwork_job_directions SET status='failed',reason='LEGACY_CONTEXT_UNAVAILABLE' WHERE job_id=$1 AND status<>'succeeded'`, [jobId]);
+  await database.query(
+    `UPDATE artwork_job_directions SET status='failed',reason='LEGACY_CONTEXT_UNAVAILABLE' WHERE job_id=$1 AND status<>'succeeded'`,
+    [jobId],
+  );
 }
 
 function sharedInputs(run: ArtworkRun, snapshot: ArtworkSnapshot): SharedInputs {
@@ -39,8 +51,9 @@ function sharedInputs(run: ArtworkRun, snapshot: ArtworkSnapshot): SharedInputs 
   return {
     async model() {
       if (!modelLoaded) {
-        model = (await activeAiModels(run.database, 'artwork', run.config.aiModelEncryptionKey)).find(m =>
-          m.id === snapshot.model.id && m.revision === snapshot.model.revision);
+        model = (await activeAiModels(run.database, 'artwork', run.config.aiModelEncryptionKey)).find(
+          m => m.id === snapshot.model.id && m.revision === snapshot.model.revision,
+        );
         modelLoaded = true;
       }
       return model;
@@ -48,7 +61,8 @@ function sharedInputs(run: ArtworkRun, snapshot: ArtworkSnapshot): SharedInputs 
     async reference() {
       if (!reference) {
         const bytes = await run.storage.getBuffer(snapshot.source.objectKey, ARTWORK_QUALITY.maxBytes);
-        if (createHash('sha256').update(bytes).digest('hex') !== snapshot.source.checksum) throw new Error('Artwork reference integrity mismatch');
+        if (createHash('sha256').update(bytes).digest('hex') !== snapshot.source.checksum)
+          throw new Error('Artwork reference integrity mismatch');
         await normalizeGeneratedImage(bytes);
         reference = bytes;
       }
@@ -61,10 +75,18 @@ function sharedInputs(run: ArtworkRun, snapshot: ArtworkSnapshot): SharedInputs 
  * 调用供应商生成单个方向的底图，返回已落库的生成 URL；方向被判失败时返回 undefined。
  * 可重试且结果明确的错误会把方向退回 pending 并抛出，由任务重试；其余错误（含结果不明）直接判失败，不重复提交。
  */
-async function generateDirectionUrl(run: ArtworkRun, snapshot: ArtworkSnapshot, direction: Direction, inputs: SharedInputs): Promise<string | undefined> {
+async function generateDirectionUrl(
+  run: ArtworkRun,
+  snapshot: ArtworkSnapshot,
+  direction: Direction,
+  inputs: SharedInputs,
+): Promise<string | undefined> {
   const { database, jobId, deadline, log, publish } = run;
   const model = await inputs.model();
-  if (!model) { await failDirection(run, direction, 'MODEL_UNAVAILABLE'); return undefined; }
+  if (!model) {
+    await failDirection(run, direction, 'MODEL_UNAVAILABLE');
+    return undefined;
+  }
   const reference = await inputs.reference();
   await updateDirection(run, direction, 'submitting');
   await publishGeneration(publish, jobId, { direction, status: 'submitting' });
@@ -72,16 +94,29 @@ async function generateDirectionUrl(run: ArtworkRun, snapshot: ArtworkSnapshot, 
   let url: string;
   try {
     const prompt = snapshot.directionPrompts?.[direction] ?? snapshot.prompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction]);
-    const generated = await imageAdapter(model).edit(model, { reference, prompt, count: 1, deadline, onProviderRequest: async id => {
-      providerRequestId = id;
-      await database.query('UPDATE artwork_job_directions SET provider_request_id=$3 WHERE job_id=$1 AND direction=$2', [jobId, direction, id]);
-    } });
+    const generated = await imageAdapter(model).edit(model, {
+      reference,
+      prompt,
+      count: 1,
+      deadline,
+      onProviderRequest: async id => {
+        providerRequestId = id;
+        await database.query('UPDATE artwork_job_directions SET provider_request_id=$3 WHERE job_id=$1 AND direction=$2', [
+          jobId,
+          direction,
+          id,
+        ]);
+      },
+    });
     if (!generated[0]) throw new ImageGenerationError('PROVIDER_NO_IMAGE');
     url = generated[0];
     log.info({ direction, modelId: model.id, protocol: model.protocol, providerRequestId }, 'Artwork provider request completed');
   } catch (error) {
     const reason = error instanceof ImageGenerationError ? error.code : 'PROVIDER_OUTCOME_UNKNOWN';
-    log.warn({ direction, modelId: model.id, protocol: model.protocol, providerRequestId, code: reason }, 'Artwork provider request failed');
+    log.warn(
+      { direction, modelId: model.id, protocol: model.protocol, providerRequestId, code: reason },
+      'Artwork provider request failed',
+    );
     if (error instanceof ImageGenerationError && error.retryable && !error.outcomeUnknown) {
       await updateDirection(run, direction, 'pending');
       throw error;
@@ -100,31 +135,58 @@ async function fetchDirectionImage(run: ArtworkRun, direction: Direction, url: s
     return await normalizeArtworkImage(await downloadGeneratedImage(url, run.deadline));
   } catch (error) {
     if (error instanceof ImageGenerationError && error.retryable) throw error;
-    const reason = error instanceof ImageGenerationError ? error.code.replace(/^IMAGE_/, 'ARTWORK_') :
-      error instanceof Error && error.message.startsWith('ARTWORK_') ? error.message : 'ARTWORK_IMAGE_INVALID';
+    const reason =
+      error instanceof ImageGenerationError
+        ? error.code.replace(/^IMAGE_/, 'ARTWORK_')
+        : error instanceof Error && error.message.startsWith('ARTWORK_')
+          ? error.message
+          : 'ARTWORK_IMAGE_INVALID';
     await failDirection(run, direction, reason);
     return undefined;
   }
 }
 
 /** 先上传对象，再在租约保护的事务内写入资产、版本、结果行并把方向置为 succeeded。 */
-async function storeDirectionResult(run: ArtworkRun, direction: Direction, index: number, image: Awaited<ReturnType<typeof normalizeArtworkImage>>) {
+async function storeDirectionResult(
+  run: ArtworkRun,
+  direction: Direction,
+  index: number,
+  image: Awaited<ReturnType<typeof normalizeArtworkImage>>,
+) {
   const { database, jobId, job, storage } = run;
-  const assetId = randomUUID(); const versionId = randomUUID();
+  const assetId = randomUUID();
+  const versionId = randomUUID();
   await refreshGeneration(database, creditJob(run), run.lease, 'result_persisting');
   const objectKey = `artwork-results/${jobId}/${direction}.png`;
   const checksum = createHash('sha256').update(image.bytes).digest('hex');
   await storage.putBuffer(objectKey, image.bytes, 'image/png');
   await transaction(database, async client => {
     await lockRunningLease(client, creditJob(run), run.lease);
-    await client.query(`INSERT INTO scheme_assets(id,scheme_id,type,name,sort_order,metadata,source,owner_user_id,visibility)
-      SELECT $1,id,'artwork',$2,$3,$4,'artwork_generation',$6,'private' FROM schemes WHERE code=$5`, [assetId, `${DIRECTION_LABELS[direction]}方向底图`, index,
-        JSON.stringify({ artworkJobId: jobId, direction, mappingStatus: 'unresolved', physicalDimensions: 'unverified' }), job.schemeCode, job.userId]);
-    await client.query(`INSERT INTO asset_versions(id,asset_id,object_key,original_filename,mime_type,byte_size,checksum,width_px,height_px)
-      VALUES($1,$2,$3,$4,'image/png',$5,$6,$7,$8)`, [versionId, assetId, objectKey, `${direction}.png`, image.bytes.length, checksum, image.width, image.height]);
-    await client.query(`INSERT INTO artwork_job_results(job_id,ordinal,asset_id,asset_version_id,direction,width,height) VALUES($1,$2,$3,$4,$5,$6,$7)`,
-      [jobId, index + 1, assetId, versionId, direction, image.width, image.height]);
-    await client.query("UPDATE artwork_job_directions SET status='succeeded',generated_url=NULL,reason=NULL,updated_at=now() WHERE job_id=$1 AND direction=$2", [jobId, direction]);
+    await client.query(
+      `INSERT INTO scheme_assets(id,scheme_id,type,name,sort_order,metadata,source,owner_user_id,visibility)
+      SELECT $1,id,'artwork',$2,$3,$4,'artwork_generation',$6,'private' FROM schemes WHERE code=$5`,
+      [
+        assetId,
+        `${DIRECTION_LABELS[direction]}方向底图`,
+        index,
+        JSON.stringify({ artworkJobId: jobId, direction, mappingStatus: 'unresolved', physicalDimensions: 'unverified' }),
+        job.schemeCode,
+        job.userId,
+      ],
+    );
+    await client.query(
+      `INSERT INTO asset_versions(id,asset_id,object_key,original_filename,mime_type,byte_size,checksum,width_px,height_px)
+      VALUES($1,$2,$3,$4,'image/png',$5,$6,$7,$8)`,
+      [versionId, assetId, objectKey, `${direction}.png`, image.bytes.length, checksum, image.width, image.height],
+    );
+    await client.query(
+      `INSERT INTO artwork_job_results(job_id,ordinal,asset_id,asset_version_id,direction,width,height) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [jobId, index + 1, assetId, versionId, direction, image.width, image.height],
+    );
+    await client.query(
+      "UPDATE artwork_job_directions SET status='succeeded',generated_url=NULL,reason=NULL,updated_at=now() WHERE job_id=$1 AND direction=$2",
+      [jobId, direction],
+    );
   });
 }
 
@@ -137,7 +199,12 @@ async function processDirection(run: ArtworkRun, snapshot: ArtworkSnapshot, dire
   const { database, jobId, publish } = run;
   await refreshGeneration(database, creditJob(run), run.lease, `generating_${direction}`);
   await publishGeneration(publish, jobId, { status: 'running', phase: `generating_${direction}` });
-  const state = (await database.query<{ status: string; url: string | null }>('SELECT status,generated_url AS url FROM artwork_job_directions WHERE job_id=$1 AND direction=$2', [jobId, direction])).rows[0];
+  const state = (
+    await database.query<{ status: string; url: string | null }>(
+      'SELECT status,generated_url AS url FROM artwork_job_directions WHERE job_id=$1 AND direction=$2',
+      [jobId, direction],
+    )
+  ).rows[0];
   if (!state || state.status === 'succeeded' || state.status === 'failed') return;
   if (state.status === 'submitting') {
     await failDirection(run, direction, 'PROVIDER_OUTCOME_UNKNOWN');
@@ -145,7 +212,7 @@ async function processDirection(run: ArtworkRun, snapshot: ArtworkSnapshot, dire
   }
   // Directions persist their state, so a draining worker stops before the next provider call and the job resumes here.
   if (!state.url) throwIfDraining(run.draining);
-  const url = state.url ?? await generateDirectionUrl(run, snapshot, direction, inputs);
+  const url = state.url ?? (await generateDirectionUrl(run, snapshot, direction, inputs));
   if (!url) return;
   const image = await fetchDirectionImage(run, direction, url);
   if (!image) return;

@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { isRenderingAspect } from '../assets/image-spec.js';
+import { isRenderingAspect } from './image-spec.js';
 
 type DbClient = pg.Pool | pg.PoolClient;
 
@@ -142,17 +142,20 @@ export function evaluateReadiness(data: SchemeReadinessData): SchemeReadiness {
     const masks = assets.filter(a => a.type === 'mask');
     const sortOrdersUnique = new Set(images.map(i => i.sortOrder)).size === 3;
     const objectKeysUnique = new Set(images.map(i => i.objectKey)).size === 3;
-    const pairingValid = images.every(image =>
-      image.widthPx && image.heightPx &&
-      isRenderingAspect(image.widthPx, image.heightPx) &&
-      imageMimeRe.test(image.mimeType ?? '') &&
-      masks.filter(mask =>
-        mask.relatedAssetId === image.id &&
-        mask.sortOrder === image.sortOrder &&
-        mask.widthPx === image.widthPx &&
-        mask.heightPx === image.heightPx &&
-        imageMimeRe.test(mask.mimeType ?? ''),
-      ).length === 1,
+    const pairingValid = images.every(
+      image =>
+        image.widthPx &&
+        image.heightPx &&
+        isRenderingAspect(image.widthPx, image.heightPx) &&
+        imageMimeRe.test(image.mimeType ?? '') &&
+        masks.filter(
+          mask =>
+            mask.relatedAssetId === image.id &&
+            mask.sortOrder === image.sortOrder &&
+            mask.widthPx === image.widthPx &&
+            mask.heightPx === image.heightPx &&
+            imageMimeRe.test(mask.mimeType ?? ''),
+        ).length === 1,
     );
     if (!sortOrdersUnique || !objectKeysUnique || !pairingValid) {
       blockers.push('RENDERING_MASK_MISMATCH');
@@ -161,11 +164,8 @@ export function evaluateReadiness(data: SchemeReadinessData): SchemeReadiness {
 
   // 尺寸与面积
   const { lengthMm, widthMm, heightMm } = scheme;
-  const dimensionsValid = [lengthMm, widthMm, heightMm].every(
-    v => v !== null && Number.isSafeInteger(v) && v > 0,
-  );
-  if (!dimensionsValid || scheme.areaM2 === null ||
-    Number(scheme.areaM2) !== (lengthMm ?? 0) * (widthMm ?? 0) / 1_000_000) {
+  const dimensionsValid = [lengthMm, widthMm, heightMm].every(v => v !== null && Number.isSafeInteger(v) && v > 0);
+  if (!dimensionsValid || scheme.areaM2 === null || Number(scheme.areaM2) !== ((lengthMm ?? 0) * (widthMm ?? 0)) / 1_000_000) {
     blockers.push('DIMENSION_INCOMPLETE');
   }
 
@@ -206,7 +206,8 @@ export function evaluateReadiness(data: SchemeReadinessData): SchemeReadiness {
 }
 
 export async function loadAndEvaluate(client: DbClient, scheme: SchemeRow): Promise<SchemeReadiness> {
-  const assetRows = await client.query<SchemeReadinessData['assets'][number]>(`
+  const assetRows = await client.query<SchemeReadinessData['assets'][number]>(
+    `
     SELECT a.id::text AS id, a.type, a.sort_order AS "sortOrder",
       a.related_asset_id::text AS "relatedAssetId", a.updated_at AS "updatedAt",
       v.width_px AS "widthPx", v.height_px AS "heightPx",
@@ -217,7 +218,9 @@ export async function loadAndEvaluate(client: DbClient, scheme: SchemeRow): Prom
       FROM asset_versions WHERE asset_id = a.id
       ORDER BY created_at DESC, id DESC LIMIT 1
     ) v ON true
-    WHERE a.scheme_id = $1 AND a.is_active = true`, [scheme.id]);
+    WHERE a.scheme_id = $1 AND a.is_active = true`,
+    [scheme.id],
+  );
 
   const bom = await client.query<{ status: string | null }>(
     'SELECT b.status FROM schemes s LEFT JOIN scheme_boms b ON b.scheme_id = s.id WHERE s.id = $1',
@@ -245,7 +248,8 @@ export async function loadAndEvaluate(client: DbClient, scheme: SchemeRow): Prom
     : null;
   const productSystemExists = product?.rows[0]?.exists === true;
 
-  const invalidTags = await client.query<{ invalid: boolean }>(`
+  const invalidTags = await client.query<{ invalid: boolean }>(
+    `
     SELECT EXISTS (
       SELECT 1 FROM schemes s
       CROSS JOIN LATERAL unnest(array_remove(
@@ -255,7 +259,9 @@ export async function loadAndEvaluate(client: DbClient, scheme: SchemeRow): Prom
       LEFT JOIN dictionary_items i ON i.id = tag.id AND i.enabled
       LEFT JOIN dictionaries d ON d.id = i.dictionary_id AND d.enabled
       WHERE s.id = $1 AND d.id IS NULL
-    ) AS invalid`, [scheme.id]);
+    ) AS invalid`,
+    [scheme.id],
+  );
   const hasInvalidTags = invalidTags.rows[0]?.invalid === true;
 
   return evaluateReadiness({

@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
-import { ensureSelectionSizes } from '../selection/sizes.js';
+import { ensureSelectionSizes } from '../dictionaries/sizes.js';
 import { writeAuditLog } from '../../infra/audit.js';
 import { validateSchemeDictionaryIds } from './dictionary-ids.js';
 
@@ -95,11 +95,24 @@ const schemeColumns = `
 `;
 
 const columnByInput: Record<keyof SchemeInput, string> = {
-  code: 'code', name: 'name', parentCode: 'parent_code', lengthMm: 'length_mm', widthMm: 'width_mm',
-  heightMm: 'height_mm', areaM2: 'area_sqm', openingCount: 'opening_count',
-  productSystemId: 'product_system_id', styleId: 'style_id', industryIds: 'industry_ids', budgetTierId: 'budget_tier_id',
-  zoneIds: 'zone_ids', featureIds: 'feature_ids', description: 'description', keywords: 'keywords',
-  source: 'source', visualTheme: 'visual_theme',
+  code: 'code',
+  name: 'name',
+  parentCode: 'parent_code',
+  lengthMm: 'length_mm',
+  widthMm: 'width_mm',
+  heightMm: 'height_mm',
+  areaM2: 'area_sqm',
+  openingCount: 'opening_count',
+  productSystemId: 'product_system_id',
+  styleId: 'style_id',
+  industryIds: 'industry_ids',
+  budgetTierId: 'budget_tier_id',
+  zoneIds: 'zone_ids',
+  featureIds: 'feature_ids',
+  description: 'description',
+  keywords: 'keywords',
+  source: 'source',
+  visualTheme: 'visual_theme',
   notes: 'notes',
 };
 
@@ -121,8 +134,9 @@ function hasInput(input: SchemeInput, key: keyof SchemeInput): boolean {
 
 function calculatedArea(input: SchemeInput): number | null | undefined {
   if (input.lengthMm !== undefined && input.lengthMm !== null && input.widthMm !== undefined && input.widthMm !== null) {
-    const calculated = input.lengthMm * input.widthMm / 1_000_000;
-    if (input.areaM2 !== undefined && input.areaM2 !== null && Math.abs(input.areaM2 - calculated) > 0.000001) throw requestError('Area conflicts with dimensions', 400);
+    const calculated = (input.lengthMm * input.widthMm) / 1_000_000;
+    if (input.areaM2 !== undefined && input.areaM2 !== null && Math.abs(input.areaM2 - calculated) > 0.000001)
+      throw requestError('Area conflicts with dimensions', 400);
     return calculated;
   }
   return hasInput(input, 'areaM2') ? input.areaM2 : undefined;
@@ -153,7 +167,8 @@ export function changedSchemeFields(current: Omit<SchemeRecord, 'createdAt' | 'u
 
 function validateDimensions(input: SchemeInput): void {
   for (const value of [input.lengthMm, input.widthMm, input.heightMm]) {
-    if (value !== undefined && value !== null && (!Number.isSafeInteger(value) || value < 1 || value > 2147483647)) throw requestError('Dimensions must be positive integer millimeters', 400);
+    if (value !== undefined && value !== null && (!Number.isSafeInteger(value) || value < 1 || value > 2147483647))
+      throw requestError('Dimensions must be positive integer millimeters', 400);
   }
 }
 
@@ -162,7 +177,10 @@ function containsPattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, '\\$&')}%`;
 }
 
-export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): Promise<{ data: SchemeRecord[]; total: number; page: number; pageSize: number }> {
+export async function listSchemes(
+  pool: pg.Pool,
+  options: ListSchemesOptions,
+): Promise<{ data: SchemeRecord[]; total: number; page: number; pageSize: number }> {
   const conditions: string[] = [];
   const values: (string | string[])[] = [];
   const add = (condition: string, value: string) => {
@@ -196,17 +214,27 @@ export async function listSchemes(pool: pg.Pool, options: ListSchemesOptions): P
   const sortDir = options.sortOrder === 'asc' ? 'ASC' : 'DESC';
   const offset = (options.page - 1) * options.pageSize;
   const [records, count] = await Promise.all([
-    pool.query<SchemeRow>(`SELECT ${schemeColumns} FROM schemes${clause} ORDER BY ${sortColumn} ${sortDir} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, options.pageSize, offset]),
+    pool.query<SchemeRow>(
+      `SELECT ${schemeColumns} FROM schemes${clause} ORDER BY ${sortColumn} ${sortDir} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      [...values, options.pageSize, offset],
+    ),
     pool.query<{ total: string }>(`SELECT count(*)::text AS total FROM schemes${clause}`, values),
   ]);
-  return { data: records.rows.map(toSchemeRecord), total: Number(count.rows[0]?.total ?? 0), page: options.page, pageSize: options.pageSize };
+  return {
+    data: records.rows.map(toSchemeRecord),
+    total: Number(count.rows[0]?.total ?? 0),
+    page: options.page,
+    pageSize: options.pageSize,
+  };
 }
 
 /** 按编号批量读取方案；lock 为 true 时须在事务内调用，按编号顺序加行锁。 */
 export async function findSchemesByCodes(client: pg.Pool | pg.PoolClient, codes: string[], lock = false): Promise<SchemeRecord[]> {
   if (codes.length === 0) return [];
   const result = await client.query<SchemeRow>(
-    `SELECT ${schemeColumns} FROM schemes WHERE code = ANY($1::text[]) ORDER BY code${lock ? ' FOR UPDATE' : ''}`, [codes]);
+    `SELECT ${schemeColumns} FROM schemes WHERE code = ANY($1::text[]) ORDER BY code${lock ? ' FOR UPDATE' : ''}`,
+    [codes],
+  );
   return result.rows.map(toSchemeRecord);
 }
 
@@ -246,7 +274,10 @@ async function createSchemeRecord(pool: pg.PoolClient, adminId: string, input: S
     values.push(area);
     placeholders.push(`$${values.length}`);
   }
-  const result = await pool.query<SchemeRow>(`INSERT INTO schemes (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING ${schemeColumns}`, values);
+  const result = await pool.query<SchemeRow>(
+    `INSERT INTO schemes (${columns.join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING ${schemeColumns}`,
+    values,
+  );
   const row = result.rows[0];
   if (!row) throw requestError('Failed to create scheme', 500);
   await ensureSelectionSizes(pool, [row]);
@@ -272,14 +303,26 @@ export async function deleteScheme(pool: pg.Pool, adminId: string, code: string)
   });
 }
 
-export async function updateScheme(pool: pg.Pool, code: string, adminId: string, input: SchemeInput, expectedRevision: number): Promise<SchemeRecord> {
+export async function updateScheme(
+  pool: pg.Pool,
+  code: string,
+  adminId: string,
+  input: SchemeInput,
+  expectedRevision: number,
+): Promise<SchemeRecord> {
   if ('publishStatus' in input || 'verificationStatus' in input) throw requestError('Publication and verification require review', 400);
   if (hasInput(input, 'code')) throw requestError('Scheme code cannot be changed', 400);
   validateDimensions(input);
   return transaction(pool, client => updateSchemeRecord(client, code, adminId, input, expectedRevision));
 }
 
-async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: string, input: SchemeInput, expectedRevision: number): Promise<SchemeRecord> {
+async function updateSchemeRecord(
+  pool: pg.PoolClient,
+  code: string,
+  adminId: string,
+  input: SchemeInput,
+  expectedRevision: number,
+): Promise<SchemeRecord> {
   await validateSchemeDictionaryIds(pool, input);
   const currentResult = await pool.query<SchemeRow>(`SELECT ${schemeColumns} FROM schemes WHERE code = $1 FOR UPDATE`, [code]);
   const current = currentResult.rows[0];
@@ -288,8 +331,14 @@ async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: st
   if (input.areaM2 !== undefined && input.areaM2 !== null) {
     const lengthMm = hasInput(input, 'lengthMm') ? input.lengthMm : current.lengthMm;
     const widthMm = hasInput(input, 'widthMm') ? input.widthMm : current.widthMm;
-    if (lengthMm !== null && lengthMm !== undefined && widthMm !== null && widthMm !== undefined &&
-      Math.abs(input.areaM2 - lengthMm * widthMm / 1_000_000) > 0.000001) throw requestError('Area conflicts with dimensions', 400);
+    if (
+      lengthMm !== null &&
+      lengthMm !== undefined &&
+      widthMm !== null &&
+      widthMm !== undefined &&
+      Math.abs(input.areaM2 - (lengthMm * widthMm) / 1_000_000) > 0.000001
+    )
+      throw requestError('Area conflicts with dimensions', 400);
   }
   const changed = changedSchemeFields(current, input);
   if (changed.length === 0) return toSchemeRecord(current);
@@ -308,17 +357,29 @@ async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: st
     const width = hasInput(input, 'widthMm') ? updates.find(update => update.startsWith('width_mm = '))!.split(' = ')[1]! : 'width_mm';
     if (input.areaM2 !== undefined && input.areaM2 !== null) {
       values.push(input.areaM2);
-      updates.push(`area_sqm = CASE WHEN ${length} IS NOT NULL AND ${width} IS NOT NULL THEN ${length}::numeric * ${width}::numeric / 1000000 ELSE ${requestedArea} END`);
+      updates.push(
+        `area_sqm = CASE WHEN ${length} IS NOT NULL AND ${width} IS NOT NULL THEN ${length}::numeric * ${width}::numeric / 1000000 ELSE ${requestedArea} END`,
+      );
     } else {
-      updates.push(`area_sqm = CASE WHEN ${length} IS NOT NULL AND ${width} IS NOT NULL THEN ${length}::numeric * ${width}::numeric / 1000000 ELSE NULL END`);
+      updates.push(
+        `area_sqm = CASE WHEN ${length} IS NOT NULL AND ${width} IS NOT NULL THEN ${length}::numeric * ${width}::numeric / 1000000 ELSE NULL END`,
+      );
     }
   }
   if (updates.length === 0) throw requestError('No fields to update', 400);
   values.push(adminId);
   updates.push(`updated_by = $${values.length}`, 'updated_at = now()');
-  if (!notesOnly) updates.push('revision = revision + 1', "publish_status = CASE WHEN publish_status = 'published' THEN 'draft' ELSE publish_status END", "verification_status = 'unverified'");
+  if (!notesOnly)
+    updates.push(
+      'revision = revision + 1',
+      "publish_status = CASE WHEN publish_status = 'published' THEN 'draft' ELSE publish_status END",
+      "verification_status = 'unverified'",
+    );
   values.push(code, expectedRevision);
-  const result = await pool.query<SchemeRow>(`UPDATE schemes SET ${updates.join(', ')} WHERE code = $${values.length - 1} AND revision = $${values.length} RETURNING ${schemeColumns}`, values);
+  const result = await pool.query<SchemeRow>(
+    `UPDATE schemes SET ${updates.join(', ')} WHERE code = $${values.length - 1} AND revision = $${values.length} RETURNING ${schemeColumns}`,
+    values,
+  );
   const row = result.rows[0];
   if (row) {
     await ensureSelectionSizes(pool, [row]);
@@ -334,4 +395,19 @@ async function updateSchemeRecord(pool: pg.PoolClient, code: string, adminId: st
   const exists = await pool.query('SELECT 1 FROM schemes WHERE code = $1', [code]);
   if (!exists.rowCount) throw requestError('Scheme not found', 404);
   throw requestError('Scheme revision conflict', 409);
+}
+
+export type SchemeFormOptions = Record<string, { id: string; label: string; itemValue: string }[]>;
+
+/** 方案编辑表单使用的启用字典项，按字典编码分组 */
+export async function schemeFormOptions(pool: Pick<pg.Pool, 'query'>): Promise<SchemeFormOptions> {
+  const result = await pool.query<{ code: string; id: string; label: string; itemValue: string }>(`
+    SELECT d.code, i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue" FROM dictionaries d
+    JOIN dictionary_items i ON i.dictionary_id = d.id
+     WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','booth_size','product_system','style','industry','budget_tier','functional_zone','key_feature')
+    ORDER BY d.code, i.sort_order, i.id`);
+  return result.rows.reduce<SchemeFormOptions>((options, item) => {
+    (options[item.code] ??= []).push({ id: item.id, label: item.label, itemValue: item.itemValue });
+    return options;
+  }, {});
 }

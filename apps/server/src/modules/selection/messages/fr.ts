@@ -7,7 +7,7 @@ export const fr: Messages = {
   missingOpeningCount: 'le nombre de côtés ouverts',
   matchNeedCondition: 'Indiquez au moins un critère reconnaissable',
   matchNoDirect: "Aucun design n'est utilisable tel quel ; les suivants sont donnés à titre indicatif",
-  matchRandomPending: "Recommandation aléatoire. Les dimensions, les côtés ouverts et la hauteur limite restent à confirmer.",
+  matchRandomPending: 'Recommandation aléatoire. Les dimensions, les côtés ouverts et la hauteur limite restent à confirmer.',
   reasonSize: 'La longueur, la largeur et les côtés ouverts correspondent aux critères de structure fournis',
   reasonHeight: 'La hauteur réelle du design ne dépasse pas la hauteur limite du site',
   pendingMissing: 'Veuillez indiquer {field}',
@@ -22,7 +22,8 @@ export const fr: Messages = {
   missBudget: "Le niveau de budget d'achat des matériaux diffère de la préférence",
   noPublished: 'Aucun design publié et validé pour le moment',
   noMatchRandom: "Aucun design disponible pour une recommandation aléatoire pour le moment (les motifs d'exclusion peuvent se recouper)",
-  noMatchFiltered: "Aucun design à adopter ou à prendre comme référence pour cette combinaison de critères (les motifs d'exclusion peuvent se recouper)",
+  noMatchFiltered:
+    "Aucun design à adopter ou à prendre comme référence pour cette combinaison de critères (les motifs d'exclusion peuvent se recouper)",
   excUnverifiedChecklist: 'Liste de contrôle non vérifiée',
   excIncompleteAssets: 'Ressources incomplètes',
   excInvalidData: 'Données de base ou informations de validation incomplètes',
@@ -32,19 +33,25 @@ export const fr: Messages = {
   excDimensions: 'Dimensions non conformes ou hors de la plage de référence',
   excPoolLine: '{label} : {count} designs publiés',
   excAvailableLine: '{label} : {count} designs disponibles',
-  suggestDimensions: 'Vérifiez la longueur, la largeur et la hauteur choisies, ou ajustez la longueur, la largeur et la surface personnalisées, puis relancez la recherche',
+  suggestDimensions:
+    'Vérifiez la longueur, la largeur et la hauteur choisies, ou ajustez la longueur, la largeur et la surface personnalisées, puis relancez la recherche',
   suggestProductSystem: 'Vérifiez le système de produit choisi, modifiez-le puis relancez la recherche',
   suggestTags: 'Vérifiez les critères de fonctions obligatoires ou exclues, modifiez-les puis relancez la recherche',
   suggestAdvisor: 'Vous pouvez aussi contacter un conseiller pour confirmer les designs disponibles',
-  parseUnhandledRules: "Une partie du texte n'a pas pu être reconnue de façon fiable. Complétez les critères dans le formulaire ou passez à un conseiller.",
-  parseNoReliable: "Aucun critère fiable n'a été reconnu. Veuillez ajouter des dimensions précises ou choisir des critères dans le formulaire.",
-  parseWarningRulesOnly: "La reconnaissance par règles a été utilisée cette fois ; le contenu non reconnu doit être confirmé manuellement.",
+  parseUnhandledRules:
+    "Une partie du texte n'a pas pu être reconnue de façon fiable. Complétez les critères dans le formulaire ou passez à un conseiller.",
+  parseNoReliable:
+    "Aucun critère fiable n'a été reconnu. Veuillez ajouter des dimensions précises ou choisir des critères dans le formulaire.",
+  parseWarningRulesOnly: 'La reconnaissance par règles a été utilisée cette fois ; le contenu non reconnu doit être confirmé manuellement.',
   parseDimMultiple: 'Plusieurs valeurs ont été trouvées pour la même dimension. Veuillez confirmer la valeur finale dans le formulaire.',
   parseDimInvalid: 'La dimension doit être un nombre positif, précis au millimètre. Veuillez la corriger.',
-  parseHeightNeedsSize: 'La hauteur du design doit être choisie avec une longueur et une largeur explicites, comme dimensions complètes. Veuillez confirmer.',
-  parseHeightNoSize: "Il n'existe pas de dimensions complètes correspondantes. Choisissez des dimensions existantes ou passez à un conseiller.",
+  parseHeightNeedsSize:
+    'La hauteur du design doit être choisie avec une longueur et une largeur explicites, comme dimensions complètes. Veuillez confirmer.',
+  parseHeightNoSize:
+    "Il n'existe pas de dimensions complètes correspondantes. Choisissez des dimensions existantes ou passez à un conseiller.",
   parseAreaMultiple: 'Plusieurs surfaces ont été trouvées. Veuillez confirmer la surface finale.',
-  parseDirection: 'Les sens de la longueur et de la largeur de « {text} » ne sont pas clairs. Veuillez confirmer, en prenant gauche-droite pour la longueur et avant-arrière pour la largeur.',
+  parseDirection:
+    'Les sens de la longueur et de la largeur de « {text} » ne sont pas clairs. Veuillez confirmer, en prenant gauche-droite pour la longueur et avant-arrière pour la largeur.',
   parseOpeningConflict: 'Le nombre de côtés ouverts est contradictoire. Veuillez confirmer.',
   parseNoConstraints: 'Cette catégorie ne prend pas en charge la négation ni les critères obligatoires. Veuillez confirmer.',
   parseCandidates: '« {text} » a plusieurs correspondances possibles. Veuillez confirmer.',

@@ -6,7 +6,7 @@ import type { BomRecord, SchemeRow } from './types.js';
 
 export const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-export const iso = (value: Date | string | null) => value === null ? null : value instanceof Date ? value.toISOString() : value;
+export const iso = (value: Date | string | null) => (value === null ? null : value instanceof Date ? value.toISOString() : value);
 
 export function assertBomEditable(bom: BomRecord | null): void {
   if (bom?.status === 'verified') throw bomError('BOM_ALREADY_VERIFIED', 409);

@@ -54,20 +54,32 @@ const mine = `WITH mine AS (
 
 async function projectsSection(pool: pg.Pool, adminId: string) {
   const [counts, tasks, activities] = await Promise.all([
-    pool.query<{ active: number; pending: number; todayFollowUps: number; overdueFollowUps: number; taskTotal: number }>(`${mine}
+    pool
+      .query<{ active: number; pending: number; todayFollowUps: number; overdueFollowUps: number; taskTotal: number }>(
+        `${mine}
       SELECT count(*)::int AS active,count(*) FILTER (WHERE status='pending')::int AS pending,
         count(*) FILTER (WHERE next_follow_up_at >= start_at AND next_follow_up_at < start_at + interval '1 day')::int AS "todayFollowUps",
         count(*) FILTER (WHERE next_follow_up_at < now())::int AS "overdueFollowUps",
         count(*) FILTER (WHERE reason IS NOT NULL)::int AS "taskTotal"
-      FROM classified CROSS JOIN bounds`, [adminId]).then(result => result.rows[0]!),
-    pool.query<TaskRow>(`${mine}
+      FROM classified CROSS JOIN bounds`,
+        [adminId],
+      )
+      .then(result => result.rows[0]!),
+    pool
+      .query<TaskRow>(
+        `${mine}
       SELECT id AS "projectId",project_no AS "projectNo",nullif(request_snapshot->>'company','') AS company,
         request_snapshot->'contact'->>'name' AS "contactName",request_snapshot->'exhibition'->>'name' AS "exhibitionName",
         status,reason,next_follow_up_at AS "nextFollowUpAt",created_at AS "createdAt"
       FROM classified WHERE reason IS NOT NULL
       ORDER BY CASE reason WHEN 'overdue' THEN 0 WHEN 'today' THEN 1 ELSE 2 END,next_follow_up_at ASC NULLS LAST,created_at ASC,id ASC
-      LIMIT ${taskLimit}`, [adminId]).then(result => result.rows),
-    pool.query<ActivityRow>(`SELECT e.id,e.kind,e.project_id AS "projectId",p.project_no AS "projectNo",
+      LIMIT ${taskLimit}`,
+        [adminId],
+      )
+      .then(result => result.rows),
+    pool
+      .query<ActivityRow>(
+        `SELECT e.id,e.kind,e.project_id AS "projectId",p.project_no AS "projectNo",
         coalesce(a.nickname,a.username) AS "actorName",coalesce(e.actor_admin_id=$1,false) AS "byMe",
         CASE WHEN e.kind='follow-up' THEN e.payload->>'fromStatus' END AS "fromStatus",
         CASE WHEN e.kind='follow-up' THEN e.payload->>'status' END AS "toStatus",
@@ -75,11 +87,18 @@ async function projectsSection(pool: pg.Pool, adminId: string) {
         CASE WHEN e.kind='quotation' THEN (e.payload->>'quotationRevision')::int END AS "quotationRevision",
         e.created_at AS "createdAt"
       FROM project_events e JOIN projects p ON p.id=e.project_id LEFT JOIN admins a ON a.id=e.actor_admin_id
-      WHERE p.assignee_admin_id=$1 ORDER BY e.created_at DESC,e.id DESC LIMIT ${activityLimit}`, [adminId]).then(result => result.rows),
+      WHERE p.assignee_admin_id=$1 ORDER BY e.created_at DESC,e.id DESC LIMIT ${activityLimit}`,
+        [adminId],
+      )
+      .then(result => result.rows),
   ]);
   return {
     ...counts,
-    tasks: tasks.map(task => ({ ...task, nextFollowUpAt: task.nextFollowUpAt?.toISOString() ?? null, createdAt: task.createdAt.toISOString() })),
+    tasks: tasks.map(task => ({
+      ...task,
+      nextFollowUpAt: task.nextFollowUpAt?.toISOString() ?? null,
+      createdAt: task.createdAt.toISOString(),
+    })),
     activities: activities.map(activity => ({ ...activity, createdAt: activity.createdAt.toISOString() })),
   };
 }
@@ -92,9 +111,15 @@ export async function getDashboardWorkspace(pool: pg.Pool, adminId: string, perm
   const granted = new Set(permissions);
   const [projects, notifications] = await Promise.all([
     granted.has('projects.read') ? projectsSection(pool, adminId) : null,
-    granted.has('notifications.read') ? pool.query<{ unread: number }>(`SELECT count(*)::int AS unread FROM project_notification_outbox o
-      WHERE NOT EXISTS (SELECT 1 FROM project_notification_reads r WHERE r.notification_id=o.id AND r.admin_id=$1)`, [adminId])
-      .then(result => result.rows[0]!) : null,
+    granted.has('notifications.read')
+      ? pool
+          .query<{ unread: number }>(
+            `SELECT count(*)::int AS unread FROM project_notification_outbox o
+      WHERE NOT EXISTS (SELECT 1 FROM project_notification_reads r WHERE r.notification_id=o.id AND r.admin_id=$1)`,
+            [adminId],
+          )
+          .then(result => result.rows[0]!)
+      : null,
   ]);
   return { projects, notifications, generatedAt: new Date().toISOString(), timeZone };
 }

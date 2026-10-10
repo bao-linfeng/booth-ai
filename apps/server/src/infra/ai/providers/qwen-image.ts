@@ -16,8 +16,11 @@ async function referenceDataUrl(reference: Buffer): Promise<string> {
   if (reference.length <= INLINE_REFERENCE_BYTES && Math.max(width, height) <= MAX_REFERENCE_EDGE) {
     return `data:${await imageMimeType(reference)};base64,${reference.toString('base64')}`;
   }
-  const resized = await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels }).rotate()
-    .resize({ width: MAX_REFERENCE_EDGE, height: MAX_REFERENCE_EDGE, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
+  const resized = await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels })
+    .rotate()
+    .resize({ width: MAX_REFERENCE_EDGE, height: MAX_REFERENCE_EDGE, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 90 })
+    .toBuffer();
   return `data:image/jpeg;base64,${resized.toString('base64')}`;
 }
 
@@ -29,17 +32,27 @@ export const qwenImage: ImageModelAdapter = {
   downloadHosts: ['aliyuncs.com'],
   async edit(model, { reference, prompt, count, deadline, onProviderRequest }) {
     const url = await providerEndpoint(model.baseUrl, '/services/aigc/multimodal-generation/generation');
-    const body = await providerJson(url, {
-      method: 'POST', headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: model.model,
-        input: { messages: [{ role: 'user', content: [{ image: await referenceDataUrl(reference) }, { text: prompt }] }] },
-        parameters: { n: count, size: OUTPUT_SIZE, prompt_extend: false, watermark: false },
-      }),
-    }, deadline, true, onProviderRequest) as QwenImageResponse;
+    const body = (await providerJson(
+      url,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: model.model,
+          input: { messages: [{ role: 'user', content: [{ image: await referenceDataUrl(reference) }, { text: prompt }] }] },
+          parameters: { n: count, size: OUTPUT_SIZE, prompt_extend: false, watermark: false },
+        }),
+      },
+      deadline,
+      true,
+      onProviderRequest,
+    )) as QwenImageResponse;
     if (!Array.isArray(body?.output?.choices)) throw new ImageGenerationError('PROVIDER_OUTCOME_UNKNOWN', false, true);
-    const images = body.output.choices.flatMap(choice => (Array.isArray(choice?.message?.content) ? choice.message.content : [])
-      .flatMap(part => typeof part?.image === 'string' && part.image ? [part.image] : []));
+    const images = body.output.choices.flatMap(choice =>
+      (Array.isArray(choice?.message?.content) ? choice.message.content : []).flatMap(part =>
+        typeof part?.image === 'string' && part.image ? [part.image] : [],
+      ),
+    );
     if (!images.length) throw new ImageGenerationError('PROVIDER_NO_IMAGE');
     return images;
   },

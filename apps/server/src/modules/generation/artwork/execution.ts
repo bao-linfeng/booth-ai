@@ -2,15 +2,21 @@ import type pg from 'pg';
 import { ImageGenerationError } from '../../../infra/ai/image.js';
 import { transaction } from '../../../infra/database.js';
 import { artworkFiles, completeArtworkFiles } from './queries.js';
-import { CreditInvariantError, lockCreditJob, releaseJobCredits, settleJobCredits, terminalCreditJob } from '../../credits/service.js';
+import { CreditInvariantError, terminalCreditJob } from '../../credits/service.js';
+import { jobLedger, lockCreditJob } from '../credit-jobs.js';
 import { claimGeneration, publishGeneration, refreshGeneration } from '../execution.js';
 import { logger } from '../../../infra/logger.js';
 import { generateDirections } from './directions.js';
 import type { ArtworkConfig, ArtworkJob, ArtworkStorage, PublishArtworkEvent } from './types.js';
 
 async function loadArtworkJob(database: pg.Pool, jobId: string) {
-  const job = (await database.query<ArtworkJob>(`SELECT request_id AS "requestId", scheme_code AS "schemeCode", user_id AS "userId",
-    unit_credits AS "unitCredits", generation_snapshot AS snapshot, status FROM artwork_jobs WHERE id = $1`, [jobId])).rows[0];
+  const job = (
+    await database.query<ArtworkJob>(
+      `SELECT request_id AS "requestId", scheme_code AS "schemeCode", user_id AS "userId",
+    unit_credits AS "unitCredits", generation_snapshot AS snapshot, status FROM artwork_jobs WHERE id = $1`,
+      [jobId],
+    )
+  ).rows[0];
   if (!job) throw new Error('Artwork job not found');
   return job;
 }
@@ -34,7 +40,10 @@ export async function processArtworkJob(
   try {
     const job = await loadArtworkJob(database, jobId);
     const log = logger.child({ jobKind: 'artwork', jobId, requestId: job.requestId });
-    if (deadline.getTime() <= Date.now()) { await settleArtworkJob(database, jobId, lease, publish); return; }
+    if (deadline.getTime() <= Date.now()) {
+      await settleArtworkJob(database, jobId, lease, publish);
+      return;
+    }
     await publishGeneration(publish, jobId, { status: 'running' });
     await generateDirections({ database, jobId, job, lease, deadline, config, storage, log, publish, draining });
     await refreshGeneration(database, { kind: 'artwork', id: jobId }, lease, 'credit_settling');
@@ -48,18 +57,30 @@ export async function settleArtworkJob(database: pg.Pool, jobId: string, lease?:
   const event = await transaction(database, async client => {
     const job = await lockCreditJob(client, { kind: 'artwork', id: jobId });
     if (!job || terminalCreditJob(job.status)) return;
-    if (lease ? job.leaseToken !== lease : job.leaseUntil && new Date(job.leaseUntil).getTime() > Date.now()) throw new ImageGenerationError('GENERATION_LEASE_BUSY', true);
+    if (lease ? job.leaseToken !== lease : job.leaseUntil && new Date(job.leaseUntil).getTime() > Date.now())
+      throw new ImageGenerationError('GENERATION_LEASE_BUSY', true);
     const files = await artworkFiles(client, jobId);
     const usable = files.length;
-    if (usable && job.unitCredits === null) throw new CreditInvariantError('CREDIT_JOB_PRICE_MISSING', 'Artwork price missing', { kind: 'artwork', id: jobId });
-    if (usable) await settleJobCredits(client, { kind: 'artwork', id: jobId }, usable * job.unitCredits!);
-    await client.query("UPDATE artwork_job_directions SET status='failed',reason=COALESCE(reason,'PROCESSING_FAILED'),generated_url=NULL WHERE job_id=$1 AND status<>'succeeded'", [jobId]);
+    if (usable && job.unitCredits === null)
+      throw new CreditInvariantError('CREDIT_JOB_PRICE_MISSING', 'Artwork price missing', { kind: 'artwork', id: jobId });
+    if (usable) await jobLedger.settle(client, { kind: 'artwork', id: jobId }, usable * job.unitCredits!);
+    await client.query(
+      "UPDATE artwork_job_directions SET status='failed',reason=COALESCE(reason,'PROCESSING_FAILED'),generated_url=NULL WHERE job_id=$1 AND status<>'succeeded'",
+      [jobId],
+    );
     const status = usable === 4 ? 'succeeded' : usable ? 'partially_succeeded' : 'failed';
     const deliveryStatus = completeArtworkFiles(files) ? 'ready' : 'incomplete';
-    if (!usable) await client.query("UPDATE artwork_jobs SET status='failed',delivery_status=$2,usable_count=0,phase=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1", [jobId, deliveryStatus]);
-    if (!usable) await releaseJobCredits(client, { kind: 'artwork', id: jobId });
-    if (usable) await client.query(`UPDATE artwork_jobs SET status=$2,delivery_status=$3,usable_count=$4,phase=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
-      [jobId, status, deliveryStatus, usable]);
+    if (!usable)
+      await client.query(
+        "UPDATE artwork_jobs SET status='failed',delivery_status=$2,usable_count=0,phase=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1",
+        [jobId, deliveryStatus],
+      );
+    if (!usable) await jobLedger.release(client, { kind: 'artwork', id: jobId });
+    if (usable)
+      await client.query(
+        `UPDATE artwork_jobs SET status=$2,delivery_status=$3,usable_count=$4,phase=NULL,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
+        [jobId, status, deliveryStatus, usable],
+      );
     return { status, deliveryStatus, phase: null };
   });
   if (event) await publishGeneration(publish, jobId, event);

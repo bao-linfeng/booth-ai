@@ -52,9 +52,9 @@ async function submitOffline(body: string, email: string) {
     >
       <SheetHeader class="border-b px-4 py-3 text-start">
         <SheetTitle>{{ t('customerService.title') }}</SheetTitle>
-        <SheetDescription class="text-xs" data-cs-status>{{ status }}</SheetDescription>
+        <SheetDescription class="text-sm" data-cs-status>{{ status }}</SheetDescription>
       </SheetHeader>
-      <p v-if="state.notice" class="border-b bg-muted px-4 py-2 text-xs" role="status">
+      <p v-if="state.notice" class="border-b bg-muted px-4 py-2 text-sm" role="status">
         {{ t(`customerService.${state.notice}`) }}
       </p>
       <div v-if="state.busy && !state.loaded" class="flex flex-1 items-center justify-center">

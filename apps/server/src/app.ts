@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
-import type { FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
@@ -13,6 +12,8 @@ import { createStorage } from './infra/storage.js';
 import { registerAdminModule } from './http/admin/index.js';
 import { registerClientModule } from './http/client/index.js';
 import { defaultUploadMaxBytes } from './http/uploads.js';
+import { registerErrorContract } from './http/errors.js';
+import { registerResponseGuard } from './http/response-guard.js';
 
 export interface HealthDependencies {
   database: () => Promise<unknown>;
@@ -52,39 +53,55 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
       tags: [{ name: 'health', description: '存活与依赖就绪检查' }],
     },
   });
-  app.addHook('onRequest', async (_request, reply) => { reply.header('x-request-id', _request.id); });
+  app.addHook('onRequest', async (_request, reply) => {
+    reply.header('x-request-id', _request.id);
+  });
   app.addHook('onResponse', async (request, reply) => {
-    request.log.info({ method: request.method, route: request.routeOptions.url, statusCode: reply.statusCode, responseTime: reply.elapsedTime }, 'request completed');
+    request.log.info(
+      { method: request.method, route: request.routeOptions.url, statusCode: reply.statusCode, responseTime: reply.elapsedTime },
+      'request completed',
+    );
   });
-  app.setErrorHandler((error: FastifyError, request, reply) => {
-    const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500;
-    // Error messages can include upstream credentials; only emit stable diagnostic codes and details built by domain code.
-    request.log[status >= 500 ? 'error' : 'warn']({ code: error.code ?? 'REQUEST_ERROR', statusCode: status }, 'request failed');
-    const { reason, details } = error as FastifyError & { reason?: string; details?: unknown };
-    const assignmentUnavailable = status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE';
-    reply.code(status).send({ error: { code: error.validation ? 'VALIDATION_ERROR' : assignmentUnavailable ? 'REQUEST_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR', ...(reason && (status < 500 || assignmentUnavailable) ? { reason } : {}), ...(reason && details !== undefined && status < 500 ? { details } : {}), message: assignmentUnavailable ? 'Request acceptance is temporarily unavailable' : status >= 500 ? 'Internal server error' : 'Invalid request', requestId: request.id } });
-  });
-  app.setNotFoundHandler((request, reply) => reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found', requestId: request.id } }));
+  registerErrorContract(app);
+  registerResponseGuard(app, config.nodeEnv === 'test' ? 'throw' : config.nodeEnv === 'development' ? 'log' : 'repair');
 
-  app.get('/health/live', {
-    schema: { tags: ['health'], summary: '进程存活', response: { 200: { type: 'object', required: ['status'], properties: { status: { type: 'string', const: 'ok' } } } } },
-  }, async () => ({ status: 'ok' }));
+  app.get(
+    '/health/live',
+    {
+      schema: {
+        tags: ['health'],
+        summary: '进程存活',
+        response: { 200: { type: 'object', required: ['status'], properties: { status: { type: 'string', const: 'ok' } } } },
+      },
+    },
+    async () => ({ status: 'ok' }),
+  );
 
   const readinessSchema = {
-    type: 'object', required: ['status', 'checks'], properties: {
+    type: 'object',
+    required: ['status', 'checks'],
+    properties: {
       status: { type: 'string', enum: ['ok', 'degraded'] },
-      checks: { type: 'object', required: ['database', 'redis', 'storage'], properties: Object.fromEntries(['database', 'redis', 'storage'].map(name => [name, { type: 'string', enum: ['ok', 'error'] }])) },
+      checks: {
+        type: 'object',
+        required: ['database', 'redis', 'storage'],
+        properties: Object.fromEntries(['database', 'redis', 'storage'].map(name => [name, { type: 'string', enum: ['ok', 'error'] }])),
+      },
     },
   };
-  app.get('/health/ready', {
-    schema: { tags: ['health'], summary: '数据库、队列依赖和存储桶就绪', response: { 200: readinessSchema, 503: readinessSchema } },
-  }, async (_request, reply) => {
-    const names = ['database', 'redis', 'storage'] as const;
-    const results = await Promise.allSettled(names.map(name => boundedCheck(dependencies[name])));
-    const checks = Object.fromEntries(names.map((name, index) => [name, results[index]?.status === 'fulfilled' ? 'ok' : 'error']));
-    const ok = results.every(result => result.status === 'fulfilled');
-    return reply.code(ok ? 200 : 503).send({ status: ok ? 'ok' : 'degraded', checks });
-  });
+  app.get(
+    '/health/ready',
+    {
+      schema: { tags: ['health'], summary: '数据库、队列依赖和存储桶就绪', response: { 200: readinessSchema, 503: readinessSchema } },
+    },
+    async (_request, reply) => {
+      const names = ['database', 'redis', 'storage'] as const;
+      const results = await Promise.allSettled(names.map(name => boundedCheck(dependencies[name])));
+      const checks = Object.fromEntries(names.map((name, index) => [name, results[index]?.status === 'fulfilled' ? 'ok' : 'error']));
+      const ok = results.every(result => result.status === 'fulfilled');
+      return reply.code(ok ? 200 : 503).send({ status: ok ? 'ok' : 'degraded', checks });
+    },
+  );
 
   if (authDependencies) {
     await registerClientModule(app, config, authDependencies.pool, authDependencies.redis, authDependencies.storage);
@@ -103,7 +120,11 @@ async function boundedCheck(check: () => Promise<unknown>) {
   try {
     return await Promise.race([
       Promise.resolve().then(check),
-      new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('Dependency timeout')), 2500); }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('Dependency timeout')), 2500);
+      }),
     ]);
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+  }
 }

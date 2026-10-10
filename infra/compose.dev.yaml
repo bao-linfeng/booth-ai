@@ -170,13 +170,17 @@ services:
       - ../apps/server/src:/app/src:ro
       - ../apps/server/migrations:/app/migrations:ro
       - ../apps/server/tests:/app/tests:ro
+      - ../apps/server/.oxlintrc.json:/app/.oxlintrc.json:ro
+      - ../apps/server/.oxfmtrc.json:/app/.oxfmtrc.json:ro
       - ../docs/source:/docs/source:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: [/bin/sh, -ec, 'npm run check && npx tsx tests/setup-integration-db.ts && npm run test && npm run build']
+    # 测试命令写在这里而不是 npm run test：镜像里的 package.json 在构建时固定，脚本改动后未重建镜像也不会跑错测试集；
+    # TAP 汇总用于断言确实收集到了测试，避免 glob 落空时以 0 个测试通过。
+    command: [/bin/sh, -ec, 'npm run check && npm run lint && npm run format:check && npx tsx tests/helpers/setup-integration-db.ts && npx tsx --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=/tmp/tests.tap "tests/**/*.test.ts" && grep -Eq "^# tests [1-9]" /tmp/tests.tap && npm run build']
 
   smoke:
     <<: *server

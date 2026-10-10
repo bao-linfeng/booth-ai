@@ -6,7 +6,7 @@ import { createStorage } from '../../infra/storage.js';
 import { registerAuthentication } from '../authentication.js';
 import { registerAdminAuthRoutes } from './auth/index.js';
 import { registerAdminMeRoutes } from './me/index.js';
-import { registerAdminUserRoutes } from './users.controller.js';
+import { registerAdminUserRoutes } from './users/index.js';
 import { registerAdminSchemesRoutes } from './schemes/index.js';
 import { registerAdminSchemeImportsRoutes } from './scheme-imports/index.js';
 import { registerAdminAssetsRoutes } from './assets/index.js';
@@ -22,33 +22,42 @@ import { registerAdminSchemeSearchesRoutes } from './scheme-searches/index.js';
 import { registerAdminCreditRoutes } from './credits/index.js';
 import { registerAdminGenerationJobRoutes } from './generation-jobs/index.js';
 import { registerAdminAuthorization } from './authorization.js';
-import { registerAdminRoleRoutes } from './roles.controller.js';
+import { registerAdminRoleRoutes } from './roles/index.js';
 import { registerAdminDashboardRoutes } from './dashboard/index.js';
 import { registerAdminCustomerServiceRoutes } from './customer-service/index.js';
 
-export async function registerAdminModule(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>): Promise<void> {
-  await app.register(async admin => {
-    registerAuthentication(admin, pool, redis, 'admin');
-    registerAdminAuthorization(admin);
-    await registerAdminRoleRoutes(admin, config, pool);
-    await registerAdminAuthRoutes(admin, config, pool, redis);
-    await registerAdminMeRoutes(admin, config, pool, redis);
-    await registerAdminDashboardRoutes(admin, pool);
-    await registerAdminCreditRoutes(admin, pool, redis);
-    await registerAdminUserRoutes(admin, pool);
-    await registerAdminSchemesRoutes(admin, pool, redis);
-    await registerAdminSchemeImportsRoutes(admin, pool, redis);
-    await registerAdminAssetsRoutes(admin, pool, storage, redis);
-    await registerAdminBomRoutes(admin, pool, storage, redis, config);
-    await registerAdminReviewsRoutes(admin, pool, redis);
-    await registerAdminDictionariesRoutes(admin, pool);
-    await registerAdminAuditLogsRoutes(admin, pool);
-    await registerAdminProjectRoutes(admin, pool, redis, storage);
-    await registerAdminProjectNotificationRoutes(admin, pool);
-    await registerAdminSchemeSearchesRoutes(admin, pool);
-    await registerAdminAiModelRoutes(admin, pool, redis, config.aiModelEncryptionKey);
-    await registerAdminPromptTemplateRoutes(admin, pool, redis);
-    await registerAdminGenerationJobRoutes(admin, pool, storage, redis);
-    await registerAdminCustomerServiceRoutes(admin, pool, redis);
-  }, { prefix: '/api/v1/admin' });
+export async function registerAdminModule(
+  app: FastifyInstance,
+  config: Config,
+  pool: pg.Pool,
+  redis: Redis,
+  storage: ReturnType<typeof createStorage>,
+): Promise<void> {
+  await app.register(
+    async admin => {
+      registerAuthentication(admin, pool, redis, 'admin');
+      registerAdminAuthorization(admin);
+      await registerAdminRoleRoutes(admin, config, pool);
+      await registerAdminAuthRoutes(admin, config, pool, redis);
+      await registerAdminMeRoutes(admin, config, pool, redis);
+      await registerAdminDashboardRoutes(admin, pool);
+      await registerAdminCreditRoutes(admin, pool);
+      await registerAdminUserRoutes(admin, pool);
+      await registerAdminSchemesRoutes(admin, pool);
+      await registerAdminSchemeImportsRoutes(admin, pool);
+      await registerAdminAssetsRoutes(admin, pool, storage);
+      await registerAdminBomRoutes(admin, pool, storage);
+      await registerAdminReviewsRoutes(admin, pool);
+      await registerAdminDictionariesRoutes(admin, pool);
+      await registerAdminAuditLogsRoutes(admin, pool);
+      await registerAdminProjectRoutes(admin, pool, storage);
+      await registerAdminProjectNotificationRoutes(admin, pool);
+      await registerAdminSchemeSearchesRoutes(admin, pool);
+      await registerAdminAiModelRoutes(admin, pool, redis, config.aiModelEncryptionKey);
+      await registerAdminPromptTemplateRoutes(admin, pool);
+      await registerAdminGenerationJobRoutes(admin, pool, storage, redis);
+      await registerAdminCustomerServiceRoutes(admin, pool, redis);
+    },
+    { prefix: '/api/v1/admin' },
+  );
 }

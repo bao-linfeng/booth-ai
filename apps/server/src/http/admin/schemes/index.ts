@@ -1,18 +1,23 @@
 import type { FastifyInstance } from 'fastify';
-import type { Redis } from 'ioredis';
+import type { TypeProvider } from '../../type-provider.js';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
-import { createScheme, deleteScheme, getScheme, listSchemes, updateScheme, type ListSchemesOptions, type SchemeInput } from '../../../modules/schemes/service.js';
+import {
+  createScheme,
+  deleteScheme,
+  getScheme,
+  listSchemes,
+  schemeFormOptions,
+  updateScheme,
+  type ListSchemesOptions,
+} from '../../../modules/schemes/service.js';
+import { nullDataResponse, pageSchema, successResponse } from '../../schemas.js';
 
-interface SchemeQuery extends Partial<ListSchemesOptions> {}
-interface CodeParams { code: string; }
-interface UpdateBody extends SchemeInput { editRevision: number; }
-
-const nullableString = { type: ['string', 'null'] };
-const nullableNumber = { type: ['number', 'null'] };
-const nullableStringArray = { type: ['array', 'null'], items: { type: 'string' } };
-const dictionaryId = { type: ['string', 'null'], format: 'uuid' };
-const dictionaryIds = { type: 'array', uniqueItems: true, items: { type: 'string', format: 'uuid' } };
+const nullableString = { type: ['string', 'null'] } as const;
+const nullableNumber = { type: ['number', 'null'] } as const;
+const nullableStringArray = { type: ['array', 'null'], items: { type: 'string' } } as const;
+const dictionaryId = { type: ['string', 'null'], format: 'uuid' } as const;
+const dictionaryIds = { type: 'array', uniqueItems: true, items: { type: 'string', format: 'uuid' } } as const;
 const schemeProperties = {
   code: { type: 'string', minLength: 1, maxLength: 200 },
   name: { type: 'string', minLength: 1, maxLength: 500 },
@@ -33,7 +38,7 @@ const schemeProperties = {
   source: nullableString,
   visualTheme: nullableString,
   notes: nullableString,
-};
+} as const;
 
 const updateProperties = {
   name: { type: 'string', minLength: 1, maxLength: 500 },
@@ -55,19 +60,27 @@ const updateProperties = {
   visualTheme: nullableString,
   notes: nullableString,
   editRevision: { type: 'integer', minimum: 1 },
-};
+} as const;
 
 const codeParamsSchema = {
-  type: 'object', required: ['code'], additionalProperties: false,
+  type: 'object',
+  required: ['code'],
+  additionalProperties: false,
   properties: { code: { type: 'string', minLength: 1 } },
-};
+} as const;
 
 const listQuerySchema = {
-  type: 'object', additionalProperties: false,
+  type: 'object',
+  additionalProperties: false,
   properties: {
-    page: { type: 'integer', minimum: 1 }, pageSize: { type: 'integer', minimum: 1, maximum: 100 },
-    keyword: { type: 'string', minLength: 1 }, code: { type: 'string', minLength: 1 }, name: { type: 'string', minLength: 1 }, styleId: { type: 'string', format: 'uuid' },
-    industryId: { type: 'string', format: 'uuid' }, productSystemId: { type: 'string', format: 'uuid' },
+    page: { type: 'integer', minimum: 1 },
+    pageSize: { type: 'integer', minimum: 1, maximum: 100 },
+    keyword: { type: 'string', minLength: 1 },
+    code: { type: 'string', minLength: 1 },
+    name: { type: 'string', minLength: 1 },
+    styleId: { type: 'string', format: 'uuid' },
+    industryId: { type: 'string', format: 'uuid' },
+    productSystemId: { type: 'string', format: 'uuid' },
     publishStatus: { type: 'string', enum: ['draft', 'published', 'unpublished'] },
     verificationStatus: { type: 'string', enum: ['unverified', 'verified', 'failed'] },
     openingCount: { type: 'integer', minimum: 1, maximum: 4 },
@@ -78,17 +91,90 @@ const listQuerySchema = {
     sortBy: { type: 'string', enum: ['updatedAt', 'createdAt'] },
     sortOrder: { type: 'string', enum: ['asc', 'desc'] },
   },
-};
+} as const;
 
-function decodedCode(params: CodeParams): string {
+const string = { type: 'string' } as const;
+const strings = { type: 'array', items: string } as const;
+const nullableInteger = { type: ['integer', 'null'] } as const;
+const schemeSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'code',
+    'name',
+    'parentCode',
+    'lengthMm',
+    'widthMm',
+    'heightMm',
+    'areaM2',
+    'openingCount',
+    'productSystemId',
+    'styleId',
+    'industryIds',
+    'budgetTierId',
+    'zoneIds',
+    'featureIds',
+    'description',
+    'keywords',
+    'source',
+    'visualTheme',
+    'publishStatus',
+    'verificationStatus',
+    'notes',
+    'editRevision',
+    'createdBy',
+    'updatedBy',
+    'createdAt',
+    'updatedAt',
+  ],
+  properties: {
+    id: string,
+    code: string,
+    name: string,
+    parentCode: nullableString,
+    lengthMm: nullableInteger,
+    widthMm: nullableInteger,
+    heightMm: nullableInteger,
+    areaM2: { ...nullableString, description: '面积（平方米），以字符串返回避免精度丢失' },
+    openingCount: nullableInteger,
+    productSystemId: nullableString,
+    styleId: nullableString,
+    industryIds: strings,
+    budgetTierId: nullableString,
+    zoneIds: strings,
+    featureIds: strings,
+    description: nullableString,
+    keywords: { type: ['array', 'null'], items: string },
+    source: nullableString,
+    visualTheme: nullableString,
+    publishStatus: string,
+    verificationStatus: string,
+    notes: nullableString,
+    editRevision: { type: 'integer' },
+    createdBy: nullableString,
+    updatedBy: nullableString,
+    createdAt: string,
+    updatedAt: string,
+  },
+} as const;
+const optionItem = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id', 'label', 'itemValue'],
+  properties: { id: string, label: string, itemValue: string },
+} as const;
+const schemeResponse = { 200: successResponse(schemeSchema) } as const;
+
+function decodedCode(code: string): string {
   try {
-    return decodeURIComponent(params.code);
+    return decodeURIComponent(code);
   } catch {
     throw Object.assign(new Error('Invalid scheme code'), { statusCode: 400 });
   }
 }
 
-function listOptions(query: SchemeQuery): ListSchemesOptions {
+function listOptions(query: Partial<ListSchemesOptions>): ListSchemesOptions {
   return {
     page: query.page ?? 1,
     pageSize: query.pageSize ?? 20,
@@ -110,37 +196,82 @@ function listOptions(query: SchemeQuery): ListSchemesOptions {
   };
 }
 
-export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get('/schemes/options', { schema: { tags: ['admin-schemes'] } }, async () => {
-    const result = await pool.query<{ code: string; id: string; label: string; itemValue: string }>(`
-      SELECT d.code, i.id::text AS id, i.item_label AS label, i.item_value AS "itemValue" FROM dictionaries d
-      JOIN dictionary_items i ON i.dictionary_id = d.id
-       WHERE d.enabled AND i.enabled AND d.code IN ('opening_count','booth_size','product_system','style','industry','budget_tier','functional_zone','key_feature')
-      ORDER BY d.code, i.sort_order, i.id`);
-    return { code: 0, data: result.rows.reduce<Record<string, { id: string; label: string; itemValue: string }[]>>((options, item) => {
-      (options[item.code] ??= []).push({ id: item.id, label: item.label, itemValue: item.itemValue });
-      return options;
-    }, {}) };
-  });
-  app.get('/schemes', { schema: { tags: ['admin-schemes'], querystring: listQuerySchema } }, async request => {
-    return { code: 0, data: await listSchemes(pool, listOptions(request.query as SchemeQuery)) };
-  });
-  app.get('/schemes/:code', { schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async request => {
-    return { code: 0, data: await getScheme(pool, decodedCode(request.params as CodeParams)) };
-  });
-  app.post('/schemes', {
-    schema: { tags: ['admin-schemes'], body: { type: 'object', required: ['code', 'name'], additionalProperties: false, properties: schemeProperties } },
-  }, async request => {
-    return { code: 0, data: await createScheme(pool, adminUserId(request), request.body as SchemeInput) };
-  });
-  app.put('/schemes/:code', {
-    schema: { tags: ['admin-schemes'], params: codeParamsSchema, body: { type: 'object', required: ['editRevision'], additionalProperties: false, properties: updateProperties } },
-  }, async request => {
-    const { editRevision, ...input } = request.body as UpdateBody;
-    return { code: 0, data: await updateScheme(pool, decodedCode(request.params as CodeParams), adminUserId(request), input, editRevision) };
-  });
-  app.delete('/schemes/:code', { schema: { tags: ['admin-schemes'], params: codeParamsSchema } }, async (request) => {
-    await deleteScheme(pool, adminUserId(request), decodedCode(request.params as CodeParams));
-    return { code: 0, data: null };
-  });
+export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
+  const routes = app.withTypeProvider<TypeProvider>();
+  routes.get(
+    '/schemes/options',
+    {
+      config: { permissions: ['schemes.read'] },
+      schema: {
+        tags: ['admin-schemes'],
+        response: {
+          200: successResponse({
+            type: 'object',
+            additionalProperties: { type: 'array', items: optionItem },
+            description: '按字典编码分组的选项',
+          }),
+        },
+      },
+    },
+    async () => ({ code: 0, data: await schemeFormOptions(pool) }) as const,
+  );
+  routes.get(
+    '/schemes',
+    {
+      config: { permissions: ['schemes.read'] },
+      schema: { tags: ['admin-schemes'], querystring: listQuerySchema, response: { 200: successResponse(pageSchema(schemeSchema)) } },
+    },
+    async request => ({ code: 0, data: await listSchemes(pool, listOptions(request.query)) }) as const,
+  );
+  routes.get(
+    '/schemes/:code',
+    { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'], params: codeParamsSchema, response: schemeResponse } },
+    async request => ({ code: 0, data: await getScheme(pool, decodedCode(request.params.code)) }) as const,
+  );
+  routes.post(
+    '/schemes',
+    {
+      config: { permissions: ['schemes.create'] },
+      schema: {
+        tags: ['admin-schemes'],
+        body: { type: 'object', required: ['code', 'name'], additionalProperties: false, properties: schemeProperties },
+        response: schemeResponse,
+      },
+    },
+    async request => ({ code: 0, data: await createScheme(pool, adminUserId(request), request.body) }) as const,
+  );
+  routes.put(
+    '/schemes/:code',
+    {
+      config: { permissions: ['schemes.update'] },
+      schema: {
+        tags: ['admin-schemes'],
+        params: codeParamsSchema,
+        body: { type: 'object', required: ['editRevision'], additionalProperties: false, properties: updateProperties },
+        response: schemeResponse,
+      },
+    },
+    async request => {
+      const { editRevision, ...input } = request.body;
+      return {
+        code: 0,
+        data: await updateScheme(pool, decodedCode(request.params.code), adminUserId(request), input, editRevision),
+      } as const;
+    },
+  );
+  routes.delete(
+    '/schemes/:code',
+    {
+      config: { permissions: ['schemes.delete'] },
+      schema: {
+        tags: ['admin-schemes'],
+        params: codeParamsSchema,
+        response: { 200: nullDataResponse },
+      },
+    },
+    async request => {
+      await deleteScheme(pool, adminUserId(request), decodedCode(request.params.code));
+      return { code: 0, data: null } as const;
+    },
+  );
 }

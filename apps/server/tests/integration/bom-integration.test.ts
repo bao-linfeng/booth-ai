@@ -1,0 +1,297 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import test from 'node:test';
+import pg from 'pg';
+import { addAssetVersion } from '../../src/modules/assets/service.js';
+import {
+  assertImportBaseline,
+  createBomImport,
+  createOrReplaceBomFromImport,
+} from '../../src/modules/schemes/bill-of-materials/imports.js';
+import { deleteBom, deleteBomItem, updateBomItems } from '../../src/modules/schemes/bill-of-materials/items.js';
+import { getBom, listBoms } from '../../src/modules/schemes/bill-of-materials/repository.js';
+import { submitBomVerification } from '../../src/modules/schemes/bill-of-materials/verification.js';
+
+test(
+  'BOM transactions preserve baseline, idempotency, measurement kinds and publication state',
+  { skip: !process.env.BOM_TEST_DATABASE_URL },
+  async t => {
+    const pool = new pg.Pool({ connectionString: process.env.BOM_TEST_DATABASE_URL });
+    const code = `bom-test-${randomUUID()}`;
+    const secondCode = `bom-test-${randomUUID()}`;
+    const adminId = randomUUID();
+    const model = randomUUID();
+    const scheme = randomUUID();
+    const second = randomUUID();
+    t.after(async () => {
+      await pool.query('DELETE FROM schemes WHERE id = ANY($1::uuid[])', [[scheme, second]]);
+      await pool.query('DELETE FROM admins WHERE id=$1', [adminId]);
+      await pool.end();
+    });
+    await pool.query(
+      "INSERT INTO admins (id,external_user_id,username,roles,permissions) VALUES ($1,$2,$3,ARRAY['ROLE_ADMIN'],ARRAY['scheme.read','scheme.edit','scheme.import','scheme.review'])",
+      [adminId, Math.floor(Math.random() * 1e12), code],
+    );
+    await pool.query("INSERT INTO schemes (id,code,name,publish_status) VALUES ($1,$2,$3,'published'),($4,$5,$6,'draft')", [
+      scheme,
+      code,
+      code,
+      second,
+      secondCode,
+      secondCode,
+    ]);
+    const preview = {
+      items: [
+        {
+          productName: '杆件',
+          sourceQuantity: '2500',
+          sourceUnit: 'mm',
+          measurementKind: 'length' as const,
+          unitPrice: '43',
+          totalPrice: '367.98',
+          totalWeightKg: '8.56',
+        },
+        { productName: '组件', sourceQuantity: '4', sourceUnit: '个', measurementKind: 'count' as const },
+      ],
+      errors: [],
+      warnings: [{ code: 'OPTIONAL_FIELD_MISSING', message: '型号缺失，请核对' }],
+    };
+    const createImport = async (hash: string, revision: number) => {
+      const objectKey = `tests/${randomUUID()}.xlsx`;
+      return createBomImport(pool, adminId, code, 'test.xlsx', hash, objectKey, 10, revision, preview);
+    };
+    const imported = await createImport('hash', 0);
+    await assert.rejects(createOrReplaceBomFromImport(pool, adminId, code, imported.id, 1), { reason: 'BOM_REVISION_CHANGED' });
+    const original = await createOrReplaceBomFromImport(pool, adminId, code, imported.id, 0);
+    assert.deepEqual([original.revision, original.itemCount, original.unpublished], [1, 2, true]);
+    const audit = await pool.query<{ change_reason: string }>(
+      "SELECT change_reason FROM bom_change_logs WHERE action='import' AND after_revision=1 AND bom_id=(SELECT id FROM scheme_boms WHERE scheme_id=$1)",
+      [scheme],
+    );
+    assert.equal(audit.rows[0]?.change_reason, '导入方案清单');
+    let bom = (await getBom(pool, code))!;
+    assert.deepEqual(
+      bom.items.map(item => item.quantity),
+      ['2.500000', '4.000000'],
+    );
+    assert.deepEqual(
+      [bom.items[0]?.unitPrice, bom.items[0]?.totalPrice, bom.items[0]?.totalWeightKg],
+      ['43.000000', '367.980000', '8.560000'],
+    );
+    assert.equal((await listBoms(pool, { code, page: 1, pageSize: 20 })).data[0]?.schemeCode, code);
+    assert.deepEqual(
+      bom.items.map(item => item.measurementKind),
+      ['length', 'count'],
+    );
+    assert.deepEqual(await createOrReplaceBomFromImport(pool, adminId, code, imported.id, 0), original);
+    await assert.rejects(createOrReplaceBomFromImport(pool, adminId, code, imported.id, 1), { reason: 'IDEMPOTENCY_CONFLICT' });
+    const legacy = await createImport('legacy-hash', 1);
+    await pool.query('UPDATE bom_imports SET mapping_revision=4 WHERE id=$1', [legacy.id]);
+    await assert.rejects(createOrReplaceBomFromImport(pool, adminId, code, legacy.id, 1), { reason: 'IMPORT_NOT_READY' });
+    const stale = await createImport('hash2', 1);
+    bom = await updateBomItems(
+      pool,
+      adminId,
+      code,
+      1,
+      '修正条目',
+      bom.items.map(item => ({
+        id: item.id,
+        productName: item.productName,
+        sourceQuantity: item.sourceQuantity,
+        sourceUnit: item.sourceUnit,
+        measurementKind: item.measurementKind,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice,
+        totalWeightKg: item.totalWeightKg,
+      })),
+    );
+    assert.equal(bom.items[0]?.totalPrice, '367.980000');
+    assert.deepEqual(
+      bom.items.map(item => item.measurementKind),
+      ['length', 'count'],
+    );
+    await assert.rejects(
+      updateBomItems(
+        pool,
+        adminId,
+        code,
+        2,
+        '无效计量类型',
+        bom.items.map(item => ({
+          id: item.id,
+          productName: item.productName,
+          sourceQuantity: item.sourceQuantity,
+          sourceUnit: item.sourceUnit,
+          measurementKind: item.measurementKind === 'length' ? 'area' : item.measurementKind,
+        })),
+      ),
+      { reason: 'INVALID_INPUT' },
+    );
+    assert.equal((await getBom(pool, code))?.revision, 2);
+    await assert.rejects(createOrReplaceBomFromImport(pool, adminId, code, stale.id, 1), { reason: 'BOM_REVISION_CHANGED' });
+    const input = { requestKey: randomUUID(), expectedRevision: bom.revision, decision: 'pass' as const };
+    const first = await submitBomVerification(pool, adminId, code, input);
+    assert.equal(first.status, 'verified');
+    assert.equal((await getBom(pool, code))?.schemeId, scheme);
+    const stored = await pool.query<{ checks: object; modelAssetId: string | null; notes: string | null }>(
+      `SELECT checks,model_asset_id AS "modelAssetId",notes FROM bom_verifications WHERE id=$1`,
+      [first.verificationId],
+    );
+    assert.deepEqual(stored.rows[0], { checks: {}, modelAssetId: null, notes: null });
+    const replay = await submitBomVerification(pool, adminId, code, input);
+    assert.deepEqual(replay, { ...first, replayed: true });
+    await pool.query("INSERT INTO scheme_assets (id,scheme_id,type,name) VALUES ($1,$2,'model','模型')", [model, scheme]);
+    await pool.query(
+      "INSERT INTO asset_versions (asset_id,object_key,original_filename,mime_type,byte_size,checksum) VALUES ($1,$2,'model.skp','application/octet-stream',10,'modelhash')",
+      [model, `tests/${randomUUID()}.skp`],
+    );
+    await addAssetVersion(
+      pool,
+      adminId,
+      code,
+      model,
+      {
+        objectKey: `tests/${randomUUID()}.skp`,
+        originalFilename: 'new.skp',
+        mimeType: 'application/octet-stream',
+        byteSize: 12,
+        checksum: 'newhash',
+      },
+      1,
+    );
+    const unchanged = (await getBom(pool, code))!;
+    assert.equal(unchanged.status, 'verified');
+    assert.equal(unchanged.revision, first.revision);
+    await assert.rejects(submitBomVerification(pool, adminId, secondCode, input), { reason: 'IDEMPOTENCY_CONFLICT' });
+    await assert.rejects(submitBomVerification(pool, adminId, code, { ...input, decision: 'reject', notes: '不通过' }), {
+      reason: 'IDEMPOTENCY_CONFLICT',
+    });
+    await assert.rejects(assertImportBaseline(pool, code, unchanged.revision), { reason: 'BOM_ALREADY_VERIFIED' });
+    await assert.rejects(createImport('locked-hash', unchanged.revision), { reason: 'BOM_ALREADY_VERIFIED' });
+    await assert.rejects(createOrReplaceBomFromImport(pool, adminId, code, stale.id, unchanged.revision), {
+      reason: 'BOM_REVISION_CHANGED',
+    });
+    await assert.rejects(
+      updateBomItems(
+        pool,
+        adminId,
+        code,
+        unchanged.revision,
+        '尝试修改',
+        unchanged.items.map(item => ({
+          id: item.id,
+          productName: item.productName,
+          sourceQuantity: item.sourceQuantity,
+          sourceUnit: item.sourceUnit,
+          measurementKind: item.measurementKind,
+        })),
+      ),
+      { reason: 'BOM_ALREADY_VERIFIED' },
+    );
+    await assert.rejects(deleteBomItem(pool, adminId, code, unchanged.items[0]!.id, unchanged.revision), {
+      reason: 'BOM_ALREADY_VERIFIED',
+    });
+    await assert.rejects(deleteBom(pool, adminId, code, unchanged.revision), { reason: 'BOM_ALREADY_VERIFIED' });
+    await assert.rejects(
+      submitBomVerification(pool, adminId, code, {
+        ...input,
+        requestKey: randomUUID(),
+        expectedRevision: unchanged.revision,
+        decision: 'reject',
+        notes: '不通过',
+      }),
+      { reason: 'BOM_ALREADY_VERIFIED' },
+    );
+    assert.deepEqual(await submitBomVerification(pool, adminId, code, input), { ...first, replayed: true });
+    const secondImport = await createBomImport(
+      pool,
+      adminId,
+      secondCode,
+      'test.xlsx',
+      'second-hash',
+      `tests/${randomUUID()}.xlsx`,
+      10,
+      0,
+      preview,
+    );
+    await createOrReplaceBomFromImport(pool, adminId, secondCode, secondImport.id, 0);
+    const secondBom = (await getBom(pool, secondCode))!;
+    await assert.rejects(
+      submitBomVerification(pool, adminId, secondCode, {
+        requestKey: randomUUID(),
+        expectedRevision: secondBom.revision,
+        decision: 'reject',
+      }),
+      { reason: 'VERIFICATION_INCOMPLETE' },
+    );
+    await assert.rejects(
+      submitBomVerification(pool, adminId, secondCode, {
+        requestKey: randomUUID(),
+        expectedRevision: secondBom.revision,
+        decision: 'reject',
+        notes: '  ',
+      }),
+      { reason: 'VERIFICATION_INCOMPLETE' },
+    );
+    const concurrent = await Promise.all(
+      [
+        submitBomVerification(pool, adminId, secondCode, {
+          requestKey: randomUUID(),
+          expectedRevision: secondBom.revision,
+          decision: 'reject',
+          notes: '不通过',
+        }),
+        submitBomVerification(pool, adminId, secondCode, {
+          requestKey: randomUUID(),
+          expectedRevision: secondBom.revision,
+          decision: 'reject',
+          notes: '不通过',
+        }),
+      ].map(p =>
+        p.then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
+    assert.deepEqual(concurrent.sort(), [false, true]);
+    assert.equal((await getBom(pool, secondCode))?.status, 'rejected');
+    const beforeDelete = (await getBom(pool, secondCode))!;
+    await assert.rejects(deleteBomItem(pool, adminId, secondCode, beforeDelete.items[0]!.id, beforeDelete.revision - 1), {
+      reason: 'BOM_REVISION_CHANGED',
+    });
+    await assert.rejects(deleteBomItem(pool, adminId, secondCode, randomUUID(), beforeDelete.revision), { reason: 'RESOURCE_NOT_FOUND' });
+    await pool.query("UPDATE schemes SET publish_status='published' WHERE id=$1", [second]);
+    const afterDelete = await deleteBomItem(pool, adminId, secondCode, beforeDelete.items[0]!.id, beforeDelete.revision);
+    assert.deepEqual(
+      [afterDelete.items.length, afterDelete.items[0]?.ordinal, afterDelete.status, afterDelete.revision],
+      [1, 1, 'pending_verification', beforeDelete.revision + 1],
+    );
+    assert.equal(afterDelete.items[0]?.id, beforeDelete.items[1]?.id);
+    assert.equal(
+      (await pool.query<{ publish_status: string }>('SELECT publish_status FROM schemes WHERE id=$1', [second])).rows[0]?.publish_status,
+      'draft',
+    );
+    await assert.rejects(deleteBomItem(pool, adminId, secondCode, afterDelete.items[0]!.id, afterDelete.revision), {
+      reason: 'LAST_BOM_ITEM',
+    });
+    await assert.rejects(deleteBom(pool, adminId, secondCode, beforeDelete.revision), { reason: 'BOM_REVISION_CHANGED' });
+    await pool.query("UPDATE schemes SET publish_status='published' WHERE id=$1", [second]);
+    await deleteBom(pool, adminId, secondCode, afterDelete.revision);
+    assert.equal(await getBom(pool, secondCode), null);
+    assert.equal(
+      (await pool.query<{ publish_status: string }>('SELECT publish_status FROM schemes WHERE id=$1', [second])).rows[0]?.publish_status,
+      'draft',
+    );
+    assert.equal((await listBoms(pool, { code: secondCode, page: 1, pageSize: 20 })).total, 0);
+    for (const table of ['scheme_bom_items', 'bom_verifications', 'bom_change_logs']) {
+      assert.equal(
+        (await pool.query<{ count: string }>(`SELECT count(*)::text AS count FROM ${table} WHERE bom_id=$1`, [beforeDelete.id])).rows[0]
+          ?.count,
+        '0',
+      );
+    }
+    await assert.rejects(deleteBom(pool, adminId, secondCode, afterDelete.revision), { reason: 'BOM_NOT_AVAILABLE' });
+  },
+);

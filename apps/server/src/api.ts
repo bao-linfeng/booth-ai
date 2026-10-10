@@ -13,11 +13,15 @@ async function main() {
   const database = createDatabase(config);
   const redis = createRedis(config);
   const storage = createStorage(config);
-  const app = await buildApp(config, {
-    database: migrationReadiness(database, await readMigrations()),
-    redis: () => redis.ping(),
-    storage: () => storage.check(),
-  }, { pool: database, redis, storage });
+  const app = await buildApp(
+    config,
+    {
+      database: migrationReadiness(database, await readMigrations()),
+      redis: () => redis.ping(),
+      storage: () => storage.check(),
+    },
+    { pool: database, redis, storage },
+  );
   app.addHook('onClose', async () => {
     closeEventStreams(redis);
     redis.disconnect();
@@ -29,11 +33,22 @@ async function main() {
     if (stopping) return;
     stopping = true;
     const deadline = setTimeout(() => process.exit(1), 25000).unref();
-    try { await app.close(); } finally { clearTimeout(deadline); }
+    try {
+      await app.close();
+    } finally {
+      clearTimeout(deadline);
+    }
   };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
-  try { await app.listen({ host: config.host, port: config.port }); }
-  catch (error) { await app.close(); throw error; }
+  try {
+    await app.listen({ host: config.host, port: config.port });
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
 }
-main().catch(error => { logger.fatal({ process: 'api', code: errorCode(error) }, 'API startup failed; check configuration and dependency health'); process.exit(1); });
+main().catch(error => {
+  logger.fatal({ process: 'api', code: errorCode(error) }, 'API startup failed; check configuration and dependency health');
+  process.exit(1);
+});

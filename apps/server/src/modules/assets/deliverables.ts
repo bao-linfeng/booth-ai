@@ -38,13 +38,25 @@ export function deliverableError(statusCode: number, reason?: string): Error & {
 }
 
 function isReady(row: DeliverableSetRow): row is DeliverableSetRow & DeliverableRow {
-  return !!row.versionId && !!row.objectKey && !!row.originalFilename && !!row.mimeType &&
-    row.byteSize !== null && row.byteSize > 0 && !!row.checksum;
+  return (
+    !!row.versionId &&
+    !!row.objectKey &&
+    !!row.originalFilename &&
+    !!row.mimeType &&
+    row.byteSize !== null &&
+    row.byteSize > 0 &&
+    !!row.checksum
+  );
 }
 
-export async function getDeliverableSet(pool: pg.Pool, code: string, type: DeliverableType): Promise<{ revision: string; rows: DeliverableSetRow[] }> {
+export async function getDeliverableSet(
+  pool: pg.Pool,
+  code: string,
+  type: DeliverableType,
+): Promise<{ revision: string; rows: DeliverableSetRow[] }> {
   await assertPublished(pool, code);
-  const result = await pool.query<DeliverableSetRow>(`
+  const result = await pool.query<DeliverableSetRow>(
+    `
     SELECT a.id::text AS "assetId", a.name, a.sort_order AS "sortOrder", a.revision AS "assetRevision",
       v.original_filename AS "originalFilename", v.mime_type AS "mimeType",
       v.byte_size::float8 AS "byteSize", v.object_key AS "objectKey", v.id::text AS "versionId", v.checksum
@@ -57,8 +69,12 @@ export async function getDeliverableSet(pool: pg.Pool, code: string, type: Deliv
     ) v ON true
     WHERE s.code = $1 AND s.publish_status = 'published'
     ORDER BY a.sort_order, a.created_at, a.id
-  `, [code, type]);
-  const revision = createHash('sha256').update(JSON.stringify([code, type, result.rows])).digest('hex');
+  `,
+    [code, type],
+  );
+  const revision = createHash('sha256')
+    .update(JSON.stringify([code, type, result.rows]))
+    .digest('hex');
   return { revision, rows: result.rows };
 }
 
@@ -68,16 +84,25 @@ export async function listDeliverables(pool: pg.Pool, code: string, type: Delive
 }
 
 export function publicDeliverables(rows: DeliverableSetRow[]): Deliverable[] {
-  return rows.filter(isReady).map(({ assetId, name, originalFilename, mimeType, byteSize, sortOrder }) =>
-    ({ assetId, name, originalFilename, mimeType, byteSize, sortOrder }));
+  return rows.filter(isReady).map(({ assetId, name, originalFilename, mimeType, byteSize, sortOrder }) => ({
+    assetId,
+    name,
+    originalFilename,
+    mimeType,
+    byteSize,
+    sortOrder,
+  }));
 }
 
 const MAX_ARCHIVE_FILES = 30;
 const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024;
 
 export async function buildDeliverableArchive(
-  pool: pg.Pool, storage: Pick<ReturnType<typeof createStorage>, 'getBuffer'>,
-  code: string, type: 'drawing' | 'artwork', expectedRevision: string,
+  pool: pg.Pool,
+  storage: Pick<ReturnType<typeof createStorage>, 'getBuffer'>,
+  code: string,
+  type: 'drawing' | 'artwork',
+  expectedRevision: string,
 ): Promise<{ buffer: Buffer; filename: string }> {
   const set = await getDeliverableSet(pool, code, type);
   if (set.revision !== expectedRevision) throw deliverableError(409, 'DELIVERABLE_REVISION_CHANGED');
@@ -90,8 +115,12 @@ export async function buildDeliverableArchive(
   const names = new Set<string>();
   for (const item of items) {
     const filename = item.originalFilename;
-    if (/[\\/:*?"<>|\u0000-\u001f\u007f]/.test(filename) || /[. ]$/.test(filename) ||
-      /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(filename) || Buffer.byteLength(filename) > 255) {
+    if (
+      /[\\/:*?"<>|\u0000-\u001f\u007f]/.test(filename) ||
+      /[. ]$/.test(filename) ||
+      /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(filename) ||
+      Buffer.byteLength(filename) > 255
+    ) {
       throw deliverableError(409, 'DELIVERABLE_FILENAME_INVALID');
     }
     const normalized = filename.normalize('NFC').toLowerCase();
@@ -127,20 +156,27 @@ export async function assertPublished(pool: pg.Pool, code: string): Promise<void
 }
 
 export async function deliverableAvailability(pool: pg.Pool, code: string): Promise<Record<DeliverableType, boolean>> {
-  const result = await pool.query<{ type: DeliverableType }>(`
+  const result = await pool.query<{ type: DeliverableType }>(
+    `
     SELECT DISTINCT a.type FROM schemes s
     JOIN scheme_baseline_assets a ON a.scheme_id = s.id AND a.is_active = true
     WHERE s.code = $1 AND s.publish_status = 'published' AND a.type IN ('model', 'drawing', 'artwork')
       AND (SELECT v.byte_size FROM asset_versions v WHERE v.asset_id = a.id
            ORDER BY v.created_at DESC, v.id DESC LIMIT 1) > 0
-  `, [code]);
+  `,
+    [code],
+  );
   const types = new Set(result.rows.map(row => row.type));
   return { model: types.has('model'), drawing: types.has('drawing'), artwork: types.has('artwork') };
 }
 
 export async function signDeliverable(
-  pool: pg.Pool, storage: Pick<ReturnType<typeof createStorage>, 'signDownloadWithName' | 'signDownload'>,
-  code: string, type: DeliverableType, assetId?: string, preview = false,
+  pool: pg.Pool,
+  storage: Pick<ReturnType<typeof createStorage>, 'signDownloadWithName' | 'signDownload'>,
+  code: string,
+  type: DeliverableType,
+  assetId?: string,
+  preview = false,
 ): Promise<{ downloadUrl: string; filename: string; mimeType: string; expiresAt: string }> {
   const items = await listDeliverables(pool, code, type);
   const asset = assetId ? items.find(item => item.assetId === assetId) : items[0];

@@ -8,10 +8,7 @@ export interface AuditEntry {
   detail?: Record<string, unknown>;
 }
 
-export async function writeAuditLog(
-  client: pg.Pool | pg.PoolClient,
-  entry: AuditEntry,
-): Promise<void> {
+export async function writeAuditLog(client: pg.Pool | pg.PoolClient, entry: AuditEntry): Promise<void> {
   await client.query(
     `INSERT INTO admin_audit_logs (admin_id, action, target_type, target_id, detail)
      VALUES ($1, $2, $3, $4, $5)`,

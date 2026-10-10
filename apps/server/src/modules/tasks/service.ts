@@ -39,7 +39,10 @@ export async function processEchoTask(pool: pg.Pool, taskId: string) {
     if (!task || task.kind !== TASK_NAME) throw new Error('Unknown foundation task');
     if (task.status === 'succeeded') return task.result;
     const result = { message: task.payload.message };
-    await client.query(`UPDATE foundation_tasks SET status = 'succeeded', result = $2, error_code = NULL, updated_at = now() WHERE id = $1`, [taskId, result]);
+    await client.query(
+      `UPDATE foundation_tasks SET status = 'succeeded', result = $2, error_code = NULL, updated_at = now() WHERE id = $1`,
+      [taskId, result],
+    );
     return result;
   });
 }

@@ -17,6 +17,13 @@ export function configureLogger(level: string, process?: string) {
 
 // Reduce an unknown failure to a stable, non-sensitive code (application codes, SQLSTATE, errno names).
 export function errorCode(error: unknown): string {
-  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' && /^[A-Z0-9][A-Z0-9_]{1,63}$/.test(error.code)) return error.code;
+  if (
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    /^[A-Z0-9][A-Z0-9_]{1,63}$/.test(error.code)
+  )
+    return error.code;
   return error instanceof Error ? error.name : 'UNKNOWN_ERROR';
 }

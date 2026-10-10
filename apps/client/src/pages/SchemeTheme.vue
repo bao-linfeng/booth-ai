@@ -426,14 +426,14 @@ function setDialogOpen(open: boolean) {
                 <p v-else class="text-sm text-muted-foreground">{{ t('schemeTheme.costPending') }}</p>
               </div>
               <div ref="confirmationTrigger">
-              <Button class="w-full" size="lg" :disabled="!canFetchOffer || loadingOffer || preparingConfirmation || creatingJob" @click="prepareConfirmation">
+              <Button class="w-full" :disabled="!canFetchOffer || loadingOffer || preparingConfirmation || creatingJob" @click="prepareConfirmation">
                 <Loader2 v-if="preparingConfirmation" class="mr-2 size-4 animate-spin" />
                 {{ isPreview ? t('schemeTheme.submitPreview') : confirmation?.attempted && !needsNewOffer ? t('schemeTheme.submitContinue') : t('schemeTheme.submitConfirm') }}
               </Button>
               </div>
               <p v-if="jobError && !confirmDialogOpen" role="alert" class="text-sm text-destructive">{{ jobError }}</p>
               <p class="text-sm leading-6 text-muted-foreground">{{ t('schemeTheme.creditDisclaimer') }}</p>
-              <details class="border-t pt-3 text-xs text-muted-foreground">
+              <details class="border-t pt-3 text-sm text-muted-foreground">
                 <summary class="cursor-pointer py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{{ t('schemeTheme.modelInfo') }}</summary>
                 <div class="mt-3 space-y-2 leading-relaxed">
                   <p v-if="loadingModels">{{ t('schemeTheme.modelLoading') }}</p>

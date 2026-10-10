@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, ArrowRight, Loader2, CheckCircle2, CircleAlert, ImageIcon } from 'lucide-vue-next'
@@ -15,7 +15,7 @@ import { useAsyncJob } from '@/composables/useAsyncJob'
 import { useSignedUrlRenewal } from '@/composables/useSignedUrlRenewal'
 import { createThemeJobEventsTicket, getThemeJob, openThemeJobEvents, saveThemeSelection, type ThemeJob } from '@/services/api/theme-jobs'
 import { failureReasonText, phaseText as getPhaseText, getThemeJobStatusLabels } from '@/features/theme-jobs/labels'
-import { setPageContext } from '@/features/customer-service/useCustomerService'
+import { useSchemeCustomerService } from '@/features/customer-service/useCustomerServiceContext'
 
 const route = useRoute()
 const router = useRouter()
@@ -74,7 +74,6 @@ onMounted(() => {
 })
 onUnmounted(() => {
   disposed = true
-  setPageContext(null)
 })
 
 const isFinished = computed(() => {
@@ -142,13 +141,10 @@ async function handleSelectResult(resultId: string) {
 
 // 客服输入框的“发送当前方案”：已选定效果时附带本任务（服务端取发送时选定的那张作卡片图），否则发送原方案
 const themedContext = computed(() => canSelect.value && !!selectedResult.value && !selectionUncertain.value)
-watch([() => jobData.value?.schemeCode, themedContext], ([schemeCode, themed]) => {
-  setPageContext(schemeCode ? {
-    context: { kind: 'scheme', schemeCode, ...(themed ? { themeJobId: jobId } : {}) },
-    entryPoint: 'scheme_detail',
-    label: schemeCode,
-  } : null)
-}, { immediate: true })
+useSchemeCustomerService(() => jobData.value?.schemeCode ? {
+  schemeCode: jobData.value.schemeCode,
+  ...(themedContext.value ? { themeJobId: jobId } : {}),
+} : null)
 
 function continueWithSelection(destination: 'quote' | 'artwork') {
   if (!canContinue.value || !jobData.value) return
@@ -335,9 +331,9 @@ const failureReason = computed(() => failureReasonText(jobData.value?.failure?.r
                 <p class="text-muted-foreground">{{ t('themeJob.noSelectionHint') }}</p>
               </div>
               <div class="space-y-3 border-t pt-5">
-                <Button class="h-auto min-h-11 w-full whitespace-normal" :disabled="!canContinue" @click="continueWithSelection('quote')">{{ t('themeJob.quoteWithSelected') }}<ArrowRight class="ml-2 size-4 shrink-0" /></Button>
-                <Button variant="outline" class="h-auto min-h-11 w-full whitespace-normal" :disabled="!canContinue" @click="continueWithSelection('artwork')">{{ t('themeJob.artworkWithSelected') }}</Button>
-                <p class="text-xs leading-relaxed text-muted-foreground">{{ t('themeJob.artworkNote') }}</p>
+                <Button class="h-auto min-h-9 w-full whitespace-normal" :disabled="!canContinue" @click="continueWithSelection('quote')">{{ t('themeJob.quoteWithSelected') }}<ArrowRight class="ml-2 size-4 shrink-0" /></Button>
+                <Button variant="outline" class="h-auto min-h-9 w-full whitespace-normal" :disabled="!canContinue" @click="continueWithSelection('artwork')">{{ t('themeJob.artworkWithSelected') }}</Button>
+                <p class="text-sm leading-relaxed text-muted-foreground">{{ t('themeJob.artworkNote') }}</p>
               </div>
               <Button variant="ghost" class="h-auto min-h-10 w-full whitespace-normal" as-child>
                 <RouterLink :to="{ path: `/schemes/${encodeURIComponent(jobData.schemeCode)}`, query: jobData.searchId ? { searchId: jobData.searchId } : {} }">{{ t('themeJob.continueOriginal') }}</RouterLink>

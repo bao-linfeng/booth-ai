@@ -44,7 +44,7 @@ const server = await createServer({
       if (path.endsWith('/components/ui/sheet') || path.endsWith('/components/ui/sheet/index')) return '\0test-sheet'
     },
     load(id) {
-      if (id === '\0test-vue') return "export { createApp, h, nextTick } from 'vue'; export { createRouter, createMemoryHistory } from 'vue-router'"
+      if (id === '\0test-vue') return "export { createApp, h, nextTick, ref } from 'vue'; export { createRouter, createMemoryHistory } from 'vue-router'"
       if (id === '\0test-api') return "export const API_BASE_URL = ''; export const apiFetch = (...args) => globalThis.__cs.apiFetch(...args)"
       if (id === '\0test-auth') return 'export const useAuthStore = () => globalThis.__cs.auth'
       // Sheet 替身：打开时直接渲染内容，保留 dir 等属性
@@ -65,10 +65,11 @@ const server = await createServer({
 })
 // 断开最后一条连接：否则看门狗与重连定时器会让进程一直存活
 after(async () => { cs.resetCustomerService(); delete globalThis.__cs;delete globalThis.EventSource; await server.close(); await window.happyDOM.close() })
-const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
+const { createApp, h, nextTick, ref, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
 const { default: ChatLauncher } = await server.ssrLoadModule('/src/features/customer-service/ChatLauncher.vue')
 const timeline = await server.ssrLoadModule('/src/features/customer-service/timeline.ts')
 const cs = await server.ssrLoadModule('/src/features/customer-service/useCustomerService.ts')
+const { useSchemeCustomerService, useProjectCustomerService } = await server.ssrLoadModule('/src/features/customer-service/useCustomerServiceContext.ts')
 const { STALE_MS } = await server.ssrLoadModule('/src/features/customer-service/useCustomerServiceConnection.ts')
 const { appLocale } = await server.ssrLoadModule('/src/plugins/i18n/index.ts')
 
@@ -106,11 +107,11 @@ function setup({ loggedIn = false, agentsOnline = true, current = conversation()
   return calls
 }
 
-async function mount() {
+async function mount(page) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }] })
   await router.push('/')
   const container = document.createElement('div'); document.body.append(container)
-  const app = createApp({ render: () => h(ChatLauncher) }); app.use(router); app.mount(container)
+  const app = createApp({ render: () => page ? h('div', [h(page), h(ChatLauncher)]) : h(ChatLauncher) }); app.use(router); app.mount(container)
   await settle()
   return { container, router, unmount: () => { app.unmount(); container.remove() } }
 }
@@ -122,6 +123,55 @@ beforeEach(() => {
   FakeEventSource.instances = []
   appLocale.value = 'zh'
 })
+
+for (const scenario of [
+  { name: 'scheme', useContext: useSchemeCustomerService, initial: { schemeCode: 'SC-001' },
+    update: { schemeCode: 'SC-002', themeJobId: 'theme-2' }, context: { kind: 'scheme', schemeCode: 'SC-002', themeJobId: 'theme-2' },
+    initialContext: { kind: 'scheme', schemeCode: 'SC-001' }, entryPoint: 'scheme_detail', title: '方案 · SC-002', text: '发送当前方案' },
+  { name: 'project', useContext: useProjectCustomerService, initial: { projectId: 'project-1', projectNo: 'PJ-001' },
+    update: { projectId: 'project-2', projectNo: 'PJ-002' }, context: { kind: 'project', projectId: 'project-2' },
+    initialContext: { kind: 'project', projectId: 'project-1' }, entryPoint: 'my_project', title: '项目 · PJ-002', text: '发送当前项目' },
+]) {
+  test(`${scenario.name} customer service helper: consult and send use the latest data, hide when unavailable and clean up on unmount`, async () => {
+    const calls = setup({ loggedIn: true, respond: call => {
+      if (call.path.endsWith('/contexts')) return { conversation: conversation(), message: message(10) }
+    } })
+    const source = ref(null)
+    const page = { setup() {
+      const { consult } = scenario.useContext(() => source.value)
+      return () => h('button', { 'data-consult': '', onClick: consult }, '咨询客服')
+    } }
+    const { container, unmount } = await mount(page)
+    try {
+      container.querySelector('[data-consult]').click()
+      await settle()
+      assert.equal(cs.useCustomerService().state.open, false, 'no request while page data is unavailable')
+      source.value = { ...scenario.initial }
+      await settle()
+      container.querySelector('[data-consult]').click()
+      await settle()
+      assert.equal(container.querySelector('[data-cs-send-context]')?.textContent.trim(), scenario.text)
+      Object.assign(source.value, scenario.update)
+      await settle()
+      assert.equal(container.querySelector('[data-cs-send-context]')?.title, scenario.title)
+      container.querySelector('[data-consult]').click()
+      await settle()
+      assert.deepEqual(calls.filter(call => call.path.endsWith('/conversations')).map(call => call.body), [
+        { entryPoint: scenario.entryPoint, context: scenario.initialContext },
+        { entryPoint: scenario.entryPoint, context: scenario.context },
+      ])
+      container.querySelector('[data-cs-send-context]').click()
+      await settle()
+      assert.deepEqual(calls.find(call => call.path.endsWith('/contexts'))?.body, { entryPoint: scenario.entryPoint, context: scenario.context })
+      source.value = null
+      await settle()
+      assertNoNode(container.querySelector('[data-cs-send-context]'), 'unavailable data clears the send button')
+      source.value = { ...scenario.initial }
+      await settle()
+    } finally { unmount() }
+    assert.equal(cs.useCustomerService().pageContext.value, null, 'unmount clears the registered context')
+  })
+}
 
 test('timeline merges by id, splits rounds, prefers translations and counts unread agent messages', () => {
   const merged = timeline.mergeMessages([message(3), message(1)], [message(2), message(3, { body: 'updated' })])

@@ -55,8 +55,18 @@ export interface BomItemInput {
   diffNote?: string | null;
 }
 
-export interface ImportIssue { code: string; sheet?: string; row?: number; field?: string; message: string }
-export interface ParsedBom { items: BomItemInput[]; errors: ImportIssue[]; warnings: ImportIssue[] }
+export interface ImportIssue {
+  code: string;
+  sheet?: string;
+  row?: number;
+  field?: string;
+  message: string;
+}
+export interface ParsedBom {
+  items: BomItemInput[];
+  errors: ImportIssue[];
+  warnings: ImportIssue[];
+}
 
 export interface BomVerificationInput {
   requestKey: string;

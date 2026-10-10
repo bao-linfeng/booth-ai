@@ -11,7 +11,11 @@ export const GENERATION_LEASE_MINUTES = 15;
 export const GENERATION_DEADLINE_MINUTES = 30;
 
 export class ImageGenerationError extends Error {
-  constructor(public readonly code: string, public readonly retryable = false, public readonly outcomeUnknown = false) {
+  constructor(
+    public readonly code: string,
+    public readonly retryable = false,
+    public readonly outcomeUnknown = false,
+  ) {
     super(code);
   }
 }
@@ -49,13 +53,22 @@ export async function downloadImage(url: string, deadline: Date, trustedHosts: r
     const match = /^data:image\/(?:png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(url);
     const encoded = match?.[1];
     if (!encoded) throw new ImageGenerationError('IMAGE_FORMAT_INVALID');
-    if (encoded.length > Math.ceil(IMAGE_LIMITS.maxBytes * 4 / 3) + 4) throw new ImageGenerationError('IMAGE_SIZE_INVALID');
+    if (encoded.length > Math.ceil((IMAGE_LIMITS.maxBytes * 4) / 3) + 4) throw new ImageGenerationError('IMAGE_SIZE_INVALID');
     return Buffer.from(encoded, 'base64');
   }
   let parsed: URL;
-  try { parsed = new URL(url); } catch { throw new ImageGenerationError('IMAGE_URL_INVALID'); }
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password ||
-      (parsed.port && parsed.port !== '443') || !trustedHosts.some(host => parsed.hostname.endsWith(`.${host}`))) {
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new ImageGenerationError('IMAGE_URL_INVALID');
+  }
+  if (
+    parsed.protocol !== 'https:' ||
+    parsed.username ||
+    parsed.password ||
+    (parsed.port && parsed.port !== '443') ||
+    !trustedHosts.some(host => parsed.hostname.endsWith(`.${host}`))
+  ) {
     throw new ImageGenerationError('IMAGE_URL_UNTRUSTED');
   }
   try {
@@ -73,9 +86,11 @@ export async function normalizeGeneratedImage(bytes: Buffer, minLongEdge = 1, mi
   try {
     const image = sharp(bytes, { failOn: 'warning', limitInputPixels: IMAGE_LIMITS.maxPixels });
     const metadata = await image.metadata();
-    if (!['png', 'jpeg', 'webp'].includes(metadata.format ?? '') || (metadata.pages ?? 1) !== 1) throw new ImageGenerationError('IMAGE_FORMAT_INVALID');
+    if (!['png', 'jpeg', 'webp'].includes(metadata.format ?? '') || (metadata.pages ?? 1) !== 1)
+      throw new ImageGenerationError('IMAGE_FORMAT_INVALID');
     const { data, info } = await image.rotate().toColourspace('srgb').png().toBuffer({ resolveWithObject: true });
-    if (Math.max(info.width, info.height) < minLongEdge || Math.min(info.width, info.height) < minShortEdge) throw new ImageGenerationError('IMAGE_RESOLUTION_TOO_LOW');
+    if (Math.max(info.width, info.height) < minLongEdge || Math.min(info.width, info.height) < minShortEdge)
+      throw new ImageGenerationError('IMAGE_RESOLUTION_TOO_LOW');
     if (data.length > IMAGE_LIMITS.maxBytes) throw new ImageGenerationError('IMAGE_SIZE_INVALID');
     return { bytes: data, width: info.width, height: info.height };
   } catch (error) {
@@ -94,7 +109,10 @@ export function providerRequestId(headers: Pick<Headers, 'get'>, body: unknown):
 // Recording diagnostics must never change how the provider outcome is classified.
 async function observeProviderRequest(observe: ProviderRequestObserver | undefined, headers: Pick<Headers, 'get'>, body: unknown) {
   const requestId = providerRequestId(headers, body);
-  if (requestId && observe) try { await observe(requestId); } catch {}
+  if (requestId && observe)
+    try {
+      await observe(requestId);
+    } catch {}
 }
 
 export async function imageMimeType(bytes: Buffer): Promise<string> {
@@ -103,16 +121,25 @@ export async function imageMimeType(bytes: Buffer): Promise<string> {
 }
 
 /** JSON call to an image provider; `submitting` marks requests whose failure may leave a billable job behind. */
-export async function providerJson(url: string, init: RequestInit, deadline: Date, submitting: boolean, observe?: ProviderRequestObserver): Promise<unknown> {
+export async function providerJson(
+  url: string,
+  init: RequestInit,
+  deadline: Date,
+  submitting: boolean,
+  observe?: ProviderRequestObserver,
+): Promise<unknown> {
   try {
     const response = await fetch(url, { ...init, redirect: 'error', signal: requestSignal(deadline, submitting ? 180_000 : 30_000) });
     if (!response.ok) {
       await observeProviderRequest(observe, response.headers, undefined);
       await response.body?.cancel().catch(() => {});
-      throw new ImageGenerationError(response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_REQUEST_FAILED',
-        response.status === 429 || (!submitting && response.status >= 500), submitting && response.status >= 500);
+      throw new ImageGenerationError(
+        response.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_REQUEST_FAILED',
+        response.status === 429 || (!submitting && response.status >= 500),
+        submitting && response.status >= 500,
+      );
     }
-    const bytes = await readBytes(response, Math.ceil(IMAGE_LIMITS.maxBytes * 4 / 3) * 4 + 1024 * 1024);
+    const bytes = await readBytes(response, Math.ceil((IMAGE_LIMITS.maxBytes * 4) / 3) * 4 + 1024 * 1024);
     const body = JSON.parse(bytes.toString('utf8')) as unknown;
     await observeProviderRequest(observe, response.headers, body);
     return body;
@@ -124,7 +151,10 @@ export async function providerJson(url: string, init: RequestInit, deadline: Dat
 
 /** Resolves a provider URL under an admin-configured base URL; refusal happens before anything is submitted. */
 export async function providerEndpoint(baseUrl: string, path: string): Promise<string> {
-  try { await assertPublicEndpoint(baseUrl); } catch { throw new ImageGenerationError('PROVIDER_ENDPOINT_INVALID'); }
+  try {
+    await assertPublicEndpoint(baseUrl);
+  } catch {
+    throw new ImageGenerationError('PROVIDER_ENDPOINT_INVALID');
+  }
   return `${baseUrl}${path}`;
 }
-
