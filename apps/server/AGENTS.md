@@ -6,7 +6,7 @@
 
 深入修改前先读对应代码：
 
-- 模块依赖规则：`tests/module-boundaries.test.ts` 用 AST 静态检查强制执行：技术层方向、业务模块间依赖白名单（必须无环）与对外公开文件、关键表写入归属（规则摘要见下文“模块开发规范”）
+- 模块依赖规则：`tests/architecture/module-boundaries.test.ts` 用 AST 静态检查强制执行：技术层方向、业务模块间依赖白名单（必须无环）与对外公开文件、关键表写入归属（规则摘要见下文“模块开发规范”）
 - 认证体系：`src/http/authentication.ts` 统一建立请求级 principal，`src/modules/identity/principal.ts` 校验账户与 Session 版本
 - 积分账本（预占、结算、释放）：`src/modules/credits/`，不读写生成任务表；job 行加锁由 `generation/credit-jobs.ts` 注入（`createJobLedger`，先锁用户再锁 job），任务与账本对账在 `generation/credit-reconciliation.ts`；违反账本不变量抛 `CreditInvariantError`（稳定 `code`，日志按 code 定位，不要改回普通 `Error`）
 - 生成任务 Outbox 与恢复：`src/workers/generation-outbox.ts`（主题/画稿共用分发）、`generation-recovery.ts`（恢复矩阵 `decideRecovery`）
@@ -32,8 +32,8 @@ npm run dev:api        # tsx watch src/api.ts（API，watch 模式）
 npm run dev:worker     # tsx watch src/worker.ts（Worker，watch 模式）
 npm run check          # tsc --noEmit（两套 tsconfig，源码 + 测试同时检查）
 npm run build          # tsc → dist/
-npm test               # tsx --test tests/*.test.ts（宿主机无测试库变量时集成测试会 skip，完整检查用 Docker check）
-npx tsx --test tests/app.test.ts   # 单文件测试
+npm test               # tsx --test "tests/**/*.test.ts"（宿主机无测试库变量时集成测试会 skip，完整检查用 Docker check）
+npx tsx --test tests/http/app.test.ts   # 单文件测试
 npm run migrate        # 手动跑 DB 迁移（需 DB 已启动）
 npm run smoke          # E2E 冒烟（需 Postgres + Redis + Silo S3 全部在线）
 ```
@@ -197,11 +197,16 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 ## 测试
 
 - Runner：Node 原生 `node:test`，**不是 Jest/Vitest**
-- `tests/app.test.ts`：`fastify.inject()` 路由测试，无需外部服务
+- 测试按类型分目录（`tests/architecture/test-layout.test.ts` 检查）：
+  - `architecture/`：依赖边界与目录约束。
+  - `unit/`：纯逻辑与内存替身。
+  - `http/`：`fastify.inject()` 路由测试，无需外部服务。
+  - `integration/`：凡是读取 `*_TEST_DATABASE_URL` / `*_TEST_REDIS_URL` 的测试都放这里。
+  - `helpers/`：fixtures 与测试库初始化。
 - `npm run smoke`：需要 Postgres 17、Redis 7.4、Silo S3 全部运行
-- **标准检查是 Docker `check` 服务**（命令见根目录 `AGENTS.md`）：`npm run check` → `tests/setup-integration-db.ts` → `npm test` → `npm run build`。它注入全部 `*_TEST_DATABASE_URL`（统一指向独立库 `booth_test`）与 `THEME_TEST_REDIS_URL` / `CS_TEST_REDIS_URL`（Redis 15 号库），并设置 `REQUIRE_INTEGRATION_TESTS=1`，因此集成测试必须执行，结果应为 `skipped 0`。
-- `tests/setup-integration-db.ts` 每次检查都会删除并重建 `booth_test`、在 `public` 执行全部迁移（BOM、通知收件箱等测试直接使用 `public`），并清空 Redis 测试库；脚本只接受名称以 `_test` 结尾的库和非 0 号 Redis 库，不会触碰开发库 `booth`。
-- 宿主机直接 `npm test` 时这些变量缺失，集成测试会 `skip`，**本地通过不代表集成测试跑过**；`tests/integration-env.test.ts` 在 `REQUIRE_INTEGRATION_TESTS=1` 时校验变量齐全，缺项直接失败。变量清单从测试源码中的 `process.env.*_TEST_(DATABASE|REDIS)_URL` 自动收集（`tests/integration-env.ts`），新增集成测试变量后须同步加到 `infra/compose.dev.yaml` 的 `check` 服务。
+- **标准检查是 Docker `check` 服务**（命令见根目录 `AGENTS.md`）：`npm run check` → `tests/helpers/setup-integration-db.ts` → 全部测试（与 `npm test` 同一 glob，命令写在 compose 中，并断言收集到的测试数大于 0）→ `npm run build`。改了 `package.json` 依赖或脚本后需 `docker compose ... build check` 重建镜像。它注入全部 `*_TEST_DATABASE_URL`（统一指向独立库 `booth_test`）与 `THEME_TEST_REDIS_URL` / `CS_TEST_REDIS_URL`（Redis 15 号库），并设置 `REQUIRE_INTEGRATION_TESTS=1`，因此集成测试必须执行，结果应为 `skipped 0`。
+- `tests/helpers/setup-integration-db.ts` 每次检查都会删除并重建 `booth_test`、在 `public` 执行全部迁移（BOM、通知收件箱等测试直接使用 `public`），并清空 Redis 测试库；脚本只接受名称以 `_test` 结尾的库和非 0 号 Redis 库，不会触碰开发库 `booth`。
+- 宿主机直接 `npm test` 时这些变量缺失，集成测试会 `skip`，**本地通过不代表集成测试跑过**；`tests/integration/integration-env.test.ts` 在 `REQUIRE_INTEGRATION_TESTS=1` 时校验变量齐全，缺项直接失败。变量清单从测试源码中的 `process.env.*_TEST_(DATABASE|REDIS)_URL` 自动收集（`tests/helpers/integration-env.ts`），新增集成测试变量后须同步加到 `infra/compose.dev.yaml` 的 `check` 服务。
 - 集成测试按文件并行，读系统目录（`pg_constraint`、`information_schema` 等）时必须限定当前 schema（如 `connamespace = current_schema()::regnamespace`），否则会读到其他测试的临时 schema。
 - **新增权限码必须同时追加迁移补授给 `ROLE_ADMIN`**（参考 `072_grant_sign_in_config_to_admin.sql`，已拥有时不改 revision）。`admin-roles-integration.test.ts` 断言执行全部迁移后 ROLE_ADMIN 拥有全部权限码，漏写迁移会失败；只执行到某个历史迁移的测试要按该迁移当时的权限集合断言（见 `introducedAfter061`）。
 - 修改核心逻辑后必须确保 `check` 服务通过（推送前 lefthook 也会在 `apps/server`、`infra` 有改动时执行它）
@@ -213,11 +218,11 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 - 新增业务路由：在对应 `src/http/{admin|client}/<功能>/index.ts` 实现并在门户 `index.ts` 注册；复杂请求/响应契约可拆到同目录 `schema.ts`。不要再新增 `*.controller.ts` 这类平铺文件
 - Controller 保持薄：只做解析和响应，业务逻辑放 service 层；`src/http` 内不得直接执行 SQL 或开启事务（边界测试检查）
 - 管理端路由权限在路由配置就近声明：`config: { permissions: ['schemes.read'] }`（类型为 `PermissionCode`，拼错会编译失败）。语义是任一权限码已授予即可进入，`[]` 表示任何已登录管理员；未声明的非公开路由一律 403。hook 只检查声明的权限码本身，不复核依赖闭包；需要依赖闭包或细粒度判断（资产类型、修改字段、对象归属）时，在 handler / route preHandler 里调用 `requireAdminPermission`。依赖闭包由角色保存校验和 `admin-roles-integration` 的迁移断言保证
-- 成功响应 schema 用 `src/http/schemas.ts` 的 `successResponse(...)`。声明后 Fastify 会按 schema 序列化并丢弃未声明字段，所以必须覆盖前端用到的全部字段，并在测试里比对序列化结果（参考 `tests/http-contract.test.ts`）。错误响应 schema 由 `src/http/errors.ts` 自动挂到所有路由，路由不要再自定义 errorHandler 或手写错误体
+- 成功响应 schema 用 `src/http/schemas.ts` 的 `successResponse(...)`。声明后 Fastify 会按 schema 序列化并丢弃未声明字段，所以必须覆盖前端用到的全部字段，并在测试里比对序列化结果（参考 `tests/http/http-contract.test.ts`）。错误响应 schema 由 `src/http/errors.ts` 自动挂到所有路由，路由不要再自定义 errorHandler 或手写错误体
 - 共享业务放 `src/modules/` 领域模块，禁止导入 HTTP 门户、Fastify 或 Worker 调度实现；`infra/` 禁止反向导入业务模块
 - 业务代码按领域放进 `src/modules/<领域>/`，不要按门户（admin/client/su）建目录
-- 业务模块之间的依赖在 `tests/module-boundaries.test.ts` 的 `moduleRules` 中声明：`dependsOn` 必须无环，其他模块只能导入 `exposes` 列出的文件。新增跨模块依赖时，先确认被依赖方不需要了解调用方；跨模块用例放到上层编排模块，例如登录后的游客数据归属放在 `client-sign-in`，不要放进 identity
+- 业务模块之间的依赖在 `tests/architecture/module-boundaries.test.ts` 的 `moduleRules` 中声明：`dependsOn` 必须无环，其他模块只能导入 `exposes` 列出的文件。新增跨模块依赖时，先确认被依赖方不需要了解调用方；跨模块用例放到上层编排模块，例如登录后的游客数据归属放在 `client-sign-in`，不要放进 identity
 - 表写入归属：`credit_transactions`/`credit_reservations` 只由 `modules/credits` 写入，生成任务表（`theme_job*`/`artwork_job*`）只由 `modules/generation` 与 `workers/generation-*` 写入，其他模块只能读；同一测试会检查
-- `tests/module-boundaries.test.ts` 检查上述依赖边界
+- `tests/architecture/module-boundaries.test.ts` 检查上述依赖边界
 - 新 Job 类型：在 `src/infra/queue.ts` 追加 `TASK_NAME` 常量，Worker 在 `src/worker.ts` 注册处理器
 - 智选匹配/解析返回给用户的提示文案（理由、差异、澄清问题等）集中在 `src/modules/selection/messages/`（12 种语言，以 `zh.ts` 的 key 为准，缺 key 会编译失败），按 `Accept-Language` 输出；新增文案不要在 match/parse/llm 里写死中文。

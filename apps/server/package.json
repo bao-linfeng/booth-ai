@@ -13,7 +13,7 @@
     "start:worker": "node dist/worker.js",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "build": "tsc",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test \"tests/**/*.test.ts\"",
     "migrate": "tsx src/scripts/migrate.ts",
     "storage:init": "tsx src/scripts/storage-init.ts",
     "smoke": "tsx src/scripts/smoke.ts"
