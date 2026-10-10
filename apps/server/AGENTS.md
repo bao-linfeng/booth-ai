@@ -31,6 +31,8 @@
 npm run dev:api        # tsx watch src/api.ts（API，watch 模式）
 npm run dev:worker     # tsx watch src/worker.ts（Worker，watch 模式）
 npm run check          # tsc --noEmit（两套 tsconfig，源码 + 测试同时检查）
+npm run lint           # oxlint（规则 .oxlintrc.json，警告即失败）
+npm run format         # oxfmt 格式化 src 与 tests（配置 .oxfmtrc.json）；format:check 只检查。少数长链式调用一遍不稳定，format 后 format:check 仍报错时再跑一次 format
 npm run build          # tsc → dist/
 npm test               # tsx --test "tests/**/*.test.ts"（宿主机无测试库变量时集成测试会 skip，完整检查用 Docker check）
 npx tsx --test tests/http/app.test.ts   # 单文件测试
@@ -204,7 +206,7 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
   - `integration/`：凡是读取 `*_TEST_DATABASE_URL` / `*_TEST_REDIS_URL` 的测试都放这里。
   - `helpers/`：fixtures 与测试库初始化。
 - `npm run smoke`：需要 Postgres 17、Redis 7.4、Silo S3 全部运行
-- **标准检查是 Docker `check` 服务**（命令见根目录 `AGENTS.md`）：`npm run check` → `tests/helpers/setup-integration-db.ts` → 全部测试（与 `npm test` 同一 glob，命令写在 compose 中，并断言收集到的测试数大于 0）→ `npm run build`。改了 `package.json` 依赖或脚本后需 `docker compose ... build check` 重建镜像。它注入全部 `*_TEST_DATABASE_URL`（统一指向独立库 `booth_test`）与 `THEME_TEST_REDIS_URL` / `CS_TEST_REDIS_URL`（Redis 15 号库），并设置 `REQUIRE_INTEGRATION_TESTS=1`，因此集成测试必须执行，结果应为 `skipped 0`。
+- **标准检查是 Docker `check` 服务**（命令见根目录 `AGENTS.md`）：`npm run check` → `npm run lint` → `npm run format:check` → `tests/helpers/setup-integration-db.ts` → 全部测试（与 `npm test` 同一 glob，命令写在 compose 中，并断言收集到的测试数大于 0）→ `npm run build`。改了 `package.json` 依赖或脚本后需 `docker compose ... build check` 重建镜像。它注入全部 `*_TEST_DATABASE_URL`（统一指向独立库 `booth_test`）与 `THEME_TEST_REDIS_URL` / `CS_TEST_REDIS_URL`（Redis 15 号库），并设置 `REQUIRE_INTEGRATION_TESTS=1`，因此集成测试必须执行，结果应为 `skipped 0`。
 - `tests/helpers/setup-integration-db.ts` 每次检查都会删除并重建 `booth_test`、在 `public` 执行全部迁移（BOM、通知收件箱等测试直接使用 `public`），并清空 Redis 测试库；脚本只接受名称以 `_test` 结尾的库和非 0 号 Redis 库，不会触碰开发库 `booth`。
 - 宿主机直接 `npm test` 时这些变量缺失，集成测试会 `skip`，**本地通过不代表集成测试跑过**；`tests/integration/integration-env.test.ts` 在 `REQUIRE_INTEGRATION_TESTS=1` 时校验变量齐全，缺项直接失败。变量清单从测试源码中的 `process.env.*_TEST_(DATABASE|REDIS)_URL` 自动收集（`tests/helpers/integration-env.ts`），新增集成测试变量后须同步加到 `infra/compose.dev.yaml` 的 `check` 服务。
 - 集成测试按文件并行，读系统目录（`pg_constraint`、`information_schema` 等）时必须限定当前 schema（如 `connamespace = current_schema()::regnamespace`），否则会读到其他测试的临时 schema。

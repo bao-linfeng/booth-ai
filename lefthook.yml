@@ -5,7 +5,7 @@
 #
 # 所有钩子都不设 parallel：串行执行，避免 vue-tsc、测试与 Docker 构建同时运行导致内存峰值叠加。
 
-# 提交前：admin 暂存文件 lint 并自动修复回填，再做类型检查（约 20 秒）。
+# 提交前：admin 暂存文件 lint 并自动修复回填，再做类型检查（约 20 秒）；server 暂存文件 lint 与格式化（秒级）。
 # 设置 root 后命令在 apps/admin 下执行，{staged_files} 只包含该目录内的文件且路径相对 apps/admin。
 pre-commit:
   jobs:
@@ -33,6 +33,18 @@ pre-commit:
       root: apps/admin/
       glob: '*.{ts,tsx,vue,mts,cts}'
       run: pnpm check:type
+    # server：暂存的 TS 文件 lint 自动修复并格式化回填（规则见 apps/server/.oxlintrc.json、.oxfmtrc.json）
+    - name: server-oxlint
+      root: apps/server/
+      glob: '*.ts'
+      run: npx --no-install oxlint --fix --deny-warnings --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+    # oxfmt 0.65 对少数长链式调用一遍格式化不稳定（第二遍还会改），执行两遍，保证与 check 中的 format:check 一致
+    - name: server-oxfmt
+      root: apps/server/
+      glob: '*.{ts,json}'
+      run: npx --no-install oxfmt --no-error-on-unmatched-pattern {staged_files} && npx --no-install oxfmt --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
 
 # 提交信息：仓库根目录 commitlint.config.mjs（Conventional Commits）。
 commit-msg:

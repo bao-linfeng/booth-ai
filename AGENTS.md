@@ -74,7 +74,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml down                   
 
 - 提交信息遵循 Conventional Commits。
 - **不写向后兼容 shim**：废弃接口直接删除（数据库 schema 变更除外，需迁移）。
-- 修改核心逻辑必须同步更新或新增测试；非平凡改动后必须跑对应子项目的类型检查和测试（client：`pnpm build` + `pnpm test`；admin：`typecheck` + `pnpm test:antd`；server：`check` 服务，命令见子项目文档）。Git hooks 统一在根目录 `lefthook.yml`：提交前对 admin 暂存文件做 lint 与类型检查，commit-msg 按根目录 `commitlint.config.mjs` 校验提交信息，推送前按改动范围执行上述检查；`LEFTHOOK=0` 可临时跳过，但跳过时需说明原因。GitHub Actions（`.github/workflows/ci.yml`）在 PR 与推送 `main` 时对三个子项目执行同样的检查，server 额外跑 `smoke`；改动任一子项目的检查命令时，需同步该子项目 `AGENTS.md`、`lefthook.yml` 与 CI。
+- 修改核心逻辑必须同步更新或新增测试；非平凡改动后必须跑对应子项目的类型检查和测试（client：`pnpm build` + `pnpm test`；admin：`typecheck` + `pnpm test:antd`；server：`check` 服务，命令见子项目文档）。Git hooks 统一在根目录 `lefthook.yml`：提交前对 admin 暂存文件做 lint 与类型检查、对 server 暂存文件做 oxlint 与 oxfmt（纯格式化提交登记在根目录 `.git-blame-ignore-revs`，本地可 `git config blame.ignoreRevsFile .git-blame-ignore-revs`），commit-msg 按根目录 `commitlint.config.mjs` 校验提交信息，推送前按改动范围执行上述检查；`LEFTHOOK=0` 可临时跳过，但跳过时需说明原因。GitHub Actions（`.github/workflows/ci.yml`）在 PR 与推送 `main` 时对三个子项目执行同样的检查，server 额外跑 `smoke`；改动任一子项目的检查命令时，需同步该子项目 `AGENTS.md`、`lefthook.yml` 与 CI。
 - 安全：禁止在日志或错误响应中输出凭据或 secret。
 
 ### PowerShell
