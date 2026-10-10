@@ -106,7 +106,7 @@ src/
 ├── http/
 │   ├── admin/           # 管理端路由、校验、身份提取与响应映射
 │   ├── client/          # 参展商路由、校验、身份提取与响应映射
-│   └── su/              # SU HTTP 入口
+│   └── su/              # SU 门户规划占位（未实现、未注册路由）
 ├── modules/             # identity / dictionaries / schemes / assets / selection（含 analytics 搜索记录）
 │                        # generation / prompts / credits / projects / customer-service / dashboard / tasks 业务模块
 │                        # client-sign-in、prompt-preview 是跨模块用例的编排模块
@@ -210,12 +210,12 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 
 ## 模块开发规范
 
-- 新增业务路由：在对应 `src/http/{admin|client|su}/` 子目录实现，注册到 Fastify（参考 app.ts 的 plugin 模式）
+- 新增业务路由：在对应 `src/http/{admin|client}/<功能>/index.ts` 实现并在门户 `index.ts` 注册；复杂请求/响应契约可拆到同目录 `schema.ts`。不要再新增 `*.controller.ts` 这类平铺文件
 - Controller 保持薄：只做解析和响应，业务逻辑放 service 层；`src/http` 内不得直接执行 SQL 或开启事务（边界测试检查）
 - 管理端路由权限在路由配置就近声明：`config: { permissions: ['schemes.read'] }`（类型为 `PermissionCode`，拼错会编译失败）。语义是任一权限码已授予即可进入，`[]` 表示任何已登录管理员；未声明的非公开路由一律 403。hook 只检查声明的权限码本身，不复核依赖闭包；需要依赖闭包或细粒度判断（资产类型、修改字段、对象归属）时，在 handler / route preHandler 里调用 `requireAdminPermission`。依赖闭包由角色保存校验和 `admin-roles-integration` 的迁移断言保证
 - 成功响应 schema 用 `src/http/schemas.ts` 的 `successResponse(...)`。声明后 Fastify 会按 schema 序列化并丢弃未声明字段，所以必须覆盖前端用到的全部字段，并在测试里比对序列化结果（参考 `tests/http-contract.test.ts`）。错误响应 schema 由 `src/http/errors.ts` 自动挂到所有路由，路由不要再自定义 errorHandler 或手写错误体
 - 共享业务放 `src/modules/` 领域模块，禁止导入 HTTP 门户、Fastify 或 Worker 调度实现；`infra/` 禁止反向导入业务模块
-- `src/modules/{admin,client,su}/` 只剩重构遗留的空目录，不要往里放代码；按业务领域放入对应模块
+- 业务代码按领域放进 `src/modules/<领域>/`，不要按门户（admin/client/su）建目录
 - 业务模块之间的依赖在 `tests/module-boundaries.test.ts` 的 `moduleRules` 中声明：`dependsOn` 必须无环，其他模块只能导入 `exposes` 列出的文件。新增跨模块依赖时，先确认被依赖方不需要了解调用方；跨模块用例放到上层编排模块，例如登录后的游客数据归属放在 `client-sign-in`，不要放进 identity
 - 表写入归属：`credit_transactions`/`credit_reservations` 只由 `modules/credits` 写入，生成任务表（`theme_job*`/`artwork_job*`）只由 `modules/generation` 与 `workers/generation-*` 写入，其他模块只能读；同一测试会检查
 - `tests/module-boundaries.test.ts` 检查上述依赖边界

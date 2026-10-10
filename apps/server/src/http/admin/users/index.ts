@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import { getAdmin, getUser, listAdmins, listUsers, type ListAccountsOptions } from '../../modules/identity/accounts.js';
+import { getAdmin, getUser, listAdmins, listUsers, type ListAccountsOptions } from '../../../modules/identity/accounts.js';
 
 interface ListQuery {
   page?: number;

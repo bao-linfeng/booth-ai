@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import type { Config } from '../../config.js';
-import { decryptJwt } from '../../infra/session.js';
-import { accessSummary, permissionCatalog } from '../../modules/identity/permissions.js';
-import { getAdminRole, listAdminRoles, updateRolePermissions } from '../../modules/identity/roles.js';
-import { requirePrincipal } from '../authentication.js';
+import type { Config } from '../../../config.js';
+import { decryptJwt } from '../../../infra/session.js';
+import { accessSummary, permissionCatalog } from '../../../modules/identity/permissions.js';
+import { getAdminRole, listAdminRoles, updateRolePermissions } from '../../../modules/identity/roles.js';
+import { requirePrincipal } from '../../authentication.js';
 
 const params = { type: 'object', required: ['id'], additionalProperties: false, properties: { id: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER } } };
 

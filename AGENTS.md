@@ -55,7 +55,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml down                   
 
 改动以下任一处时，需同步检查另一端：
 
-- **路由前缀**：参展商接口 `/api/v1/client/*`、管理端接口 `/api/v1/admin/*`，SU 接口在 `apps/server/src/http/su/`。
+- **路由前缀**：参展商接口 `/api/v1/client/*`、管理端接口 `/api/v1/admin/*`。SU 门户 `/api/v1/su/*` 尚未实现：`apps/server/src/http/su/` 只有规划占位，SU 用户目前经 `/api/v1/client/auth/sync`（`type: 'su'`）登录。
 - **开发代理**：client 与 admin 的 Vite 都把 `/api` 代理到 `http://localhost:3000`；后端 dev 栈 `CORS_ORIGINS` 默认放行 `5173`/`5174`。
 - **响应包装**：业务接口成功返回 `{ code: 0, data }`（admin `requestClient` 依赖此格式拦截）。错误统一为 `{ error: { code, reason?, details?, message, requestId } }`，由 `apps/server/src/http/errors.ts` 统一生成，并以 `ErrorResponse` schema 挂到每条路由的 4xx/5xx 响应上：
   - `code` 只区分大类：`VALIDATION_ERROR`（请求 schema 校验失败）、`REQUEST_ERROR`、`INTERNAL_ERROR`。

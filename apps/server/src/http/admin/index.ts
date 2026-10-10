@@ -6,7 +6,7 @@ import { createStorage } from '../../infra/storage.js';
 import { registerAuthentication } from '../authentication.js';
 import { registerAdminAuthRoutes } from './auth/index.js';
 import { registerAdminMeRoutes } from './me/index.js';
-import { registerAdminUserRoutes } from './users.controller.js';
+import { registerAdminUserRoutes } from './users/index.js';
 import { registerAdminSchemesRoutes } from './schemes/index.js';
 import { registerAdminSchemeImportsRoutes } from './scheme-imports/index.js';
 import { registerAdminAssetsRoutes } from './assets/index.js';
@@ -22,7 +22,7 @@ import { registerAdminSchemeSearchesRoutes } from './scheme-searches/index.js';
 import { registerAdminCreditRoutes } from './credits/index.js';
 import { registerAdminGenerationJobRoutes } from './generation-jobs/index.js';
 import { registerAdminAuthorization } from './authorization.js';
-import { registerAdminRoleRoutes } from './roles.controller.js';
+import { registerAdminRoleRoutes } from './roles/index.js';
 import { registerAdminDashboardRoutes } from './dashboard/index.js';
 import { registerAdminCustomerServiceRoutes } from './customer-service/index.js';
 
