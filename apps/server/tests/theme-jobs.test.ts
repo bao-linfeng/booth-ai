@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import Fastify from 'fastify';
+import { registerErrorContract } from '../src/http/errors.js';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { registerThemeModelRoutes } from '../src/http/client/theme-jobs/index.js';
@@ -54,7 +55,7 @@ async function setup(query: Query) {
   } as unknown as ReturnType<typeof createStorage>;
   const app = Fastify();
   registerAuthentication(app, pool, redis, 'client');
-  app.setErrorHandler((error: Error & { statusCode?: number; reason?: string }, _request, reply) => reply.code(error.statusCode ?? 500).send({ error: { reason: error.reason } }));
+  registerErrorContract(app);
   await registerThemeModelRoutes(app, pool, redis, storage);
   await app.ready();
   return { app, statements, offers };
@@ -233,7 +234,7 @@ test('idempotent cache replay works after offer expiry and preserves free billin
   assert.equal(conflict.statusCode, 409);
 });
 
-test('theme submission preserves the expired offer HTTP response without creating a task', async t => {
+test('theme submission reports an expired offer through the shared error contract without creating a task', async t => {
   const { app, statements } = await setup(sql => {
     if (sql.includes('FROM theme_jobs WHERE')) return { rows: [] };
     throw new Error(`Unexpected query: ${sql}`);
@@ -245,7 +246,7 @@ test('theme submission preserves the expired offer HTTP response without creatin
   const { error } = response.json();
   assert.equal(error.code, 'REQUEST_ERROR');
   assert.equal(error.reason, 'OFFER_EXPIRED');
-  assert.equal(error.message, 'Offer expired or not found');
+  assert.equal(error.message, 'Invalid request');
   assert.equal(typeof error.requestId, 'string');
   assert.ok(!statements.includes('BEGIN'));
 });

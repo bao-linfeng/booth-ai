@@ -8,7 +8,7 @@ import { streamThemeJobEvents } from './events.js';
 import { themeEventsSchema, themeJobSchema, themeModelsSchema, themeOfferSchema, themeSelectionSchema, themeSubmissionSchema } from './schema.js';
 import { getThemeJob, ownedThemeJob, selectThemeResult } from '../../../modules/generation/theme/queries.js';
 import { themeCredits } from '../../../modules/generation/theme/service.js';
-import { createThemeOffer, listThemeModels, ThemeOfferExpiredError, type ThemeOfferInput } from '../../../modules/generation/theme/offers.js';
+import { createThemeOffer, listThemeModels, type ThemeOfferInput } from '../../../modules/generation/theme/offers.js';
 import { submitThemeJob, type ThemeSubmissionInput } from '../../../modules/generation/theme/submission.js';
 
 export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis, storage: ReturnType<typeof createStorage>) {
@@ -44,13 +44,7 @@ export async function registerThemeModelRoutes(app: FastifyInstance, pool: pg.Po
     schema: themeSubmissionSchema,
   }, async (request, reply) => {
     const userId = clientUserId(request);
-    let data;
-    try {
-      data = await submitThemeJob(pool, redis, userId, request.body, request.id);
-    } catch (error) {
-      if (!(error instanceof ThemeOfferExpiredError)) throw error;
-      return reply.status(409).send({ error: { code: 'REQUEST_ERROR', reason: error.reason, message: error.message, requestId: request.id } });
-    }
+    const data = await submitThemeJob(pool, redis, userId, request.body, request.id);
     if (!data.reusedRequest) request.log.info({ jobKind: 'theme', jobId: data.jobId, cacheHit: data.cacheHit }, 'generation job accepted');
     reply.status(data.cacheHit || data.reusedRequest ? 200 : 202);
     reply.header('Location', `/api/v1/client/theme-jobs/${data.jobId}`);

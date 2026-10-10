@@ -226,6 +226,17 @@ test('prompt template routes expose definitions, preview real builders, and isol
   } });
   assert.equal(ordinaryError.statusCode, 500);
   assert.doesNotMatch(ordinaryError.body, /private SQL detail|SELECT|FROM/);
+
+  const rejected = await app.inject({ method: 'POST', url: '/api/v1/admin/prompt-templates', headers: { authorization: 'Bearer test-token' }, payload: {
+    purpose: 'theme', body: '{{unknown}}',
+  } });
+  assert.equal(rejected.statusCode, 400);
+  assert.equal(rejected.json().error.reason, 'INVALID_PROMPT_TEMPLATE');
+  assert.equal(rejected.json().error.details.issues[0].code, 'UNKNOWN_VARIABLE');
+
+  const missing = await app.inject({ url: `/api/v1/admin/prompt-templates/${templateId}`, headers: { authorization: 'Bearer test-token' } });
+  assert.equal(missing.statusCode, 404);
+  assert.equal(missing.json().error.reason, 'RESOURCE_NOT_FOUND');
 });
 
 test('requirements parse inject uses the enabled filter template, model messages, and prompt snapshot analytics', async t => {

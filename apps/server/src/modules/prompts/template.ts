@@ -34,7 +34,7 @@ export function inspectPrompt(purpose: PromptPurpose, body: string): { variables
 
 export function assertPrompt(purpose: PromptPurpose, body: string): string[] {
   const { variables, issues } = inspectPrompt(purpose, body);
-  if (issues.length) throw Object.assign(new Error('Invalid prompt template'), { statusCode: 400, reason: 'INVALID_PROMPT_TEMPLATE', issues });
+  if (issues.length) throw Object.assign(new Error('Invalid prompt template'), { statusCode: 400, reason: 'INVALID_PROMPT_TEMPLATE', details: { issues } });
   return variables;
 }
 

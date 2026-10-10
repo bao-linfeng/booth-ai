@@ -7,6 +7,7 @@ import { getProvidedVisitorId } from '../selection/identity.js';
 import { signInClient, signInClientWithToken } from '../../../modules/client-sign-in/service.js';
 import { authorizationToken } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
+import { currentUserSchema, sessionSchema, successResponse } from '../../schemas.js';
 import type { UserType } from '../../../modules/identity/service.js';
 
 export async function registerClientAuthRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
@@ -14,6 +15,7 @@ export async function registerClientAuthRoutes(app: FastifyInstance, config: Con
     config: { authentication: 'public' }, onRequest: rateLimit(redis, 'login'),
     schema: {
       tags: ['client-auth'],
+      response: { 200: successResponse(sessionSchema(currentUserSchema)) },
       body: { type: 'object', required: ['username', 'password'], additionalProperties: false, properties: { username: { type: 'string', minLength: 1 }, password: { type: 'string', minLength: 1 }, type: { type: 'string', enum: ['client'], default: 'client' } } },
     },
   }, async request => {
@@ -27,6 +29,7 @@ export async function registerClientAuthRoutes(app: FastifyInstance, config: Con
     schema: {
       tags: ['client-auth'],
       summary: '使用外部 token 同步用户并建立客户端会话',
+      response: { 200: successResponse(sessionSchema(currentUserSchema)) },
       body: { type: 'object', required: ['username', 'token'], additionalProperties: false, properties: { username: { type: 'string', minLength: 1 }, token: { type: 'string', minLength: 1 }, type: { type: 'string', enum: ['client', 'su'], default: 'client' } } },
     },
   }, async request => {

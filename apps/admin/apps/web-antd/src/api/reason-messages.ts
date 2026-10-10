@@ -35,6 +35,8 @@ export const REASON_MESSAGES: Record<string, string> = {
   SCHEME_ALREADY_LINKED: '项目已关联方案，无需重复确认',
   SCHEME_UNAVAILABLE: '方案不存在或尚未就绪（需已发布、清单已核验且资产齐全）',
   // 文件上传
+  FILE_REQUIRED: '请选择要上传的文件',
+  UNSUPPORTED_FILE_TYPE: '仅支持 .xlsx 文件',
   FILE_TOO_LARGE:
     '文件超过大小上限：方案与清单导入不超过 20MB，方案资源不超过 50MB',
   // 方案导入
@@ -71,6 +73,8 @@ export const REASON_MESSAGES: Record<string, string> = {
   TRANSFER_REASON_REQUIRED: '请填写改派原因（最多 500 字）',
   CONTACT_EMAIL_INVALID: '邮箱格式不正确',
   TOO_MANY_EMAILS: '离线通知邮箱最多 20 个',
+  // 提示词模板
+  INVALID_PROMPT_TEMPLATE: '提示词模板校验失败，请检查正文与变量',
 };
 
 /** 附带 details 时可生成更具体提示的原因；返回 undefined 时回退到 REASON_MESSAGES。 */
@@ -78,6 +82,14 @@ export const REASON_DETAIL_MESSAGES: Record<
   string,
   (details: unknown) => string | undefined
 > = {
+  INVALID_PROMPT_TEMPLATE: (details) => {
+    const issues = (details as null | { issues?: { message?: string }[] })
+      ?.issues;
+    const messages = issues
+      ?.map((issue) => issue.message)
+      .filter((message): message is string => !!message);
+    return messages?.length ? messages.join('；') : undefined;
+  },
   IMPORT_TEMPLATE_MISMATCH: (details) => {
     const mismatch = details as null | {
       actual?: string;

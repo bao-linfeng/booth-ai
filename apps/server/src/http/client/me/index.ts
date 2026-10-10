@@ -8,9 +8,10 @@ import { syncClientUser } from '../../../modules/identity/client-service.js';
 import { toCurrentUser } from '../../../modules/identity/service.js';
 import { revokeAccountSessions } from '../../../modules/identity/principal.js';
 import { requirePrincipal } from '../../authentication.js';
+import { currentUserSchema, successResponse } from '../../schemas.js';
 
 export async function registerClientMeRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get('/me', { schema: { tags: ['client-auth'] } }, async request => {
+  app.get('/me', { schema: { tags: ['client-auth'], response: { 200: successResponse(currentUserSchema) } } }, async request => {
     const { token, session, localId: accountId } = requirePrincipal(request, 'client');
     let externalJwt: string;
     try {

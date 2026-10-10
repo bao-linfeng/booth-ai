@@ -7,6 +7,7 @@ import { commitImport } from '../../../modules/schemes/imports/commit.js';
 import { previewImport } from '../../../modules/schemes/imports/preview.js';
 import { buildImportTemplate } from '../../../modules/schemes/imports/template.js';
 import type { CommitImportOptions } from '../../../modules/schemes/imports/types.js';
+import { domainError } from '../../../lib/errors.js';
 
 interface ImportParams {
   importId: string;
@@ -24,15 +25,11 @@ export async function registerAdminSchemeImportsRoutes(app: FastifyInstance, poo
 
   app.post('/scheme-imports', {
     schema: { tags: ['admin-scheme-imports'] },
-  }, async (request, reply) => {
+  }, async request => {
     const data = await request.file({ limits: { fileSize: workbookUploadMaxBytes } });
-    if (!data) {
-      return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'No file uploaded' } });
-    }
+    if (!data) throw domainError('FILE_REQUIRED', 400);
     const lowerFilename = data.filename.toLowerCase();
-    if (!lowerFilename.endsWith('.xlsx')) {
-      return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Only .xlsx files are supported' } });
-    }
+    if (!lowerFilename.endsWith('.xlsx')) throw domainError('UNSUPPORTED_FILE_TYPE', 400);
     const buffer = await readUploadedFile(data);
     const adminId = adminUserId(request);
     const result = await previewImport(pool, adminId, buffer, data.filename);

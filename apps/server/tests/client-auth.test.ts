@@ -3,6 +3,7 @@ import test, { type TestContext } from 'node:test';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { decryptJwt, getSession } from '../src/infra/session.js';
+import { currentUserSchema } from '../src/http/schemas.js';
 
 const config = loadConfig({
   NODE_ENV: 'test', LOG_LEVEL: 'silent', DATABASE_URL: 'postgres://localhost/test', REDIS_URL: 'redis://localhost',
@@ -92,6 +93,8 @@ test('external token login wraps the profile, synchronizes the visitor and creat
   assert.equal(me.statusCode, 200);
   assert.equal(me.json().data.id, 'local-user-id');
   assert.equal(me.json().data.type, 'client');
+  assert.deepEqual(Object.keys(me.json().data).sort(), Object.keys(currentUserSchema.properties).sort(), 'response schema keeps every profile field');
+  assert.deepEqual(Object.keys(result.data.user).sort(), Object.keys(currentUserSchema.properties).sort());
 });
 
 test('SU token login persists the entry type and profile refresh preserves it', async t => {

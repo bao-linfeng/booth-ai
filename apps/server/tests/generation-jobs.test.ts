@@ -170,5 +170,5 @@ test('admin generation job routes validate queries and params, and return 404 fo
   assert.equal((await app.inject('/generation-jobs/not-a-uuid')).statusCode, 400);
   const missing = await app.inject(`/generation-jobs/${jobId}`);
   assert.equal(missing.statusCode, 404);
-  assert.equal(missing.json().code, 'NOT_FOUND');
+  assert.equal(missing.json().message, 'RESOURCE_NOT_FOUND');
 });

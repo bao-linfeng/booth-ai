@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { domainError } from '../../lib/errors.js';
 import { getJobCreditLedger } from '../credits/management-service.js';
 import { artworkFiles } from './artwork/queries.js';
 import { DIRECTIONS, type ArtworkSnapshot } from './artwork/types.js';
@@ -155,7 +156,7 @@ async function getArtworkGenerationJob(pool: pg.Pool, jobId: string, storage?: {
       j.selection_revision AS "selectionRevision",j.selected_result_id AS "selectedResultId",j.generation_snapshot AS snapshot,
       j.delivery_status AS "deliveryStatus",${artworkModels('j')} AS "aiModels",j.theme_job_id AS "themeJobId",j.theme_result_id AS "themeResultId",j.theme_selection_revision AS "themeSelectionRevision"
       FROM (SELECT a.*,false AS cache_hit FROM artwork_jobs a) j LEFT JOIN users u ON u.id=j.user_id WHERE j.id=$1`, [jobId])).rows[0];
-  if (!job) throw Object.assign(new Error('Generation job not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  if (!job) throw domainError('RESOURCE_NOT_FOUND', 404);
   const [files, credits] = await Promise.all([artworkFiles(pool, jobId), getJobCreditLedger(pool, { kind: 'artwork', id: jobId })]);
   const directions = (await pool.query<{ direction: string; status: string; reason: string | null }>('SELECT direction,status,reason FROM artwork_job_directions WHERE job_id=$1 ORDER BY direction', [jobId])).rows;
   const { snapshot, ...publicJob } = job;

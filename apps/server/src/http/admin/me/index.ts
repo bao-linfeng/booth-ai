@@ -11,6 +11,7 @@ import { requireAdminAccess } from '../../../modules/identity/roles.js';
 import { accessSummary } from '../../../modules/identity/permissions.js';
 
 import { requirePrincipal } from '../../authentication.js';
+import { adminCurrentUserSchema, successResponse } from '../../schemas.js';
 
 function authenticationError(): Error & { statusCode: number } {
   const error = new Error('Authentication required') as Error & { statusCode: number };
@@ -19,7 +20,7 @@ function authenticationError(): Error & { statusCode: number } {
 }
 
 export async function registerAdminMeRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
-  app.get('/me', { schema: { tags: ['admin-auth'] } }, async request => {
+  app.get('/me', { schema: { tags: ['admin-auth'], response: { 200: successResponse(adminCurrentUserSchema) } } }, async request => {
     const { token, session, localId: accountId } = requirePrincipal(request, 'admin');
     let externalJwt: string;
     try {

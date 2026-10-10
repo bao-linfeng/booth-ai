@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
-import type { FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
@@ -13,6 +12,7 @@ import { createStorage } from './infra/storage.js';
 import { registerAdminModule } from './http/admin/index.js';
 import { registerClientModule } from './http/client/index.js';
 import { defaultUploadMaxBytes } from './http/uploads.js';
+import { registerErrorContract } from './http/errors.js';
 
 export interface HealthDependencies {
   database: () => Promise<unknown>;
@@ -56,15 +56,7 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
   app.addHook('onResponse', async (request, reply) => {
     request.log.info({ method: request.method, route: request.routeOptions.url, statusCode: reply.statusCode, responseTime: reply.elapsedTime }, 'request completed');
   });
-  app.setErrorHandler((error: FastifyError, request, reply) => {
-    const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500;
-    // Error messages can include upstream credentials; only emit stable diagnostic codes and details built by domain code.
-    request.log[status >= 500 ? 'error' : 'warn']({ code: error.code ?? 'REQUEST_ERROR', statusCode: status }, 'request failed');
-    const { reason, details } = error as FastifyError & { reason?: string; details?: unknown };
-    const assignmentUnavailable = status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE';
-    reply.code(status).send({ error: { code: error.validation ? 'VALIDATION_ERROR' : assignmentUnavailable ? 'REQUEST_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR', ...(reason && (status < 500 || assignmentUnavailable) ? { reason } : {}), ...(reason && details !== undefined && status < 500 ? { details } : {}), message: assignmentUnavailable ? 'Request acceptance is temporarily unavailable' : status >= 500 ? 'Internal server error' : 'Invalid request', requestId: request.id } });
-  });
-  app.setNotFoundHandler((request, reply) => reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Route not found', requestId: request.id } }));
+  registerErrorContract(app);
 
   app.get('/health/live', {
     schema: { tags: ['health'], summary: '进程存活', response: { 200: { type: 'object', required: ['status'], properties: { status: { type: 'string', const: 'ok' } } } } },

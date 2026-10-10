@@ -1,11 +1,12 @@
-import type { FastifyInstance, FastifyError, FastifyReply, FastifyRequest, RouteOptions } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import { adminUserId } from '../../authentication.js';
 import { createPromptTemplate, getPromptTemplate, listPromptTemplates, updatePromptTemplate,
   type CreateTemplateInput, type UpdateTemplateInput } from '../../../modules/prompts/management-service.js';
 import { promptDefinitions, previewPrompt, type PreviewInput } from '../../../modules/prompt-preview/service.js';
-import { PROMPT_PURPOSES, type PromptIssue } from '../../../modules/prompts/template.js';
+import { PROMPT_PURPOSES } from '../../../modules/prompts/template.js';
+import { domainError } from '../../../lib/errors.js';
 
 interface ListQuery { purpose?: string; industryId?: string; styleId?: string; enabled?: boolean; page?: number; pageSize?: number }
 interface IdParams { id: string }
@@ -17,16 +18,6 @@ const purposeSchema = { type: 'string', enum: [...PROMPT_PURPOSES] };
 const uuidSchema = { type: 'string', format: 'uuid' };
 
 export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, pool: pg.Pool, redis: Redis): Promise<void> {
-  const errorHandler: RouteOptions['errorHandler'] = (error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
-    const issues = (error as Error & { issues?: PromptIssue[] }).issues;
-    if (issues) return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', reason: 'INVALID_PROMPT_TEMPLATE',
-      message: '提示词模板校验失败', issues, requestId: request.id } });
-    const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 600 ? error.statusCode : 500;
-    request.log[status >= 500 ? 'error' : 'warn']({ code: error.code ?? 'REQUEST_ERROR', statusCode: status }, 'request failed');
-    const reason = (error as FastifyError & { reason?: string }).reason;
-    return reply.code(status).send({ error: { code: error.validation ? 'VALIDATION_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR',
-      ...(reason && status < 500 ? { reason } : {}), message: status >= 500 ? 'Internal server error' : 'Invalid request', requestId: request.id } });
-  };
   app.get('/prompt-templates/definitions', { schema: { tags } }, async () => ({ code: 0, data: promptDefinitions() }));
   app.post<{ Body: PreviewInput }>('/prompt-templates/preview', {
     schema: { tags, body: { type: 'object', additionalProperties: false, required: ['purpose', 'body'], properties: {
@@ -49,7 +40,6 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
   }) }));
 
   app.post<{ Body: CreateTemplateInput }>('/prompt-templates', {
-    errorHandler,
     schema: { tags, body: { type: 'object', additionalProperties: false, required: ['purpose', 'body'], properties: {
       purpose: purposeSchema,
       industryId: { anyOf: [{ type: 'string', format: 'uuid' }, { type: 'null' }] },
@@ -58,14 +48,13 @@ export async function registerAdminPromptTemplateRoutes(app: FastifyInstance, po
     } } },
   }, async request => ({ code: 0, data: await createPromptTemplate(pool, request.body, adminUserId(request)) }));
 
-  app.get<{ Params: IdParams }>('/prompt-templates/:id', { schema: { tags, params: idSchema } }, async (request, reply) => {
+  app.get<{ Params: IdParams }>('/prompt-templates/:id', { schema: { tags, params: idSchema } }, async request => {
     const template = await getPromptTemplate(pool, request.params.id);
-    if (!template) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Prompt template not found', requestId: request.id } });
+    if (!template) throw domainError('RESOURCE_NOT_FOUND', 404);
     return { code: 0, data: template };
   });
 
   app.patch<{ Params: IdParams; Body: UpdateTemplateInput }>('/prompt-templates/:id', {
-    errorHandler,
     schema: { tags, params: idSchema, body: { type: 'object', additionalProperties: false, required: ['expectedRevision'], properties: {
       body: bodySchema, enabled: { type: 'boolean' },
       expectedRevision: { type: 'integer', minimum: 1 },

@@ -6,12 +6,14 @@ import { destroySession } from '../../../infra/session.js';
 import { loginAdmin } from '../../../modules/identity/admin-service.js';
 import { authorizationToken } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
+import { currentUserSchema, sessionSchema, successResponse } from '../../schemas.js';
 
 export async function registerAdminAuthRoutes(app: FastifyInstance, config: Config, pool: pg.Pool, redis: Redis): Promise<void> {
   app.post('/auth/login', {
     config: { authentication: 'public' }, onRequest: rateLimit(redis, 'login'),
     schema: {
       tags: ['admin-auth'],
+      response: { 200: successResponse(sessionSchema(currentUserSchema)) },
       body: { type: 'object', required: ['username', 'password'], additionalProperties: false, properties: { username: { type: 'string', minLength: 1 }, password: { type: 'string', minLength: 1 } } },
     },
   }, async request => {
