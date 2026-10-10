@@ -6,7 +6,7 @@ import { receiptEmailMessages } from './receipt-email-messages.js';
 export const RECEIPT_EMAIL_MAX_ATTEMPTS = 6;
 // 同一收件人 24 小时内最多入队的回执数，超出后静默跳过，防止匿名提交被用来批量骚扰任意邮箱
 export const RECEIPT_EMAIL_DAILY_LIMIT_PER_RECIPIENT = 5;
-const LEASE_SECONDS = 120;
+export const RECEIPT_EMAIL_LEASE_SECONDS = 120;
 
 export interface ReceiptEmailInput { projectId: string; recipient: string; locale: MessageLocale; accountBound: boolean }
 
@@ -35,12 +35,18 @@ export async function claimReceiptEmails(database: Pick<pg.Pool, 'query'>, limit
      RETURNING r.id, r.project_id AS "projectId", r.recipient, r.locale, r.account_bound AS "accountBound", r.attempts,
        p.project_no AS "projectNo", p.request_no AS "requestNo", p.source_type AS "sourceType",
        p.request_snapshot->'contact'->>'name' AS "contactName", p.request_snapshot->'exhibition' AS exhibition,
-       p.scheme_snapshot->>'name' AS "schemeName", p.scheme_code AS "schemeCode"`, [limit, LEASE_SECONDS])).rows;
+       p.scheme_snapshot->>'name' AS "schemeName", p.scheme_code AS "schemeCode"`, [limit, RECEIPT_EMAIL_LEASE_SECONDS])).rows;
 }
 
 export async function completeReceiptEmail(database: Pick<pg.Pool, 'query'>, id: string): Promise<void> {
   await database.query(`UPDATE project_receipt_emails SET delivered_at = now(), locked_until = NULL, last_error_code = NULL
     WHERE id = $1 AND delivered_at IS NULL`, [id]);
+}
+
+// 本批来不及处理的已领取邮件：释放租约并退回本次计入的尝试次数
+export async function releaseReceiptEmails(database: Pick<pg.Pool, 'query'>, ids: string[]): Promise<void> {
+  await database.query(`UPDATE project_receipt_emails SET locked_until = NULL, attempts = GREATEST(attempts - 1, 0)
+    WHERE id = ANY($1::uuid[]) AND delivered_at IS NULL AND failed_at IS NULL`, [ids]);
 }
 
 export function receiptEmailBackoffSeconds(attempts: number): number {

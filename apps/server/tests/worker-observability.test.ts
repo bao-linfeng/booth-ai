@@ -76,6 +76,34 @@ test('scheduler honours intervals and throttles repeated failure logs', async ()
   assert.equal(entries.filter(entry => entry.level === 'error').length, 3);
 });
 
+test('a slow lane neither delays nor re-enters other lanes, and health reports the task in flight', async () => {
+  const { log } = recordingLogger();
+  let dispatched = 0;
+  let deliveries = 0;
+  let releaseDelivery!: () => void;
+  const delivery = new Promise<void>(resolve => { releaseDelivery = resolve; });
+  const scheduler = createScheduler([
+    { name: 'outbox', intervalMs: 0, staleAfterMs: 30_000, run: async () => { dispatched++; } },
+    { name: 'emails', intervalMs: 0, staleAfterMs: 180_000, lane: 'background', run: async () => { deliveries++; await delivery; } },
+    { name: 'metrics', intervalMs: 0, staleAfterMs: 300_000, critical: false, lane: 'background', run: async () => {} },
+  ], log);
+  assert.deepEqual(scheduler.lanes, ['dispatch', 'background']);
+  const controller = new AbortController();
+  const running = scheduler.run(controller.signal, 1);
+  while (dispatched < 5) await new Promise(resolve => setTimeout(resolve, 1));
+  await scheduler.tick();
+  assert.equal(deliveries, 1, 'a busy lane is not started again');
+  const report = scheduler.health({});
+  assert.equal(report.tasks.outbox?.stale, false);
+  assert.equal(report.tasks.emails?.lane, 'background');
+  assert.notEqual(report.tasks.emails?.runningForMs, null);
+  assert.deepEqual(report.problems, ['task:emails'], 'the in-flight task stays stale until it first succeeds');
+  controller.abort();
+  releaseDelivery();
+  await running;
+  assert.equal(scheduler.health({}).tasks.emails?.runningForMs, null);
+});
+
 test('migration readiness requires every bundled migration with matching checksum', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'booth-migrations-'));
   try {
@@ -114,20 +142,24 @@ function notificationDatabase(rows: { id: string; attempts: number }[]) {
   return { database, updates };
 }
 
-test('project notifications deliver, retry with backoff and dead-letter after the attempt budget', async () => {
-  const { database, updates } = notificationDatabase([{ id: 'a', attempts: 1 }, { id: 'b', attempts: 2 }, { id: 'c', attempts: PROJECT_NOTIFICATION_MAX_ATTEMPTS }]);
+test('project notifications deliver, retry with backoff, dead-letter after the attempt budget and stop when the channel is down', async () => {
+  const { database, updates } = notificationDatabase([{ id: 'a', attempts: 1 }, { id: 'b', attempts: 2 }, { id: 'c', attempts: PROJECT_NOTIFICATION_MAX_ATTEMPTS }, { id: 'd', attempts: 1 }]);
   const sent: { id: string; body: unknown }[] = [];
   const { log, entries } = recordingLogger();
   const result = await deliverProjectNotifications(database, async message => {
     sent.push(message);
+    if (message.id === 'event-b') throw new WebhookDeliveryError('NOTIFICATION_REJECTED');
     if (message.id !== 'event-a') throw new WebhookDeliveryError('NOTIFICATION_UNAVAILABLE');
   }, log);
-  assert.deepEqual(result, { delivered: 1, failed: 2 });
+  assert.deepEqual(result, { delivered: 1, failed: 2, released: 1 });
+  assert.deepEqual(sent.map(message => message.id), ['event-a', 'event-b', 'event-c'], 'an unavailable channel stops the batch');
   assert.deepEqual(sent[0], { id: 'event-a', body: { eventId: 'event-a', projectId: 'project-1', projectNo: 'P-1', sourceType: 'quote_request',
     kind: 'accepted', payload: { revision: 1 }, occurredAt: '2026-01-01T00:00:00.000Z' } });
   assert.match(updates[0]!.sql, /delivered_at = now\(\)/);
-  assert.deepEqual(updates[1]!.params, ['b', 'NOTIFICATION_UNAVAILABLE', projectNotificationBackoffSeconds(2), false]);
+  assert.deepEqual(updates[1]!.params, ['b', 'NOTIFICATION_REJECTED', projectNotificationBackoffSeconds(2), false]);
   assert.deepEqual(updates[2]!.params, ['c', 'NOTIFICATION_UNAVAILABLE', projectNotificationBackoffSeconds(PROJECT_NOTIFICATION_MAX_ATTEMPTS), true]);
+  assert.match(updates[3]!.sql, /attempts = GREATEST\(attempts - 1, 0\)/);
+  assert.deepEqual(updates[3]!.params, [['d']]);
   assert.equal(entries.filter(entry => entry.level === 'error').length, 1);
   assert.equal(projectNotificationBackoffSeconds(1), 30);
   assert.equal(projectNotificationBackoffSeconds(20), 3600);

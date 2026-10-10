@@ -152,7 +152,9 @@ GET  /api/v1/admin/me                → 管理端当前用户信息
 - `jobId` = `taskId`（BullMQ 去重，重试幂等）
 - Task 写入 + Outbox 写入必须在**同一事务**内
 - **调用 AI/外部 API 时不得持有 DB 锁**
-- Worker 健康文件：成功迭代写 `/tmp/worker-ready`（compose healthcheck 依赖其 mtime），Redis 断连或分发失败时删除；详细状态写 `/tmp/worker-status.json`
+- Worker 调度分两条执行链（`src/workers/scheduler.ts` 的 lane）：默认链 `dispatch` 跑 Outbox 分发、恢复、对账、坐席巡检；`background` 链跑邮件、Webhook、客服保留期与指标。链间并发、链内顺序，调度最多占 2 个数据库连接。会调用外部服务的新任务放 `background`，避免拖慢分发
+- 外部投递批次（邮件、Webhook）必须走 `workers/leased-batch.ts` 的 `processLeased`：只在租约还够一次最坏耗时时才开始下一条；渠道不可达时停止本批。剩余条目释放租约，并退回已计入的尝试次数，避免多副本重复领取、重复发送
+- Worker 健康文件：健康评估在独立的 1 秒循环中执行，不等待调度链；健康时写 `/tmp/worker-ready`（compose healthcheck 依赖其 mtime），Redis 断连或关键任务超过 `staleAfterMs` 未成功时删除；详细状态（含各任务所在链、`runningForMs`）写 `/tmp/worker-status.json`
 - Worker 停机：收到 SIGTERM 后不再接新任务，生成任务在下一次供应商调用前的检查点让出（`GenerationInterruptedError` → `moveToDelayed`，不消耗重试次数，租约立即释放），进行中的调用会跑完；`worker.ts` 170 秒后兜底退出。换主题只在尚未出图时让出，已出图的跑完以免张数缩水。容器停止等待须 ≥ 180 秒（dev compose 已配置），且信号必须直达 node：dev compose 的 Worker 用 `node --import tsx` 启动，不要改回 `npm run dev:worker`（`tsx watch` 收到信号 5 秒后强杀子进程）
 
 ---

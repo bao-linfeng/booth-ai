@@ -20,6 +20,10 @@ import { deliverProjectNotifications } from './workers/project-notifications.js'
 import { deliverReceiptEmails } from './workers/receipt-emails.js';
 import { createSmtpSender } from './infra/mailer.js';
 import { createScheduler, type ScheduledTask } from './workers/scheduler.js';
+
+// Slow external deliveries and hourly maintenance run in their own lane so they never hold up outbox dispatch,
+// recovery or reconciliation in the default lane.
+const BACKGROUND_LANE = 'background';
 import { collectWorkerMetrics, createJobStats } from './workers/metrics.js';
 import { CS_LOCALES, type CsLocale } from './modules/customer-service/domain.js';
 import { failTranslation, translateMessage } from './modules/customer-service/translation.js';
@@ -34,6 +38,7 @@ const log = logger.child({ process: 'worker' });
 // Stays below the container stop_grace_period (180s in infra/compose.dev.yaml) so the process exits on its own after an
 // in-flight provider call (a single Seedream image takes about a minute) instead of being killed mid-request.
 const SHUTDOWN_TIMEOUT_MS = 170_000;
+const STARTUP_GRACE_MS = 60_000;
 
 async function main() {
   await rm(heartbeatPath, { force: true });
@@ -149,7 +154,7 @@ async function main() {
       if (recovery.enqueued || recovery.retried || recovery.settled || recovery.errors.length) log.warn({ recovery }, 'Generation recovery');
     } },
     { name: 'cs-translation-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchCsTranslations(database, csQueue) },
-    { name: 'cs-retention', intervalMs: 3_600_000, staleAfterMs: 7_200_000, run: () => runCsRetention(database, log) },
+    { name: 'cs-retention', intervalMs: 3_600_000, staleAfterMs: 7_200_000, lane: BACKGROUND_LANE, run: () => runCsRetention(database, log) },
     { name: 'cs-agent-sweep', intervalMs: 60_000, staleAfterMs: 300_000, run: () => sweepCsAgents(database, producerRedis, log) },
     // Unrepairable issues are persisted on the job rows and listed on the admin generation job page.
     { name: 'credit-reconciliation', intervalMs: 60_000, staleAfterMs: 300_000, run: async () => {
@@ -159,21 +164,21 @@ async function main() {
   ];
   if (config.projectNotificationWebhook) {
     const send = createWebhookSender(config.projectNotificationWebhook);
-    tasks.push({ name: 'project-notifications', intervalMs: 5000, staleAfterMs: 120_000, run: () => deliverProjectNotifications(database, send, log) });
+    tasks.push({ name: 'project-notifications', intervalMs: 5000, staleAfterMs: 120_000, lane: BACKGROUND_LANE, run: () => deliverProjectNotifications(database, send, log) });
   } else {
     log.warn('Project notification channel not configured; events stay pending in project_notification_outbox');
   }
   if (config.receiptEmail) {
     const { smtp, clientPublicUrl } = config.receiptEmail;
     const send = createSmtpSender(smtp);
-    tasks.push({ name: 'receipt-emails', intervalMs: 5000, staleAfterMs: 180_000, run: () => deliverReceiptEmails(database, send, clientPublicUrl, log) });
-    tasks.push({ name: 'cs-emails', intervalMs: 5000, staleAfterMs: 180_000, run: () => deliverCsEmails(database, producerRedis, send, clientPublicUrl, log) });
+    tasks.push({ name: 'receipt-emails', intervalMs: 5000, staleAfterMs: 180_000, lane: BACKGROUND_LANE, run: () => deliverReceiptEmails(database, send, clientPublicUrl, log) });
+    tasks.push({ name: 'cs-emails', intervalMs: 5000, staleAfterMs: 180_000, lane: BACKGROUND_LANE, run: () => deliverCsEmails(database, producerRedis, send, clientPublicUrl, log) });
   } else {
     log.warn('SMTP not configured; receipt and customer service emails stay pending in project_receipt_emails / cs_email_outbox');
   }
   // Metrics are diagnostics only and never decide worker health.
   let metrics: unknown = null;
-  tasks.push({ name: 'metrics', intervalMs: 60_000, staleAfterMs: 300_000, critical: false, run: async () => {
+  tasks.push({ name: 'metrics', intervalMs: 60_000, staleAfterMs: 300_000, critical: false, lane: BACKGROUND_LANE, run: async () => {
     metrics = { ...await collectWorkerMetrics(database, { foundation: queue, ...generationQueues, cs: csQueue }), jobs: jobStats.drain() };
     log.info({ metrics }, 'Worker metrics');
   } });
@@ -183,15 +188,22 @@ async function main() {
   let lastHealthy: boolean | undefined;
   let healthFilesWritable = true;
   const controller = new AbortController();
-  const loop = (async () => {
+  const startedAt = Date.now();
+  const lanes = scheduler.run(controller.signal);
+  // Health is evaluated on its own clock, so a lane stuck in a slow task cannot freeze the heartbeat of the others;
+  // the stuck task itself turns the worker unhealthy once it exceeds its staleAfterMs.
+  const healthLoop = (async () => {
     while (!stopping) {
-      await scheduler.tick(() => stopping);
       const report = scheduler.health({
         consumerRedis: consumerRedis.status === 'ready', producerRedis: producerRedis.status === 'ready',
         foundationWorker: worker.isRunning(), themeWorker: themeWorker.isRunning(), artworkWorker: artworkWorker.isRunning(), csWorker: csWorker.isRunning(),
       });
-      if (report.healthy !== lastHealthy) log[report.healthy ? 'info' : 'error']({ problems: report.problems }, report.healthy ? 'Worker healthy' : 'Worker unhealthy');
-      lastHealthy = report.healthy;
+      // Right after start the first passes are still running; report "unhealthy" only once they had time to finish.
+      const settled = lastHealthy !== undefined || report.healthy || Date.now() - startedAt > STARTUP_GRACE_MS;
+      if (settled && report.healthy !== lastHealthy) {
+        log[report.healthy ? 'info' : 'error']({ problems: report.problems }, report.healthy ? 'Worker healthy' : 'Worker unhealthy');
+        lastHealthy = report.healthy;
+      }
       try {
         await writeFile(statusPath, JSON.stringify({ ...report, metrics }));
         if (report.healthy) await writeFile(heartbeatPath, String(Date.now()));
@@ -213,8 +225,9 @@ async function main() {
     const deadline = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS).unref();
     // Close every consumer at once so none keeps taking new jobs while another is still draining.
     const closing = Promise.all([worker.close(), themeWorker.close(), artworkWorker.close(), csWorker.close()]);
-    await loop;
+    await healthLoop;
     await rm(heartbeatPath, { force: true });
+    await lanes;
     await closing;
     await queue.close();
     await themeQueue.close();
@@ -228,6 +241,6 @@ async function main() {
   };
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
-  log.info({ tasks: tasks.map(task => task.name) }, 'Worker ready; queue consumers and schedulers running');
+  log.info({ tasks: tasks.map(task => task.name), lanes: scheduler.lanes }, 'Worker ready; queue consumers and schedulers running');
 }
 main().catch(error => { log.fatal({ code: errorCode(error) }, 'Worker startup failed; check configuration and dependency health'); process.exit(1); });

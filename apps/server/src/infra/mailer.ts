@@ -9,6 +9,9 @@ export class MailDeliveryError extends Error {
   constructor(public readonly code: string, public readonly permanent: boolean) { super(code); }
 }
 
+// 单封最坏耗时：连接 10 秒 + 问候 10 秒 + socket 空闲 20 秒，另留余量；投递批次据此判断租约内还能否再发一封
+export const SMTP_MAX_SEND_MS = 45_000;
+
 export function createSmtpSender(smtp: SmtpConfig): MailSender {
   const transport = createTransport({
     host: smtp.host, port: smtp.port, secure: smtp.secure, requireTLS: !smtp.secure,

@@ -4,6 +4,10 @@ export class WebhookDeliveryError extends Error {
   constructor(public readonly code: 'NOTIFICATION_REJECTED' | 'NOTIFICATION_UNAVAILABLE') { super(code); }
 }
 
+const DEFAULT_TIMEOUT_MS = 10_000;
+// Worst case for one delivery with the default timeout, used to keep a batch inside its claim lease.
+export const WEBHOOK_MAX_SEND_MS = DEFAULT_TIMEOUT_MS + 5_000;
+
 export interface WebhookMessage { id: string; body: unknown }
 
 // Receivers verify `sha256=HMAC(secret, "<timestamp>.<body>")` and de-duplicate on the event id header.
@@ -15,7 +19,7 @@ export function createWebhookSender(options: { url: string; secret: string; time
     let response: Response;
     try {
       response = await fetcher(options.url, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(options.timeoutMs ?? 10_000), body,
+        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS), body,
         headers: { 'content-type': 'application/json', 'x-booth-event-id': message.id, 'x-booth-timestamp': timestamp, 'x-booth-signature': `sha256=${signature}` },
       });
     } catch { throw new WebhookDeliveryError('NOTIFICATION_UNAVAILABLE'); }

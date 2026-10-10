@@ -68,7 +68,7 @@ test('outbox merges offline messages, honours the 10-minute window, cancels read
     const sent: MailMessage[] = [];
     let failNext: Error | null = null;
     const send = async (message: MailMessage) => { if (failNext) { const error = failNext; failNext = null; throw error; } sent.push(message); };
-    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 2, failed: 0 });
+    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 2, failed: 0, released: 0 });
     assert.ok(sent.every(message => message.text.includes('first') && message.text.includes('second')));
     const lastSeq = (await pool.query("SELECT max(seq)::int AS seq FROM cs_messages WHERE kind='offline'")).rows[0].seq;
     assert.ok((await outbox()).every(row => row.sent && row.coveredSeq === lastSeq));
@@ -78,7 +78,7 @@ test('outbox merges offline messages, honours the 10-minute window, cancels read
     assert.deepEqual(window.map(row => [row.afterSeq, row.deferred]), [[lastSeq, true], [lastSeq, true]], 'next notice waits 10 minutes after the last one');
     await pool.query("UPDATE cs_email_outbox SET due_at=now() WHERE sent_at IS NULL");
     failNext = new MailDeliveryError('SMTP_EENVELOPE', true);
-    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 1, failed: 1 });
+    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 1, failed: 1, released: 0 });
     assert.equal(sent.at(-1)!.text.includes('first'), false, 'later notices only carry new messages');
     assert.equal((await outbox()).filter(row => row.failed).length, 1, 'permanent failures stop retrying');
     const failedRecipient = (await pool.query("SELECT recipient FROM cs_email_outbox WHERE failed_at IS NOT NULL")).rows[0].recipient as string;
@@ -120,7 +120,7 @@ test('outbox merges offline messages, honours the 10-minute window, cancels read
     assert.deepEqual((await replies()).map(row => [row.sent, row.cancelled]), [[false, true], [false, false]], 'replies queue while the customer looks online');
     const due = "UPDATE cs_email_outbox SET due_at=now() WHERE kind='reply_notice' AND sent_at IS NULL AND cancelled_at IS NULL";
     await pool.query(due);
-    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 0, failed: 0 });
+    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 0, failed: 0, released: 0 });
     const deferred = (await pool.query(`SELECT attempts, cancelled_at IS NOT NULL AS cancelled, due_at > now() AS later FROM cs_email_outbox
       WHERE kind='reply_notice' AND sent_at IS NULL AND cancelled_at IS NULL`)).rows;
     assert.deepEqual(deferred, [{ attempts: 0, cancelled: false, later: true }], 'online customers only postpone the reminder');
@@ -130,7 +130,7 @@ test('outbox merges offline messages, honours the 10-minute window, cancels read
     await markCustomerRead(pool, redis, customer, chat.conversation.id, seen.message.seq);
     await redis.del(`cs:customer-presence:${chat.conversation.id}`);
     await pool.query(due);
-    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 1, failed: 0 });
+    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 1, failed: 0, released: 0 });
     assert.ok(sent.at(-1)!.text.includes('未读的回复') && !sent.at(-1)!.text.includes('客户在线时也排队'), 'read replies are left out');
 
     // 入队后客户已读到全部回复（但还有更晚的客户消息未读，没有在已读接口取消）：到期按已读游标取消
@@ -138,7 +138,7 @@ test('outbox merges offline messages, honours the 10-minute window, cancels read
     await postCustomerMessage(pool, redis, customer, chat.conversation.id, { clientMessageId: randomUUID(), body: 'Danke', kind: 'text' }, 'de');
     await markCustomerRead(pool, redis, customer, chat.conversation.id, read.message.seq);
     await pool.query(due);
-    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 0, failed: 0 });
+    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 0, failed: 0, released: 0 });
     assert.equal((await replies()).at(-1)!.cancelled, true, 'reminders with every reply read are cancelled at delivery');
 
     // 一直在线但不读（页面在后台不算已读）：超过最长顺延时间后照发
@@ -146,6 +146,6 @@ test('outbox merges offline messages, honours the 10-minute window, cancels read
     await touchCustomer(redis, chat.conversation.id);
     await pool.query(`UPDATE cs_email_outbox SET due_at=now(), created_at=now() - interval '31 minutes'
       WHERE kind='reply_notice' AND sent_at IS NULL AND cancelled_at IS NULL`);
-    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 1, failed: 0 });
+    assert.deepEqual(await deliverCsEmails(pool, redis, send, 'https://booth.example.com', logger), { delivered: 1, failed: 0, released: 0 });
     assert.match(sent.at(-1)!.text, /后台页面/);
   });

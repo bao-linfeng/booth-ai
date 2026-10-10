@@ -5,7 +5,7 @@ import { csEmailMessages } from './email-messages.js';
 // 客服邮件 outbox（设计 §8.3、计划 §6.6）：沿用回执邮件的租约、退避与永久失败机制。
 // 每个（会话，类型，收件人）至多一封待发邮件，期间的新消息合并进去；发送时记录覆盖到的 seq，下一封从这里继续。
 export const CS_EMAIL_MAX_ATTEMPTS = 6;
-const LEASE_SECONDS = 120;
+export const CS_EMAIL_LEASE_SECONDS = 120;
 const pending = 'sent_at IS NULL AND cancelled_at IS NULL AND failed_at IS NULL';
 
 type Db = Pick<pg.Pool, 'query'>;
@@ -65,7 +65,7 @@ export async function claimCsEmails(db: Db, limit = 10): Promise<CsEmail[]> {
     WHERE o.id=picked.id AND c.id=o.conversation_id
     RETURNING o.id, o.conversation_id AS "conversationId", o.kind, o.recipient, o.locale, o.after_seq AS "afterSeq", o.attempts,
       c.conversation_no AS "conversationNo", c.deleted_at IS NOT NULL AS deleted,
-      o.created_at > now() - make_interval(mins => $3) AS deferrable`, [limit, LEASE_SECONDS, REPLY_MAX_DEFER_MINUTES])).rows;
+      o.created_at > now() - make_interval(mins => $3) AS deferrable`, [limit, CS_EMAIL_LEASE_SECONDS, REPLY_MAX_DEFER_MINUTES])).rows;
 }
 
 export interface EmailLine { seq: string; body: string; translation: string | null }
@@ -144,6 +144,11 @@ export async function completeCsEmail(db: Db, email: CsEmail, coveredSeq: string
 export async function deferCsEmail(db: Db, id: string): Promise<void> {
   await db.query(`UPDATE cs_email_outbox SET locked_until=NULL, attempts=GREATEST(attempts-1,0), due_at=now() + make_interval(secs => $2)
     WHERE id=$1 AND sent_at IS NULL`, [id, REPLY_ONLINE_RECHECK_SECONDS]);
+}
+
+/** 本批来不及处理的已领取邮件：释放租约并退回本次计入的尝试次数 */
+export async function releaseCsEmails(db: Db, ids: string[]): Promise<void> {
+  await db.query(`UPDATE cs_email_outbox SET locked_until=NULL, attempts=GREATEST(attempts-1,0) WHERE id = ANY($1::uuid[]) AND ${pending}`, [ids]);
 }
 
 export async function cancelCsEmail(db: Db, id: string): Promise<void> {

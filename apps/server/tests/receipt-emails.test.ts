@@ -36,9 +36,9 @@ test('every receipt email locale is complete and keeps placeholders', () => {
   }
 });
 
-test('delivery completes sent emails, retries transient failures and stops on permanent rejection', async () => {
+test('delivery completes sent emails, dead-letters permanent rejections and stops the batch on transient failures', async () => {
   const updates: { sql: string; values: unknown[] }[] = [];
-  const claimed = [email, { ...email, id: 'receipt-2' }, { ...email, id: 'receipt-3' }];
+  const claimed = [email, { ...email, id: 'receipt-2' }, { ...email, id: 'receipt-3' }, { ...email, id: 'receipt-4' }];
   const database = { query: async (sql: string, values: unknown[] = []) => {
     if (sql.includes('UPDATE project_receipt_emails r SET attempts')) return { rows: claimed };
     updates.push({ sql, values });
@@ -47,17 +47,36 @@ test('delivery completes sent emails, retries transient failures and stops on pe
   const sent: MailMessage[] = [];
   const send = async (message: MailMessage) => {
     sent.push(message);
-    if (sent.length === 2) throw new MailDeliveryError('SMTP_ECONNECTION', false);
-    if (sent.length === 3) throw new MailDeliveryError('SMTP_EENVELOPE', true);
+    if (sent.length === 2) throw new MailDeliveryError('SMTP_EENVELOPE', true);
+    if (sent.length === 3) throw new MailDeliveryError('SMTP_ECONNECTION', false);
   };
   const logs: unknown[] = [];
   const log = { info: (entry: unknown) => logs.push(entry), warn: (entry: unknown) => logs.push(entry), error: (entry: unknown) => logs.push(entry) } as unknown as Logger;
-  assert.deepEqual(await deliverReceiptEmails(database, send, 'https://booth.example.test', log), { delivered: 1, failed: 2 });
+  assert.deepEqual(await deliverReceiptEmails(database, send, 'https://booth.example.test', log), { delivered: 1, failed: 2, released: 1 });
+  assert.equal(sent.length, 3, 'an unreachable SMTP server stops the batch');
   assert.equal(sent[0]!.to, 'Visitor@Example.com');
   assert.ok(updates[0]!.sql.includes('SET delivered_at = now()'));
-  assert.deepEqual(updates[1]!.values.slice(0, 2), ['receipt-2', 'SMTP_ECONNECTION']);
-  assert.equal(updates[1]!.values[3], 1 >= RECEIPT_EMAIL_MAX_ATTEMPTS);
-  assert.deepEqual(updates[2]!.values.slice(0, 2), ['receipt-3', 'SMTP_EENVELOPE']);
-  assert.equal(updates[2]!.values[3], true);
+  assert.deepEqual(updates[1]!.values.slice(0, 2), ['receipt-2', 'SMTP_EENVELOPE']);
+  assert.equal(updates[1]!.values[3], true);
+  assert.deepEqual(updates[2]!.values.slice(0, 2), ['receipt-3', 'SMTP_ECONNECTION']);
+  assert.equal(updates[2]!.values[3], 1 >= RECEIPT_EMAIL_MAX_ATTEMPTS);
+  assert.match(updates[3]!.sql, /attempts = GREATEST\(attempts - 1, 0\)/, 'unsent emails get their lease and attempt back');
+  assert.deepEqual(updates[3]!.values, [['receipt-4']]);
   assert.ok(!JSON.stringify(logs).includes('Visitor@Example.com'), 'logs must not contain recipient addresses');
+});
+
+test('delivery only starts an email that can finish inside the claim lease', async () => {
+  const claimed = [email, { ...email, id: 'receipt-2' }, { ...email, id: 'receipt-3' }];
+  const released: unknown[] = [];
+  const database = { query: async (sql: string, values: unknown[] = []) => {
+    if (sql.includes('UPDATE project_receipt_emails r SET attempts')) return { rows: claimed };
+    if (sql.includes('GREATEST(attempts - 1, 0)')) released.push(values[0]);
+    return { rows: [] };
+  } } as unknown as Pick<pg.Pool, 'query'>;
+  let clock = 0;
+  // Each send takes 70 seconds: with a 120-second lease, a 45-second worst case and a 10-second margin a second one would overrun.
+  const send = async () => { clock += 70_000; };
+  const log = { info: () => {}, warn: () => {}, error: () => {} } as unknown as Logger;
+  assert.deepEqual(await deliverReceiptEmails(database, send, 'https://booth.example.test', log, () => clock), { delivered: 1, failed: 0, released: 2 });
+  assert.deepEqual(released, [['receipt-2', 'receipt-3']]);
 });
