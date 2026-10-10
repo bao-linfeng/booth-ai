@@ -125,7 +125,7 @@ for (const manual of [false, true]) {
       const button = mounted.container.querySelector('[data-cs-send-context]')
       assert.equal(button?.textContent.trim(), '发送当前项目')
       assert.match(button.title, /PJ-001/)
-      mounted.container.querySelector('[data-cs-nav]').click()
+      await cs.openWith(undefined, 'floating')
       await settle()
       assert.equal(cs.useCustomerService().state.open, true)
       assert.equal(cs.useCustomerService().state.notice, '')

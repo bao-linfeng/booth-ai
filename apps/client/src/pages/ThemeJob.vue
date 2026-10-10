@@ -331,9 +331,9 @@ const failureReason = computed(() => failureReasonText(jobData.value?.failure?.r
                 <p class="text-muted-foreground">{{ t('themeJob.noSelectionHint') }}</p>
               </div>
               <div class="space-y-3 border-t pt-5">
-                <Button class="h-auto min-h-11 w-full whitespace-normal" :disabled="!canContinue" @click="continueWithSelection('quote')">{{ t('themeJob.quoteWithSelected') }}<ArrowRight class="ml-2 size-4 shrink-0" /></Button>
-                <Button variant="outline" class="h-auto min-h-11 w-full whitespace-normal" :disabled="!canContinue" @click="continueWithSelection('artwork')">{{ t('themeJob.artworkWithSelected') }}</Button>
-                <p class="text-xs leading-relaxed text-muted-foreground">{{ t('themeJob.artworkNote') }}</p>
+                <Button class="h-auto min-h-9 w-full whitespace-normal" :disabled="!canContinue" @click="continueWithSelection('quote')">{{ t('themeJob.quoteWithSelected') }}<ArrowRight class="ml-2 size-4 shrink-0" /></Button>
+                <Button variant="outline" class="h-auto min-h-9 w-full whitespace-normal" :disabled="!canContinue" @click="continueWithSelection('artwork')">{{ t('themeJob.artworkWithSelected') }}</Button>
+                <p class="text-sm leading-relaxed text-muted-foreground">{{ t('themeJob.artworkNote') }}</p>
               </div>
               <Button variant="ghost" class="h-auto min-h-10 w-full whitespace-normal" as-child>
                 <RouterLink :to="{ path: `/schemes/${encodeURIComponent(jobData.schemeCode)}`, query: jobData.searchId ? { searchId: jobData.searchId } : {} }">{{ t('themeJob.continueOriginal') }}</RouterLink>

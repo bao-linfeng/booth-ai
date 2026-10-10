@@ -65,7 +65,7 @@ function selectSize(id: string | null) {
         </AccordionTrigger>
         <AccordionContent class="space-y-5 pt-2">
           <RequirementField v-for="field in moreFields" :id="`requirement-${field}`" :key="field" inline :field="field" :model-value="modelValue" :catalog="catalog" :disabled="disabled" @update:model-value="emit('update:modelValue', $event)" />
-          <p class="text-xs leading-6 text-muted-foreground">{{ t('requirementForm.moreNote') }}</p>
+          <p class="text-sm leading-6 text-muted-foreground">{{ t('requirementForm.moreNote') }}</p>
         </AccordionContent>
       </AccordionItem>
     </Accordion>

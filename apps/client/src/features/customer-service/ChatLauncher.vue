@@ -30,7 +30,7 @@ onBeforeUnmount(stopIdlePolling)
   <button
     type="button"
     :class="cn(
-      'fixed bottom-6 z-40 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+      'fixed bottom-24 z-40 flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 lg:bottom-6',
       appLocale === 'ar' ? 'left-6' : 'right-6',
     )"
     :aria-label="unread ? `${t('customerService.launcher')} · ${t('customerService.unread', { count: unread })}` : t('customerService.launcher')"

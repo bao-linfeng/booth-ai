@@ -74,7 +74,7 @@ const avatarFallback = computed(() => (authStore.displayName || '?').charAt(0))
         </span>
         <div class="hidden min-w-0 flex-col items-start sm:flex">
           <span class="max-w-24 truncate text-sm font-medium leading-none">{{ authStore.displayName }}</span>
-          <span class="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+          <span class="text-sm text-muted-foreground mt-1 flex items-center gap-1">
             <Coins class="inline h-3 w-3 text-primary" aria-hidden="true" />
             {{ balance !== null ? `${balance} ${t('auth.credits')}` : '--' }}
             <span v-if="!signedInToday" class="ms-1 rounded-full bg-primary/10 px-1.5 py-px text-[10px] font-medium leading-4 text-primary">{{ t('auth.checkInShort') }}</span>
@@ -92,8 +92,8 @@ const avatarFallback = computed(() => (authStore.displayName || '?').charAt(0))
           </Avatar>
           <div class="grid min-w-0 flex-1 text-left text-sm leading-tight">
             <span class="truncate font-semibold">{{ authStore.displayName }}</span>
-            <span class="truncate text-xs text-muted-foreground">{{ authStore.currentUser?.email ?? authStore.currentUser?.username }}</span>
-            <span class="mt-1 text-xs text-muted-foreground">{{ balance !== null ? `${balance} ${t('auth.credits')}` : t('auth.creditsQuery') }}</span>
+            <span class="truncate text-sm text-muted-foreground">{{ authStore.currentUser?.email ?? authStore.currentUser?.username }}</span>
+            <span class="mt-1 text-sm text-muted-foreground">{{ balance !== null ? `${balance} ${t('auth.credits')}` : t('auth.creditsQuery') }}</span>
           </div>
         </div>
       </DropdownMenuLabel>
@@ -103,7 +103,7 @@ const avatarFallback = computed(() => (authStore.displayName || '?').charAt(0))
           <Check v-if="signedInToday" class="mr-2 h-4 w-4" aria-hidden="true" />
           <Sparkles v-else class="mr-2 h-4 w-4 text-primary" aria-hidden="true" />
           <span>{{ signedInToday ? t('auth.checkedIn') : t('auth.checkIn') }}</span>
-          <span v-if="rewardAmount !== null" class="ms-auto text-xs font-medium text-primary" role="status">{{ t('auth.creditsEarned', { amount: rewardAmount }) }}</span>
+          <span v-if="rewardAmount !== null" class="ms-auto text-sm font-medium text-primary" role="status">{{ t('auth.creditsEarned', { amount: rewardAmount }) }}</span>
         </DropdownMenuItem>
         <DropdownMenuItem as-child class="cursor-pointer">
           <RouterLink to="/profile">

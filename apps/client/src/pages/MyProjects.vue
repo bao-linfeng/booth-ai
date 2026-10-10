@@ -294,7 +294,7 @@ onBeforeUnmount(() => { loadSeq++ })
               <Button v-else-if="canSupplementArtworks" variant="outline" as-child>
                 <RouterLink :to="{ path: `/schemes/${encodeURIComponent(detail.schemeCode!)}/artwork`, query: { themeJobId: detail.selectedThemeSummary!.themeJobId, projectId: detail.projectId } }">{{ t('projects.addArtwork') }}<ArrowRight class="ml-2 size-4" /></RouterLink>
               </Button>
-              <p class="text-xs text-muted-foreground">{{ t('projects.schemeDisclaimer') }}</p>
+              <p class="text-sm text-muted-foreground">{{ t('projects.schemeDisclaimer') }}</p>
             </CardContent>
           </Card>
         </template>
