@@ -21,17 +21,18 @@ const schemeCode = ref('');
 const file = ref<File | null>(null);
 const preview = ref<BomImportResult | null>(null);
 const busy = ref(false);
+/** 从方案详情打开时方案已确定，不允许改选 */
+const schemeLocked = ref(false);
 const templateHint =
-  '导入表首行须包含：产品名称、型号、规格/mm、数量、计量类型、单价/¥、总价/¥、重量合计/kg、ERP编码；列顺序不限。每行填写计量类型 count / length / area，分别按件、mm、mm² 解析数量。';
+  '导入表首行须包含：产品名称、产品型号、尺寸规格(mm)、数量、单价、总价、ERP编码（序号列可选），列顺序不限。分组标题行自动跳过；数量按件导入，长度/面积类条目可在导入后编辑计量类型；总价公式只读取 Excel 已保存的计算结果。';
 const columns = [
   { title: '产品名称', dataIndex: 'productName' },
-  { title: '型号', dataIndex: 'productModel' },
-  { title: '规格/mm', dataIndex: 'specificationMm' },
+  { title: '产品型号', dataIndex: 'productModel' },
+  { title: '尺寸规格(mm)', dataIndex: 'specificationMm' },
   { title: '数量', dataIndex: 'sourceQuantity' },
   { title: '计量类型', dataIndex: 'measurementKind' },
-  { title: '单价/¥', dataIndex: 'unitPrice' },
-  { title: '总价/¥', dataIndex: 'totalPrice' },
-  { title: '重量合计/kg', dataIndex: 'totalWeightKg' },
+  { title: '单价', dataIndex: 'unitPrice' },
+  { title: '总价', dataIndex: 'totalPrice' },
   { title: 'ERP编码', dataIndex: 'erpCode' },
 ];
 
@@ -109,8 +110,9 @@ const [Modal, modalApi] = useVbenModal({
   onConfirm: submit,
 });
 
-function open(code = '') {
+function open(code = '', lockScheme = false) {
   schemeCode.value = code;
+  schemeLocked.value = lockScheme && !!code;
   file.value = null;
   preview.value = null;
   schemes.value = [];
@@ -163,7 +165,7 @@ defineExpose({ open });
           "
           placeholder="搜索方案编号或名称"
           class="w-full"
-          :disabled="!!preview || busy"
+          :disabled="schemeLocked || !!preview || busy"
           @search="searchSchemes"
           @change="resetPreview"
         />

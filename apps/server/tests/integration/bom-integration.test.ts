@@ -86,7 +86,7 @@ test(
     assert.deepEqual(await createOrReplaceBomFromImport(pool, adminId, code, imported.id, 0), original);
     await assert.rejects(createOrReplaceBomFromImport(pool, adminId, code, imported.id, 1), { reason: 'IDEMPOTENCY_CONFLICT' });
     const legacy = await createImport('legacy-hash', 1);
-    await pool.query('UPDATE bom_imports SET mapping_revision=4 WHERE id=$1', [legacy.id]);
+    await pool.query('UPDATE bom_imports SET mapping_revision=5 WHERE id=$1', [legacy.id]);
     await assert.rejects(createOrReplaceBomFromImport(pool, adminId, code, legacy.id, 1), { reason: 'IMPORT_NOT_READY' });
     const stale = await createImport('hash2', 1);
     bom = await updateBomItems(

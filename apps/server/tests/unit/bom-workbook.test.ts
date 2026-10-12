@@ -18,109 +18,83 @@ test('decimal conversion is exact and rejects unrepresentable fractions', () => 
 
 function sourceWorkbook(): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Sheet1');
-  sheet.addRow(['产品名称', '型号', '规格/mm', '数量', '计量类型', '单价/¥', '总价/¥', '重量合计/kg', 'ERP编码']);
-  sheet.addRow(['62布框门', 'FS62-992x2480M', '992x2480', 1, 'count', 2790.53, 2790.53, 21.3, '000123']);
-  sheet.addRow(['遮光布', 'MCZ-02', '918x2330.5x1', 4, 'count', 43, 367.98, 8.56, '31801000003']);
-  sheet.addRow(['遮光布', 'MCZ-02', '918x2888.5x1', 4, 'count', 43, 456.08, 10.61, '31801000003']);
+  const sheet = workbook.addWorksheet('简化清单');
+  sheet.addRow(['序号', '产品名称', '产品型号', '尺寸规格(mm)', '数量', '单价', '总价', 'ERP编码']);
+  sheet.addRow(Array(8).fill('一、展位主框架及配件清单'));
+  sheet.mergeCells('A2:H2');
+  sheet.addRow([1, '62布框门', 'FS62-992x2480M', null, '1', 2790.53, { formula: 'E3*F3', result: 2790.53 }, '000123']);
+  sheet.addRow(Array(8).fill('62封盖'));
+  sheet.addRow([2, '遮光布', 'MCZ-02', '918×2330.5', '4', null, { formula: 'IF(OR(E5="",F5=""),"",E5*F5)', result: '' }, '31801000003']);
+  sheet.addRow([3, null, 'DZ-13', null, '2', null, { formula: 'IF(OR(E6="",F6=""),"",E6*F6)' }, null]);
+  sheet.addRow([4, '遮光布', 'MCZ-02', '992×1984', null, null, null, '31801000003']);
   return workbook;
 }
 
-test('source workbook imports per-product measurement fields without requiring a scheme code', async () => {
+test('simplified source sheet skips group rows, keeps cached prices and defaults to counted items', async () => {
   const workbook = sourceWorkbook();
   const parsed = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
   assert.deepEqual(parsed.errors, []);
-  assert.equal(parsed.items.length, 3);
   assert.deepEqual(
-    parsed.items.map(item => [item.sourceQuantity, item.sourceUnit, item.unitPrice, item.totalPrice, item.totalWeightKg]),
+    parsed.items.map(item => [
+      item.sourceRow,
+      item.productName,
+      item.productModel,
+      item.specificationMm,
+      item.sourceQuantity,
+      item.sourceUnit,
+      item.measurementKind,
+      item.unitPrice,
+      item.totalPrice,
+      item.totalWeightKg,
+      item.erpCode,
+    ]),
     [
-      ['1', '件', '2790.53', '2790.53', '21.3'],
-      ['4', '件', '43', '367.98', '8.56'],
-      ['4', '件', '43', '456.08', '10.61'],
+      [3, '62布框门', 'FS62-992x2480M', null, '1', '件', 'count', '2790.53', '2790.53', null, '000123'],
+      [5, '遮光布', 'MCZ-02', '918×2330.5', '4', '件', 'count', null, null, null, '31801000003'],
+      [6, 'DZ-13', 'DZ-13', null, '2', '件', 'count', null, null, null, null],
     ],
   );
   assert.deepEqual(
-    parsed.items.map(item => item.erpCode),
-    ['000123', '31801000003', '31801000003'],
-  );
-  assert.deepEqual(
-    parsed.items.map(item => item.sourceRow),
-    [2, 3, 4],
-  );
-  assert.deepEqual(parsed.warnings, []);
-  assert.deepEqual(
-    parsed.items.map(item => item.measurementKind),
-    ['count', 'count', 'count'],
+    parsed.warnings.map(issue => [issue.code, issue.row]),
+    [
+      ['PRODUCT_NAME_MISSING', 6],
+      ['ERP_CODE_MISSING', 6],
+      ['QUANTITY_MISSING', 7],
+    ],
   );
   const info = workbook.addWorksheet('说明');
   const blankInfo = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
-  assert.deepEqual(blankInfo.warnings, []);
+  assert.equal(blankInfo.items.length, 3);
   info.getCell('B1').value = 'OTHER';
   await assert.rejects(parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME'), /Scheme code mismatch/);
-  info.getCell('B1').value = 'SCHEME';
-  workbook.getWorksheet('Sheet1')!.getCell('I2').value = 123;
-  const numericErp = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
-  assert.deepEqual(
-    numericErp.warnings.map(issue => issue.code),
-    ['NUMERIC_ERP_CODE'],
-  );
-  assert.match(numericErp.warnings[0]!.message, /第 2 行.*按当前数值导入/);
-  workbook.getWorksheet('Sheet1')!.getCell('D2').value = { formula: '2+2', result: 4 };
-  const invalid = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
-  assert.equal(invalid.errors[0]?.code, 'FORMULA_UNSUPPORTED');
 });
 
-test('import infers units for each product measurement type and rejects missing or invalid types', async () => {
+test('import rejects formulas outside price columns and non-integer or invalid values', async () => {
   const workbook = sourceWorkbook();
-  const sheet = workbook.getWorksheet('Sheet1')!;
-  sheet.getCell('D3').value = 2500;
-  sheet.getCell('E3').value = 'length';
-  sheet.getCell('D4').value = 1200000;
-  sheet.getCell('E4').value = 'area';
-  const parsed = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
-  assert.deepEqual(parsed.errors, []);
-  assert.deepEqual(
-    parsed.items.map(item => item.sourceUnit),
-    ['件', 'mm', 'mm²'],
-  );
-  assert.deepEqual(
-    parsed.items.map(item => item.measurementKind),
-    ['count', 'length', 'area'],
-  );
-  sheet.getCell('E3').value = null;
-  sheet.getCell('E4').value = 'invalid';
+  const sheet = workbook.getWorksheet('简化清单')!;
+  sheet.getCell('E3').value = { formula: '2+2', result: 4 };
+  sheet.getCell('E5').value = '1.5';
+  sheet.getCell('F6').value = '面议';
+  sheet.getCell('B7').value = null;
+  sheet.getCell('C7').value = null;
   const invalid = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
   assert.deepEqual(
     invalid.errors.map(issue => [issue.code, issue.row]),
     [
-      ['MEASUREMENT_KIND_INVALID', 3],
-      ['MEASUREMENT_KIND_INVALID', 4],
+      ['FORMULA_UNSUPPORTED', 3],
+      ['ROW_INVALID', 5],
+      ['ROW_INVALID', 6],
+      ['ROW_INVALID', 7],
     ],
   );
-  assert.equal(invalid.items.length, 1);
-  sheet.getCell('E3').value = 'length';
-  sheet.getCell('E4').value = 'area';
-  sheet.getCell('D3').value = 0.000001;
-  const fractional = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
-  assert.equal(fractional.errors[0]?.field, 'sourceQuantity');
-  sheet.getCell('D3').value = 1.5;
-  sheet.getCell('E3').value = 'count';
-  const fractionalCount = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
-  assert.equal(fractionalCount.errors[0]?.code, 'ROW_INVALID');
-  sheet.getCell('E1').value = null;
-  await assert.rejects(parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME'), {
-    message: 'Unsupported workbook template',
-    reason: 'UNSUPPORTED_BOM_TEMPLATE',
-    statusCode: 422,
-  });
+  assert.equal(invalid.items.length, 0);
 });
 
 test('import reads required fields by header name regardless of their positions', async () => {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('调整列序');
-  sheet.addRow(['ERP编码', '额外说明', '计量类型', '重量合计/kg', '数量', '产品名称', '总价/¥', '规格/mm', '单价/¥', '型号']);
-  sheet.addRow(['000123', '忽略此列', 'length', 250, 2500, '杆件', 88, '2500', 44, 'L-01']);
-  sheet.addRow([456, null, 'area', 2, 1200000, '面板', 30, '1200', 15, 'A-02']);
+  sheet.addRow(['ERP编码', '额外说明', '总价', '数量', '产品名称', '尺寸规格（mm）', '单价', '产品型号']);
+  sheet.addRow(['000123', '忽略此列', 88, 2, '杆件', '2500', 44, 'L-01']);
   const parsed = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
   assert.deepEqual(parsed.errors, []);
   assert.deepEqual(
@@ -129,45 +103,41 @@ test('import reads required fields by header name regardless of their positions'
       item.productModel,
       item.specificationMm,
       item.sourceQuantity,
-      item.sourceUnit,
       item.unitPrice,
       item.totalPrice,
-      item.totalWeightKg,
       item.erpCode,
     ]),
-    [
-      ['杆件', 'L-01', '2500', '2500', 'mm', '44', '88', '250', '000123'],
-      ['面板', 'A-02', '1200', '1200000', 'mm²', '15', '30', '2', '456'],
-    ],
+    [['杆件', 'L-01', '2500', '2', '44', '88', '000123']],
   );
-  assert.deepEqual(
-    parsed.warnings.map(issue => [issue.code, issue.row]),
-    [['NUMERIC_ERP_CODE', undefined]],
-  );
-  assert.match(parsed.warnings[0]!.message, /第 3 行/);
 });
 
 test('numeric ERP cells in a source workbook produce one actionable warning', async () => {
   const workbook = sourceWorkbook();
-  const sheet = workbook.getWorksheet('Sheet1')!;
-  sheet.getCell('I2').value = 12300000219;
-  sheet.getCell('I3').value = 31801000003;
-  sheet.getCell('I4').value = 31801000003;
+  const sheet = workbook.getWorksheet('简化清单')!;
+  sheet.getCell('H3').value = 12300000219;
+  sheet.getCell('H5').value = 31801000003;
   const parsed = await parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME');
   assert.deepEqual(parsed.errors, []);
   assert.deepEqual(
     parsed.items.map(item => item.erpCode),
-    ['12300000219', '31801000003', '31801000003'],
+    ['12300000219', '31801000003', null],
   );
-  assert.equal(parsed.warnings.length, 1);
-  assert.match(parsed.warnings[0]!.message, /第 2 至 4 行中有 3 行.*前导零/);
+  assert.equal(parsed.warnings[0]?.code, 'NUMERIC_ERP_CODE');
+  assert.match(parsed.warnings[0]!.message, /第 3 至 5 行中有 2 行.*前导零/);
 });
 
-test('import rejects duplicate required headers rather than silently reading an ambiguous column', async () => {
+test('import rejects missing or duplicate required headers rather than guessing a column', async () => {
   const workbook = sourceWorkbook();
-  const sheet = workbook.getWorksheet('Sheet1')!;
-  sheet.getCell('J1').value = '数量';
+  const sheet = workbook.getWorksheet('简化清单')!;
+  sheet.getCell('I1').value = '数量';
   await assert.rejects(parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME'), {
+    reason: 'UNSUPPORTED_BOM_TEMPLATE',
+    statusCode: 422,
+  });
+  sheet.getCell('I1').value = null;
+  sheet.getCell('C1').value = '型号';
+  await assert.rejects(parseBomWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()), 'SCHEME'), {
+    message: 'Unsupported workbook template',
     reason: 'UNSUPPORTED_BOM_TEMPLATE',
     statusCode: 422,
   });

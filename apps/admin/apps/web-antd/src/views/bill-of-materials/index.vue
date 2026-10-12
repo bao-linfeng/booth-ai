@@ -503,8 +503,7 @@ defineExpose({ open });
         </div>
       </div>
       <p v-if="mode === 'edit'" class="text-muted-foreground text-xs">
-        导入表首行须包含：产品名称、型号、规格/mm、数量、计量类型、单价/¥、总价/¥、重量合计/kg、ERP编码，列顺序不限。每行填写计量类型
-        count / length / area，数量分别按件、mm、mm² 解析。
+        导入表首行须包含：产品名称、产品型号、尺寸规格(mm)、数量、单价、总价、ERP编码（序号列可选），列顺序不限。分组标题行自动跳过；数量按件导入，长度/面积类条目可在下方编辑计量类型。
       </p>
 
       <!-- 导入预览区 -->
@@ -548,6 +547,8 @@ defineExpose({ open });
             class="bg-warning/10 rounded px-2 py-1 text-xs text-amber-700 dark:text-amber-400"
           >
             [{{ warn.code }}] {{ warn.message }}
+            <span v-if="warn.sheet"> · {{ warn.sheet }}</span>
+            <span v-if="warn.row"> 行{{ warn.row }}</span>
           </div>
         </div>
         <!-- 预览条目 -->

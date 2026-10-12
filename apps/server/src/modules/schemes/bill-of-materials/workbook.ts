@@ -1,12 +1,12 @@
 import ExcelJS from 'exceljs';
 import { quantityFor } from './quantity.js';
-import type { BomItemInput, BomRecord, MeasurementKind, ImportIssue, ParsedBom } from './types.js';
+import type { BomItemInput, BomRecord, ImportIssue, ParsedBom } from './types.js';
 
 export type { ImportIssue, ParsedBom } from './types.js';
 
-const importHeaders = ['产品名称', '型号', '规格/mm', '数量', '计量类型', '单价/¥', '总价/¥', '重量合计/kg', 'ERP编码'];
+/** 导入表头按业务方简化清单样表；「序号」列可有可无，不读取 */
+const importHeaders = ['产品名称', '产品型号', '尺寸规格(mm)', '数量', '单价', '总价', 'ERP编码'];
 const exportHeaders = ['产品名称', '型号', '规格/mm', '数量', '单价/¥', '总价/¥', '重量合计/kg', 'ERP编码'];
-const sourceUnits: Record<MeasurementKind, string> = { count: '件', length: 'mm', area: 'mm²' };
 function inspectZip(buffer: Buffer): void {
   let expanded = 0;
   let entries = 0;
@@ -53,6 +53,35 @@ const text = (cell: ExcelJS.Cell): string => {
   return String(value).trim();
 };
 
+/** 价格列允许公式（样表总价为「数量×单价」），只读取 Excel 保存的计算结果，不在服务端重新计算 */
+const priceText = (cell: ExcelJS.Cell): string => {
+  const value = cell.value;
+  if (value !== null && typeof value === 'object' && 'formula' in value) {
+    const result = (value as ExcelJS.CellFormulaValue).result;
+    return typeof result === 'number' ? String(result) : '';
+  }
+  return text(cell);
+};
+
+const headerName = (value: string): string => value.replace(/\s+/g, '').replaceAll('（', '(').replaceAll('）', ')');
+
+/** 分组标题行（如「一、展位主框架及配件清单」「62封盖」）：合并单元格横跨产品名称与数量，或各列为同一段文字 */
+function isGroupRow(row: ExcelJS.Row, columns: Map<string, number>): boolean {
+  const name = row.getCell(columns.get('产品名称')!);
+  const quantity = row.getCell(columns.get('数量')!);
+  if (name.isMerged && name.master.address === quantity.master.address) return true;
+  const values = new Set<string>();
+  let filled = 0;
+  for (const index of columns.values()) {
+    const value = row.getCell(index).value;
+    if (value === null || value === undefined || value === '') continue;
+    if (typeof value !== 'string') return false;
+    values.add(value.trim());
+    filled++;
+  }
+  return filled >= 3 && values.size === 1;
+}
+
 export async function parseBomWorkbook(buffer: Buffer, schemeCode: string): Promise<ParsedBom> {
   inspectZip(buffer);
   const workbook = new ExcelJS.Workbook();
@@ -70,7 +99,7 @@ export async function parseBomWorkbook(buffer: Buffer, schemeCode: string): Prom
     const found = new Map<string, number>();
     try {
       for (let index = 1; index <= headers.cellCount; index++) {
-        const header = text(headers.getCell(index));
+        const header = headerName(text(headers.getCell(index)));
         if (!importHeaders.includes(header)) continue;
         if (found.has(header)) {
           found.clear();
@@ -100,94 +129,74 @@ export async function parseBomWorkbook(buffer: Buffer, schemeCode: string): Prom
   const warnings: ImportIssue[] = [];
   const items: BomItemInput[] = [];
   const numericErpRows: number[] = [];
+  const decimal = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/;
   for (let number = 2; number <= sheet.rowCount; number++) {
     const row = sheet.getRow(number);
     const cell = (header: string) => row.getCell(columns.get(header)!);
-    let name: string, quantity: string, model: string, specification: string, erp: string, measurementKind: string;
-    let unitPrice: string, totalPrice: string, totalWeightKg: string;
+    let name: string, quantity: string, model: string, specification: string, erp: string;
+    let unitPrice: string, totalPrice: string;
     if (row.cellCount > 32) {
       errors.push({ code: 'ROW_INVALID', sheet: sheet.name, row: number, message: '超出支持的列范围' });
       continue;
     }
+    if (isGroupRow(row, columns)) continue;
     try {
       name = text(cell('产品名称'));
-      model = text(cell('型号'));
-      specification = text(cell('规格/mm'));
+      model = text(cell('产品型号'));
+      specification = text(cell('尺寸规格(mm)'));
       quantity = text(cell('数量'));
-      measurementKind = text(cell('计量类型'));
-      unitPrice = text(cell('单价/¥'));
-      totalPrice = text(cell('总价/¥'));
-      totalWeightKg = text(cell('重量合计/kg'));
+      unitPrice = priceText(cell('单价'));
+      totalPrice = priceText(cell('总价'));
       erp = text(cell('ERP编码'));
-      if (![name, model, specification, quantity, measurementKind, unitPrice, totalPrice, totalWeightKg, erp].some(Boolean)) continue;
+      if (![name, model, specification, quantity, unitPrice, erp].some(Boolean)) continue;
     } catch {
       errors.push({ code: 'FORMULA_UNSUPPORTED', sheet: sheet.name, row: number, message: '业务列包含公式或不支持的单元格类型' });
       continue;
     }
-    const decimal = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,6})?$/;
-    const kind = (['count', 'length', 'area'] as const).find(value => value === measurementKind);
-    if (!kind) {
-      errors.push({
-        code: 'MEASUREMENT_KIND_INVALID',
-        sheet: sheet.name,
-        row: number,
-        field: 'measurementKind',
-        message: '每行须填写计量类型 count/length/area',
-      });
+    if (!name && !model) {
+      errors.push({ code: 'ROW_INVALID', sheet: sheet.name, row: number, message: '产品名称与产品型号均为空' });
       continue;
     }
-    const sourceUnit = sourceUnits[kind];
-    if (
-      !name ||
-      !decimal.test(quantity) ||
-      Number(quantity) <= 0 ||
-      (kind === 'count' && !Number.isInteger(Number(quantity))) ||
-      !unitPrice ||
-      !decimal.test(unitPrice) ||
-      !totalPrice ||
-      !decimal.test(totalPrice) ||
-      !totalWeightKg ||
-      !decimal.test(totalWeightKg) ||
-      !erp
-    ) {
-      errors.push({
-        code: 'ROW_INVALID',
-        sheet: sheet.name,
-        row: number,
-        message: '产品、正数数量（个数须为整数）、单价、总价、重量或 ERP 编码缺失/非法',
-      });
+    if (!quantity) {
+      warnings.push({ code: 'QUANTITY_MISSING', sheet: sheet.name, row: number, message: '数量为空，该行未导入，请导入后补充' });
+      continue;
+    }
+    // 样表不区分计量类型，统一按件导入；长度/面积类条目在导入后编辑
+    if (!decimal.test(quantity) || Number(quantity) <= 0 || !Number.isInteger(Number(quantity))) {
+      errors.push({ code: 'ROW_INVALID', sheet: sheet.name, row: number, field: 'sourceQuantity', message: '数量须为正整数' });
+      continue;
+    }
+    if ((unitPrice && !decimal.test(unitPrice)) || (totalPrice && !decimal.test(totalPrice))) {
+      errors.push({ code: 'ROW_INVALID', sheet: sheet.name, row: number, message: '单价或总价须为不小于 0 的数字' });
       continue;
     }
     try {
-      quantityFor(quantity, kind);
+      quantityFor(quantity, 'count');
     } catch {
-      errors.push({
-        code: 'ROW_INVALID',
-        sheet: sheet.name,
-        row: number,
-        field: 'sourceQuantity',
-        message: '换算后数量超出支持范围或精度',
-      });
+      errors.push({ code: 'ROW_INVALID', sheet: sheet.name, row: number, field: 'sourceQuantity', message: '数量超出支持范围' });
       continue;
     }
     if (cell('ERP编码').type === ExcelJS.ValueType.Number) {
       numericErpRows.push(number);
     }
     items.push({
-      productName: name,
+      productName: name || model,
       productModel: model || null,
       specificationMm: specification || null,
       sourceQuantity: quantity,
-      sourceUnit,
-      measurementKind: kind,
-      unitPrice,
-      totalPrice,
-      totalWeightKg,
-      erpCode: erp,
+      sourceUnit: '件',
+      measurementKind: 'count',
+      unitPrice: unitPrice || null,
+      totalPrice: totalPrice || null,
+      totalWeightKg: null,
+      erpCode: erp || null,
       sourceSheet: sheet.name,
       sourceRow: number,
     });
+    if (!name)
+      warnings.push({ code: 'PRODUCT_NAME_MISSING', sheet: sheet.name, row: number, message: '产品名称为空，已用产品型号代替，请核对' });
     if (!model) warnings.push({ code: 'OPTIONAL_FIELD_MISSING', sheet: sheet.name, row: number, message: '型号缺失，请核对' });
+    if (!erp) warnings.push({ code: 'ERP_CODE_MISSING', sheet: sheet.name, row: number, message: 'ERP 编码为空，请核对' });
   }
   if (numericErpRows.length) {
     const range =

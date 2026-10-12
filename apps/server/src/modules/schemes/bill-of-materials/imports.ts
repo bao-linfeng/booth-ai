@@ -12,7 +12,7 @@ interface ImportRow extends Omit<BomImportRecord, 'expiresAt'> {
   expiresAt: Date | string;
 }
 
-const IMPORT_MAPPING_REVISION = 5;
+const IMPORT_MAPPING_REVISION = 6;
 
 const importColumns = `
   i.id::text AS id,
