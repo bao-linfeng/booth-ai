@@ -191,7 +191,7 @@ export const createGridOptions = () => ({
     {
       field: 'action',
       title: '操作',
-      width: 160,
+      width: 110,
       fixed: 'right' as const,
       slots: { default: 'action' },
     },

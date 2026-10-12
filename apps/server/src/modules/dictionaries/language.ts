@@ -9,8 +9,13 @@ export interface DictionaryNames {
   aliases?: DictionaryAlias[];
 }
 
+/** 统一全半角与空白，保留大小写，用作自动新建条目的名称。 */
+export function cleanDictionaryTerm(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ');
+}
+
 export function normalizeDictionaryTerm(value: string): string {
-  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase();
+  return cleanDictionaryTerm(value).toLowerCase();
 }
 
 export function dictionaryTerms(item: DictionaryNames): string[] {

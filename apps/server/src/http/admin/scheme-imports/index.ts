@@ -102,6 +102,7 @@ const previewSchema = {
           reason: string,
           data: importRowSchema,
           dictionaryLabels: { type: 'object', additionalProperties: { type: 'array', items: string } },
+          newDictionaryLabels: { type: 'object', additionalProperties: { type: 'array', items: string } },
           snapshotRevision: integer,
           published: { type: 'boolean' },
           changedFields: { type: 'array', items: fieldName },

@@ -11,6 +11,7 @@ import {
   importDictionaryEntries,
   importRowNote,
   overwriteImpact,
+  pendingDictionaryItems,
   previewRemainingMs,
 } from '../import-preview';
 
@@ -43,22 +44,56 @@ describe('import preview presentation', () => {
     expect(formatOpeningCount(null)).toBe('—');
   });
 
-  it('lists mapped dictionary labels in template column order', () => {
+  it('lists dictionary labels in template column order and marks new items', () => {
+    const mapped = (text: string) => ({ isNew: false, text });
     expect(
       importDictionaryEntries({
         dictionaryLabels: {
           featureIds: [],
           styleId: ['现代简约'],
           productSystemId: ['FS62布框'],
-          zoneIds: ['接待区', '洽谈区'],
+          zoneIds: ['接待区', '休息区'],
         },
+        newDictionaryLabels: { zoneIds: ['休息区'] },
       }),
     ).toEqual([
-      { label: '产品体系', values: ['FS62布框'] },
-      { label: '风格', values: ['现代简约'] },
-      { label: '功能分区', values: ['接待区', '洽谈区'] },
+      { label: '产品体系', values: [mapped('FS62布框')] },
+      { label: '风格', values: [mapped('现代简约')] },
+      {
+        label: '功能分区',
+        values: [mapped('接待区'), { isNew: true, text: '休息区' }],
+      },
     ]);
     expect(importDictionaryEntries({})).toEqual([]);
+  });
+
+  it('summarizes new dictionary items only for rows that will be written', () => {
+    const row = (
+      status: ImportPreviewRow['status'],
+      newDictionaryLabels: ImportPreviewRow['newDictionaryLabels'],
+    ): ImportPreviewRow => ({
+      code: status,
+      name: status,
+      newDictionaryLabels,
+      rowId: 1,
+      rowNumber: 2,
+      sheetName: '方案',
+      status,
+    });
+    const rows = [
+      row('valid', { styleId: ['Baroque'], industryIds: ['宠物用品'] }),
+      row('valid', { styleId: ['baroque'] }),
+      row('duplicate', { styleId: ['哥特'] }),
+      row('error', { styleId: ['不导入'] }),
+    ];
+    expect(pendingDictionaryItems(rows, false)).toEqual([
+      { label: '风格', values: ['Baroque'] },
+      { label: '适用行业', values: ['宠物用品'] },
+    ]);
+    expect(pendingDictionaryItems(rows, true)).toEqual([
+      { label: '风格', values: ['Baroque', '哥特'] },
+      { label: '适用行业', values: ['宠物用品'] },
+    ]);
   });
 
   it('counts down the preview validity and reports expiry', () => {

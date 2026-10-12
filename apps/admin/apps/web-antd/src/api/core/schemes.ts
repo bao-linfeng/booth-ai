@@ -189,6 +189,8 @@ export interface ImportPreviewRow {
   reason?: string;
   data?: ImportPreviewRowData;
   dictionaryLabels?: Partial<Record<ImportDictionaryField, string[]>>;
+  /** 字典中尚不存在、确认导入时将自动新建的条目名称（已包含在 dictionaryLabels 中） */
+  newDictionaryLabels?: Partial<Record<ImportDictionaryField, string[]>>;
   /** 仅已存在的方案：当前是否已发布，文件相对当前方案变化的字段及其中将被清空的字段 */
   published?: boolean;
   changedFields?: ImportChangedField[];

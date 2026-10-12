@@ -7,6 +7,7 @@ export interface ImportRow {
   areaM2: number | null;
   heightMm: number | null;
   openingCount: number | null;
+  /** 字典字段：解析后为条目 id；字典中尚不存在的名称为 `new:<名称>`，提交时新建条目后替换为 id。 */
   productSystemId: string | null;
   styleId: string | null;
   industryIds: string[] | null;
@@ -67,6 +68,8 @@ export interface ImportPreviewRow extends ImportRowSource {
   reason?: string;
   data?: ImportRow;
   dictionaryLabels?: ImportDictionaryLabels;
+  /** 字典中尚不存在、提交时将自动新建的条目名称（已包含在 dictionaryLabels 中） */
+  newDictionaryLabels?: ImportDictionaryLabels;
   snapshotRevision?: number;
   /** 仅 duplicate / unchanged：当前方案是否已发布，以及文件相对当前方案变化与将清空的字段 */
   published?: boolean;

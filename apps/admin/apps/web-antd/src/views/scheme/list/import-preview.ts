@@ -33,13 +33,42 @@ export function formatOpeningCount(count: null | number | undefined): string {
   return count === null || count === undefined ? '—' : `${count} 面`;
 }
 
-/** 按模板列顺序列出已映射的字典字段及其标签，未填写的字段不列出。 */
+/** 按模板列顺序列出字典字段及其标签，标出确认导入时将新建的条目；未填写的字段不列出。 */
 export function importDictionaryEntries(
-  row: Pick<ImportPreviewRow, 'dictionaryLabels'>,
-): { label: string; values: string[] }[] {
+  row: Pick<ImportPreviewRow, 'dictionaryLabels' | 'newDictionaryLabels'>,
+): { label: string; values: { isNew: boolean; text: string }[] }[] {
   return dictionaryFields.flatMap(([field, label]) => {
-    const values = row.dictionaryLabels?.[field] ?? [];
+    const created = new Set(row.newDictionaryLabels?.[field]);
+    const values = (row.dictionaryLabels?.[field] ?? []).map((text) => ({
+      isNew: created.has(text),
+      text,
+    }));
     return values.length > 0 ? [{ label, values }] : [];
+  });
+}
+
+/**
+ * 确认导入时将新建的字典项，按字段汇总并去重（不区分大小写，与服务端匹配规则一致）。
+ * 只统计会写入的行：新增行，以及选择覆盖更新时有变更的已有方案。
+ */
+export function pendingDictionaryItems(
+  rows: ImportPreviewRow[],
+  includeDuplicates: boolean,
+): { label: string; values: string[] }[] {
+  const written = rows.filter(
+    (row) =>
+      row.status === 'valid' ||
+      (includeDuplicates && row.status === 'duplicate'),
+  );
+  return dictionaryFields.flatMap(([field, label]) => {
+    const values = new Map<string, string>();
+    for (const row of written) {
+      for (const text of row.newDictionaryLabels?.[field] ?? []) {
+        const key = text.toLowerCase();
+        if (!values.has(key)) values.set(key, text);
+      }
+    }
+    return values.size > 0 ? [{ label, values: [...values.values()] }] : [];
   });
 }
 

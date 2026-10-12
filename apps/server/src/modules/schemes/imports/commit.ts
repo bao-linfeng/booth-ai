@@ -7,7 +7,8 @@ import { findSchemesByCodes } from '../service.js';
 import { ensureSelectionSizes } from '../../dictionaries/sizes.js';
 import { importRowChanges, onlyNotesChanged } from './changes.js';
 import type { CommitImportOptions, CommitImportResult, ImportPreviewRow, ImportRow } from './types.js';
-import { importRowFromJson, validateImportedSize } from './validation.js';
+import { hasNewDictionaryItems, materializeNewDictionaryItems } from './dictionary-items.js';
+import { addImportedDictionaryItem, importRowFromJson, loadImportDictionaries, validateImportedSize } from './validation.js';
 
 const insertSql = `
   INSERT INTO schemes (
@@ -194,24 +195,31 @@ export async function commitImport(
     const { rows, unchanged } = rowsToCommit(locked.preview, options);
     const result: CommitImportResult = { created: 0, updated: 0, unchanged, dictionaryItemsCreated: 0, failed: [] };
     const committedRows: ImportRow[] = [];
-    // 每行独立 SAVEPOINT：单行失败只回滚该行，整批仍在同一事务内提交。
+    const dictionaries = rows.some(row => hasNewDictionaryItems(row.data)) ? await loadImportDictionaries(client) : null;
+    // 每行独立 SAVEPOINT：单行失败只回滚该行（含该行新建的字典项），整批仍在同一事务内提交。
     for (const row of rows) {
       await client.query('SAVEPOINT row_save');
       try {
-        const outcome = await writeRow(client, adminId, row);
-        await client.query('RELEASE SAVEPOINT row_save');
+        const { data, created } = dictionaries
+          ? await materializeNewDictionaryItems(client, dictionaries, row.data)
+          : { data: row.data, created: [] };
+        const outcome = await writeRow(client, adminId, { ...row, data });
         if (outcome.kind === 'failed') {
+          await client.query('ROLLBACK TO SAVEPOINT row_save');
           result.failed.push({ ...failedSource(row), reason: outcome.reason });
           continue;
         }
+        await client.query('RELEASE SAVEPOINT row_save');
+        if (dictionaries) for (const item of created) addImportedDictionaryItem(dictionaries, item.dictionaryCode, item.id, item.label);
+        result.dictionaryItemsCreated += created.length;
         result[outcome.kind] += 1;
-        if (outcome.kind !== 'unchanged') committedRows.push(row.data);
+        if (outcome.kind !== 'unchanged') committedRows.push(data);
       } catch (error) {
         await client.query('ROLLBACK TO SAVEPOINT row_save');
         result.failed.push({ ...failedSource(row), reason: failureReason(error) });
       }
     }
-    result.dictionaryItemsCreated = await ensureSelectionSizes(client, committedRows);
+    result.dictionaryItemsCreated += await ensureSelectionSizes(client, committedRows);
     await client.query(
       "UPDATE scheme_imports SET status = 'committed', committed_at = now(), commit_request_hash = $2, committed_result = $3 WHERE id = $1",
       [importId, requestHash, JSON.stringify(result)],

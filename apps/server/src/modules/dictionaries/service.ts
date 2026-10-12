@@ -396,6 +396,33 @@ export async function ensureDictionaryItems(
   return created;
 }
 
+/**
+ * 以名称作为条目值新建字典项（排在末尾），返回条目 id；并发导入已建同值条目时复用该条目。
+ * 字典不存在或已停用时抛 400。
+ */
+export async function ensureLabeledDictionaryItem(
+  client: pg.Pool | pg.PoolClient,
+  dictionaryCode: string,
+  label: string,
+): Promise<{ id: string; created: boolean }> {
+  const inserted = await client.query<{ id: string }>(
+    `INSERT INTO dictionary_items (dictionary_id, item_value, item_label, sort_order)
+     SELECT d.id, $2, $2, COALESCE((SELECT max(i.sort_order) FROM dictionary_items i WHERE i.dictionary_id = d.id), 0) + 1
+     FROM dictionaries d WHERE d.code = $1 AND d.enabled
+     ON CONFLICT (dictionary_id, item_value) DO NOTHING
+     RETURNING id::text AS id`,
+    [dictionaryCode, label],
+  );
+  if (inserted.rows[0]) return { id: inserted.rows[0].id, created: true };
+  const existing = await client.query<{ id: string }>(
+    `SELECT i.id::text AS id FROM dictionary_items i JOIN dictionaries d ON d.id = i.dictionary_id
+     WHERE d.code = $1 AND d.enabled AND i.item_value = $2`,
+    [dictionaryCode, label],
+  );
+  if (!existing.rows[0]) throw requestError(`字典不存在或已停用，无法新建字典项：${label}`, 400);
+  return { id: existing.rows[0].id, created: false };
+}
+
 /** 按字典项 ID 取名称（含已停用项），用于回显历史快照中保存的条件。 */
 export async function dictionaryItemLabels(db: pg.Pool | pg.PoolClient, ids: string[]): Promise<Record<string, string>> {
   if (!ids.length) return {};

@@ -182,3 +182,71 @@ test(
     assert.equal(chinese.dictionaryVersion, japanese.dictionaryVersion);
   },
 );
+
+test(
+  'Excel import fills emptied selection dictionaries automatically against PostgreSQL',
+  {
+    skip: !process.env.SELECTION_TEST_DATABASE_URL,
+  },
+  async t => {
+    const schema = `selection_${randomUUID().replaceAll('-', '')}`;
+    const adminPool = new pg.Pool({ connectionString: process.env.SELECTION_TEST_DATABASE_URL });
+    await adminPool.query(`CREATE SCHEMA ${schema}`);
+    const pool = new pg.Pool({ connectionString: process.env.SELECTION_TEST_DATABASE_URL, options: `-c search_path=${schema}` });
+    t.after(async () => {
+      await pool.end();
+      await adminPool.query(`DROP SCHEMA ${schema} CASCADE`);
+      await adminPool.end();
+    });
+    const names = (await readdir(new URL('../../migrations/', import.meta.url))).filter(name => /^\d+_.+\.sql$/.test(name)).sort();
+    for (const name of names) await pool.query(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
+    const codes = ['product_system', 'style', 'industry', 'budget_tier', 'functional_zone', 'key_feature'];
+    await pool.query('DELETE FROM dictionary_items i USING dictionaries d WHERE d.id = i.dictionary_id AND d.code = ANY($1::text[])', [
+      codes,
+    ]);
+    const adminId = randomUUID();
+    await pool.query("INSERT INTO admins(id,external_user_id,username) VALUES($1,1,'test')", [adminId]);
+    const buffer = await readFile(new URL('../../../../docs/source/灵通展台方案打标模板.xlsx', import.meta.url));
+
+    const preview = await previewImport(pool, adminId, buffer, 'template.xlsx');
+    assert.equal(preview.summary.valid, 48);
+    assert.ok(preview.rows.every(row => row.newDictionaryLabels?.productSystemId?.[0] === 'FS62布框'));
+    const imported = await commitImport(pool, adminId, preview.importId, { duplicateStrategy: 'skip' });
+    assert.deepEqual([imported.created, imported.failed], [48, []]);
+
+    const itemCounts = async () =>
+      Object.fromEntries(
+        (
+          await pool.query<{ code: string; count: number }>(
+            `SELECT d.code, count(i.id)::int AS count FROM dictionaries d LEFT JOIN dictionary_items i ON i.dictionary_id = d.id
+            WHERE d.code = ANY($1::text[]) GROUP BY d.code`,
+            [codes],
+          )
+        ).rows.map(row => [row.code, row.count]),
+      );
+    const expected = { product_system: 1, style: 7, industry: 9, budget_tier: 2, functional_zone: 6, key_feature: 10 };
+    assert.deepEqual(await itemCounts(), expected);
+    assert.ok(imported.dictionaryItemsCreated >= 35);
+    const unreferenced = await pool.query(
+      `SELECT i.item_label FROM dictionary_items i JOIN dictionaries d ON d.id = i.dictionary_id
+      WHERE d.code = ANY($1::text[]) AND NOT EXISTS (SELECT 1 FROM schemes s WHERE s.product_system_id = i.id OR s.style_id = i.id
+        OR s.budget_tier_id = i.id OR i.id = ANY(s.industry_ids) OR i.id = ANY(s.zone_ids) OR i.id = ANY(s.feature_ids))`,
+      [codes],
+    );
+    assert.deepEqual(unreferenced.rows, []);
+    const first = preview.rows[0]!;
+    const stored = await pool.query<{ style: string; zones: string[] }>(
+      `SELECT st.item_label AS style, ARRAY(SELECT z.item_label FROM unnest(s.zone_ids) WITH ORDINALITY u(id, n)
+        JOIN dictionary_items z ON z.id = u.id ORDER BY u.n) AS zones
+      FROM schemes s JOIN dictionary_items st ON st.id = s.style_id WHERE s.code = $1`,
+      [first.code],
+    );
+    assert.deepEqual(stored.rows[0], { style: first.dictionaryLabels!.styleId![0], zones: first.dictionaryLabels!.zoneIds });
+
+    const repeated = await previewImport(pool, adminId, buffer, 'template.xlsx');
+    assert.equal(repeated.summary.unchanged, 48);
+    assert.ok(repeated.rows.every(row => row.newDictionaryLabels === undefined));
+    assert.equal((await commitImport(pool, adminId, repeated.importId, { duplicateStrategy: 'skip' })).dictionaryItemsCreated, 0);
+    assert.deepEqual(await itemCounts(), expected);
+  },
+);

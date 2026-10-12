@@ -32,7 +32,7 @@ async function templateItems() {
             return Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
           }),
         ),
-      ].map(label => ({ dictionaryCode, label, itemValue: label })),
+      ].map(label => ({ dictionaryCode, label, itemValue: label, enabled: true })),
     )
     .map((item, index) => ({ ...item, id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}` }));
 }
@@ -393,6 +393,148 @@ test('commit isolates failing rows with savepoints and creates generated diction
   );
   assert.equal(result.dictionaryItemsCreated, 2);
   assert.deepEqual(JSON.parse(savedResult!), result);
+});
+
+function sheetRow(values: Partial<Record<(typeof importColumns)[number]['key'], string>>): string[] {
+  return importColumns.map(column => values[column.key] ?? '');
+}
+
+test('preview keeps unknown dictionary labels as items to create and rejects disabled or ambiguous ones', async () => {
+  const workbook = new ExcelJS.Workbook();
+  workbook
+    .addWorksheet('方案')
+    .addRows([
+      header,
+      sheetRow({ code: 'A-1', name: '新行业', styleId: '现代简约', industryIds: 'Pet Supplies，医药健康，pet  supplies' }),
+      sheetRow({ code: 'A-2', name: '停用风格', styleId: '旧风格' }),
+      sheetRow({ code: 'A-3', name: '新风格', styleId: 'Ｂａｒｏｑｕｅ ' }),
+      sheetRow({ code: 'A-4', name: '多个候选', styleId: '简约' }),
+    ]);
+  const item = (id: number, dictionaryCode: string, label: string, extra: object = {}) => ({
+    id: `00000000-0000-4000-8000-00000000000${id}`,
+    dictionaryCode,
+    label,
+    itemValue: label,
+    labels: {},
+    aliases: [],
+    enabled: true,
+    ...extra,
+  });
+  const dictionaryItems = [
+    item(1, 'style', '现代简约', { aliases: [{ locale: 'zh-CN', text: '简约' }] }),
+    item(2, 'style', '极简', { aliases: [{ locale: 'zh-CN', text: '简约' }] }),
+    item(3, 'style', '旧风格', { enabled: false }),
+    item(4, 'industry', '医药健康'),
+  ];
+  const saved: { rows?: string } = {};
+  const result = await previewImport(
+    previewPool(dictionaryItems, [], saved),
+    null,
+    Buffer.from(await workbook.xlsx.writeBuffer()),
+    'new.xlsx',
+  );
+
+  const [created, disabled, baroque, ambiguous] = result.rows;
+  assert.equal(created?.status, 'valid');
+  assert.equal(created?.data?.styleId, item(1, 'style', '').id);
+  assert.deepEqual(created?.data?.industryIds, ['new:Pet Supplies', item(4, 'industry', '').id]);
+  assert.deepEqual(created?.dictionaryLabels?.industryIds, ['Pet Supplies', '医药健康']);
+  assert.deepEqual(created?.newDictionaryLabels, { industryIds: ['Pet Supplies'] });
+  assert.deepEqual([disabled?.status, disabled?.reason], ['error', '字典项已停用，请先启用：旧风格']);
+  assert.equal(baroque?.data?.styleId, 'new:Baroque');
+  assert.deepEqual(baroque?.newDictionaryLabels, { styleId: ['Baroque'] });
+  assert.deepEqual([ambiguous?.status, ambiguous?.reason], ['error', '标签存在多个候选，请确认：简约']);
+  assert.deepEqual(JSON.parse(saved.rows!), result.rows);
+});
+
+test('commit creates pending dictionary items once, reuses them across rows and rolls them back with failed rows', async () => {
+  const existingIndustry = '00000000-0000-4000-8000-000000000001';
+  const base: ImportRow = {
+    code: 'S1',
+    name: 'Scheme',
+    parentCode: null,
+    widthMm: null,
+    lengthMm: null,
+    areaM2: null,
+    heightMm: null,
+    openingCount: null,
+    productSystemId: null,
+    styleId: 'new:巴洛克',
+    industryIds: ['new:宠物用品', existingIndustry],
+    budgetTierId: null,
+    zoneIds: null,
+    featureIds: null,
+    description: null,
+    keywords: null,
+    verificationStatus: 'unverified',
+    notes: null,
+  };
+  const preview = [
+    { rowId: 1, sheetName: '方案', rowNumber: 2, code: 'S1', name: 'Scheme', status: 'valid', data: base },
+    {
+      rowId: 2,
+      sheetName: '方案',
+      rowNumber: 3,
+      code: 'S2',
+      name: 'Scheme',
+      status: 'valid',
+      data: { ...base, code: 'S2', industryIds: null },
+    },
+    {
+      rowId: 3,
+      sheetName: '方案',
+      rowNumber: 4,
+      code: 'S3',
+      name: 'Scheme',
+      status: 'valid',
+      data: { ...base, code: 'S3', parentCode: 'MISSING', styleId: 'new:哥特', industryIds: null },
+    },
+  ];
+  const itemInserts: unknown[][] = [];
+  const schemeInserts: unknown[][] = [];
+  const queries: string[] = [];
+  const client = {
+    query: async (sql: string, params?: unknown[]) => {
+      queries.push(sql.trim().split('\n')[0]!.trim());
+      if (sql.includes('FROM scheme_imports')) return { rows: [{ status: 'pending', preview }] };
+      if (sql.includes('INSERT INTO dictionary_items')) {
+        itemInserts.push(params ?? []);
+        return { rows: [{ id: `00000000-0000-4000-8000-00000000010${itemInserts.length}` }], rowCount: 1 };
+      }
+      if (sql.includes('AS "dictionaryCode"')) return { rows: [] };
+      if (sql.includes('WHERE i.id = ANY')) return { rows: (params![0] as string[]).map(id => ({ id })) };
+      if (sql.includes('INSERT INTO schemes')) {
+        if (params?.[0] === 'S3') throw new Error('violates foreign key constraint on parent_code');
+        schemeInserts.push(params ?? []);
+      }
+      return { rows: [], rowCount: 1 };
+    },
+    release: () => {},
+  };
+  const pool = { connect: async () => client } as unknown as pg.Pool;
+
+  const result = await commitImport(pool, 'admin-1', 'import-1', { duplicateStrategy: 'skip' });
+  assert.equal(result.created, 2);
+  assert.deepEqual(result.failed, [{ rowId: 3, sheetName: '方案', rowNumber: 4, code: 'S3', reason: '母方案不存在' }]);
+  assert.deepEqual(
+    itemInserts.map(params => [params[0], params[1]]),
+    [
+      ['style', '巴洛克'],
+      ['industry', '宠物用品'],
+      ['style', '哥特'],
+    ],
+  );
+  assert.equal(result.dictionaryItemsCreated, 2);
+  const style = '00000000-0000-4000-8000-000000000101';
+  // productSystemId、styleId、industryIds 依次为 schemeValues 的第 9–11 项
+  assert.deepEqual(
+    schemeInserts.map(params => params.slice(9, 11)),
+    [
+      [style, ['00000000-0000-4000-8000-000000000102', existingIndustry]],
+      [style, []],
+    ],
+  );
+  assert.equal(queries.filter(sql => sql === 'ROLLBACK TO SAVEPOINT row_save').length, 1);
 });
 
 async function multiSheetWorkbook(): Promise<Buffer> {

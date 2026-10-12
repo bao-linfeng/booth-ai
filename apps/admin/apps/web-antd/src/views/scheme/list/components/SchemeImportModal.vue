@@ -36,6 +36,7 @@ import {
   importDictionaryEntries,
   importRowNote,
   overwriteImpact,
+  pendingDictionaryItems,
   previewRemainingMs,
 } from '../import-preview';
 
@@ -77,6 +78,12 @@ const remainingMs = computed(() =>
     : 0,
 );
 const impact = computed(() => overwriteImpact(previewResult.value?.rows ?? []));
+const newDictionaryItems = computed(() =>
+  pendingDictionaryItems(
+    previewResult.value?.rows ?? [],
+    duplicateStrategy.value === 'update',
+  ),
+);
 
 const previewExpired = computed(
   () =>
@@ -280,7 +287,7 @@ defineExpose({ open });
         type="info"
         class="mb-4"
         message="上传说明"
-        description="请使用标准模板（.xlsx）填写，每个数据工作表第 1 行为表头且列顺序须与模板一致，从第 2 行开始为数据行（名称含“说明”“选项”的工作表不导入），单次最多 10 个数据工作表、2000 行。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按有效方案自动补齐开口面数、展位长宽高和面积字典。"
+        description="请使用标准模板（.xlsx）填写，每个数据工作表第 1 行为表头且列顺序须与模板一致，从第 2 行开始为数据行（名称含“说明”“选项”的工作表不导入），单次最多 10 个数据工作表、2000 行。方案编号（B列）和方案名称（C列）为必填项。确认导入后会按写入的方案自动补齐开口面数和方案尺寸字典；产品体系、风格、适用行业、预算档位、功能分区、关键特征填写字典中没有的名称时，会自动新建对应字典项。"
         show-icon
       />
       <div class="mb-3 flex justify-end">
@@ -388,20 +395,37 @@ defineExpose({ open });
             </div>
             <div v-if="impact.unpublish > 0">
               其中
-              {{
-                impact.unpublish
-              }}
+              {{ impact.unpublish }}
               个已发布方案将退回草稿，需重新核验并通过整体审核后才能再次发布（仅改备注的不受影响）。
             </div>
             <div v-if="impact.clearing > 0">
-              {{
-                impact.clearing
-              }}
+              {{ impact.clearing }}
               个方案的部分字段在文件中为空，覆盖后原值将被清空，具体见“说明”列。
             </div>
           </template>
         </Alert>
       </div>
+
+      <Alert
+        v-if="newDictionaryItems.length > 0"
+        type="info"
+        class="mb-4"
+        show-icon
+        message="以下名称在字典中不存在，确认导入后将自动新建字典项（请核对是否有错别字）："
+      >
+        <template #description>
+          <div
+            v-for="entry in newDictionaryItems"
+            :key="entry.label"
+            class="mt-1"
+          >
+            <span class="mr-2">{{ entry.label }}：</span>
+            <Tag v-for="value in entry.values" :key="value" color="purple">
+              {{ value }}
+            </Tag>
+          </div>
+        </template>
+      </Alert>
 
       <Table
         :columns="previewColumns"
@@ -428,7 +452,13 @@ defineExpose({ open });
               :key="entry.label"
               :label="entry.label"
             >
-              <Tag v-for="value in entry.values" :key="value">{{ value }}</Tag>
+              <Tag
+                v-for="value in entry.values"
+                :key="value.text"
+                :color="value.isNew ? 'purple' : undefined"
+              >
+                {{ value.text }}{{ value.isNew ? '（新建）' : '' }}
+              </Tag>
             </DescriptionsItem>
           </Descriptions>
         </template>

@@ -4,6 +4,7 @@ import { importRowChanges, onlyNotesChanged } from './changes.js';
 import type { ImportPreviewRow, ImportRow, ImportRowSource, ImportSummary, ParsedImportRow, PreviewImportResult } from './types.js';
 import {
   importDictionaryLabels,
+  importNewDictionaryLabels,
   loadImportDictionaries,
   missingRequiredField,
   validateImportRow,
@@ -78,7 +79,16 @@ function classifyRows(
       continue;
     }
     firstSeen.set(code, { sheetName, rowNumber });
-    const row = { ...source, code, name, status: 'valid' as const, data, dictionaryLabels: importDictionaryLabels(dictionaries, data) };
+    const newDictionaryLabels = importNewDictionaryLabels(data);
+    const row = {
+      ...source,
+      code,
+      name,
+      status: 'valid' as const,
+      data,
+      dictionaryLabels: importDictionaryLabels(dictionaries, data),
+      ...(newDictionaryLabels && { newDictionaryLabels }),
+    };
     const current = existing.get(code);
     if (current) {
       rows.push(existingRow(row, current, summary));
