@@ -987,6 +987,7 @@
     "launcher": "在线客服",
     "title": "在线客服",
     "statusQueued": "排队中，客服接入后会立即回复",
+    "statusIdle": "发送消息后，客服将尽快接入",
     "statusActive": "客服 {name} 已接入",
     "defaultAgent": "客服",
     "statusClosed": "本次会话已结束，继续发送将开始新的咨询",

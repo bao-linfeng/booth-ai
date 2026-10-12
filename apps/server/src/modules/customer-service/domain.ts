@@ -95,6 +95,8 @@ export interface ConversationDto {
   lastPublicSeq: number | null;
   customerReadSeq: number;
   agentReadSeq: number;
+  /** 排队中且客户已发言（文字或主动发送的上下文卡片）的时间；为空表示尚未进入待接入队列 */
+  awaitingSince: string | null;
   createdAt: string;
   closedAt: string | null;
 }
@@ -105,7 +107,6 @@ export interface AdminConversationDto extends ConversationDto {
   customerLocale: CsLocale;
   agentAdminId: string | null;
   agentName: string | null;
-  awaitingSince: string | null;
   claimedAt: string | null;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
@@ -195,6 +196,7 @@ export function toCustomerConversation(row: ConversationRow): ConversationDto {
     lastPublicSeq: num(row.lastPublicSeq),
     customerReadSeq: Number(row.customerReadSeq),
     agentReadSeq: Number(row.agentReadSeq),
+    awaitingSince: iso(row.awaitingSince),
     createdAt: iso(row.createdAt)!,
     closedAt: iso(row.closedAt),
   };
@@ -217,7 +219,6 @@ export function toAdminConversation(
     customerLocale: row.customerLocale,
     agentAdminId: row.agentAdminId,
     agentName: row.agentAdminId ? (nickname(row.agentNickname) ?? row.agentUsername) : null,
-    awaitingSince: iso(row.awaitingSince),
     claimedAt: iso(row.claimedAt),
     lastMessageAt: iso(row.lastMessageAt),
     lastMessagePreview: row.lastMessagePreview ?? null,

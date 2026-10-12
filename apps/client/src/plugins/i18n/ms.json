@@ -987,6 +987,7 @@
     "launcher": "Sembang langsung",
     "title": "Sembang langsung",
     "statusQueued": "Dalam giliran — ejen akan membalas sebaik sahaja menyertai",
+    "statusIdle": "Hantar mesej dan ejen akan menyertai tidak lama lagi",
     "statusActive": "{name} telah menyertai",
     "defaultAgent": "Ejen",
     "statusClosed": "Perbualan ini telah tamat. Menghantar mesej akan memulakan perbualan baharu",

@@ -20,6 +20,8 @@ export interface ConversationDto {
   lastPublicSeq: number | null
   customerReadSeq: number
   agentReadSeq: number
+  /** 排队中且客户已发言（文字或主动发送的卡片）后才有值，此时才进入客服待接入队列 */
+  awaitingSince: string | null
   createdAt: string
   closedAt: string | null
 }

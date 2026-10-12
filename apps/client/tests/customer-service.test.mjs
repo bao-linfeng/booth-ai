@@ -77,7 +77,8 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function settle() { for (let i = 0; i < 6; i++) { await nextTick(); await sleep(5) } }
 const conversationId = '11111111-1111-4111-8111-111111111111'
 const conversation = (overrides = {}) => ({ id: conversationId, conversationNo: 'CS-00000001', status: 'queued', agent: null, contactEmail: null,
-  hasOfflineMessage: false, lastPublicSeq: null, customerReadSeq: 0, agentReadSeq: 0, createdAt: '2026-10-08T00:00:00Z', closedAt: null, ...overrides })
+  hasOfflineMessage: false, lastPublicSeq: null, customerReadSeq: 0, agentReadSeq: 0, awaitingSince: '2026-10-08T00:00:00Z',
+  createdAt: '2026-10-08T00:00:00Z', closedAt: null, ...overrides })
 const message = (seq, overrides = {}) => ({ id: `m${seq}`, seq, conversationId, conversationNo: 'CS-00000001', senderType: 'customer', senderName: null,
   kind: 'text', body: `body ${seq}`, locale: 'zh', context: null, eventCode: null, eventParams: null, translation: null, clientMessageId: null,
   createdAt: '2026-10-08T00:00:00Z', ...overrides })
@@ -300,6 +301,20 @@ test('presence events from the stream heartbeat switch between offline form and 
   await settle()
   assert.equal(Boolean(container.querySelector('[data-cs-offline]')), true, 'all agents leaving brings the offline form back')
   assert.equal(textarea().value, '还在吗')
+  unmount()
+})
+
+test('a queued conversation asks the customer to send a message first and shows the queue once they have spoken', async () => {
+  setup({ current: conversation({ awaitingSince: null }), respond: call => {
+    if (call.method === 'POST' && call.path.endsWith('/messages')) return { message: message(99, { body: call.body.body }), conversation: conversation() }
+  } })
+  const { unmount, container } = await mount()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  assert.match(container.querySelector('[data-cs-status]').textContent, /发送消息后，客服将尽快接入/)
+  await cs.send('你好')
+  await settle()
+  assert.match(container.querySelector('[data-cs-status]').textContent, /排队中/)
   unmount()
 })
 

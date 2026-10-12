@@ -987,6 +987,7 @@
     "launcher": "Chat en direct",
     "title": "Chat en direct",
     "statusQueued": "En file d’attente — un conseiller vous répondra dès sa prise en charge",
+    "statusIdle": "Envoyez un message et un conseiller vous prendra en charge rapidement",
     "statusActive": "{name} a rejoint la conversation",
     "defaultAgent": "Conseiller",
     "statusClosed": "Cette conversation est terminée. Un nouveau message ouvrira une nouvelle conversation",

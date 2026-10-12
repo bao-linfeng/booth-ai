@@ -987,6 +987,7 @@
     "launcher": "Live-Chat",
     "title": "Live-Chat",
     "statusQueued": "In der Warteschlange – ein Mitarbeiter antwortet, sobald er übernimmt",
+    "statusIdle": "Senden Sie eine Nachricht, dann übernimmt in Kürze ein Mitarbeiter",
     "statusActive": "{name} ist beigetreten",
     "defaultAgent": "Kundenservice",
     "statusClosed": "Dieses Gespräch wurde beendet. Eine neue Nachricht startet ein neues Gespräch",

@@ -159,9 +159,13 @@ test("context cards are resent on demand, reuse the snapshot record and only go 
   const input = { context: { kind: 'scheme' as const, schemeCode: 'S-RESEND' }, entryPoint: 'scheme_detail' as const };
   const opened = await openConversation(pool, redis, subject, input, 'en');
   const conversationId = opened.conversation.id;
+  // 打开时自动附带的卡片不进待接入队列；主动发送视同发言，重复发送不刷新等待起点
+  assert.equal(opened.conversation.awaitingSince, null);
 
   const first = await sendContext(pool, redis, subject, conversationId, input, 'en');
   const second = await sendContext(pool, redis, subject, conversationId, input, 'en');
+  assert.ok(first.conversation.awaitingSince);
+  assert.equal(second.conversation.awaitingSince, first.conversation.awaitingSince);
   assert.notEqual(first.message.id, second.message.id);
   assert.deepEqual(
     [first.message.kind, first.message.context?.id, second.message.context?.id],

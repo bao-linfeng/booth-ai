@@ -987,6 +987,7 @@
     "launcher": "Chat ao vivo",
     "title": "Chat ao vivo",
     "statusQueued": "Na fila — um atendente responderá assim que entrar",
+    "statusIdle": "Envie uma mensagem e um atendente entrará em breve",
     "statusActive": "{name} entrou",
     "defaultAgent": "Atendente",
     "statusClosed": "Esta conversa foi encerrada. Enviar uma mensagem inicia uma nova",

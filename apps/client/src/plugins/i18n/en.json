@@ -987,6 +987,7 @@
     "launcher": "Live chat",
     "title": "Live chat",
     "statusQueued": "In queue — an agent will reply as soon as they join",
+    "statusIdle": "Send a message and an agent will join shortly",
     "statusActive": "{name} has joined",
     "defaultAgent": "Agent",
     "statusClosed": "This conversation has ended. Sending a message starts a new one",

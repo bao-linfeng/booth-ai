@@ -987,6 +987,7 @@
     "launcher": "Chat dal vivo",
     "title": "Chat dal vivo",
     "statusQueued": "In coda — un operatore risponderà appena disponibile",
+    "statusIdle": "Invia un messaggio e un operatore ti risponderà a breve",
     "statusActive": "{name} si è unito alla chat",
     "defaultAgent": "Operatore",
     "statusClosed": "Questa conversazione è terminata. Un nuovo messaggio avvierà una nuova conversazione",

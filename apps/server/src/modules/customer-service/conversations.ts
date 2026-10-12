@@ -151,6 +151,7 @@ export async function openConversation(
 
 /**
  * 客户手动发送上下文卡片（如客服输入框上的“发送当前方案/项目”）：每次都追加一条卡片消息，同一上下文复用已有快照记录。
+ * 主动发送视同客户发言，排队中的会话由此进入待接入队列；打开会话时自动附带的卡片不算（G9）。
  * 只发到本人未结束的会话，已结束时返回 CONVERSATION_CLOSED，由前端开启新一轮后重发。
  */
 export async function sendContext(
@@ -162,20 +163,27 @@ export async function sendContext(
   locale: CsLocale,
 ) {
   const resolved = await resolveContext(pool, subject, input.context);
-  const messageId = await transaction(pool, async client => {
+  const result = await transaction(pool, async client => {
     const [condition, subjectId] = subjectCondition(subject, 'c', 2);
     const row = (
-      await client.query<{ status: ConversationRow['status'] }>(
-        `SELECT c.status FROM cs_conversations c
+      await client.query<{ status: ConversationRow['status']; awaiting: boolean }>(
+        `SELECT c.status, c.awaiting_since IS NOT NULL AS awaiting FROM cs_conversations c
       WHERE c.id=$1 AND ${condition} AND c.deleted_at IS NULL FOR UPDATE`,
         [conversationId, subjectId],
       )
     ).rows[0];
     if (!row) throw notFound();
     if (row.status === 'closed') throw csError('CONVERSATION_CLOSED');
-    return appendContextCard(client, conversationId, resolved, input.entryPoint, locale);
+    const messageId = await appendContextCard(client, conversationId, resolved, input.entryPoint, locale);
+    const queueChanged = row.status === 'queued' && !row.awaiting;
+    if (queueChanged) await client.query('UPDATE cs_conversations SET awaiting_since=now() WHERE id=$1', [conversationId]);
+    return { messageId, queueChanged };
   });
-  await announce(pool, redis, conversationId, { messageIds: [messageId] });
+  const messageId = result.messageId;
+  await announce(pool, redis, conversationId, {
+    messageIds: [messageId],
+    ...(result.queueChanged ? { conversationChanged: true, agentEvent: 'queue.changed' as const } : {}),
+  });
   const [message] = await loadMessages(pool, [messageId]);
   const conversation = await loadConversation(pool, conversationId);
   return { message: toCustomerMessage(message!)!, conversation: conversation!.customer };

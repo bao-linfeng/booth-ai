@@ -987,6 +987,7 @@
     "launcher": "Chat en vivo",
     "title": "Chat en vivo",
     "statusQueued": "En cola: un agente te responderá en cuanto se conecte",
+    "statusIdle": "Envía un mensaje y un agente se conectará en breve",
     "statusActive": "{name} se ha unido",
     "defaultAgent": "Agente",
     "statusClosed": "Esta conversación ha finalizado. Al enviar un mensaje se iniciará una nueva",

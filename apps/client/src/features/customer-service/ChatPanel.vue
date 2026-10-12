@@ -34,7 +34,9 @@ const status = computed(() => {
   if (!conversation) return ''
   if (conversation.status === 'closed') return t('customerService.statusClosed')
   if (conversation.status === 'active') return t('customerService.statusActive', { name: conversation.agent?.displayName || t('customerService.defaultAgent') })
-  return offlineMode.value ? '' : t('customerService.statusQueued')
+  if (offlineMode.value) return ''
+  // 客户发言（打开时自动附带的卡片不算）后才进入待接入队列，之前提示先发消息
+  return t(conversation.awaitingSince ? 'customerService.statusQueued' : 'customerService.statusIdle')
 })
 
 async function submitOffline(body: string, email: string) {
