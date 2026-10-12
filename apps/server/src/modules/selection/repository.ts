@@ -180,7 +180,8 @@ export async function loadCandidatePool(
         image =>
           !image.width ||
           !image.height ||
-          image.width * 9 !== image.height * 16 ||
+          // 效果图 16:9 校验暂时关闭
+          // image.width * 9 !== image.height * 16 ||
           !/^image\/(png|jpeg|webp)$/.test(image.mime) ||
           masks.filter(
             mask =>
