@@ -100,7 +100,6 @@ const ASSET_FIELD_LABELS: Record<string, string> = {
 
 const ASSET_METADATA_LABELS: Record<string, string> = {
   applicability: '适用范围',
-  artworkKey: '画面键',
   dimensionEvidence: '尺寸依据',
   dimensionUnit: '尺寸单位',
   exportSpecVersion: '导出规范版本',
@@ -132,9 +131,6 @@ export const REASON_DETAIL_MESSAGES: Record<
     switch ((details as { rule?: string }).rule) {
       case 'positive_number': {
         return `${label}需为大于 0 的数字`;
-      }
-      case 'required': {
-        return `请填写${label}`;
       }
       case 'unit': {
         return `${label}只能是 mm、cm 或 m`;

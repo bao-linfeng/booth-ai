@@ -34,8 +34,6 @@ test(
       .rows;
     const sql = await readFile(new URL('../../migrations/075_customer_service.sql', import.meta.url), 'utf8');
     await pool.query(sql);
-    for (const name of files.slice(index + 1))
-      await pool.query(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
 
     const roles = (
       await pool.query("SELECT name, revision, permission_codes FROM admin_roles WHERE name IN ('ROLE_ADMIN','ROLE_SUPPORT') ORDER BY name")
@@ -45,6 +43,10 @@ test(
     assert.equal(roles[0].revision, before[0].revision + 1);
     assert.deepEqual(roles[1].permission_codes, ['projects.read']);
     assert.equal(roles[1].revision, before[1].revision);
+    // 之后的迁移可能继续给 ROLE_ADMIN 补授权限，重复执行 075 的授权时以全部迁移后的版本为基准
+    for (const name of files.slice(index + 1))
+      await pool.query(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
+    const migratedRevision = (await pool.query("SELECT revision FROM admin_roles WHERE name='ROLE_ADMIN'")).rows[0].revision;
 
     const user = (await pool.query("INSERT INTO users(external_user_id,username,email) VALUES(1,'cs-user','cs@example.com') RETURNING id"))
       .rows[0].id as string;
@@ -94,6 +96,6 @@ test(
     await pool.query("INSERT INTO ai_model_assignments(purpose,model_id,position) VALUES('cs_translation',$1,1)", [model]);
 
     await pool.query(sql.slice(sql.indexOf('UPDATE admin_roles')));
-    assert.equal((await pool.query("SELECT revision FROM admin_roles WHERE name='ROLE_ADMIN'")).rows[0].revision, roles[0].revision);
+    assert.equal((await pool.query("SELECT revision FROM admin_roles WHERE name='ROLE_ADMIN'")).rows[0].revision, migratedRevision);
   },
 );

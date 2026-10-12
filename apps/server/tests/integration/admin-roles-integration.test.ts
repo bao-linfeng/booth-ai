@@ -10,12 +10,14 @@ import { assertProjectAdmin } from '../../src/modules/projects/admin-service.js'
 import { configuredAssignee } from '../../src/modules/projects/assignment.js';
 import { projectTestPool } from '../helpers/project-fixtures.js';
 
-// 061 只授予编写时已有的权限；之后新增的权限码由追加迁移补授给 ROLE_ADMIN（如 072、075）。
+// 061 只授予编写时已有的权限；之后新增的权限码由追加迁移补授给 ROLE_ADMIN（如 072、075、082）。
 // 新增权限码时必须追加补授迁移，否则下方“执行全部迁移后 ROLE_ADMIN 拥有全部权限”的断言会失败。
 const introducedBy075 = ['customer-service.read', 'customer-service.reply', 'customer-service.supervise', 'customer-service.settings'];
-const introducedAfter061 = ['credits.sign_in_config', ...introducedBy075];
+const introducedBy082 = ['assets-artworks.update'];
+const introducedAfter072 = [...introducedBy075, ...introducedBy082];
+const introducedAfter061 = ['credits.sign_in_config', ...introducedAfter072];
 const grantedBy061 = allPermissionCodes.filter(code => !introducedAfter061.includes(code));
-const grantedBy072 = allPermissionCodes.filter(code => !introducedBy075.includes(code));
+const grantedBy072 = allPermissionCodes.filter(code => !introducedAfter072.includes(code));
 
 test(
   '060 seeds the original grants, 061 migrates them to page actions and 072 grants later permissions without changing the role ID',
@@ -62,6 +64,19 @@ test(
         assert.equal(granted.revision, migrated.revision + 1);
         await pool.query(grant);
         assert.equal((await getAdminRole(pool, existingId ?? 5)).revision, granted.revision);
+
+        // 082 只补授给已能上传平面素材的角色
+        await pool.query(
+          "INSERT INTO admin_roles(id,name,permission_codes,revision) VALUES(902,'ROLE_VIEWER',ARRAY['assets-artworks.read'],1)",
+        );
+        const artworkGrant = await readFile(new URL('../../migrations/082_artwork_update_permission.sql', import.meta.url), 'utf8');
+        await pool.query(artworkGrant);
+        const artworkGranted = await getAdminRole(pool, existingId ?? 5);
+        assert.ok(artworkGranted.permissionCodes.includes('assets-artworks.update'));
+        assert.equal(artworkGranted.revision, granted.revision + 1);
+        assert.deepEqual((await getAdminRole(pool, 902)).permissionCodes, ['assets-artworks.read']);
+        await pool.query(artworkGrant);
+        assert.equal((await getAdminRole(pool, existingId ?? 5)).revision, artworkGranted.revision);
       });
     }
   },

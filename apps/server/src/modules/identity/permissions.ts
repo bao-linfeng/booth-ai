@@ -112,6 +112,7 @@ export const permissionGroups = [
       ['read', '查看平面素材'],
       ['upload', '上传平面素材'],
       ['replace', '替换文件'],
+      ['update', '修改墙面与尺寸'],
       ['download', '下载平面素材'],
       ['delete', '删除平面素材'],
     ],

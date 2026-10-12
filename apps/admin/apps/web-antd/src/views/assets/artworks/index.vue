@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { SchemeFilterValues } from '../shared/scheme-filter';
 
+import type { SchemeAsset } from '#/api/core/assets';
+
 import { onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -20,10 +22,13 @@ import {
   useRouteSchemeCode,
   useSchemeOptions,
 } from '../shared/scheme-filter';
+import { formatArtworkSize } from './artwork-metadata';
+import EditModal from './components/EditModal.vue';
 import UploadModal from './components/UploadModal.vue';
 import { createGridOptions } from './options';
 
 const uploadModalRef = ref<InstanceType<typeof UploadModal>>();
+const editModalRef = ref<InstanceType<typeof EditModal>>();
 
 const schemes = useSchemeOptions();
 const initialSchemeCode = useRouteSchemeCode(applySchemeFilter);
@@ -56,6 +61,10 @@ function handleUpload() {
   const { schemeCode } =
     gridApi.formApi.getLatestSubmissionValues() as SchemeFilterValues;
   uploadModalRef.value?.open(schemeCode);
+}
+
+function handleEdit(row: SchemeAsset) {
+  editModalRef.value?.open(row);
 }
 
 async function handleReplace(row: any) {
@@ -123,10 +132,24 @@ function handleDelete(row: any) {
       <template #filename="{ row }">
         {{ row.currentVersion?.originalFilename || '-' }}
       </template>
+      <template #wallPosition="{ row }">
+        {{ row.metadata?.wallPosition || '-' }}
+      </template>
+      <template #dimensions="{ row }">
+        {{ formatArtworkSize(row.metadata ?? {}) }}
+      </template>
       <template #createdAt="{ row }">
         {{ formatDate(row.createdAt) }}
       </template>
       <template #action="{ row }">
+        <Button
+          v-access:code="['assets-artworks.update']"
+          type="link"
+          size="small"
+          @click="handleEdit(row as SchemeAsset)"
+        >
+          编辑
+        </Button>
         <Button
           v-access:code="['assets-artworks.replace']"
           type="link"
@@ -155,5 +178,6 @@ function handleDelete(row: any) {
       </template>
     </Grid>
     <UploadModal ref="uploadModalRef" @reload="gridApi.reload()" />
+    <EditModal ref="editModalRef" @reload="gridApi.reload()" />
   </Page>
 </template>

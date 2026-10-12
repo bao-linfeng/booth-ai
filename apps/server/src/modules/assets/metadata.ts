@@ -1,18 +1,14 @@
 import type { AssetType } from './types.js';
 
 /** 违反的规则，前端据此与字段名组合提示 */
-type MetadataRule = 'required' | 'string' | 'string_array' | 'uuid' | 'positive_number' | 'unit';
+type MetadataRule = 'string' | 'string_array' | 'uuid' | 'positive_number' | 'unit';
 
 function metadataError(message: string, field: string, rule: MetadataRule): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode: 400, reason: 'ASSET_METADATA_INVALID', details: { field, rule } });
 }
 
 export function validateAssetMetadata(type: AssetType, metadata: Record<string, unknown> | undefined): void {
-  if (type !== 'drawing' && type !== 'artwork') return;
-  if (type === 'artwork' && (!metadata || typeof metadata.artworkKey !== 'string' || metadata.artworkKey.trim() === '')) {
-    throw metadataError('artwork metadata.artworkKey is required', 'artworkKey', 'required');
-  }
-  if (!metadata) return;
+  if ((type !== 'drawing' && type !== 'artwork') || !metadata) return;
   if (type === 'drawing') {
     if (
       Object.hasOwn(metadata, 'viewCodes') &&

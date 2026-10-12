@@ -6,12 +6,6 @@ describe('asset upload error reasons', () => {
   it('names the invalid metadata field and the rule it violates', () => {
     expect(
       reasonMessage('ASSET_METADATA_INVALID', {
-        field: 'artworkKey',
-        rule: 'required',
-      }),
-    ).toBe('请填写画面键');
-    expect(
-      reasonMessage('ASSET_METADATA_INVALID', {
         field: 'physicalWidth',
         rule: 'positive_number',
       }),

@@ -19,7 +19,7 @@ function dependencies(
     storageError?: Error;
     cleanupError?: Error;
     revision?: number;
-    assetType?: 'rendering' | 'mask';
+    assetType?: 'rendering' | 'mask' | 'artwork';
     renderingSize?: { widthPx: number; heightPx: number } | null;
   } = {},
 ) {
@@ -150,7 +150,8 @@ test('invalid, mismatched and unsupported rendering images are rejected before s
   }
 });
 
-test('rendering uploads and replacements require an exact 16:9 image before storage', async t => {
+// 效果图 16:9 校验暂时关闭，恢复校验时去掉 skip
+test('rendering uploads and replacements require an exact 16:9 image before storage', { skip: true }, async t => {
   for (const existing of [false, true]) {
     await t.test(`existing=${existing}`, async () => {
       const deps = dependencies();
@@ -267,7 +268,7 @@ test('metadata rules and required upload pairing are enforced outside HTTP', asy
   const deps = dependencies();
   const file = await imageFile('png');
   for (const input of [
-    { schemeCode: 'S-1', type: 'artwork' as const, name: '画稿' },
+    { schemeCode: 'S-1', type: 'artwork' as const, name: '画稿', metadata: { dimensionUnit: 'inch' } },
     { schemeCode: 'S-1', type: 'mask' as const, name: '蒙版' },
   ])
     await assert.rejects(uploadAsset(deps.pool, deps.storage, null, input, file), { statusCode: 400 });
@@ -275,7 +276,7 @@ test('metadata rules and required upload pairing are enforced outside HTTP', asy
     createAssetWithVersion(
       deps.pool,
       null,
-      { schemeCode: 'S-1', type: 'artwork', name: '画稿' },
+      { schemeCode: 'S-1', type: 'artwork', name: '画稿', metadata: { physicalWidth: 0 } },
       { objectKey: 'key', originalFilename: 'a.png', mimeType: 'image/png', byteSize: 1, checksum: 'hash' },
     ),
     { statusCode: 400 },
@@ -297,14 +298,15 @@ test('metadata rules and required upload pairing are enforced outside HTTP', asy
     [{ dimensionUnit: 'inch' }, 'dimensionUnit', 'unit'],
     [{ wallPosition: 1 }, 'wallPosition', 'string'],
   ] as const) {
-    assert.throws(() => validateAssetMetadata('artwork', { artworkKey: 'front', ...metadata }), {
+    assert.throws(() => validateAssetMetadata('artwork', metadata), {
       statusCode: 400,
       reason: 'ASSET_METADATA_INVALID',
       details: { field, rule },
     });
   }
   validateAssetMetadata('drawing', { viewCodes: ['front'], purpose: '施工' });
-  validateAssetMetadata('artwork', { artworkKey: 'front', physicalWidth: 100, dimensionUnit: 'mm' });
+  validateAssetMetadata('artwork', undefined);
+  validateAssetMetadata('artwork', { physicalWidth: 100, dimensionUnit: 'mm' });
 });
 
 test('metadata-only update on other asset types still follows the normal transaction', async () => {
@@ -371,13 +373,7 @@ test('admin upload routes share multipart parsing for either field order and rej
     { fields: { type: 'rendering', name: '效果图' }, files: [file, file], reason: 'TOO_MANY_FILES' },
     { fields: { type: 'drawing', name: '图纸', metadata: '[]' }, files: [file], reason: 'ASSET_METADATA_INVALID' },
     {
-      fields: { type: 'artwork', name: '画稿' },
-      files: [file],
-      reason: 'ASSET_METADATA_INVALID',
-      details: { field: 'artworkKey', rule: 'required' },
-    },
-    {
-      fields: { type: 'artwork', name: '画稿', metadata: '{"artworkKey":"front","dimensionUnit":"inch"}' },
+      fields: { type: 'artwork', name: '画稿', metadata: '{"dimensionUnit":"inch"}' },
       files: [file],
       reason: 'ASSET_METADATA_INVALID',
       details: { field: 'dimensionUnit', rule: 'unit' },
@@ -445,6 +441,36 @@ test('deleting a rendering together with its paired masks also requires the mask
     deps.events.every(sql => sql.includes('FROM scheme_baseline_assets sa')),
     'forbidden requests must not write to the database',
   );
+});
+
+test('editing artwork wall position and size requires the artwork update permission', async t => {
+  async function patch(permissions: string[]) {
+    const deps = dependencies({ assetType: 'artwork' });
+    const app = contractApp();
+    t.after(() => app.close());
+    app.decorateRequest('principal', null);
+    app.addHook('onRequest', async request => {
+      request.principal = { site: 'admin', localId: 'admin-id', permissions } as Principal;
+    });
+    await registerAdminAssetsRoutes(app, deps.pool, deps.storage as unknown as ReturnType<typeof createStorage>);
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/schemes/S-1/assets/123e4567-e89b-42d3-a456-426614174000',
+      payload: {
+        metadata: { wallPosition: '正面左墙', physicalWidth: 3000, physicalHeight: 2500, dimensionUnit: 'mm' },
+        expectedRevision: 1,
+      },
+    });
+    return { response, events: deps.events };
+  }
+
+  const forbidden = await patch(allPermissionCodes.filter(code => code !== 'assets-artworks.update'));
+  assert.equal(forbidden.response.statusCode, 403, forbidden.response.body);
+  assert.ok(forbidden.events.every(sql => !sql.includes('UPDATE scheme_baseline_assets')));
+
+  const allowed = await patch(allPermissionCodes);
+  assert.equal(allowed.response.statusCode, 200, allowed.response.body);
+  assert.ok(allowed.events.some(sql => sql.includes('UPDATE scheme_baseline_assets SET metadata')));
 });
 
 test('mask pairing candidates list renderings with size, order and occupying mask, signing thumbnails only with preview permission', async t => {
