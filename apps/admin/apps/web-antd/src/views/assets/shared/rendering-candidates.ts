@@ -11,6 +11,8 @@ import { formatImageSize, versionImageSize } from './image-spec';
 export interface RenderingCandidate {
   disabled: boolean;
   label: string;
+  /** 效果图资源名称 */
+  name: string;
   value: string;
   filename: null | string;
   /** 已被其他蒙版占用时为该蒙版；可替换时选中后改为替换其文件 */
@@ -42,6 +44,7 @@ export function renderingCandidate(
     disabled: !size || (!!candidate.pairedMask && !canReplaceMask),
     filename: candidate.file?.originalFilename ?? null,
     label: `#${candidate.sortOrder + 1} ${candidate.name}（${sizeText ?? '未上传文件'}）`,
+    name: candidate.name,
     pairedMask: candidate.pairedMask,
     sizeText,
     sortOrder: candidate.sortOrder,

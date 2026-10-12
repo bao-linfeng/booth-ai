@@ -3,7 +3,8 @@ import type pg from 'pg';
 import sharp from 'sharp';
 import type { createStorage } from '../../infra/storage.js';
 import { assetUploadRequest, findAssetUploadReplay, isUploadKeyCollision } from './idempotency.js';
-import { isRenderingAspect } from '../schemes/image-spec.js';
+// 效果图 16:9 校验暂时关闭
+// import { isRenderingAspect } from '../schemes/image-spec.js';
 import { validateAssetMetadata } from './metadata.js';
 import { getAsset } from './queries.js';
 import { addAssetVersion, createAssetWithVersion } from './service.js';
@@ -47,9 +48,10 @@ async function storeAssetUpload<T>(
   if ((type === 'rendering' || type === 'mask') && !dimensions) {
     throw Object.assign(new Error('Unsupported or invalid image'), { statusCode: 400, reason: 'IMAGE_INVALID' });
   }
-  if (type === 'rendering' && dimensions && !isRenderingAspect(dimensions.widthPx, dimensions.heightPx)) {
-    throw Object.assign(new Error('Rendering must be exactly 16:9'), { statusCode: 400, reason: 'RENDERING_ASPECT_INVALID' });
-  }
+  // 效果图 16:9 校验暂时关闭
+  // if (type === 'rendering' && dimensions && !isRenderingAspect(dimensions.widthPx, dimensions.heightPx)) {
+  //   throw Object.assign(new Error('Rendering must be exactly 16:9'), { statusCode: 400, reason: 'RENDERING_ASPECT_INVALID' });
+  // }
   const objectKey = `schemes/${schemeCode}/${type}/${randomUUID()}_${file.originalFilename}`;
   const version: UploadVersionInput = {
     objectKey,

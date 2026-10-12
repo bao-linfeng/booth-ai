@@ -97,7 +97,8 @@ describe('renderingMaskChecklist', () => {
       ]),
     ).toEqual([
       [1, 'R0', ['蒙版尺寸与效果图不一致', '蒙版排序与效果图不一致']],
-      [2, 'R2', ['效果图不是严格 16:9', '缺少蒙版']],
+      // 效果图 16:9 校验暂时关闭，恢复时改回 ['效果图不是严格 16:9', '缺少蒙版']
+      [2, 'R2', ['缺少蒙版']],
       [3, null, ['缺少效果图']],
     ]);
     expect(checklist.unpairedMasks.map((mask) => mask.id)).toEqual([

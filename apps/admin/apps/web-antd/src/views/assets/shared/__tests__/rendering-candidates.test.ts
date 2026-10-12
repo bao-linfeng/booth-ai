@@ -121,6 +121,7 @@ describe('renderingCandidate', () => {
       disabled: false,
       filename: 'R-2.png',
       label: '#1 R-2（1600×900）',
+      name: 'R-2',
       pairedMask: null,
       sizeText: '1600×900',
       sortOrder: 0,

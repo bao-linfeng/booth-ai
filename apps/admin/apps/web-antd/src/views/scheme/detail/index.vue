@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { SchemeAsset } from '#/api/core/assets';
-import type { BomRecord } from '#/api/core/bom';
+import type { AssetType, SchemeAsset } from '#/api/core/assets';
+import type { BomItem, BomRecord } from '#/api/core/bom';
 import type { ReadinessResult } from '#/api/core/reviews';
 import type {
   CreateSchemeInput,
@@ -12,6 +12,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { useAccess } from '@vben/access';
+import { IconifyIcon } from '@vben/icons';
 import { cloneDeep, formatDate, isEqual } from '@vben/utils';
 
 import {
@@ -21,11 +22,14 @@ import {
   Divider as ADivider,
   Empty as AEmpty,
   Form as AForm,
+  Image as AImage,
+  ImagePreviewGroup as AImagePreviewGroup,
   Input as AInput,
   InputNumber as AInputNumber,
   Modal as AModal,
   Radio as ARadio,
   Select as ASelect,
+  Table as ATable,
   Tabs as ATabs,
   Tag as ATag,
   Tooltip as ATooltip,
@@ -56,6 +60,8 @@ import MaskUploadModal from '../../assets/masks/components/UploadModal.vue';
 import RenderingUploadModal from '../../assets/renderings/components/UploadModal.vue';
 import { createUploadKey } from '../../assets/shared/upload-key';
 import DrawingUploadModal from '../../assets/venue-materials/components/UploadModal.vue';
+import BomImportModal from '../../bill-of-materials/components/BomImportModal.vue';
+import BomWorkspaceModal from '../../bill-of-materials/index.vue';
 import {
   assetLabel,
   otherResourceChecklist,
@@ -314,6 +320,25 @@ async function fetchDetail(preserveEdits = false) {
   }
 }
 
+/** 简化清单页签只读展示清单条目；数量按原表数量与单位显示 */
+const checklistColumns = [
+  { title: '序号', dataIndex: 'ordinal', width: 60 },
+  { title: '产品名称', dataIndex: 'productName', ellipsis: true },
+  { title: '产品型号', dataIndex: 'productModel', ellipsis: true },
+  { title: '尺寸规格(mm)', dataIndex: 'specificationMm', ellipsis: true },
+  {
+    title: '数量',
+    key: 'quantity',
+    width: 110,
+    customRender: ({ record }: { record: BomItem }) =>
+      `${record.sourceQuantity} ${record.sourceUnit}`,
+  },
+  { title: '单价/¥', dataIndex: 'unitPrice', width: 100 },
+  { title: '总价/¥', dataIndex: 'totalPrice', width: 100 },
+  { title: '重量合计/kg', dataIndex: 'totalWeightKg', width: 120 },
+  { title: 'ERP编码', dataIndex: 'erpCode', width: 120 },
+];
+
 async function fetchChecklistBom() {
   if (!currentCode.value || !hasAccessByCodes(['bom.read'])) return;
   const requestCode = currentCode.value;
@@ -368,7 +393,7 @@ async function handleModelUpload() {
   input.click();
 }
 
-async function handleModelDownload(asset: SchemeAsset) {
+async function handleAssetDownload(asset: SchemeAsset) {
   try {
     const res = await getAssetDownloadUrlApi(
       currentCode.value,
@@ -476,6 +501,8 @@ const renderingUploadRef = ref<InstanceType<typeof RenderingUploadModal>>();
 const maskUploadRef = ref<InstanceType<typeof MaskUploadModal>>();
 const drawingUploadRef = ref<InstanceType<typeof DrawingUploadModal>>();
 const artworkUploadRef = ref<InstanceType<typeof ArtworkUploadModal>>();
+const bomImportRef = ref<InstanceType<typeof BomImportModal>>();
+const bomWorkspaceRef = ref<InstanceType<typeof BomWorkspaceModal>>();
 
 /** 列表接口只返回有查看权限的类型，缺少任一权限时不判断配对缺口 */
 const canCheckPairs = computed(
@@ -486,6 +513,90 @@ const canCheckPairs = computed(
 const pairChecklist = computed(() =>
   renderingMaskChecklist(schemeAssets.value),
 );
+/**
+ * 各类资产缩略图的取图权限：效果图、蒙版走预览权限；报馆图、平面素材没有预览权限，
+ * 改用下载地址（附件响应头不影响 img 显示）
+ */
+const thumbnailAccess: Partial<
+  Record<AssetType, { code: string; disposition: 'attachment' | 'preview' }>
+> = {
+  rendering: { code: 'assets-renderings.preview', disposition: 'preview' },
+  mask: { code: 'assets-masks.preview', disposition: 'preview' },
+  drawing: { code: 'assets-drawings.download', disposition: 'attachment' },
+  artwork: { code: 'assets-artworks.download', disposition: 'attachment' },
+};
+
+function isImageAsset(asset: SchemeAsset): boolean {
+  return !!asset.currentVersion?.mimeType.startsWith('image/');
+}
+
+function canViewFile(asset: SchemeAsset): boolean {
+  const access = thumbnailAccess[asset.type];
+  return !!access && hasAccessByCodes([access.code]);
+}
+
+/** 资产汇总中逐个展示的报馆图、平面素材，按排序 */
+const resourceGalleries = computed<Record<string, SchemeAsset[]>>(() =>
+  Object.fromEntries(
+    (['drawing', 'artwork'] as const).map((type) => [
+      type,
+      schemeAssets.value
+        .filter((asset) => asset.type === type)
+        .toSorted(
+          (a, b) =>
+            a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt),
+        ),
+    ]),
+  ),
+);
+
+/** 资产汇总中各图片的缩略图地址（按资产 id），只获取有取图权限的图片 */
+const thumbnailUrls = ref<Record<string, string>>({});
+let thumbnailSequence = 0;
+
+async function fetchThumbnails(assets: SchemeAsset[]) {
+  const sequence = ++thumbnailSequence;
+  const entries = await Promise.all(
+    assets.map(async (asset) => {
+      const access = thumbnailAccess[asset.type];
+      if (!access || !isImageAsset(asset) || !canViewFile(asset)) return null;
+      try {
+        const { url } = await getAssetDownloadUrlApi(
+          asset.schemeCode,
+          asset.id,
+          access.disposition,
+        );
+        return [asset.id, url] as const;
+      } catch (error) {
+        console.error(error);
+        return null;
+      }
+    }),
+  );
+  if (sequence !== thumbnailSequence) return;
+  thumbnailUrls.value = Object.fromEntries(
+    entries.filter((entry) => entry !== null),
+  );
+}
+
+// 只在资产汇总页签可见时获取；地址有时效，切回页签或资产刷新时重新获取
+watch(
+  () => (activeTab.value === 'assets' ? schemeAssets.value : null),
+  (assets) => {
+    if (!assets) return;
+    fetchThumbnails([
+      ...(canCheckPairs.value
+        ? pairChecklist.value.slots.flatMap((slot) => [
+            slot.rendering,
+            slot.mask,
+          ])
+        : []
+      ).filter((asset) => asset !== null),
+      ...Object.values(resourceGalleries.value).flat(),
+    ]);
+  },
+);
+
 const otherResources = computed(() =>
   otherResourceChecklist(
     schemeAssets.value,
@@ -515,6 +626,11 @@ const resourceGapCount = computed(
 async function afterAssetUpload() {
   // 资产变更会使已发布方案下线、审核失效，需同步状态
   await Promise.all([fetchDetail(true), fetchReadiness()]);
+}
+
+async function afterBomChange() {
+  // 清单导入、编辑、核验同样会让方案下线并影响就绪状态
+  await Promise.all([fetchChecklistBom(), afterAssetUpload()]);
 }
 
 function uploadOtherResource(type: string) {
@@ -1015,7 +1131,9 @@ onMounted(() => {
             tab="模型"
           >
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <span class="text-muted-foreground text-sm">共 {{ modelAssets.length }} 个模型文件</span>
+              <span class="text-muted-foreground text-sm">
+                共 {{ modelAssets.length }} 个模型文件
+              </span>
               <AButton
                 type="primary"
                 :loading="modelUploading"
@@ -1046,7 +1164,7 @@ onMounted(() => {
                   v-if="asset.currentVersion"
                   type="link"
                   size="small"
-                  @click="handleModelDownload(asset)"
+                  @click="handleAssetDownload(asset)"
                   v-access:code="['assets-models.download']"
                 >
                   下载
@@ -1089,70 +1207,86 @@ onMounted(() => {
                   效果图与蒙版（需
                   {{ REQUIRED_PAIRS }} 组，蒙版与效果图尺寸、排序一致）
                 </div>
-                <div
-                  class="divide-y divide-border rounded border border-border"
-                >
+                <AImagePreviewGroup>
                   <div
-                    v-for="slot in pairChecklist.slots"
-                    :key="slot.index"
-                    class="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-sm"
+                    class="divide-y divide-border rounded border border-border"
                   >
-                    <span class="text-muted-foreground w-12 shrink-0">
-                      第 {{ slot.index }} 组
-                    </span>
-                    <span class="min-w-40 flex-1 truncate">
-                      效果图：{{
-                        slot.rendering ? assetLabel(slot.rendering) : '—'
-                      }}
-                    </span>
-                    <span class="min-w-40 flex-1 truncate">
-                      蒙版：{{ slot.mask ? assetLabel(slot.mask) : '—' }}
-                    </span>
-                    <ATag v-if="slot.issues.length === 0" color="success">
-                      就绪
-                    </ATag>
-                    <ATag
-                      v-for="issue in slot.issues"
-                      v-else
-                      :key="issue"
-                      color="warning"
+                    <div
+                      v-for="slot in pairChecklist.slots"
+                      :key="slot.index"
+                      class="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-sm"
                     >
-                      {{ issue }}
-                    </ATag>
-                    <AButton
-                      v-if="!slot.rendering"
-                      v-access:code="['assets-renderings.upload']"
-                      size="small"
-                      type="link"
-                      @click="renderingUploadRef?.open(currentCode)"
-                    >
-                      上传效果图
-                    </AButton>
-                    <AButton
-                      v-else-if="!slot.mask && slot.rendering.currentVersion"
-                      v-access:code="['assets-masks.upload']"
-                      size="small"
-                      type="link"
-                      @click="
-                        maskUploadRef?.open(currentCode, slot.rendering.id)
-                      "
-                    >
-                      上传蒙版
-                    </AButton>
-                    <AButton
-                      v-else-if="slot.issues.length > 0"
-                      size="small"
-                      type="link"
-                      @click="
-                        openSchemeAssets(
-                          slot.mask ? '/assets/masks' : '/assets/renderings',
-                        )
-                      "
-                    >
-                      去处理
-                    </AButton>
+                      <span class="text-muted-foreground w-12 shrink-0">
+                        第 {{ slot.index }} 组
+                      </span>
+                      <span
+                        v-for="part in [
+                          { label: '效果图', asset: slot.rendering },
+                          { label: '蒙版', asset: slot.mask },
+                        ]"
+                        :key="part.label"
+                        class="flex min-w-40 flex-1 items-center gap-3"
+                      >
+                        <AImage
+                          v-if="part.asset && thumbnailUrls[part.asset.id]"
+                          :src="thumbnailUrls[part.asset.id]"
+                          :alt="part.asset.name"
+                          :width="128"
+                          :height="72"
+                          class="asset-thumb"
+                        />
+                        <span class="min-w-0 truncate">
+                          {{ part.label }}：{{
+                            part.asset ? assetLabel(part.asset) : '—'
+                          }}
+                        </span>
+                      </span>
+                      <ATag v-if="slot.issues.length === 0" color="success">
+                        就绪
+                      </ATag>
+                      <ATag
+                        v-for="issue in slot.issues"
+                        v-else
+                        :key="issue"
+                        color="warning"
+                      >
+                        {{ issue }}
+                      </ATag>
+                      <AButton
+                        v-if="!slot.rendering"
+                        v-access:code="['assets-renderings.upload']"
+                        size="small"
+                        type="link"
+                        @click="renderingUploadRef?.open(currentCode)"
+                      >
+                        上传效果图
+                      </AButton>
+                      <AButton
+                        v-else-if="!slot.mask && slot.rendering.currentVersion"
+                        v-access:code="['assets-masks.upload']"
+                        size="small"
+                        type="link"
+                        @click="
+                          maskUploadRef?.open(currentCode, slot.rendering.id)
+                        "
+                      >
+                        上传蒙版
+                      </AButton>
+                      <AButton
+                        v-else-if="slot.issues.length > 0"
+                        size="small"
+                        type="link"
+                        @click="
+                          openSchemeAssets(
+                            slot.mask ? '/assets/masks' : '/assets/renderings',
+                          )
+                        "
+                      >
+                        去处理
+                      </AButton>
+                    </div>
                   </div>
-                </div>
+                </AImagePreviewGroup>
                 <div
                   v-if="pairChecklist.extraRenderings.length > 0"
                   class="mt-2 text-sm text-orange-500"
@@ -1215,6 +1349,63 @@ onMounted(() => {
                     >
                       {{ otherResourceActions[item.type]!.label }}
                     </AButton>
+                    <div
+                      v-if="resourceGalleries[item.type]?.length"
+                      class="basis-full pb-1 pt-2"
+                    >
+                      <AImagePreviewGroup>
+                        <div class="flex flex-wrap gap-3">
+                          <figure
+                            v-for="asset in resourceGalleries[item.type]"
+                            :key="asset.id"
+                            class="m-0 w-32"
+                          >
+                            <AImage
+                              v-if="thumbnailUrls[asset.id]"
+                              :src="thumbnailUrls[asset.id]"
+                              :alt="asset.name"
+                              :width="128"
+                              :height="72"
+                              class="asset-thumb"
+                            />
+                            <button
+                              v-else-if="
+                                asset.currentVersion &&
+                                !isImageAsset(asset) &&
+                                canViewFile(asset)
+                              "
+                              type="button"
+                              title="下载查看"
+                              class="bg-muted text-muted-foreground hover:text-primary flex h-[72px] w-32 items-center justify-center rounded"
+                              @click="handleAssetDownload(asset)"
+                            >
+                              <IconifyIcon
+                                icon="ant-design:file-pdf-outlined"
+                                class="size-8"
+                              />
+                            </button>
+                            <div
+                              v-else
+                              class="bg-muted text-muted-foreground flex h-[72px] w-32 items-center justify-center rounded text-xs"
+                            >
+                              {{
+                                !asset.currentVersion
+                                  ? '未上传文件'
+                                  : canViewFile(asset)
+                                    ? ''
+                                    : '无查看权限'
+                              }}
+                            </div>
+                            <figcaption
+                              class="text-muted-foreground mt-1 truncate text-xs"
+                              :title="asset.name"
+                            >
+                              {{ asset.name }}
+                            </figcaption>
+                          </figure>
+                        </div>
+                      </AImagePreviewGroup>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1297,60 +1488,78 @@ onMounted(() => {
                   <div class="text-muted-foreground mt-1 text-sm">
                     清单数据按方案编号
                     {{ currentCode }}
-                    关联，可在清单管理中继续导入、维护、核验和导出。
+                    关联，可直接导入 Excel，或打开清单详情维护、核验。
                   </div>
                 </div>
-                <AButton
-                  type="primary"
-                  @click="
-                    router.push({
-                      path: '/bill-of-materials',
-                      query: { code: currentCode },
-                    })
-                  "
-                >
-                  进入清单管理
-                </AButton>
+                <div class="flex gap-2">
+                  <AButton
+                    v-if="checklistBom && checklistBom.status !== 'absent'"
+                    @click="bomWorkspaceRef?.open(currentCode, 'edit')"
+                  >
+                    维护 / 核验
+                  </AButton>
+                  <AButton
+                    v-access:code="['bom.import']"
+                    type="primary"
+                    :disabled="checklistBom?.status === 'verified'"
+                    :title="
+                      checklistBom?.status === 'verified'
+                        ? '清单已核验，不能重新导入'
+                        : undefined
+                    "
+                    @click="bomImportRef?.open(currentCode, true)"
+                  >
+                    导入 Excel
+                  </AButton>
+                </div>
               </div>
 
-              <div
-                v-if="checklistBom && checklistBom.status !== 'absent'"
-                class="grid grid-cols-1 gap-3 sm:grid-cols-3"
-              >
-                <div class="border-border rounded border p-3">
-                  <div class="text-muted-foreground text-xs">关联状态</div>
-                  <ATag
-                    class="mt-2"
-                    :color="
-                      checklistBom.status === 'verified'
-                        ? 'success'
-                        : checklistBom.status === 'rejected'
-                          ? 'error'
-                          : 'warning'
-                    "
-                  >
-                    {{
-                      checklistBom.status === 'verified'
-                        ? '已核验'
-                        : checklistBom.status === 'rejected'
-                          ? '核验不通过'
-                          : '待核验'
-                    }}
-                  </ATag>
-                </div>
-                <div class="border-border rounded border p-3">
-                  <div class="text-muted-foreground text-xs">当前修订</div>
-                  <div class="mt-2 font-semibold">
-                    {{ checklistBom.revision }}
+              <template v-if="checklistBom && checklistBom.status !== 'absent'">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div class="border-border rounded border p-3">
+                    <div class="text-muted-foreground text-xs">关联状态</div>
+                    <ATag
+                      class="mt-2"
+                      :color="
+                        checklistBom.status === 'verified'
+                          ? 'success'
+                          : checklistBom.status === 'rejected'
+                            ? 'error'
+                            : 'warning'
+                      "
+                    >
+                      {{
+                        checklistBom.status === 'verified'
+                          ? '已核验'
+                          : checklistBom.status === 'rejected'
+                            ? '核验不通过'
+                            : '待核验'
+                      }}
+                    </ATag>
+                  </div>
+                  <div class="border-border rounded border p-3">
+                    <div class="text-muted-foreground text-xs">当前修订</div>
+                    <div class="mt-2 font-semibold">
+                      {{ checklistBom.revision }}
+                    </div>
+                  </div>
+                  <div class="border-border rounded border p-3">
+                    <div class="text-muted-foreground text-xs">清单条目</div>
+                    <div class="mt-2 font-semibold">
+                      {{ checklistBom.items.length }} 条
+                    </div>
                   </div>
                 </div>
-                <div class="border-border rounded border p-3">
-                  <div class="text-muted-foreground text-xs">清单条目</div>
-                  <div class="mt-2 font-semibold">
-                    {{ checklistBom.items.length }} 条
-                  </div>
-                </div>
-              </div>
+
+                <ATable
+                  :data-source="checklistBom.items"
+                  :columns="checklistColumns"
+                  :pagination="{ pageSize: 20, showSizeChanger: false }"
+                  size="small"
+                  row-key="id"
+                  :scroll="{ x: 1100 }"
+                />
+              </template>
 
               <AEmpty
                 v-else-if="!checklistLoading"
@@ -1533,6 +1742,8 @@ onMounted(() => {
     <MaskUploadModal ref="maskUploadRef" @reload="afterAssetUpload" />
     <DrawingUploadModal ref="drawingUploadRef" @reload="afterAssetUpload" />
     <ArtworkUploadModal ref="artworkUploadRef" @reload="afterAssetUpload" />
+    <BomImportModal ref="bomImportRef" @reload="afterBomChange" />
+    <BomWorkspaceModal ref="bomWorkspaceRef" @reload="afterBomChange" />
 
     <!-- 整体审核弹窗 -->
     <AModal
@@ -1624,3 +1835,12 @@ onMounted(() => {
     </AModal>
   </div>
 </template>
+
+<style scoped>
+.asset-thumb :deep(.ant-image-img) {
+  height: 100%;
+  object-fit: contain;
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+</style>

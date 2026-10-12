@@ -2,7 +2,7 @@ import type { SchemeAsset } from '#/api/core/assets';
 
 import {
   formatImageSize,
-  renderingSizeError,
+  // renderingSizeError, // 效果图 16:9 校验暂时关闭
   versionImageSize,
 } from '../../assets/shared/image-spec';
 
@@ -46,7 +46,8 @@ function pairIssues(
   const issues: string[] = [];
   const size = versionImageSize(rendering.currentVersion);
   if (!size) issues.push('效果图未上传文件');
-  else if (renderingSizeError(size)) issues.push('效果图不是严格 16:9');
+  // 效果图 16:9 校验暂时关闭
+  // else if (renderingSizeError(size)) issues.push('效果图不是严格 16:9');
   if (duplicateOrder) issues.push('排序与其他效果图重复');
   if (!mask) {
     issues.push('缺少蒙版');

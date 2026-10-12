@@ -24,7 +24,7 @@ import {
 import {
   pairedMaskWarning,
   readImageSize,
-  renderingSizeError,
+  // renderingSizeError, // 效果图 16:9 校验暂时关闭
 } from '../shared/image-spec';
 import { renderingDeletePlan } from '../shared/pairing';
 import {
@@ -94,11 +94,12 @@ async function handleReplace(row: any) {
       message.error((error as Error).message);
       return;
     }
-    const sizeError = renderingSizeError(size);
-    if (sizeError) {
-      message.error(sizeError);
-      return;
-    }
+    // 效果图 16:9 校验暂时关闭
+    // const sizeError = renderingSizeError(size);
+    // if (sizeError) {
+    //   message.error(sizeError);
+    //   return;
+    // }
     try {
       const masks = await listSchemeAssetsApi(row.schemeCode, 'mask');
       const warning = pairedMaskWarning(

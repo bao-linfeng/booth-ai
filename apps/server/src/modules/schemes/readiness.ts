@@ -1,5 +1,6 @@
 import type pg from 'pg';
-import { isRenderingAspect } from './image-spec.js';
+// 效果图 16:9 校验暂时关闭
+// import { isRenderingAspect } from './image-spec.js';
 
 type DbClient = pg.Pool | pg.PoolClient;
 
@@ -146,7 +147,8 @@ export function evaluateReadiness(data: SchemeReadinessData): SchemeReadiness {
       image =>
         image.widthPx &&
         image.heightPx &&
-        isRenderingAspect(image.widthPx, image.heightPx) &&
+        // 效果图 16:9 校验暂时关闭
+        // isRenderingAspect(image.widthPx, image.heightPx) &&
         imageMimeRe.test(image.mimeType ?? '') &&
         masks.filter(
           mask =>
