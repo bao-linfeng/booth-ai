@@ -265,6 +265,25 @@ test(
     );
     await pool.query('DELETE FROM theme_job_results WHERE job_id=$1', [job]);
     await pool.query('DELETE FROM theme_jobs WHERE id=$1', [job]);
+    // 智选需求带展位尺寸时，匹配摘要需按目录中的展位尺寸重新匹配
+    const boothSpaceId = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO dictionary_items(dictionary_id,item_value,item_label,length_mm,width_mm,height_mm)
+      SELECT id,'6000-6000-3000','6 × 6 × 3 m',6000,6000,3000 FROM dictionaries WHERE code='booth_size'
+      ON CONFLICT (dictionary_id,item_value) DO UPDATE SET enabled=true RETURNING id`,
+      )
+    ).rows[0]!.id;
+    const matched = await createQuoteRequest(pool, user, {
+      ...input,
+      requestKey: randomUUID(),
+      requirementContext: {
+        originalDescription: '6x6 展台',
+        confirmedRequirements: { ...emptyRequirement(), boothSpaceId, lengthMm: 6000, widthMm: 6000, areaM2: 36 },
+      },
+    });
+    projects.push(matched.receipt.projectId);
+    const matchedRequest = (await getProject(pool, matched.receipt.projectId)).request;
+    assert.notEqual(matchedRequest.matchingSummary?.matchType, 'unmatched');
     await assert.rejects(createQuoteRequest(pool, user, { ...input, requestKey: randomUUID(), bomRevision: 2 }), {
       reason: 'BOM_REVISION_CHANGED',
     });
@@ -301,6 +320,6 @@ test(
     await assert.rejects(createQuoteRequest(pool, user, { ...input, schemeRevision: 2, requestKey: randomUUID() }), {
       reason: 'SCHEME_UNAVAILABLE',
     });
-    assert.equal((await pool.query('SELECT id FROM projects WHERE customer_user_id=$1', [user])).rowCount, 3);
+    assert.equal((await pool.query('SELECT id FROM projects WHERE customer_user_id=$1', [user])).rowCount, 4);
   },
 );

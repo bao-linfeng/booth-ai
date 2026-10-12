@@ -210,7 +210,8 @@ async function summarizeMatch(client: pg.PoolClient, schemeCode: string, confirm
   const catalog = await loadCatalog(client);
   const requirement = validateRequirement(confirmedRequirements, catalog);
   const { candidates } = await loadCandidatePool(client, catalog, schemeCode);
-  const match = matchSchemes(candidates, requirement, isEmpty(requirement) ? 'random' : 'filtered', false).items[0];
+  const match = matchSchemes(candidates, requirement, isEmpty(requirement) ? 'random' : 'filtered', false, undefined, catalog.boothSpaces)
+    .items[0];
   return {
     matchType: match?.matchType ?? 'unmatched',
     differences: match?.differences ?? [],
