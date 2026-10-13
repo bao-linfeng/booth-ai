@@ -18,6 +18,8 @@ import {
   Form,
   FormItem,
   message,
+  RadioButton,
+  RadioGroup,
   Spin,
   Switch,
   Tag,
@@ -52,6 +54,7 @@ function optionsOf(
       (direction) => settings.drawingDirections.includes(direction),
     ),
     drawingGrayscale: settings.drawingGrayscale,
+    directionConcurrency: settings.directionConcurrency,
   };
 }
 
@@ -85,7 +88,7 @@ async function save() {
       expectedRevision: saved.value.revision,
     });
     draft.value = optionsOf(saved.value);
-    message.success('四向图设置已保存，之后报价的任务生效');
+    message.success('四向图设置已保存');
   } finally {
     saving.value = false;
   }
@@ -104,7 +107,7 @@ onMounted(load);
         class="mb-4"
         type="info"
         show-icon
-        message="设置在用户报价时冻结：只影响之后报价并提交的任务，已提交或已报价的任务仍按当时的设置执行。"
+        message="报馆图设置在用户报价时冻结：只影响之后报价并提交的任务，已提交或已报价的任务仍按当时的设置执行。方向并发数在任务开始生成时读取，对尚未开始的任务也生效。"
       />
       <Form layout="vertical" :disabled="!canEdit">
         <FormItem
@@ -124,6 +127,17 @@ onMounted(load);
             v-model:checked="draft.drawingGrayscale"
             :disabled="!canEdit || !drawingsEnabled"
           />
+        </FormItem>
+        <FormItem
+          label="单任务方向并发数"
+          extra="一个四向图任务内同时生成的方向数。四个方向互不依赖，并发不影响出图效果：4 时总耗时约等于最慢的一个方向，1 时逐个方向生成、耗时约为 4 倍。供应商频繁限流（429）时调低。"
+        >
+          <RadioGroup v-model:value="draft.directionConcurrency">
+            <RadioButton :value="1">1（逐个生成）</RadioButton>
+            <RadioButton :value="2">2</RadioButton>
+            <RadioButton :value="3">3</RadioButton>
+            <RadioButton :value="4">4（同时生成）</RadioButton>
+          </RadioGroup>
         </FormItem>
       </Form>
       <div class="flex items-center justify-between">

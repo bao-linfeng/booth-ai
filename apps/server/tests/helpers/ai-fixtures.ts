@@ -123,6 +123,7 @@ export const themeSettingsRow = {
 export const artworkSettingsRow = {
   drawingDirections: ['front', 'back', 'left', 'right'],
   drawingGrayscale: true,
+  directionConcurrency: 4,
   revision: 1,
   updatedAt: new Date(0),
 } as const;

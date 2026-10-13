@@ -177,11 +177,17 @@ const artworkOptionProperties = {
     description: '附带方案报馆图（俯视图 + 本方向立面，背面/右侧用正视图/左视图翻转）校正结构的方向，空数组即不使用',
   },
   drawingGrayscale: { type: 'boolean', description: '报馆图去色后发送' },
+  directionConcurrency: {
+    type: 'integer',
+    minimum: 1,
+    maximum: 4,
+    description: '单个任务内同时生成的方向数，1 即逐个方向串行；任务开始执行时读取，不冻结进报价',
+  },
 } as const;
 const artworkSettingsSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['drawingDirections', 'drawingGrayscale', 'revision', 'updatedAt'],
+  required: ['drawingDirections', 'drawingGrayscale', 'directionConcurrency', 'revision', 'updatedAt'],
   properties: { ...artworkOptionProperties, revision, updatedAt: { type: 'string', format: 'date-time' } },
 } as const;
 const createdIdResponse = {
@@ -433,7 +439,7 @@ export async function registerAdminAiModelRoutes(app: FastifyInstance, pool: pg.
     '/artwork-generation-settings',
     {
       config: { permissions: ['ai-models.read'] },
-      schema: { tags, summary: '四向图生图设置（报馆图结构校正）', response: { 200: successResponse(artworkSettingsSchema) } },
+      schema: { tags, summary: '四向图生图设置（报馆图结构校正、方向并发）', response: { 200: successResponse(artworkSettingsSchema) } },
     },
     async () => ({ code: 0, data: await getArtworkGenerationSettings(pool) }) as const,
   );
@@ -444,11 +450,11 @@ export async function registerAdminAiModelRoutes(app: FastifyInstance, pool: pg.
       config: { permissions: ['ai-models.assign'] },
       schema: {
         tags,
-        summary: '修改四向图生图设置，只影响之后报价的任务',
+        summary: '修改四向图生图设置：报馆图选项只影响之后报价的任务，并发数对尚未开始执行的任务生效',
         body: {
           type: 'object',
           additionalProperties: false,
-          required: ['drawingDirections', 'drawingGrayscale', 'expectedRevision'],
+          required: ['drawingDirections', 'drawingGrayscale', 'directionConcurrency', 'expectedRevision'],
           properties: { ...artworkOptionProperties, expectedRevision: revision },
         },
         response: { 200: successResponse(artworkSettingsSchema) },

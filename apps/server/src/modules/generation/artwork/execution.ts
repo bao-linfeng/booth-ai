@@ -22,7 +22,7 @@ async function loadArtworkJob(database: pg.Pool, jobId: string) {
 }
 
 /**
- * 画稿任务执行流程：认领租约 → 四个方向依次生成并入库 → 积分结算。
+ * 画稿任务执行流程：认领租约 → 各方向按后台设置的并发数生成并入库 → 积分结算。
  * 方向状态落库，崩溃或重试后从各方向的当前状态继续。
  */
 export async function processArtworkJob(

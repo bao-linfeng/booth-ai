@@ -9,9 +9,10 @@ import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot, ty
 import type { ArtworkRun } from './types.js';
 import { prepareDrawing } from './drawings.js';
 import { normalizeArtworkImage } from './image.js';
+import { artworkDirectionConcurrency } from './settings.js';
 import { lockRunningLease, publishGeneration, refreshGeneration, throwIfDraining } from '../execution.js';
 
-/** 模型、参考图与报馆图只在第一个需要调用供应商的方向上加载，之后各方向共用。 */
+/** 模型、参考图与报馆图只在第一个需要调用供应商的方向上加载，之后各方向（含并发的方向）共用。 */
 type SharedInputs = {
   model(): Promise<ActiveAiModel | undefined>;
   reference(): Promise<Buffer>;
@@ -19,6 +20,20 @@ type SharedInputs = {
 };
 
 const creditJob = (run: ArtworkRun) => ({ kind: 'artwork', id: run.jobId }) as const;
+/** 各方向可能并发执行，任务只记一个总阶段；单方向耗时见供应商调用日志。 */
+const GENERATING_PHASE = 'generating';
+
+/** 并发调用共用同一次加载；加载失败时清除，之后的调用重新加载。 */
+function memo<T>(load: () => Promise<T>): () => Promise<T> {
+  let pending: Promise<T> | undefined;
+  return () => {
+    if (!pending) {
+      pending = load();
+      pending.catch(() => (pending = undefined));
+    }
+    return pending;
+  };
+}
 
 async function updateDirection(
   run: ArtworkRun,
@@ -50,32 +65,22 @@ async function failLegacyDirections(database: pg.Pool, jobId: string) {
 }
 
 function sharedInputs(run: ArtworkRun, snapshot: ArtworkSnapshot): SharedInputs {
-  let model: ActiveAiModel | undefined;
-  let modelLoaded = false;
-  let reference: Buffer | undefined;
   // 同一张报馆图（如俯视图）会被多个方向共用，按版本与是否翻转缓存处理结果。
   const prepared = new Map<string, Promise<Buffer>>();
   const grayscale = snapshot.options?.drawingGrayscale ?? true;
   return {
-    async model() {
-      if (!modelLoaded) {
-        model = (await activeAiModels(run.database, 'artwork', run.config.aiModelEncryptionKey)).find(
-          m => m.id === snapshot.model.id && m.revision === snapshot.model.revision,
-        );
-        modelLoaded = true;
-      }
-      return model;
-    },
-    async reference() {
-      if (!reference) {
-        const bytes = await run.storage.getBuffer(snapshot.source.objectKey, ARTWORK_QUALITY.maxBytes);
-        if (createHash('sha256').update(bytes).digest('hex') !== snapshot.source.checksum)
-          throw new Error('Artwork reference integrity mismatch');
-        await normalizeGeneratedImage(bytes);
-        reference = bytes;
-      }
-      return reference;
-    },
+    model: memo(async () =>
+      (await activeAiModels(run.database, 'artwork', run.config.aiModelEncryptionKey)).find(
+        m => m.id === snapshot.model.id && m.revision === snapshot.model.revision,
+      ),
+    ),
+    reference: memo(async () => {
+      const bytes = await run.storage.getBuffer(snapshot.source.objectKey, ARTWORK_QUALITY.maxBytes);
+      if (createHash('sha256').update(bytes).digest('hex') !== snapshot.source.checksum)
+        throw new Error('Artwork reference integrity mismatch');
+      await normalizeGeneratedImage(bytes);
+      return bytes;
+    }),
     drawings(direction) {
       return Promise.all(
         (snapshot.drawings?.[direction] ?? []).map(drawing => {
@@ -115,6 +120,7 @@ async function generateDirectionUrl(
   await publishGeneration(publish, jobId, { direction, status: 'submitting' });
   let providerRequestId: string | undefined;
   let url: string;
+  const started = Date.now();
   try {
     const prompt = snapshot.directionPrompts?.[direction] ?? snapshot.prompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction]);
     const generated = await imageAdapter(model).edit(model, {
@@ -134,11 +140,14 @@ async function generateDirectionUrl(
     });
     if (!generated[0]) throw new ImageGenerationError('PROVIDER_NO_IMAGE');
     url = generated[0];
-    log.info({ direction, modelId: model.id, protocol: model.protocol, providerRequestId }, 'Artwork provider request completed');
+    log.info(
+      { direction, modelId: model.id, protocol: model.protocol, providerRequestId, ms: Date.now() - started },
+      'Artwork provider request completed',
+    );
   } catch (error) {
     const reason = error instanceof ImageGenerationError ? error.code : 'PROVIDER_OUTCOME_UNKNOWN';
     log.warn(
-      { direction, modelId: model.id, protocol: model.protocol, providerRequestId, code: reason },
+      { direction, modelId: model.id, protocol: model.protocol, providerRequestId, code: reason, ms: Date.now() - started },
       'Artwork provider request failed',
     );
     if (error instanceof ImageGenerationError && error.retryable && !error.outcomeUnknown) {
@@ -180,7 +189,7 @@ async function storeDirectionResult(
   const { database, jobId, job, storage } = run;
   const assetId = randomUUID();
   const versionId = randomUUID();
-  await refreshGeneration(database, creditJob(run), run.lease, 'result_persisting');
+  await refreshGeneration(database, creditJob(run), run.lease, GENERATING_PHASE);
   const objectKey = `artwork-results/${jobId}/${direction}.png`;
   const checksum = createHash('sha256').update(image.bytes).digest('hex');
   await storage.putBuffer(objectKey, image.bytes, 'image/png');
@@ -221,8 +230,7 @@ async function storeDirectionResult(
  */
 async function processDirection(run: ArtworkRun, snapshot: ArtworkSnapshot, direction: Direction, index: number, inputs: SharedInputs) {
   const { database, jobId, publish } = run;
-  await refreshGeneration(database, creditJob(run), run.lease, `generating_${direction}`);
-  await publishGeneration(publish, jobId, { status: 'running', phase: `generating_${direction}` });
+  await refreshGeneration(database, creditJob(run), run.lease, GENERATING_PHASE);
   const state = (
     await database.query<{ status: string; url: string | null }>(
       'SELECT status,generated_url AS url FROM artwork_job_directions WHERE job_id=$1 AND direction=$2',
@@ -244,7 +252,11 @@ async function processDirection(run: ArtworkRun, snapshot: ArtworkSnapshot, dire
   await publishGeneration(publish, jobId, { direction, status: 'succeeded' });
 }
 
-/** 按固定顺序逐方向生成；无快照的旧任务直接判失败。 */
+/**
+ * 按后台设置的并发数生成各方向（1 即按固定顺序逐个生成）；无快照的旧任务直接判失败。
+ * 某个方向抛错后不再开始新的方向，但要等进行中的方向跑完再抛出：抛错后任务会释放租约，
+ * 进行中的方向一旦失去租约，供应商已经出的图就无法落库。
+ */
 export async function generateDirections(run: ArtworkRun) {
   const { snapshot } = run.job;
   if (!snapshot) {
@@ -252,7 +264,22 @@ export async function generateDirections(run: ArtworkRun) {
     return;
   }
   const inputs = sharedInputs(run, snapshot);
-  for (const [index, direction] of DIRECTIONS.entries()) {
-    await processDirection(run, snapshot, direction, index, inputs);
-  }
+  const concurrency = Math.min(DIRECTIONS.length, Math.max(1, await artworkDirectionConcurrency(run.database)));
+  await refreshGeneration(run.database, creditJob(run), run.lease, GENERATING_PHASE);
+  await publishGeneration(run.publish, run.jobId, { status: 'running', phase: GENERATING_PHASE });
+  const queue = [...DIRECTIONS.entries()];
+  const errors: unknown[] = [];
+  const lane = async () => {
+    while (!errors.length) {
+      const next = queue.shift();
+      if (!next) return;
+      try {
+        await processDirection(run, snapshot, next[1], next[0], inputs);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, lane));
+  if (errors.length) throw errors[0];
 }

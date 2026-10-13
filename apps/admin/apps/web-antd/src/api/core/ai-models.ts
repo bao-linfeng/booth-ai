@@ -216,11 +216,13 @@ export function saveThemeGenerationSettingsApi(
 
 export type ArtworkDirection = 'back' | 'front' | 'left' | 'right';
 
-/** 四向底图流水线设置；报价时冻结，修改只影响之后报价的任务。 */
+/** 四向底图生图设置；报馆图选项在报价时冻结，并发数在任务开始执行时读取。 */
 export interface ArtworkGenerationOptions {
   /** 附带报馆图校正结构的方向，空数组即不使用报馆图 */
   drawingDirections: ArtworkDirection[];
   drawingGrayscale: boolean;
+  /** 单个任务内同时生成的方向数（1–4），1 即逐个方向串行 */
+  directionConcurrency: number;
 }
 
 export interface ArtworkGenerationSettings extends ArtworkGenerationOptions {

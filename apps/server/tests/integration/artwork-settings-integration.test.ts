@@ -5,6 +5,7 @@ import test from 'node:test';
 import pg from 'pg';
 import { getAdminRole } from '../../src/modules/identity/roles.js';
 import {
+  artworkDirectionConcurrency,
   artworkPipelineOptions,
   getArtworkGenerationSettings,
   updateArtworkGenerationSettings,
@@ -97,40 +98,62 @@ test(
     const admin = randomUUID();
     await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,1,'settings',ARRAY['ROLE_ADMIN'])", [admin]);
     assert.deepEqual(await artworkPipelineOptions(pool), { drawingDirections: ['front', 'back', 'left', 'right'], drawingGrayscale: true });
+    assert.equal(await artworkDirectionConcurrency(pool), 4);
     const updated = await updateArtworkGenerationSettings(
       pool,
-      { drawingDirections: ['right', 'front', 'right'], drawingGrayscale: false, expectedRevision: 1 },
+      { drawingDirections: ['right', 'front', 'right'], drawingGrayscale: false, directionConcurrency: 2, expectedRevision: 1 },
       admin,
     );
     assert.equal(updated.revision, 2);
+    // 并发数只影响执行，不进入报价冻结的流水线选项
     assert.deepEqual(await artworkPipelineOptions(pool), { drawingDirections: ['front', 'right'], drawingGrayscale: false });
+    assert.equal(await artworkDirectionConcurrency(pool), 2);
     await assert.rejects(
-      updateArtworkGenerationSettings(pool, { drawingDirections: [], drawingGrayscale: true, expectedRevision: 1 }, admin),
+      updateArtworkGenerationSettings(
+        pool,
+        { drawingDirections: [], drawingGrayscale: true, directionConcurrency: 4, expectedRevision: 1 },
+        admin,
+      ),
       { statusCode: 409, reason: 'REVISION_CONFLICT' },
     );
     await assert.rejects(
       pool.query("UPDATE artwork_generation_settings SET drawing_directions = ARRAY['top']"),
       /artwork_generation_settings_drawing_directions_check/,
     );
+    for (const invalid of [0, 5])
+      await assert.rejects(
+        pool.query('UPDATE artwork_generation_settings SET direction_concurrency = $1', [invalid]),
+        /artwork_generation_settings_direction_concurrency_check/,
+      );
     const disabled = await updateArtworkGenerationSettings(
       pool,
-      { drawingDirections: [], drawingGrayscale: true, expectedRevision: 2 },
+      { drawingDirections: [], drawingGrayscale: true, directionConcurrency: 1, expectedRevision: 2 },
       admin,
     );
     assert.deepEqual(disabled.drawingDirections, []);
+    assert.equal(disabled.directionConcurrency, 1);
     assert.equal((await getArtworkGenerationSettings(pool)).revision, 3);
 
     const audit = (
-      await pool.query<{ action: string; detail: { before: { drawingDirections: string[] }; after: { drawingDirections: string[] } } }>(
-        'SELECT action, detail FROM admin_audit_logs WHERE admin_id = $1 ORDER BY created_at, id',
-        [admin],
-      )
+      await pool.query<{
+        action: string;
+        detail: {
+          before: { drawingDirections: string[]; directionConcurrency: number };
+          after: { drawingDirections: string[]; directionConcurrency: number };
+        };
+      }>('SELECT action, detail FROM admin_audit_logs WHERE admin_id = $1 ORDER BY created_at, id', [admin])
     ).rows;
     assert.deepEqual(
-      audit.map(row => [row.action, row.detail.before.drawingDirections, row.detail.after.drawingDirections]),
+      audit.map(row => [
+        row.action,
+        row.detail.before.drawingDirections,
+        row.detail.after.drawingDirections,
+        row.detail.before.directionConcurrency,
+        row.detail.after.directionConcurrency,
+      ]),
       [
-        ['artwork_generation_settings.update', ['front', 'back', 'left', 'right'], ['front', 'right']],
-        ['artwork_generation_settings.update', ['front', 'right'], []],
+        ['artwork_generation_settings.update', ['front', 'back', 'left', 'right'], ['front', 'right'], 4, 2],
+        ['artwork_generation_settings.update', ['front', 'right'], [], 2, 1],
       ],
     );
   },

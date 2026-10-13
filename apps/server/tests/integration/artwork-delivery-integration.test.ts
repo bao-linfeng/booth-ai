@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { buffer as streamBuffer } from 'node:stream/consumers';
 import { contractApp } from '../helpers/http-app.js';
 import type { Redis } from 'ioredis';
@@ -176,6 +177,8 @@ test(
     ]);
     const encryptionKey = 'a'.repeat(64);
     await seedAiModel(pool, { protocol: 'openai', purpose: 'artwork', unitCredits: 10, encryptionKey });
+    // 前半部分按调用顺序断言提示词、附图与中断点，逐个方向执行；方向并发在末尾单独覆盖
+    await pool.query('UPDATE artwork_generation_settings SET direction_concurrency = 1');
     await pool.query("INSERT INTO credit_transactions(user_id,kind,amount) VALUES($1,'recharge',500)", [user]);
     const redisData = new Map<string, string>();
     for (const [token, id] of [
@@ -544,6 +547,54 @@ test(
       DIRECTIONS.slice(1).map(direction => historicalPrompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction])),
     );
     assert.equal((await getArtworkJob(pool, storage, user, uncertainId)).directions[0]?.reason, 'PROVIDER_OUTCOME_UNKNOWN');
+    // 方向并发：同时在途的供应商请求不超过设置；某个方向被限流时其余方向照常落库，全部跑完才释放租约
+    let inFlight = 0;
+    let peak = 0;
+    let rateLimited = '';
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (!String(input).startsWith('https://api.openai.com/')) return new Response(new Uint8Array(jpeg));
+      calls++;
+      const prompt = String((init!.body as FormData).get('prompt'));
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      try {
+        if (rateLimited && prompt.includes(rateLimited)) return new Response('busy', { status: 429 });
+        await delay(200);
+        return Response.json({ data: [{ b64_json: jpeg.toString('base64') }] });
+      } finally {
+        inFlight--;
+      }
+    }) as typeof fetch;
+    for (const concurrency of [2, 4]) {
+      await pool.query('UPDATE artwork_generation_settings SET direction_concurrency = $1', [concurrency]);
+      const concurrentId = await accept(await submission());
+      const beforeConcurrent: number = calls;
+      peak = 0;
+      await processArtworkJob(pool, concurrentId, config, storage);
+      assert.equal(calls, beforeConcurrent + 4);
+      assert.equal(peak, concurrency);
+      assert.equal((await getArtworkJob(pool, storage, user, concurrentId)).deliveryStatus, 'ready');
+    }
+    rateLimited = `本次只输出${DIRECTION_LABELS.back}一张`;
+    const limitedId = await accept(await submission());
+    const beforeLimited = calls;
+    await assert.rejects(processArtworkJob(pool, limitedId, config, storage), { code: 'PROVIDER_RATE_LIMITED' });
+    assert.equal(calls, beforeLimited + 4);
+    assert.deepEqual(
+      (await pool.query('SELECT direction,status FROM artwork_job_directions WHERE job_id=$1 ORDER BY direction', [limitedId])).rows.map(
+        row => `${row.direction}:${row.status}`,
+      ),
+      ['back:pending', 'front:succeeded', 'left:succeeded', 'right:succeeded'],
+    );
+    assert.deepEqual((await pool.query('SELECT status,lease_token FROM artwork_jobs WHERE id=$1', [limitedId])).rows[0], {
+      status: 'running',
+      lease_token: null,
+    });
+    rateLimited = '';
+    await processArtworkJob(pool, limitedId, config, storage);
+    assert.equal(calls, beforeLimited + 5);
+    assert.equal((await getArtworkJob(pool, storage, user, limitedId)).deliveryStatus, 'ready');
+    globalThis.fetch = providerFetch;
     const abandonedId = await accept(await submission());
     await pool.query("UPDATE artwork_jobs SET status='running',lease_until=now()-interval '20 minutes' WHERE id=$1", [abandonedId]);
     await settleArtworkJob(pool, abandonedId);

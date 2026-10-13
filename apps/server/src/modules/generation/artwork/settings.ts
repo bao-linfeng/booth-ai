@@ -10,9 +10,15 @@ export type ArtworkPipelineOptions = {
   /** 报馆图去色后发送，避免旧方案的品牌配色被带进结果。 */
   drawingGrayscale: boolean;
 };
-export type ArtworkGenerationSettings = ArtworkPipelineOptions & { revision: number; updatedAt: Date };
+/** 运行时选项：只影响执行方式、不影响出图，不冻结进快照，worker 执行时读取当前值。 */
+export type ArtworkRuntimeOptions = {
+  /** 单个任务内同时生成的方向数，1 即逐个方向串行。 */
+  directionConcurrency: number;
+};
+export type ArtworkGenerationSettings = ArtworkPipelineOptions & ArtworkRuntimeOptions & { revision: number; updatedAt: Date };
 
-const columns = `drawing_directions AS "drawingDirections", drawing_grayscale AS "drawingGrayscale", revision, updated_at AS "updatedAt"`;
+const columns = `drawing_directions AS "drawingDirections", drawing_grayscale AS "drawingGrayscale",
+  direction_concurrency AS "directionConcurrency", revision, updated_at AS "updatedAt"`;
 
 /** 去重并按固定方向顺序排列，使相同设置得到相同快照。 */
 const normalizeDirections = (directions: readonly string[]) => DIRECTIONS.filter(direction => directions.includes(direction));
@@ -29,9 +35,13 @@ export async function artworkPipelineOptions(database: Pick<pg.Pool, 'query'>): 
   return { drawingDirections, drawingGrayscale };
 }
 
+export async function artworkDirectionConcurrency(database: Pick<pg.Pool, 'query'>): Promise<number> {
+  return (await getArtworkGenerationSettings(database)).directionConcurrency;
+}
+
 export async function updateArtworkGenerationSettings(
   pool: pg.Pool,
-  input: ArtworkPipelineOptions & { expectedRevision: number },
+  input: ArtworkPipelineOptions & ArtworkRuntimeOptions & { expectedRevision: number },
   adminId: string,
 ): Promise<ArtworkGenerationSettings> {
   const drawingDirections = normalizeDirections(input.drawingDirections);
@@ -44,9 +54,9 @@ export async function updateArtworkGenerationSettings(
       throw Object.assign(new Error('Artwork generation settings changed'), { statusCode: 409, reason: 'REVISION_CONFLICT' });
     const after = (
       await client.query<ArtworkGenerationSettings>(
-        `UPDATE artwork_generation_settings SET drawing_directions = $1, drawing_grayscale = $2,
-        revision = revision + 1, updated_by = $3, updated_at = now() WHERE id = TRUE RETURNING ${columns}`,
-        [drawingDirections, input.drawingGrayscale, adminId],
+        `UPDATE artwork_generation_settings SET drawing_directions = $1, drawing_grayscale = $2, direction_concurrency = $3,
+        revision = revision + 1, updated_by = $4, updated_at = now() WHERE id = TRUE RETURNING ${columns}`,
+        [drawingDirections, input.drawingGrayscale, input.directionConcurrency, adminId],
       )
     ).rows[0]!;
     const strip = ({ revision: _revision, updatedAt: _updatedAt, ...options }: ArtworkGenerationSettings) => options;
