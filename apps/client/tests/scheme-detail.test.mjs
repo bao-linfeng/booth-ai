@@ -166,6 +166,19 @@ test('detail presents facts and quote before optional theme; quote links track l
   } finally { await mounted.close() }
 })
 
+test('the view passed from the result card is selected by default and carried into the theme link', async () => {
+  const images = ['front', 'side'].map((assetId, order) => ({ ...detail.images[0], assetId, order }))
+  const mounted = await mount({ path: '/schemes/SC-6030?searchId=search-42&image=side', api: { apiFetch: async () => ({ code: 0, data: { ...detail, images } }) } })
+  try {
+    const themeImages = () => [...mounted.container.querySelectorAll('a')].filter(el => el.textContent.trim() === 'AI 换主题').map(el => new URL(el.href).searchParams.get('image'))
+    assert.equal(button(mounted.container, '查看第 2 张').getAttribute('aria-pressed'), 'true')
+    assert.deepEqual(themeImages(), ['side', 'side'])
+    button(mounted.container, '查看第 1 张').click()
+    await settle()
+    assert.deepEqual(themeImages(), ['front', 'front'])
+  } finally { await mounted.close() }
+})
+
 test('resource filenames, real Dialog preview, Escape/close, and trigger focus restoration', async () => {
   const mounted = await mount()
   try {
@@ -294,7 +307,11 @@ test('preview permits theme exploration but neither quotes nor BOM/resource down
     assertNoNode(mounted.container.querySelector('a[href*="/quote"]'), "mounted.container.querySelector('a[href*=\"/quote\"]')")
     assert.equal(button(mounted.container, '示例方案不可申请报价').disabled, true)
     assert.equal(button(mounted.container, '示例不可报价').disabled, true)
-    for (const link of [...mounted.container.querySelectorAll('a')].filter(el => el.textContent.trim() === 'AI 换主题')) assert.equal(link.getAttribute('href'), '/ai-selection/preview/schemes/DEMO_63_001/theme')
+    for (const link of [...mounted.container.querySelectorAll('a')].filter(el => el.textContent.trim() === 'AI 换主题')) {
+      const url = new URL(link.href)
+      assert.equal(url.pathname, '/ai-selection/preview/schemes/DEMO_63_001/theme')
+      assert.deepEqual([...url.searchParams.keys()], ['image'])
+    }
     await selectTab(mounted.container, '物料清单')
     assert.match(mounted.container.textContent, /静态示例不提供真实物料清单/)
     assert.equal([...mounted.container.querySelectorAll('button')].some(el => el.textContent.includes('下载 XLSX')), false)

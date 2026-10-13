@@ -308,6 +308,13 @@ const item = computed(() => {
   return liveData.value;
 });
 
+// 默认选中从智选卡片带来的视角（query.image），续期换链接后仍按 assetId 保持选中
+const selectedImageId = ref(typeof route.query.image === 'string' ? route.query.image : '');
+const activeImageIndex = computed({
+  get: () => Math.max(0, item.value?.images.findIndex(image => image.assetId === selectedImageId.value) ?? 0),
+  set: (index: number) => { selectedImageId.value = item.value?.images[index]?.assetId ?? ''; },
+});
+
 const resources = computed(() => [
   { label: t('schemeDetail.tabThreeViews'), icon: Layers3, type: 'drawings', available: 'drawings' },
   { label: t('schemeDetail.tabFloorPlan'), icon: Image, type: 'artworks', available: 'artworks' },
@@ -342,7 +349,10 @@ const quoteLocation = computed(() => ({
 }));
 const themeLocation = computed(() => ({
   path: `${preview.value ? '/ai-selection/preview' : ''}/schemes/${encodeURIComponent(item.value?.code ?? '')}/theme`,
-  query: !preview.value && typeof route.query.searchId === 'string' ? { searchId: route.query.searchId } : {},
+  query: {
+    ...(!preview.value && typeof route.query.searchId === 'string' ? { searchId: route.query.searchId } : {}),
+    ...(item.value?.images[activeImageIndex.value] ? { image: item.value.images[activeImageIndex.value].assetId } : {}),
+  },
 }));
 
 // 方案图片为 5 分钟预签名链接：停留过久后图片加载失败或页面重新可见时重新读取详情换新链接，续期失败不影响已展示内容
@@ -391,7 +401,7 @@ onMounted(() => {
       <template v-if="item">
         <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:gap-12">
           <section :aria-label="t('schemeDetail.galleryAriaLabel')" class="min-w-0">
-            <SchemeGallery :images="item.images" :code="item.code" :preview="preview" :variant="Math.max(0, previewItems.findIndex(i => i.code === item?.code))" @image-error="imageLinks.onImageError" />
+            <SchemeGallery v-model:active="activeImageIndex" :images="item.images" :code="item.code" :preview="preview" :variant="Math.max(0, previewItems.findIndex(i => i.code === item?.code))" @image-error="imageLinks.onImageError" />
             <p class="mt-3 text-sm leading-relaxed text-muted-foreground">{{ preview ? t('schemeDetail.galleryPreviewNote') : t('schemeDetail.galleryNote') }}</p>
           </section>
 

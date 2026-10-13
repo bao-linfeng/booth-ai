@@ -500,6 +500,19 @@ test('industry and style default to those confirmed in the same AI selection sea
   } finally { await mounted.close() }
 })
 
+test('the view selected on the scheme detail is the default source image; an unknown view falls back to the first image', async () => {
+  let mounted = await mount({ path: '/schemes/SC-6030/theme?searchId=search-42&image=side' })
+  try {
+    assert.equal(callsTo(mounted, endpoints.offer)[0].body.sourceAssetId, 'side')
+    const back = [...mounted.container.querySelectorAll('a')].find(el => new URL(el.href).pathname === '/schemes/SC-6030')
+    assert.equal(new URL(back.href).searchParams.get('image'), 'side')
+  } finally { await mounted.close() }
+  mounted = await mount({ path: '/schemes/SC-6030/theme?searchId=search-42&image=removed' })
+  try {
+    assert.deepEqual(callsTo(mounted, endpoints.offer)[0].body, initialParameters)
+  } finally { await mounted.close() }
+})
+
 test('preferences from a different AI selection search are ignored', async () => {
   selectionSession('search-other', { industryIds: ['industry-energy'], styleIds: ['style-natural'] })
   const mounted = await mount({ keepStorage: true })

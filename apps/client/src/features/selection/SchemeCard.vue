@@ -43,6 +43,14 @@ const matchBadge = cva('gap-1.5 px-2.5 py-1 text-xs font-medium hover:bg-transpa
     },
   },
 })
+// 进入详情时带上卡片里选中的视角，详情与换主题页默认选中同一张图
+const detailLocation = computed(() => {
+  const image = props.item.images[active.value]
+  return {
+    path: `${props.preview ? '/ai-selection/preview/schemes' : '/schemes'}/${encodeURIComponent(props.item.code)}`,
+    query: { ...(!props.preview && props.searchId ? { searchId: props.searchId } : {}), ...(image ? { image: image.assetId } : {}) },
+  }
+})
 watch(() => props.item, () => { reasonsExpanded.value = false })
 </script>
 
@@ -104,7 +112,7 @@ watch(() => props.item, () => { reasonsExpanded.value = false })
           <p v-for="miss in item.preferenceMisses" :key="miss" class="break-words text-muted-foreground">{{ t('schemeCard.preferenceHint') }}{{ miss }}</p>
         </section>
         <Button as-child class="mt-auto justify-between gap-3" :aria-label="`${t('schemeCard.viewSolution')} ${item.code}`">
-          <RouterLink :to="{ path: `${preview ? '/ai-selection/preview/schemes' : '/schemes'}/${encodeURIComponent(item.code)}`, query: !preview && searchId ? { searchId } : {} }">{{ t('schemeCard.viewSolution') }}<ArrowUpRight class="size-4 shrink-0 rtl:-scale-x-100" aria-hidden="true" /></RouterLink>
+          <RouterLink :to="detailLocation">{{ t('schemeCard.viewSolution') }}<ArrowUpRight class="size-4 shrink-0 rtl:-scale-x-100" aria-hidden="true" /></RouterLink>
         </Button>
       </div>
     </div>

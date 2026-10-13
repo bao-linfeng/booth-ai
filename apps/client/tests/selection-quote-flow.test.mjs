@@ -7,7 +7,7 @@ import { parse, compileScript, registerTS } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createServer, transformWithEsbuild } from 'vite'
 
-// 跨页面交接回归：同一个应用、同一个路由里依次走 智选 → 方案详情 → 报价申请，三页都用真实组件。
+// 跨页面交接回归：同一个应用、同一个路由里依次走 智选 → 方案详情 → 报价申请 / AI 换主题，各页都用真实组件。
 // 只 mock 网络层与登录态，sessionStorage 的写入与读取全部由页面自己完成，任一侧的会话结构或版本漂移都会在这里失败。
 const window = new Window({ url: 'http://localhost/' })
 for (const name of ['window', 'document', 'navigator', 'history', 'localStorage', 'sessionStorage', 'Storage', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'HTMLSelectElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
@@ -39,7 +39,7 @@ const server = await createServer({
       if (id === '\0test-shell') return "import { h } from 'vue'; export default { setup(_, { slots }) { return () => h('div', slots.default?.()) } }"
       if (id === '\0test-api') return "export const API_BASE_URL = ''; export const getVisitorId = () => 'visitor-1'; export const rotateVisitorId = () => 'visitor-2'; export const apiFetch = (...args) => globalThis.__selectionQuote.apiFetch(...args); export const lingtongPublicFetch = (...args) => globalThis.__selectionQuote.dictionary(...args)"
       if (id === '\0test-auth') return 'export const useAuthStore = () => globalThis.__selectionQuote.auth'
-      if (id === '\0test-credits') return "import { ref } from 'vue'; export const useCredits = () => ({ loading: ref(false), signedInToday: ref(false), fetchBalance: async () => {}, signIn: async () => ({ success: true, amount: 1 }) })"
+      if (id === '\0test-credits') return "import { ref } from 'vue'; export const useCredits = () => ({ balance: ref(900), loading: ref(false), signedInToday: ref(false), fetchBalance: async () => {}, signIn: async () => ({ success: true, amount: 1 }) })"
     },
     async transform(source, id) {
       if (!id.endsWith('.vue')) return
@@ -56,6 +56,7 @@ const { createApp, h, nextTick, createRouter, createMemoryHistory, RouterView } 
 const { default: AISelection } = await server.ssrLoadModule('/src/pages/AISelection.vue')
 const { default: SchemeDetail } = await server.ssrLoadModule('/src/pages/SchemeDetail.vue')
 const { default: QuoteRequest } = await server.ssrLoadModule('/src/pages/QuoteRequest.vue')
+const { default: SchemeTheme } = await server.ssrLoadModule('/src/pages/SchemeTheme.vue')
 
 const user = { id: 'test-user', username: '测试用户', nickname: '测试用户', city: '上海', email: '', mobile: '', company: '' }
 const description = '6x3 科技展台，希望有洽谈区'
@@ -67,9 +68,9 @@ const catalog = {
   productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [{ id: 'meeting', label: '洽谈区' }], features: [],
 }
 const specifications = { lengthMm: 6000, widthMm: 3000, heightMm: 4500, areaM2: 18, openingCount: 2, productSystemId: 'standard', productSystemLabel: '标准模块' }
-const image = { assetId: 'front', url: '/front.jpg', thumbnailUrl: '/front-thumb.jpg', order: 0, width: 1600, height: 1200 }
+const images = ['front', 'side'].map((assetId, order) => ({ assetId, url: `/${assetId}.jpg`, thumbnailUrl: `/${assetId}-thumb.jpg`, order, width: 1600, height: 1200 }))
 const detail = {
-  code: 'SC-6030', images: [image], specifications,
+  code: 'SC-6030', images, specifications,
   resources: { model: true, bom: true, renderings: true, masks: true, drawings: true, artworks: true },
   actions: { theme: 'available', quote: 'available', bom: 'available', drawings: 'available', artworks: 'available', modelDownload: 'available' },
 }
@@ -78,7 +79,7 @@ const quoteDraftKey = 'booth:quote-draft:SC-6030:standard:pending'
 const validForm = { exhibitionName: '上海测试展', countryCode: 'CN', city: '上海', startDate: '2026-11-01', endDate: '2026-11-04', scopeCodes: ['materials'], scopeNotes: '', currency: 'CNY', amount: '30000', customerType: 'individual', company: '', contactName: '王测试', email: 'test@example.com', phone: '', notes: '' }
 
 function matchResponse(body) {
-  const item = { code: 'SC-6030', matchType: 'reference', images: [image], specifications,
+  const item = { code: 'SC-6030', matchType: 'reference', images, specifications,
     reasons: ['尺寸满足需求'], differences: [difference], pendingConfirmations: [{ type: 'missing_field', message: '开口方向待确认' }], preferenceMisses: [] }
   return {
     status: 'matched', mode: body.mode, requirement: body.requirement, items: [item],
@@ -109,6 +110,7 @@ async function mount() {
       if (path === '/api/v1/client/scheme-matches') return { code: 0, data: matchResponse(call.body) }
       if (path === '/api/v1/client/schemes/SC-6030') return { code: 0, data: structuredClone(detail) }
       if (path.endsWith('/quote-context')) return { code: 0, data: { schemeCode: 'SC-6030', schemeRevision: 1, bomRevision: 7, drawingRevision: 1, artworkRevision: 1, materialsStatus: { bom: 'available', drawings: 'available', artworks: 'available' } } }
+      if (path === '/api/v1/client/theme-models') return { code: 0, data: [] }
       if (path === '/api/v1/client/quote-requests') return { code: 0, data: { projectId: 'project-1', projectNo: 'PJ-001', requestNo: 'REQ-001', status: 'pending', revision: 1 } }
       assert.fail(`Unexpected API: ${call.method} ${path}`)
     },
@@ -118,6 +120,7 @@ async function mount() {
     { path: '/ai-selection', component: AISelection },
     { path: '/schemes/:code', component: SchemeDetail },
     { path: '/schemes/:code/quote', name: 'QuoteRequest', component: QuoteRequest },
+    { path: '/schemes/:code/theme', component: SchemeTheme },
     { path: '/:pathMatch(.*)*', component: { render: () => null } },
   ] })
   await router.push('/ai-selection'); await router.isReady()
@@ -203,5 +206,21 @@ test('selection → quote: editing requirements after matching drops the context
     assert.doesNotMatch(mounted.container.textContent, /高度略高于需求/)
     const body = await submitQuote(mounted)
     assert.equal('requirementContext' in body, false)
+  } finally { await mounted.close() }
+})
+
+test('selection → detail → theme: the view chosen on the result card stays selected on the detail and theme pages', async () => {
+  const mounted = await mount()
+  try {
+    await input(mounted.container, '#requirement-text', description)
+    button(mounted.container, '匹配方案').click(); await settle()
+    const pressedView = () => [...mounted.container.querySelectorAll('button[aria-pressed="true"][aria-label^="查看第"]')].map(element => element.getAttribute('aria-label'))
+    mounted.container.querySelector('button[aria-label="查看第 2 张"]').click(); await settle()
+    const detailRoute = await navigate(mounted, link(mounted.container, '/schemes/SC-6030'))
+    assert.deepEqual(detailRoute.query, { searchId: 'search-1', image: 'side' })
+    assert.deepEqual(pressedView(), ['查看第 2 张'])
+    const themeRoute = await navigate(mounted, link(mounted.container, '/schemes/SC-6030/theme'))
+    assert.deepEqual(themeRoute.query, { searchId: 'search-1', image: 'side' })
+    assert.deepEqual(pressedView(), ['查看第 2 张'])
   } finally { await mounted.close() }
 })

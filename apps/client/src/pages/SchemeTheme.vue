@@ -40,6 +40,8 @@ const schemeData = ref<SchemeDetail | null>(null)
 const loadingScheme = ref(true)
 const schemeError = ref(false)
 const images = computed(() => schemeData.value?.images || [])
+// 默认选中从方案详情带来的视角（query.image）
+const requestedImageId = typeof route.query.image === 'string' ? route.query.image : ''
 const selectedAssetId = ref('')
 const previewVariant = Math.max(0, previewItems.findIndex(item => item.code === schemeCode))
 const galleryImages = computed(() => isPreview.value ? previewItems[previewVariant]?.images ?? [] : images.value)
@@ -107,7 +109,7 @@ async function loadScheme() {
     if (res.code !== 0) throw new Error('Scheme unavailable')
     schemeData.value = res.data
     imageLinks.markFresh()
-    if (!selectedAssetId.value) selectedAssetId.value = images.value[0]?.assetId || ''
+    if (!selectedAssetId.value) selectedAssetId.value = (images.value.find(image => image.assetId === requestedImageId) ?? images.value[0])?.assetId || ''
   } catch {
     schemeError.value = true
   } finally {
@@ -168,7 +170,7 @@ async function loadModels() {
 }
 
 onMounted(() => {
-  if (isPreview.value) { loadingScheme.value = false; return }
+  if (isPreview.value) { selectedAssetId.value = requestedImageId; loadingScheme.value = false; return }
   restorePendingRequest()
   void loadScheme()
   void loadCatalog()
@@ -312,7 +314,7 @@ function setDialogOpen(open: boolean) {
     <main id="main-content" class="studio-page">
       <header class="studio-header">
         <Button as-child variant="ghost" class="-ml-3">
-          <RouterLink :to="{ path: detailPath, query: searchId ? { searchId } : {} }"><ArrowLeft class="mr-2 size-4" />{{ t('schemeTheme.backToScheme') }}</RouterLink>
+          <RouterLink :to="{ path: detailPath, query: { ...(searchId ? { searchId } : {}), ...(selectedAssetId ? { image: selectedAssetId } : {}) } }"><ArrowLeft class="mr-2 size-4" />{{ t('schemeTheme.backToScheme') }}</RouterLink>
         </Button>
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div class="min-w-0 flex-1 basis-64 space-y-2">
