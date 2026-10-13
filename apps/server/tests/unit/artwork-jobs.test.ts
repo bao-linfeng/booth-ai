@@ -3,6 +3,7 @@ import test from 'node:test';
 import type pg from 'pg';
 import sharp from 'sharp';
 import { normalizeArtworkImage } from '../../src/modules/generation/artwork/image.js';
+import { meetsArtworkResolution } from '../../src/modules/generation/artwork/queries.js';
 import { loadArtworkSnapshot } from '../../src/modules/generation/artwork/service.js';
 import type { ProviderProtocol } from '../../src/infra/ai/types.js';
 import { DIRECTIONS, DIRECTION_LABELS } from '../../src/modules/generation/artwork/types.js';
@@ -137,7 +138,7 @@ test('artwork snapshot freezes the first assigned model able to render artwork',
   assert.deepEqual(snapshot.model, { id: 'gemini-model', model: 'gemini-3.1-flash-image', revision: 3, unitCredits: 6 });
 });
 
-test('artwork acceptance converts actual JPEG pixels to PNG and rejects low resolution, corrupt and oversized content', async () => {
+test('artwork acceptance converts actual JPEG pixels to PNG, keeps low resolution and rejects corrupt and oversized content', async () => {
   const jpeg = await sharp({ create: { width: 2048, height: 1152, channels: 3, background: '#345678' } })
     .jpeg()
     .toBuffer();
@@ -147,7 +148,9 @@ test('artwork acceptance converts actual JPEG pixels to PNG and rejects low reso
   assert.equal(image.height, 1152);
   assert.equal((await sharp(image.bytes).metadata()).format, 'png');
   const small = await sharp(jpeg).resize(1024, 576).png().toBuffer();
-  await assert.rejects(normalizeArtworkImage(small), /ARTWORK_RESOLUTION_TOO_LOW/);
+  const kept = await normalizeArtworkImage(small);
+  assert.deepEqual([kept.width, kept.height, meetsArtworkResolution(kept)], [1024, 576, false]);
+  assert.equal(meetsArtworkResolution(image), true);
   const threeByTwo = await sharp(jpeg).resize(1920, 1280, { fit: 'fill' }).png().toBuffer();
   await assert.rejects(normalizeArtworkImage(threeByTwo), /ARTWORK_ASPECT_INVALID/);
   await assert.rejects(normalizeArtworkImage(Buffer.from('fake PNG')));

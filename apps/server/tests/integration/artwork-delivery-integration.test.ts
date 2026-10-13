@@ -76,6 +76,7 @@ test(
       .jpeg()
       .toBuffer();
     const small = await sharp(jpeg).resize(512, 288).png().toBuffer();
+    const square = await sharp(jpeg).resize(1536, 1536, { fit: 'fill' }).png().toBuffer();
     const sourceChecksum = createHash('sha256').update(jpeg).digest('hex');
     const buffers = new Map<string, Buffer>([['selected-theme.jpg', jpeg]]);
     const read = (key: string) => {
@@ -265,7 +266,8 @@ test(
       );
       assert.equal(createHash('sha256').update(images[0]!).digest('hex'), sourceChecksum);
       sentImages.push(images);
-      const data = mode === 'partial' && prompt.includes('背面正交') ? small : jpeg;
+      // partial：背面比例不合格判失败；左侧低于高清仍入库结算，但任务不能完整交付
+      const data = mode !== 'partial' ? jpeg : prompt.includes('背面正交') ? square : prompt.includes('左侧正交') ? small : jpeg;
       return Response.json({ data: [{ b64_json: data.toString('base64') }] });
     }) as typeof fetch;
     const config = {
@@ -451,6 +453,10 @@ test(
     assert.equal(partial.credits.chargedCredits, 30);
     assert.equal(partial.credits.releasedCredits, 10);
     assert.deepEqual(partial.missingDirections, ['back']);
+    assert.equal(partial.directions.find(d => d.direction === 'back')?.reason, 'ARTWORK_ASPECT_INVALID');
+    const lowResolution = partial.directions.find(d => d.direction === 'left');
+    assert.deepEqual([lowResolution?.status, lowResolution?.width, lowResolution?.belowQuality], ['succeeded', 512, true]);
+    assert.equal(partial.directions.find(d => d.direction === 'front')?.belowQuality, false);
     await assert.rejects(readyArtworkFiles(pool, user, partialId, context), { reason: 'ARTWORK_INCOMPLETE' });
     await assert.rejects(createQuoteRequest(pool, user, { ...quote, requestKey: randomUUID(), artworkJobId: partialId }), {
       reason: 'ARTWORK_INCOMPLETE',

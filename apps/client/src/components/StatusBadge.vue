@@ -10,7 +10,8 @@ import type { ThemeJob } from '@/services/api/theme-jobs'
 import { cn } from '@/lib/utils'
 
 type JobStatus = ThemeJob['status']
-type ArtworkStatus = 'pending' | 'submitting' | 'generated' | 'succeeded' | 'failed'
+/** below_quality 不是后端方向状态：已入库但低于高清门槛的方向由页面传入。 */
+type ArtworkStatus = 'pending' | 'submitting' | 'generated' | 'succeeded' | 'failed' | 'below_quality'
 type Tone = 'pending' | 'active' | 'success' | 'muted' | 'failed' | 'partial'
 
 const props = defineProps<{
@@ -50,6 +51,7 @@ const artworkLabels = computed<Record<ArtworkStatus, string>>(() => ({
   generated: t('artworkJob.statusGenerated'),
   succeeded: t('artworkJob.statusSucceeded'),
   failed: t('artworkJob.statusFailed'),
+  below_quality: t('artworkJob.statusBelowQuality'),
 }))
 
 const projectLabels = computed(() => getProjectStatusLabels(t))
@@ -62,6 +64,7 @@ const tone = computed<Tone>(() => {
     if (status === 'submitting' || status === 'generated') return 'active'
     if (status === 'succeeded') return 'success'
     if (status === 'failed') return 'failed'
+    if (status === 'below_quality') return 'partial'
     return 'muted'
   }
 

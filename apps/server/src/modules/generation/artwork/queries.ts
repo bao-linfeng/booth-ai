@@ -88,6 +88,12 @@ export async function artworkFiles(database: Database, jobId: string): Promise<A
     )
   ).rows;
 }
+/** 是否达到高清交付门槛；未达到的方向图照常展示与单张下载，但任务不能完整交付。 */
+export function meetsArtworkResolution(file: Pick<ArtworkFile, 'width' | 'height'>): boolean {
+  return (
+    Math.max(file.width, file.height) >= ARTWORK_QUALITY.minLongEdge && Math.min(file.width, file.height) >= ARTWORK_QUALITY.minShortEdge
+  );
+}
 export function completeArtworkFiles(files: ArtworkFile[]): boolean {
   return (
     files.length === 4 &&
@@ -97,8 +103,7 @@ export function completeArtworkFiles(files: ArtworkFile[]): boolean {
         f.mimeType === 'image/png' &&
         f.byteSize > 0 &&
         f.byteSize <= ARTWORK_QUALITY.maxBytes &&
-        Math.max(f.width, f.height) >= ARTWORK_QUALITY.minLongEdge &&
-        Math.min(f.width, f.height) >= ARTWORK_QUALITY.minShortEdge &&
+        meetsArtworkResolution(f) &&
         f.width * f.height <= ARTWORK_QUALITY.maxPixels &&
         /^[a-f\d]{64}$/i.test(f.checksum),
     )
@@ -154,6 +159,7 @@ export async function getArtworkJob(
               height: file.height,
               byteSize: file.byteSize,
               filename: file.filename,
+              belowQuality: !meetsArtworkResolution(file),
               previewUrl: await storage.signDownload(file.objectKey, 300),
             }
           : {}),

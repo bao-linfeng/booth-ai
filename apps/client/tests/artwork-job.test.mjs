@@ -3,12 +3,13 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { statSync, readFileSync } from 'node:fs'
 import { Window } from 'happy-dom'
+import { assertNoNode } from './dom-assert.mjs'
 import { parse, compileScript, registerTS } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createServer, transformWithEsbuild } from 'vite'
 
 const window = new Window({ url: 'http://localhost/' })
-for (const name of ['window', 'document', 'navigator', 'history', 'localStorage', 'sessionStorage', 'Storage', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'SVGElement', 'Node', 'Event', 'CustomEvent', 'MouseEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+for (const name of ['window', 'document', 'navigator', 'history', 'localStorage', 'sessionStorage', 'Storage', 'Document', 'DocumentFragment', 'ShadowRoot', 'Element', 'HTMLElement', 'HTMLInputElement', 'HTMLButtonElement', 'HTMLAnchorElement', 'SVGElement', 'Node', 'NodeFilter', 'Event', 'CustomEvent', 'MouseEvent', 'PointerEvent', 'KeyboardEvent', 'FocusEvent', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
   Object.defineProperty(globalThis, name, { configurable: true, value: name === 'window' ? window : ['getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame'].includes(name) ? window[name].bind(window) : window[name] })
 }
 registerTS(() => ts)
@@ -245,6 +246,27 @@ test('a partially delivered job lists the missing directions and offers no ZIP o
   } finally { await mounted.close() }
 })
 
+test('a direction below the HD standard is shown and downloadable but asks for regeneration instead of a ZIP', async () => {
+  const lowResolution = () => {
+    const job = artworkJob()
+    Object.assign(job, { deliveryStatus: 'incomplete' })
+    job.directions = job.directions.map(item => ({ ...item, belowQuality: item.direction === 'left', ...(item.direction === 'left' ? { width: 1024, height: 576 } : {}) }))
+    return job
+  }
+  const mounted = await mount({ path: '/artwork-jobs/job-1', job: lowResolution })
+  try {
+    const text = mounted.container.textContent
+    assert.equal(mounted.container.querySelectorAll('img[alt$="方向底图"]').length, 4)
+    assert.match(text, /1024 × 576 px · PNG/)
+    assert.equal(text.match(/低于高清(?!标准)/g)?.length, 1)
+    assert.match(text, /左侧低于高清标准/)
+    assert.doesNotMatch(text, /缺少：/)
+    assert.equal([...mounted.container.querySelectorAll('button')].filter(element => element.textContent.trim() === '单张').length, 4)
+    assert.equal([...mounted.container.querySelectorAll('button')].some(element => element.textContent.trim() === '下载完整四面 ZIP'), false)
+    assert.ok([...mounted.container.querySelectorAll('a')].some(element => element.textContent.includes('重新确认并生成')))
+  } finally { await mounted.close() }
+})
+
 test('a complete job downloads single directions and the ZIP and links the quote to the fixed theme', async () => {
   downloads.length = 0
   const mounted = await mount({ path: '/artwork-jobs/job-1' })
@@ -276,5 +298,29 @@ test('an expired direction link is re-signed by re-reading the job', async () =>
     await settle()
     assert.equal(reads(), before + 1)
     assert.equal(mounted.container.querySelector('img[alt$="方向底图"]').getAttribute('src'), '/front.png?v=1')
+  } finally { Date.now = realNow; await mounted.close() }
+})
+
+test('clicking the theme reference or a direction image enlarges it in a dialog that follows re-signed links', async () => {
+  let version = 0
+  const mounted = await mount({ path: '/artwork-jobs/job-1', job: () => artworkJob(true, version) })
+  const realNow = Date.now
+  const dialogImage = () => document.body.querySelector('[role="dialog"] img')?.getAttribute('src') ?? null
+  try {
+    mounted.container.querySelector('button[aria-label="放大查看四面素材对应的选定主题效果"]').click()
+    await settle()
+    assert.equal(dialogImage(), '/reference.png?v=0')
+    document.body.querySelector('[role="dialog"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await settle()
+    assertNoNode(document.body.querySelector('[role="dialog"]'), "document.body.querySelector('[role=\"dialog\"]')")
+    mounted.container.querySelector('button[aria-label="放大查看背面方向底图"]').click()
+    await settle()
+    assert.equal(document.body.querySelector('[role="dialog"]')?.textContent.includes('背面方向底图'), true)
+    assert.equal(dialogImage(), '/back.png?v=0')
+    Date.now = () => realNow() + 60_000
+    version = 1
+    document.body.querySelector('[role="dialog"] img').dispatchEvent(new Event('error'))
+    await settle()
+    assert.equal(dialogImage(), '/back.png?v=1')
   } finally { Date.now = realNow; await mounted.close() }
 })

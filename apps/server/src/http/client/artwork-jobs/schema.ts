@@ -73,7 +73,7 @@ export const artworkJobSchema = {
           },
         },
         referencePreviewUrl: nullableString,
-        // 未生成成功的方向只有 direction/status/reason，文件字段仅在已有结果时出现
+        // 未生成成功的方向只有 direction/status/reason，文件字段仅在已有结果时出现；belowQuality 表示图片低于高清交付门槛
         directions: {
           type: 'array',
           items: {
@@ -89,6 +89,7 @@ export const artworkJobSchema = {
               height: { type: 'integer' },
               byteSize: { type: 'number' },
               filename: { type: 'string' },
+              belowQuality: { type: 'boolean' },
               previewUrl: { type: 'string' },
             },
           },

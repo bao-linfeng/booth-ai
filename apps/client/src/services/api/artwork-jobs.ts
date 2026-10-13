@@ -10,7 +10,7 @@ export interface ArtworkReceipt {
 }
 export interface ArtworkJob extends ArtworkReceipt {
   schemeCode: string; phase: string | null; themeSelection: Omit<ArtworkContext, 'schemeCode'>; referencePreviewUrl: string | null;
-  directions: { direction: Direction; status: string; reason: string | null; assetId?: string; width?: number; height?: number; byteSize?: number; filename?: string; previewUrl?: string }[];
+  directions: { direction: Direction; status: string; reason: string | null; assetId?: string; width?: number; height?: number; byteSize?: number; filename?: string; belowQuality?: boolean; previewUrl?: string }[];
   missingDirections: Direction[]; mappingStatus: 'unresolved'; quality: { minLongEdge: number; minShortEdge: number };
 }
 export interface ArtworkSubmission extends ArtworkContext { requestKey: string; offerId: string }
