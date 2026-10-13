@@ -22,6 +22,12 @@ describe('asset upload error reasons', () => {
         rule: 'string_array',
       }),
     ).toBe('视向格式不正确');
+    expect(
+      reasonMessage('ASSET_METADATA_INVALID', {
+        field: 'viewCodes',
+        rule: 'view_code',
+      }),
+    ).toBe('视向只能是正视图、左视图或俯视图');
   });
 
   it('names the invalid upload field', () => {

@@ -26,12 +26,15 @@ async function referenceDataUrl(reference: Buffer): Promise<string> {
 
 // https://help.aliyun.com/zh/model-studio/qwen-image-edit-api and
 // https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference — the mask is ignored;
-// edits are described in the prompt. Wan 2.7 caps `n` at 4, which theme jobs never exceed.
+// edits are described in the prompt. Wan 2.7 caps `n` at 4, which theme jobs never exceed. Multi-image editing
+// takes up to 3 input images, listed before the text.
 export const qwenImage: ImageModelAdapter = {
   maxImagesPerRequest: 6,
+  maxReferenceImages: 3,
   downloadHosts: ['aliyuncs.com'],
-  async edit(model, { reference, prompt, count, deadline, onProviderRequest }) {
+  async edit(model, { reference, references = [], prompt, count, deadline, onProviderRequest }) {
     const url = await providerEndpoint(model.baseUrl, '/services/aigc/multimodal-generation/generation');
+    const inputs = await Promise.all([reference, ...references].map(async image => ({ image: await referenceDataUrl(image) })));
     const body = (await providerJson(
       url,
       {
@@ -39,7 +42,7 @@ export const qwenImage: ImageModelAdapter = {
         headers: { Authorization: `Bearer ${model.apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: model.model,
-          input: { messages: [{ role: 'user', content: [{ image: await referenceDataUrl(reference) }, { text: prompt }] }] },
+          input: { messages: [{ role: 'user', content: [...inputs, { text: prompt }] }] },
           parameters: { n: count, size: OUTPUT_SIZE, prompt_extend: false, watermark: false },
         }),
       },

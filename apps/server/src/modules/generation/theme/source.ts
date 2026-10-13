@@ -3,11 +3,14 @@ import type pg from 'pg';
 import sharp from 'sharp';
 import { IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
+import { toEditMask } from './mask.js';
 import { buildThemePrompt } from './prompt.js';
 import { normalizeThemeInput } from './service.js';
+import { LEGACY_THEME_OPTIONS, type ThemePipelineOptions } from './settings.js';
 import type { ThemeJob, ThemeStorage } from './types.js';
 
 export type ThemeSource = { reference: Buffer; mask: Buffer | undefined };
+export type ThemeImages = { original: Buffer; mask: Buffer | undefined };
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
@@ -52,17 +55,6 @@ async function maskObjectKey(database: pg.Pool, job: ThemeJob): Promise<string |
   ).rows[0]?.objectKey;
 }
 
-/** 标注色（品红）区域转为透明，供供应商按“可编辑区域”处理。 */
-async function toEditMask(maskImage: Buffer): Promise<Buffer> {
-  const { data, info } = await sharp(maskImage).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  for (let i = 0; i < info.width * info.height; i++) {
-    data[i * 4 + 3] = data[i * 4]! > 200 && data[i * 4 + 1]! < 60 && data[i * 4 + 2]! > 200 ? 0 : 255;
-  }
-  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
-    .png()
-    .toBuffer();
-}
-
 async function loadMask(database: pg.Pool, job: ThemeJob, storage: ThemeStorage): Promise<Buffer | undefined> {
   const key = await maskObjectKey(database, job);
   if (!key) return undefined;
@@ -70,17 +62,28 @@ async function loadMask(database: pg.Pool, job: ThemeJob, storage: ThemeStorage)
   if (job.snapshot?.mask?.checksum && sha256(bytes) !== job.snapshot.mask.checksum) {
     throw new ImageGenerationError('THEME_MASK_INTEGRITY_INVALID');
   }
-  return toEditMask((await normalizeGeneratedImage(bytes)).bytes);
+  return (await normalizeGeneratedImage(bytes)).bytes;
 }
 
-/** 读取并校验来源图与蒙版（快照任务需校验 checksum），返回供应商编辑所需输入。 */
-export async function loadThemeSource(database: pg.Pool, job: ThemeJob, storage: ThemeStorage): Promise<ThemeSource> {
+export const themeOptions = (job: ThemeJob): ThemePipelineOptions => job.snapshot?.options ?? LEGACY_THEME_OPTIONS;
+
+/** 读取并校验来源图与蒙版原图（快照任务需校验 checksum），供生图输入与出图合成共用。 */
+export async function loadThemeImages(database: pg.Pool, job: ThemeJob, storage: ThemeStorage): Promise<ThemeImages> {
   const key = await sourceObjectKey(database, job);
-  const reference = await storage.getBuffer(key, IMAGE_LIMITS.maxBytes);
-  await normalizeGeneratedImage(reference);
-  if (job.snapshot?.source.checksum && sha256(reference) !== job.snapshot.source.checksum) {
+  const original = await storage.getBuffer(key, IMAGE_LIMITS.maxBytes);
+  await normalizeGeneratedImage(original);
+  if (job.snapshot?.source.checksum && sha256(original) !== job.snapshot.source.checksum) {
     throw new ImageGenerationError('THEME_SOURCE_INTEGRITY_INVALID');
   }
-  const mask = await loadMask(database, job, storage);
+  return { original, mask: await loadMask(database, job, storage) };
+}
+
+/** 按任务冻结的选项生成供应商输入：透明背景可铺纯色；蒙版可不发送。 */
+export async function themeEditInput(images: ThemeImages, options: ThemePipelineOptions): Promise<ThemeSource> {
+  const reference =
+    options.backgroundMode === 'fill'
+      ? await sharp(images.original).flatten({ background: options.backgroundColor }).png().toBuffer()
+      : images.original;
+  const mask = options.sendMask && images.mask ? await toEditMask(images.mask) : undefined;
   return { reference, mask };
 }

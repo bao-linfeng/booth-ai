@@ -4,6 +4,8 @@ import type { AssignedAiModel } from '../../../infra/ai/types.js';
 import type { createStorage } from '../../../infra/storage.js';
 import type { Logger } from '../../../infra/logger.js';
 import type { ThemeInput } from '../theme/domain.js';
+import type { DirectionDrawings } from './drawings.js';
+import type { ArtworkPipelineOptions } from './settings.js';
 
 export const DIRECTIONS = ['front', 'back', 'left', 'right'] as const;
 export type Direction = (typeof DIRECTIONS)[number];
@@ -18,6 +20,10 @@ export type ArtworkSnapshot = {
   prompt: string;
   template: { id: string; revision: number; body: string } | null;
   directionPrompts?: Record<Direction, string>;
+  /** 报价时的流水线设置；缺省为引入设置前的快照，不附带报馆图。 */
+  options?: ArtworkPipelineOptions;
+  /** 各方向附带的报馆图，提示词中的图片编号与此顺序一致。 */
+  drawings?: DirectionDrawings;
   model: Pick<AssignedAiModel, 'id' | 'model' | 'revision' | 'unitCredits'>;
   quality: typeof ARTWORK_QUALITY;
   pipelineRevision: number;

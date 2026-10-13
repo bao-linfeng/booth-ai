@@ -11,6 +11,12 @@ export const createGridOptions = (assetType: AssetType) => ({
     { field: 'schemeCode', title: '方案编号', width: 140 },
     { field: 'schemeName', title: '所属方案', minWidth: 160 },
     {
+      field: 'metadata',
+      title: '视向',
+      width: 160,
+      slots: { default: 'viewCodes' },
+    },
+    {
       field: 'currentVersion',
       title: '文件名',
       width: 200,
@@ -25,7 +31,7 @@ export const createGridOptions = (assetType: AssetType) => ({
     {
       field: 'action',
       title: '操作',
-      width: 180,
+      width: 220,
       fixed: 'right' as const,
       slots: { default: 'action' },
     },

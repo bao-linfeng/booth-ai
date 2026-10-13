@@ -9,7 +9,7 @@ import { submitArtworkJob } from '../../src/modules/generation/artwork/submissio
 import { artworkHash } from '../../src/modules/generation/artwork/queries.js';
 import { ARTWORK_QUALITY, type ArtworkOffer } from '../../src/modules/generation/artwork/types.js';
 import { type ThemeOfferData } from '../../src/modules/generation/theme/service.js';
-import { assignedRow } from '../helpers/ai-fixtures.js';
+import { artworkSettingsRow, assignedRow, themeSettingsRow } from '../helpers/ai-fixtures.js';
 
 const userId = 'user';
 const theme = {
@@ -68,6 +68,7 @@ function quotePool(options: { available?: boolean; cached?: boolean; searchOwned
             { id: 'style', label: '现代' },
           ],
         };
+      if (sql.includes('FROM theme_generation_settings')) return { rows: [themeSettingsRow] };
       if (sql.includes('FROM prompt_templates')) return { rows: [] };
       if (sql.includes('FROM theme_jobs j')) return { rows: options.cached ? [{ id: 'cached' }] : [] };
       throw new Error(`Unexpected query: ${sql}`);
@@ -190,6 +191,8 @@ test('artwork offer service freezes selected artwork and four-direction pricing 
         };
       if (sql.includes('FROM ai_model_assignments')) return { rows: [assignedRow('openai', 'artwork', { unitCredits: 9 })] };
       if (sql.includes('FROM dictionary_items') || sql.includes('FROM prompt_templates')) return { rows: [] };
+      if (sql.includes('FROM artwork_generation_settings')) return { rows: [artworkSettingsRow] };
+      if (sql.includes("a.type = 'drawing'")) return { rows: [] };
       throw new Error(`Unexpected query: ${sql}`);
     },
   } as unknown as pg.Pool;

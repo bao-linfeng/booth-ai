@@ -38,6 +38,8 @@ export type ProviderRequestObserver = (requestId: string) => Promise<void> | voi
 export interface ImageEditRequest {
   /** Validated PNG/JPEG/WebP bytes of the image to edit. */
   reference: Buffer;
+  /** Supplementary images sent after `reference` in order (e.g. structural drawings); at most `maxReferenceImages - 1`. */
+  references?: Buffer[];
   prompt: string;
   /** Images wanted from this single call; never above the adapter's `maxImagesPerRequest`. */
   count: number;
@@ -53,6 +55,8 @@ export interface ImageEditRequest {
  */
 export interface ImageModelAdapter {
   maxImagesPerRequest: number;
+  /** Input images one call accepts, counting `reference` and `references`. */
+  maxReferenceImages: number;
   /** HTTPS host suffixes this provider may return result URLs on; `data:` URLs need none. */
   downloadHosts: readonly string[];
   edit(model: ActiveAiModel, request: ImageEditRequest): Promise<string[]>;

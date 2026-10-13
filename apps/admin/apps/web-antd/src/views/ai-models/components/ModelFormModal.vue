@@ -317,10 +317,8 @@ defineExpose({ open });
       <Tag v-for="purpose in capability.purposes" :key="purpose">
         {{ PURPOSE_LABELS[purpose] }}
       </Tag>
-      <span v-if="editing"
-        >·
-        保存修改会使该模型尚未提交的报价失效，进行中的任务不再调用旧配置</span
-      >
+      <span v-if="editing">·
+        保存修改会使该模型尚未提交的报价失效，进行中的任务不再调用旧配置</span>
     </div>
   </Modal>
 </template>

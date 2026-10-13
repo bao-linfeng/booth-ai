@@ -108,3 +108,21 @@ export async function seedAiModel(
   ]);
   return modelId;
 }
+
+/** `theme_generation_settings` 单行的查询结果（默认值），供模拟数据库的测试返回。 */
+export const themeSettingsRow = {
+  sendMask: true,
+  composite: false,
+  backgroundMode: 'fill',
+  backgroundColor: '#E8EAEE',
+  revision: 1,
+  updatedAt: new Date(0),
+} as const;
+
+/** `artwork_generation_settings` 单行的查询结果（默认值），供模拟数据库的测试返回。 */
+export const artworkSettingsRow = {
+  drawingDirections: ['front', 'back', 'left', 'right'],
+  drawingGrayscale: true,
+  revision: 1,
+  updatedAt: new Date(0),
+} as const;

@@ -27,11 +27,14 @@ async function referenceDataUrl(reference: Buffer): Promise<string> {
 
 // https://www.volcengine.com/docs/82379/1541523 — one image per call (5.0 pro/flash reject group generation);
 // the mask is ignored and edits are described in the prompt. Base64 results avoid the 24-hour TOS download links.
+// Seedream 4.0+ takes several reference images as an `image` array.
 export const arkImage: ImageModelAdapter = {
   maxImagesPerRequest: 1,
+  maxReferenceImages: 10,
   downloadHosts: [],
-  async edit(model, { reference, prompt, deadline, onProviderRequest }) {
+  async edit(model, { reference, references = [], prompt, deadline, onProviderRequest }) {
     const url = await providerEndpoint(model.baseUrl, '/images/generations');
+    const inputs = await Promise.all([reference, ...references].map(referenceDataUrl));
     const body = (await providerJson(
       url,
       {
@@ -40,7 +43,7 @@ export const arkImage: ImageModelAdapter = {
         body: JSON.stringify({
           model: model.model,
           prompt,
-          image: await referenceDataUrl(reference),
+          image: inputs.length > 1 ? inputs : inputs[0],
           size: OUTPUT_SIZE,
           response_format: 'b64_json',
           watermark: false,

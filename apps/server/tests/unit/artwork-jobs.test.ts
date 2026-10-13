@@ -6,7 +6,7 @@ import { normalizeArtworkImage } from '../../src/modules/generation/artwork/imag
 import { loadArtworkSnapshot } from '../../src/modules/generation/artwork/service.js';
 import type { ProviderProtocol } from '../../src/infra/ai/types.js';
 import { DIRECTIONS, DIRECTION_LABELS } from '../../src/modules/generation/artwork/types.js';
-import { assignedRow } from '../helpers/ai-fixtures.js';
+import { artworkSettingsRow, assignedRow } from '../helpers/ai-fixtures.js';
 
 test('default artwork snapshot freezes single-reference reconstruction and resolves each requested camera direction', async () => {
   const source = {
@@ -36,6 +36,8 @@ test('default artwork snapshot freezes single-reference reconstruction and resol
           ],
         };
       if (sql.includes('FROM prompt_templates')) return { rows: templateEnabled ? [template] : [] };
+      if (sql.includes('FROM artwork_generation_settings')) return { rows: [artworkSettingsRow] };
+      if (sql.includes("a.type = 'drawing'")) return { rows: [] };
       throw new Error(`Unexpected query: ${sql}`);
     },
   } as unknown as pg.Pool;
@@ -48,7 +50,9 @@ test('default artwork snapshot freezes single-reference reconstruction and resol
     checksum: source.checksum,
   });
   assert.equal(snapshot.template, null);
-  assert.equal(snapshot.pipelineRevision, 5);
+  assert.equal(snapshot.pipelineRevision, 6);
+  assert.deepEqual(snapshot.options, { drawingDirections: [...DIRECTIONS], drawingGrayscale: true });
+  assert.deepEqual(snapshot.drawings, {});
   assert.match(snapshot.prompt, /行业：汽车。风格：科技未来。品牌色：沿用参考图已有配色/);
   assert.match(snapshot.prompt, /唯一一张主题效果参考图/);
   assert.match(snapshot.prompt, /画幅固定为16:9横版/);
@@ -119,6 +123,8 @@ test('artwork snapshot freezes the first assigned model able to render artwork',
         };
       if (sql.includes('FROM dictionary_items')) return { rows: [] };
       if (sql.includes('FROM prompt_templates')) return { rows: [] };
+      if (sql.includes('FROM artwork_generation_settings')) return { rows: [artworkSettingsRow] };
+      if (sql.includes("a.type = 'drawing'")) return { rows: [] };
       throw new Error(`Unexpected query: ${sql}`);
     },
   } as unknown as pg.Pool;

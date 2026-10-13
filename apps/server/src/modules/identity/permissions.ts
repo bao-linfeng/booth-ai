@@ -100,6 +100,7 @@ export const permissionGroups = [
       ['read', '查看报馆图'],
       ['upload', '上传报馆图'],
       ['replace', '替换文件'],
+      ['update', '修改名称与视向'],
       ['download', '下载报馆图'],
       ['delete', '删除报馆图'],
     ],
@@ -217,7 +218,7 @@ export const permissionGroups = [
     label: 'AI 模型配置',
     routes: ['AiModels'],
     actions: [
-      ['read', '查看供应商、模型与用途'],
+      ['read', '查看供应商、模型、用途与生图设置'],
       ['provider-create', '新建供应商'],
       ['provider-update', '编辑供应商'],
       ['provider-delete', '删除供应商'],
@@ -225,7 +226,7 @@ export const permissionGroups = [
       ['model-create', '添加模型'],
       ['model-update', '编辑模型'],
       ['model-delete', '删除模型'],
-      ['assign', '配置用途、主备顺序与积分'],
+      ['assign', '配置用途、主备顺序、积分与生图设置'],
     ],
   },
   {

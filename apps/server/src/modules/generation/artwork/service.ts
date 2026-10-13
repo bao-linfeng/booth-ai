@@ -6,7 +6,10 @@ import { domainError as projectError } from '../../../lib/errors.js';
 import { getActivePromptTemplate } from '../../prompts/service.js';
 import { lockCreditUser } from '../../credits/service.js';
 import { jobLedger } from '../credit-jobs.js';
+import { imageAdapter } from '../../../infra/ai/protocols.js';
+import { loadDrawingCandidates, planDirectionDrawings } from './drawings.js';
 import { buildArtworkPrompts } from './prompt.js';
+import { artworkPipelineOptions } from './settings.js';
 import { artworkHash, assertThemeSelection, receipt } from './queries.js';
 import {
   ARTWORK_QUALITY,
@@ -44,16 +47,29 @@ export async function loadArtworkSnapshot(pool: pg.Pool, userId: string, context
   const industryLabel = labels.find(r => r.id === selected.input.industryId)?.label ?? '';
   const styleLabel = labels.find(r => r.id === selected.input.styleId)?.label ?? '';
   const template = await getActivePromptTemplate(pool, 'artwork', selected.input.industryId, selected.input.styleId);
-  const { prompt, directionPrompts } = buildArtworkPrompts(selected.input, industryLabel, styleLabel, template?.body);
+  const options = await artworkPipelineOptions(pool);
+  const drawings = options.drawingDirections.length
+    ? planDirectionDrawings(
+        await loadDrawingCandidates(pool, context.schemeCode),
+        options.drawingDirections,
+        imageAdapter(model).maxReferenceImages - 1,
+      )
+    : {};
+  const { prompt, directionPrompts } = buildArtworkPrompts(selected.input, industryLabel, styleLabel, template?.body, {
+    plan: drawings,
+    grayscale: options.drawingGrayscale,
+  });
   return {
     source: { assetId: selected.sourceAssetId, versionId: selected.versionId, objectKey: selected.objectKey, checksum: selected.checksum },
     input: selected.input,
     template: template ? { id: template.id, revision: template.revision, body: template.body } : null,
     prompt,
     directionPrompts,
+    options,
+    drawings,
     model: { id: model.id, model: model.model, revision: model.revision, unitCredits: model.unitCredits },
     quality: ARTWORK_QUALITY,
-    pipelineRevision: 5,
+    pipelineRevision: 6,
   };
 }
 export async function createArtworkJob(

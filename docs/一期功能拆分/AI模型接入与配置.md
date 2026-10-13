@@ -10,7 +10,7 @@
 | 换主题 / 四面素材 | 阿里云百炼 Qwen-Image（`qwen-image-3.0-pro`、`qwen-image-3.0`）与万相 2.7（`wan2.7-image-pro`、`wan2.7-image`）共用 `POST /api/v1/services/aigc/multimodal-generation/generation`，Bearer API Key 鉴权，同步返回。原图以 `data:` URL 放在 `input.messages[0].content` 的 `image` 中（超过 7 MB 或长边 >3072 时先转为长边 ≤3072 的 JPEG），固定 `size: '2048*1152'`，`watermark: false`；蒙版不传，编辑意图写在提示词里。万相 2.7 单次 `n` 上限 4，换主题请求数上限同为 4 | [Qwen-Image 图像编辑](https://help.aliyun.com/zh/model-studio/qwen-image-edit-api)、[万相 2.7 图像生成与编辑](https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference) |
 | 换主题 / 四面素材 | 火山方舟 Doubao Seedream（5.0 pro/flash/lite、4.5、4.0），`POST /api/v3/images/generations`，Bearer API Key 鉴权，同步返回。原图以 `data:image/<格式>;base64,` 传入 `image`（超过 10 MB 或长边 >4096 时先转为长边 ≤4096 的 JPEG），固定 `size: '2560x1440'`（严格 16:9，3,686,400 像素，同时满足 5.0 pro/flash 上限 4,624,220 与 5.0 lite/4.5 下限 3,686,400），`response_format: 'b64_json'`、`watermark: false`。5.0 pro/flash 不支持组图参数，因此每次请求只出 1 张；蒙版不传，编辑意图写在提示词里。`data[].error.code` 含 `SensitiveContent` 归类为 `PROVIDER_CONTENT_BLOCKED` | [图片生成 API](https://www.volcengine.com/docs/82379/1541523) |
 
-旧需求中的 `wanx-x-painting` + `mask_color` 已不再使用（万相 2.1 异步图像编辑协议已移除）。Gemini、Qwen-Image/万相 2.7、Seedream 都没有硬蒙版参数，必须在生成后做区域外像素保护并验证画面质量。图像输出 URL 有有效期，需要保存到平台私有 S3。各提供商调用适配器已按下文「代码结构与接入新模型」实现；区域外像素保护尚未实现。
+旧需求中的 `wanx-x-painting` + `mask_color` 已不再使用（万相 2.1 异步图像编辑协议已移除）。Gemini、Qwen-Image/万相 2.7、Seedream 都没有硬蒙版参数；OpenAI 兼容协议会传 `mask`，但 gpt-image 只把蒙版当参考，蒙版外仍可能被改动或整体重新构图。区域外像素保护由换主题的「出图后蒙版合成」实现（见下文「换主题设置」），与供应商无关。图像输出 URL 有有效期，需要保存到平台私有 S3。各提供商调用适配器已按下文「代码结构与接入新模型」实现。
 
 ## 配置流程
 
@@ -20,6 +20,19 @@
    - **模型目录**：供应商行的「刷新模型」用已保存的地址和密钥实时拉取模型列表，保存为该供应商的模型目录（`ai_providers.model_catalog`）并记录刷新时间；新建供应商、更换密钥或 Base URL 后自动刷新一次。修改 Base URL 时服务端清空旧目录，避免展示新地址不提供的型号；刷新期间供应商被编辑则丢弃结果（`REVISION_CONFLICT`）。
    - **添加模型**：在供应商下选择模型类型（文本/图像，取决于协议能力），从模型目录中选择型号（已添加的型号不再列出，也可手动输入或在弹窗内刷新目录）；参数表单按“协议 + 类型”由服务端声明自动生成并在保存时校验。模型不设单独的显示名称，后台与参展商端一律展示模型 ID；同一供应商下模型 ID 唯一（`MODEL_TAKEN`）。
 3. 「用途分配」标签页：为 AI 智选·需求解析、AI 换主题、四面平面素材分别选择模型并排序（第一个为主用）。图像用途在这里设置积分单价（换主题按张、四面素材按方向），同一个模型可以同时分配给换主题和四面素材并分别定价。未分配模型时该功能不可用（智选回退规则解析）。实际收费价格由后端费用 offer 冻结，不能以客户端显示数值直接扣费；具体规则见本平台自建积分模块（`credit_reservations` 预占扣费）。
+
+4. 「换主题设置」标签页（查看需 `ai-models.read`，修改需 `ai-models.assign`，带 revision 乐观锁并写审计日志）。设置存于单行表 `theme_generation_settings`，报价时冻结进 `generation_snapshot.options`，只影响之后报价并提交的任务；引入设置前的旧快照按“发蒙版、不合成、透明原图直接发送”执行：
+   - **发送蒙版**：把方案蒙版转成供应商编辑蒙版发送，只有 OpenAI 兼容协议使用。蒙版约定为**不透明**品红像素可编辑；蒙版通常是透明背景 PNG，透明像素即使 RGB 为品红也不可编辑。
+   - **出图后蒙版合成**：结果入库前，在原图“不可编辑结构 + 展台外轮廓”上用边缘归一化互相关搜索缩放（0.95–1.25）与平移，把生成图对齐到原图，再只取蒙版区域（外扩 3px、羽化）的新画面，其余像素（含透明背景）保持原图。全局解贴着搜索边界，或 2×2 分块各自的最优平移与全局解相差超过约 1% 画宽（模型改了视角或拉伸画面）时，该张不合成、保留模型原图并记 warn 日志；方案没有蒙版时不合成。实现见 `modules/generation/theme/composite.ts`，单张约 1 秒 CPU。
+   - **原图透明背景**：`fill`（默认，浅灰 `#E8EAEE`，与参展商端图片底色一致）先铺纯色再发送，避免模型自行补画天空和地面；`transparent` 原样发送。开启合成时结果背景会还原为透明。
+5. 「四向图设置」标签页（权限、乐观锁与审计同上）。设置存于单行表 `artwork_generation_settings`，报价时冻结进 `generation_snapshot.options`，所选报馆图冻结进 `generation_snapshot.drawings`，只影响之后报价的任务：
+   - **报馆图结构校正**（按方向勾选，默认四个方向全开，全不勾即关闭）：勾选方向生成时，除主题图外再附带方案报馆图——俯视图 + 本方向立面；报馆图只有正视图、左视图两个立面，背面用正视图水平翻转、右侧用左视图水平翻转（相反方向的正交轮廓互为镜像）。报馆图取方案当前生效、图片格式（PNG/JPEG/WebP）且 `metadata.viewCodes` 标注了视向的资产，同一视向多张时取排序靠前的一张；没有可用报馆图的方向只发送主题图，提示词与引入前一致。模型单次能接收的图片不足时优先保留立面。发送前裁掉四周纯色边条（SketchUp 导出图的上下深色条与留白）、长边缩到 ≤2048，提示词按发送顺序说明每张图的视向与用途，并禁止输出报馆图中的旧方案文字与标识。实现见 `modules/generation/artwork/drawings.ts` 与 `prompt.ts`。
+   - **报馆图去色**（默认开）：去色后发送，避免旧方案的品牌配色被带进结果。
+   - 2026-10-13 用 3 套方案实测（`gpt-image-2.5-sunburst`）：背面在 3 套上都从“凭空的开放拱门”变为正确的封闭后墙；多数方案左右侧更准、透视图与环境背景减少；正面拱门等特征很强的方案（HARD）侧面仍会画错。
+
+   报馆图视向在「报馆图」页上传或编辑时选择，只有 SketchUp 标准三视图：`front` 正视图、`left` 左视图、`top` 俯视图，左右以站在正面入口外、面向展台时的左右手为准；上传时按文件名（如「-左视图」）预填。迁移 084 把原来的 `side`（侧视图）统一改为 `left`（SketchUp 标准三视图导出的是左视图）。
+
+   各图像适配器通过 `ImageEditRequest.references` 接收附加参考图，放在主图之后：OpenAI 兼容协议多图时改用 `image[]` 字段（单图仍为 `image`），Seedream 的 `image` 改为数组，Gemini 依次追加 `inlineData`，Qwen-Image/万相在 `content` 中依次排列图片。`maxReferenceImages`（含主图）分别为 16、10、3、3。
 
 ### 获取供应商模型列表
 

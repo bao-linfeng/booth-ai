@@ -284,6 +284,8 @@ test('metadata rules and required upload pairing are enforced outside HTTP', asy
   assert.deepEqual(deps.events, []);
   for (const [metadata, field, rule] of [
     [{ viewCodes: [1] }, 'viewCodes', 'string_array'],
+    [{ viewCodes: ['front', 'side'] }, 'viewCodes', 'view_code'],
+    [{ viewCodes: ['back'] }, 'viewCodes', 'view_code'],
     [{ purpose: 1 }, 'purpose', 'string'],
     [{ modelAssetVersionId: 'bad' }, 'modelAssetVersionId', 'uuid'],
   ] as const) {
@@ -304,7 +306,7 @@ test('metadata rules and required upload pairing are enforced outside HTTP', asy
       details: { field, rule },
     });
   }
-  validateAssetMetadata('drawing', { viewCodes: ['front'], purpose: '施工' });
+  validateAssetMetadata('drawing', { viewCodes: ['front', 'left', 'top'], purpose: '施工' });
   validateAssetMetadata('artwork', undefined);
   validateAssetMetadata('artwork', { physicalWidth: 100, dimensionUnit: 'mm' });
 });

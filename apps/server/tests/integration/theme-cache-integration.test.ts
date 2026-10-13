@@ -40,6 +40,7 @@ test(
       '034_theme_result_assets',
       '038_credit_reservations_and_generated_urls',
       '039_credit_idempotency',
+      '083_theme_generation_settings',
     ]) {
       await pool.query(await readFile(new URL(`../../migrations/${name}.sql`, import.meta.url), 'utf8'));
     }

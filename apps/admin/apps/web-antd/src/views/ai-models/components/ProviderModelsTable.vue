@@ -110,8 +110,9 @@ function paramSummary(model: AiModelRecord) {
         type="link"
         size="small"
         @click="emit('edit', row)"
-        >编辑</Button
       >
+        编辑
+      </Button>
       <Button
         v-access:code="['ai-models.model-delete']"
         type="link"

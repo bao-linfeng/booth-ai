@@ -21,7 +21,7 @@ const config = {
   },
 };
 
-async function fixture(count = 2, prompt?: string, protocol: ProviderProtocol = 'openai') {
+async function fixture(count = 2, prompt?: string, protocol: ProviderProtocol = 'openai', snapshotPatch: Record<string, unknown> = {}) {
   const jobId = randomUUID();
   const userId = randomUUID();
   const industryId = randomUUID();
@@ -56,6 +56,7 @@ async function fixture(count = 2, prompt?: string, protocol: ProviderProtocol = 
             mask: null,
             source: { objectKey: 'pinned.png' },
             models: [{ id: modelRow.id, model: modelRow.model, revision: 1, position: 1, unitCredits: 3 }],
+            ...snapshotPatch,
           },
   });
   const run = async (sql: string, params?: unknown[]) => {
@@ -102,10 +103,12 @@ async function fixture(count = 2, prompt?: string, protocol: ProviderProtocol = 
   };
   const pool = { query: run, connect: async () => ({ query: run, release: () => {} }) } as unknown as pg.Pool;
   const stored: string[] = [];
+  const storedBytes: Buffer[] = [];
   const storage = {
     getBuffer: async () => image,
-    putBuffer: async (key: string) => {
+    putBuffer: async (key: string, bytes: Buffer) => {
       stored.push(key);
+      storedBytes.push(bytes);
     },
     signDownload: async (key: string) => `https://assets.example/${key}`,
   };
@@ -121,6 +124,7 @@ async function fixture(count = 2, prompt?: string, protocol: ProviderProtocol = 
     pool,
     storage,
     stored,
+    storedBytes,
     state: () => status,
     disableModel: () => {
       enabled = false;
@@ -256,10 +260,10 @@ test('theme storage retry with partial generation never submits again and skips 
   };
   const storage = {
     ...f.storage,
-    putBuffer: async (key: string) => {
+    putBuffer: async (key: string, bytes: Buffer) => {
       uploads++;
       if (uploads === 2) throw new Error('Storage outage');
-      await f.storage.putBuffer(key);
+      await f.storage.putBuffer(key, bytes);
     },
   };
   await assert.rejects(processThemeJob(f.pool, f.jobId, config, storage as never), /Storage outage/);
@@ -325,4 +329,45 @@ test('theme worker sends the accepted prompt unchanged', async t => {
   await processThemeJob(f.pool, f.jobId, config, f.storage as never);
   assert.equal(f.state(), 'succeeded');
   assert.ok(!f.queries.some(q => q.sql.includes('FROM dictionary_items') || q.sql.includes('FROM prompt_templates')));
+});
+
+const options = (patch: Record<string, unknown>) => ({
+  options: { sendMask: true, composite: false, backgroundMode: 'transparent', backgroundColor: '#E8EAEE', ...patch },
+});
+
+test('theme worker sends the mask only when the frozen options allow it', async t => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = oldFetch;
+  });
+  for (const sendMask of [true, false]) {
+    const f = await fixture(1, '提示词', 'openai', { mask: { objectKey: 'mask.png' }, ...options({ sendMask }) });
+    let sentMask: unknown;
+    globalThis.fetch = async (_input, init) => {
+      sentMask = (init!.body as FormData).get('mask');
+      return Response.json({ data: [{ b64_json: f.image.toString('base64') }] });
+    };
+    await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+    assert.equal(f.state(), 'succeeded');
+    assert.equal(sentMask !== null, sendMask);
+  }
+});
+
+test('theme worker stores the composite when enabled and the provider image otherwise', async t => {
+  const oldFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = oldFetch;
+  });
+  // 蒙版没有可编辑区：合成结果应完全还原原图（#123456），未开启合成时保存模型返回的红色图。
+  const generated = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#FF0000' } })
+    .png()
+    .toBuffer();
+  for (const composite of [true, false]) {
+    const f = await fixture(1, '提示词', 'openai', { mask: { objectKey: 'mask.png' }, ...options({ composite }) });
+    globalThis.fetch = async () => Response.json({ data: [{ b64_json: generated.toString('base64') }] });
+    await processThemeJob(f.pool, f.jobId, config, f.storage as never);
+    assert.equal(f.state(), 'succeeded');
+    const { data } = await sharp(f.storedBytes[0]!).raw().toBuffer({ resolveWithObject: true });
+    assert.deepEqual([...data.subarray(0, 3)], composite ? [0x12, 0x34, 0x56] : [0xff, 0, 0]);
+  }
 });

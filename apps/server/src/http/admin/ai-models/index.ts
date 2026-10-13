@@ -18,6 +18,8 @@ import {
   updateModel,
   updateProvider,
 } from '../../../modules/ai-models/service.js';
+import { getArtworkGenerationSettings, updateArtworkGenerationSettings } from '../../../modules/generation/artwork/settings.js';
+import { getThemeGenerationSettings, updateThemeGenerationSettings } from '../../../modules/generation/theme/settings.js';
 import { nullDataResponse, successResponse } from '../../schemas.js';
 
 const tags = ['AI 模型配置'];
@@ -153,6 +155,34 @@ const assignmentSchema = {
       },
     },
   },
+} as const;
+const themeOptionProperties = {
+  sendMask: { type: 'boolean', description: '把蒙版发给支持蒙版的供应商' },
+  composite: { type: 'boolean', description: '出图后对齐原图，只保留蒙版可编辑区域的新画面' },
+  backgroundMode: { type: 'string', enum: ['transparent', 'fill'], description: '原图透明背景：保持透明或铺纯色后发送' },
+  backgroundColor: { type: 'string', pattern: '^#[0-9A-Fa-f]{6}$', description: '铺底颜色，仅 fill 时使用' },
+} as const;
+const themeSettingsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sendMask', 'composite', 'backgroundMode', 'backgroundColor', 'revision', 'updatedAt'],
+  properties: { ...themeOptionProperties, revision, updatedAt: { type: 'string', format: 'date-time' } },
+} as const;
+const artworkOptionProperties = {
+  drawingDirections: {
+    type: 'array',
+    uniqueItems: true,
+    maxItems: 4,
+    items: { type: 'string', enum: ['front', 'back', 'left', 'right'] },
+    description: '附带方案报馆图（俯视图 + 本方向立面，背面/右侧用正视图/左视图翻转）校正结构的方向，空数组即不使用',
+  },
+  drawingGrayscale: { type: 'boolean', description: '报馆图去色后发送' },
+} as const;
+const artworkSettingsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['drawingDirections', 'drawingGrayscale', 'revision', 'updatedAt'],
+  properties: { ...artworkOptionProperties, revision, updatedAt: { type: 'string', format: 'date-time' } },
 } as const;
 const createdIdResponse = {
   200: successResponse({ type: 'object', additionalProperties: false, required: ['id'], properties: { id: string } }),
@@ -369,5 +399,61 @@ export async function registerAdminAiModelRoutes(app: FastifyInstance, pool: pg.
     },
     async request =>
       ({ code: 0, data: await replaceAssignments(pool, request.params.purpose, request.body, adminUserId(request)) }) as const,
+  );
+
+  routes.get(
+    '/theme-generation-settings',
+    {
+      config: { permissions: ['ai-models.read'] },
+      schema: { tags, summary: '换主题生图设置（蒙版、合成、透明背景）', response: { 200: successResponse(themeSettingsSchema) } },
+    },
+    async () => ({ code: 0, data: await getThemeGenerationSettings(pool) }) as const,
+  );
+
+  routes.put(
+    '/theme-generation-settings',
+    {
+      config: { permissions: ['ai-models.assign'] },
+      schema: {
+        tags,
+        summary: '修改换主题生图设置，只影响之后提交的任务',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sendMask', 'composite', 'backgroundMode', 'backgroundColor', 'expectedRevision'],
+          properties: { ...themeOptionProperties, expectedRevision: revision },
+        },
+        response: { 200: successResponse(themeSettingsSchema) },
+      },
+    },
+    async request => ({ code: 0, data: await updateThemeGenerationSettings(pool, request.body, adminUserId(request)) }) as const,
+  );
+
+  routes.get(
+    '/artwork-generation-settings',
+    {
+      config: { permissions: ['ai-models.read'] },
+      schema: { tags, summary: '四向图生图设置（报馆图结构校正）', response: { 200: successResponse(artworkSettingsSchema) } },
+    },
+    async () => ({ code: 0, data: await getArtworkGenerationSettings(pool) }) as const,
+  );
+
+  routes.put(
+    '/artwork-generation-settings',
+    {
+      config: { permissions: ['ai-models.assign'] },
+      schema: {
+        tags,
+        summary: '修改四向图生图设置，只影响之后报价的任务',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['drawingDirections', 'drawingGrayscale', 'expectedRevision'],
+          properties: { ...artworkOptionProperties, expectedRevision: revision },
+        },
+        response: { 200: successResponse(artworkSettingsSchema) },
+      },
+    },
+    async request => ({ code: 0, data: await updateArtworkGenerationSettings(pool, request.body, adminUserId(request)) }) as const,
   );
 }

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { UploadFile } from 'ant-design-vue';
 
+import type { DrawingViewCode } from '../drawing-views';
+
 import { h, markRaw, onBeforeUnmount, ref } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
@@ -14,20 +16,19 @@ import { uploadAssetApi } from '#/api/core/assets';
 import { useSchemeOptions } from '../../shared/scheme-filter';
 import { createUploadKeys } from '../../shared/upload-key';
 import { defaultAssetName } from '../../shared/upload-name';
+import {
+  guessViewCodes,
+  VIEW_CODE_HINT,
+  VIEW_CODE_OPTIONS,
+} from '../drawing-views';
 
 const emit = defineEmits(['reload']);
 
 /** 每个文件各自的资源名称与视向 */
 interface DrawingRow {
   name: string;
-  viewCodes: string[];
+  viewCodes: DrawingViewCode[];
 }
-
-const VIEW_CODE_OPTIONS = [
-  { label: '正视图', value: 'front' },
-  { label: '顶视图', value: 'top' },
-  { label: '侧视图', value: 'side' },
-];
 
 const schemeCode = ref<string | undefined>(undefined);
 const schemes = useSchemeOptions();
@@ -61,7 +62,7 @@ function syncFiles(fileList: undefined | UploadFile[]) {
       item.uid,
       rows.value[item.uid] ?? {
         name: defaultAssetName(item.name),
-        viewCodes: [],
+        viewCodes: guessViewCodes(item.name),
       },
     ]),
   );
@@ -218,6 +219,9 @@ defineExpose({ open });
       <Form />
       <div v-if="files.length > 0">
         <div class="mb-2 text-sm font-medium">已选 {{ files.length }} 个</div>
+        <div class="text-muted-foreground mb-2 text-xs">
+          {{ VIEW_CODE_HINT }}
+        </div>
         <div
           class="text-muted-foreground grid grid-cols-[56px_1fr_240px_32px] gap-2 px-2 pb-1 text-xs"
         >

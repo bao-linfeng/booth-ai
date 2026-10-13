@@ -9,6 +9,7 @@ import { buildThemePrompt } from './prompt.js';
 import { lockCreditUser } from '../../credits/service.js';
 import { jobLedger } from '../credit-jobs.js';
 import { normalizeThemeInput, type ThemeInput } from './domain.js';
+import { themePipelineOptions, type ThemePipelineOptions } from './settings.js';
 
 export type { ThemeInput } from './domain.js';
 export { normalizeThemeInput } from './domain.js';
@@ -29,6 +30,8 @@ export type GenerationSnapshot = {
   models: Pick<AssignedAiModel, 'id' | 'model' | 'revision' | 'position' | 'unitCredits'>[];
   template: { id: string; revision: number; body: string } | null;
   prompt: string;
+  /** 提交时的流水线设置；缺省为引入设置前的快照，按 `LEGACY_THEME_OPTIONS` 执行。 */
+  options?: ThemePipelineOptions;
   pipelineRevision: number;
 };
 export type ThemeOfferData = ThemeParameters & {
@@ -126,7 +129,8 @@ export async function loadGenerationSnapshot(pool: pg.Pool, parameters: ThemePar
     models,
     template: template ? { id: template.id, revision: template.revision, body: template.body } : null,
     prompt,
-    pipelineRevision: 3,
+    options: await themePipelineOptions(pool),
+    pipelineRevision: 4,
   };
 }
 

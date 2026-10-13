@@ -39,32 +39,33 @@ export const geminiImageParams: ParamField[] = [
   },
 ];
 
-// One image per call; Gemini has no hard mask parameter, so the mask is ignored.
+async function inlineImage(image: Buffer) {
+  if (image.length <= INLINE_REFERENCE_BYTES)
+    return { inlineData: { mimeType: await imageMimeType(image), data: image.toString('base64') } };
+  const resized = await sharp(image, { limitInputPixels: IMAGE_LIMITS.maxPixels })
+    .rotate()
+    .resize({ width: 3072, height: 3072, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+  return { inlineData: { mimeType: 'image/jpeg', data: resized.toString('base64') } };
+}
+
+// One image per call; Gemini has no hard mask parameter, so the mask is ignored. Image models are tuned for up to
+// 3 input images; supplementary references follow the primary one in order.
 export const geminiImage: ImageModelAdapter = {
   maxImagesPerRequest: 1,
+  maxReferenceImages: 3,
   downloadHosts: ['googleusercontent.com'],
-  async edit(model, { reference, prompt, deadline, onProviderRequest }) {
+  async edit(model, { reference, references = [], prompt, deadline, onProviderRequest }) {
     const url = await providerEndpoint(model.baseUrl, `/models/${encodeURIComponent(model.model)}:generateContent`);
-    let input = { data: reference, mimeType: await imageMimeType(reference) };
-    if (reference.length > INLINE_REFERENCE_BYTES) {
-      input = {
-        mimeType: 'image/jpeg',
-        data: await sharp(reference, { limitInputPixels: IMAGE_LIMITS.maxPixels })
-          .rotate()
-          .resize({ width: 3072, height: 3072, fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 90 })
-          .toBuffer(),
-      };
-    }
+    const inputs = await Promise.all([reference, ...references].map(inlineImage));
     const body = (await providerJson(
       url,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': model.apiKey },
         body: JSON.stringify({
-          contents: [
-            { role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType: input.mimeType, data: input.data.toString('base64') } }] },
-          ],
+          contents: [{ role: 'user', parts: [{ text: prompt }, ...inputs] }],
           generationConfig: {
             responseModalities: ['IMAGE'],
             imageConfig: {

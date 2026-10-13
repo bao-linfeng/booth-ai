@@ -3,6 +3,8 @@ import { downloadGeneratedImage } from '../../../infra/ai/protocols.js';
 import { ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
 import { transaction } from '../../../infra/database.js';
 import { lockRunningLease, refreshGeneration } from '../execution.js';
+import { compositeThemeResult } from './composite.js';
+import { loadThemeImages, themeOptions, type ThemeImages } from './source.js';
 import type { ThemeRun } from './types.js';
 
 type NormalizedImage = Awaited<ReturnType<typeof normalizeGeneratedImage>>;
@@ -15,6 +17,27 @@ async function fetchValidImage(run: ThemeRun, ordinal: number, url: string): Pro
     if (!(error instanceof ImageGenerationError) || error.retryable) throw error;
     run.log.warn({ ordinal, code: error.code }, 'Theme result rejected');
     return undefined;
+  }
+}
+
+/** 合成开启且有蒙版时，把生成图的可编辑区域合成回原图；无法可靠对齐或合成异常时保留模型原图，不丢弃该序号。 */
+async function compositeResult(run: ThemeRun, ordinal: number, image: NormalizedImage, images: ThemeImages): Promise<NormalizedImage> {
+  if (!images.mask) return image;
+  try {
+    const started = Date.now();
+    const result = await compositeThemeResult(images.original, images.mask, image.bytes);
+    if ('skipped' in result) {
+      run.log.warn({ ordinal, estimate: result.skipped }, 'Theme result not aligned; keeping provider image');
+      return image;
+    }
+    run.log.info(
+      { ordinal, alignment: result.alignment, structureScore: result.structureScore, ms: Date.now() - started },
+      'Theme result composited',
+    );
+    return { bytes: result.bytes, width: result.width, height: result.height };
+  } catch (error) {
+    run.log.warn({ ordinal, err: error }, 'Theme result composite failed; keeping provider image');
+    return image;
   }
 }
 
@@ -63,13 +86,16 @@ export async function persistThemeResults(run: ThemeRun) {
     'SELECT ordinal, url FROM theme_job_generated_urls WHERE job_id = $1 ORDER BY ordinal',
     [jobId],
   );
+  const composite = themeOptions(run.job).composite;
+  let images: ThemeImages | undefined;
   for (const { ordinal, url } of saved.rows) {
     const existing = await database.query('SELECT id FROM theme_job_results WHERE job_id = $1 AND ordinal = $2', [jobId, ordinal]);
     if (existing.rows[0]) continue;
     await refreshGeneration(database, { kind: 'theme', id: run.jobId }, lease, 'result_validating');
     const image = await fetchValidImage(run, ordinal, url);
     if (!image) continue;
+    if (composite) images ??= await loadThemeImages(database, run.job, run.storage);
     await refreshGeneration(database, { kind: 'theme', id: run.jobId }, lease, 'result_persisting');
-    await storeResult(run, ordinal, image);
+    await storeResult(run, ordinal, images ? await compositeResult(run, ordinal, image, images) : image);
   }
 }

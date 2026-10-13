@@ -14,7 +14,7 @@ import {
   type ThemeParameters,
   type ThemeOfferData,
 } from '../../src/modules/generation/theme/service.js';
-import { assignedRow } from '../helpers/ai-fixtures.js';
+import { assignedRow, themeSettingsRow } from '../helpers/ai-fixtures.js';
 
 const jobId = '00000000-0000-4000-8000-000000000001';
 const resultId = '00000000-0000-4000-8000-000000000002';
@@ -50,6 +50,7 @@ async function setup(query: Query) {
           { id: 'style', label: '现代' },
         ],
       };
+    if (sql.includes('FROM theme_generation_settings')) return { rows: [themeSettingsRow] };
     if (sql.includes('FROM prompt_templates')) return { rows: [] };
     if (sql.includes('FROM theme_jobs WHERE id = $1') && created) return { rows: [created] };
     if (sql.includes('SELECT user_id AS "userId", reserved_amount')) return { rows: [] };

@@ -7,7 +7,7 @@ import { ImageGenerationError } from '../../../infra/ai/image.js';
 import type { ActiveAiModel, ImageEditRequest, ImageModelAdapter } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
 import { lockRunningLease, refreshGeneration, throwIfDraining } from '../execution.js';
-import { loadThemeSource, resolveThemePrompt } from './source.js';
+import { loadThemeImages, resolveThemePrompt, themeEditInput, themeOptions } from './source.js';
 import type { ThemeRun } from './types.js';
 
 const MAX_ATTEMPTS_PER_MODEL = 3;
@@ -107,7 +107,7 @@ async function submitWithFallback(run: ThemeRun, attempts: ProviderAttempt[], ac
     : activeModels;
   if (!models.length) return;
   const prompt = await resolveThemePrompt(database, themeJob);
-  const source = await loadThemeSource(database, themeJob, storage);
+  const source = await themeEditInput(await loadThemeImages(database, themeJob, storage), themeOptions(themeJob));
   let collected = 0;
   for (const model of models) {
     const adapter = imageAdapter(model);

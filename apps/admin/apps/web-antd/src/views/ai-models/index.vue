@@ -22,10 +22,12 @@ import {
   refreshAiProviderCatalogApi,
 } from '#/api/core/ai-models';
 
+import ArtworkSettingsPanel from './components/ArtworkSettingsPanel.vue';
 import AssignmentPanel from './components/AssignmentPanel.vue';
 import ModelFormModal from './components/ModelFormModal.vue';
 import ProviderFormModal from './components/ProviderFormModal.vue';
 import ProviderModelsTable from './components/ProviderModelsTable.vue';
+import ThemeSettingsPanel from './components/ThemeSettingsPanel.vue';
 import { discoveryErrorMessage } from './discovery-error';
 import { createProviderGridOptions } from './options';
 
@@ -198,6 +200,20 @@ onMounted(async () => {
           :providers="providers"
           @reload="reload"
         />
+      </TabPane>
+      <TabPane
+        key="theme-settings"
+        tab="换主题设置"
+        class="h-full overflow-y-auto"
+      >
+        <ThemeSettingsPanel v-if="activeTab === 'theme-settings'" />
+      </TabPane>
+      <TabPane
+        key="artwork-settings"
+        tab="四向图设置"
+        class="h-full overflow-y-auto"
+      >
+        <ArtworkSettingsPanel v-if="activeTab === 'artwork-settings'" />
       </TabPane>
     </Tabs>
     <ProviderFormModal

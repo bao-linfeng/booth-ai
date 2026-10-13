@@ -10,11 +10,12 @@ import { assertProjectAdmin } from '../../src/modules/projects/admin-service.js'
 import { configuredAssignee } from '../../src/modules/projects/assignment.js';
 import { projectTestPool } from '../helpers/project-fixtures.js';
 
-// 061 只授予编写时已有的权限；之后新增的权限码由追加迁移补授给 ROLE_ADMIN（如 072、075、082）。
+// 061 只授予编写时已有的权限；之后新增的权限码由追加迁移补授给 ROLE_ADMIN（如 072、075、082、084）。
 // 新增权限码时必须追加补授迁移，否则下方“执行全部迁移后 ROLE_ADMIN 拥有全部权限”的断言会失败。
 const introducedBy075 = ['customer-service.read', 'customer-service.reply', 'customer-service.supervise', 'customer-service.settings'];
 const introducedBy082 = ['assets-artworks.update'];
-const introducedAfter072 = [...introducedBy075, ...introducedBy082];
+const introducedBy084 = ['assets-drawings.update'];
+const introducedAfter072 = [...introducedBy075, ...introducedBy082, ...introducedBy084];
 const introducedAfter061 = ['credits.sign_in_config', ...introducedAfter072];
 const grantedBy061 = allPermissionCodes.filter(code => !introducedAfter061.includes(code));
 const grantedBy072 = allPermissionCodes.filter(code => !introducedAfter072.includes(code));

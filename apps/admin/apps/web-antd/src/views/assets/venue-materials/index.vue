@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { SchemeFilterValues } from '../shared/scheme-filter';
 
+import type { SchemeAsset } from '#/api/core/assets';
+
 import { onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
@@ -20,10 +22,13 @@ import {
   useRouteSchemeCode,
   useSchemeOptions,
 } from '../shared/scheme-filter';
+import EditModal from './components/EditModal.vue';
 import UploadModal from './components/UploadModal.vue';
+import { formatViewCodes } from './drawing-views';
 import { createGridOptions } from './options';
 
 const uploadModalRef = ref<InstanceType<typeof UploadModal>>();
+const editModalRef = ref<InstanceType<typeof EditModal>>();
 
 const schemes = useSchemeOptions();
 const initialSchemeCode = useRouteSchemeCode(applySchemeFilter);
@@ -126,7 +131,18 @@ function handleDelete(row: any) {
       <template #createdAt="{ row }">
         {{ formatDate(row.createdAt) }}
       </template>
+      <template #viewCodes="{ row }">
+        {{ formatViewCodes(row.metadata ?? {}) }}
+      </template>
       <template #action="{ row }">
+        <Button
+          v-access:code="['assets-drawings.update']"
+          type="link"
+          size="small"
+          @click="editModalRef?.open(row as SchemeAsset)"
+        >
+          编辑
+        </Button>
         <Button
           v-access:code="['assets-drawings.replace']"
           type="link"
@@ -155,5 +171,6 @@ function handleDelete(row: any) {
       </template>
     </Grid>
     <UploadModal ref="uploadModalRef" @reload="gridApi.reload()" />
+    <EditModal ref="editModalRef" @reload="gridApi.reload()" />
   </Page>
 </template>

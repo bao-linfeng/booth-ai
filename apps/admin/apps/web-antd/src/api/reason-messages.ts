@@ -135,6 +135,9 @@ export const REASON_DETAIL_MESSAGES: Record<
       case 'unit': {
         return `${label}只能是 mm、cm 或 m`;
       }
+      case 'view_code': {
+        return `${label}只能是正视图、左视图或俯视图`;
+      }
       default: {
         return `${label}格式不正确`;
       }

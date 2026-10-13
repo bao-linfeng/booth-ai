@@ -184,6 +184,65 @@ export function saveAiModelAssignmentsApi(
   );
 }
 
+export type ThemeBackgroundMode = 'fill' | 'transparent';
+
+/** 换主题流水线设置；提交任务时冻结，修改只影响之后提交的任务。 */
+export interface ThemeGenerationOptions {
+  sendMask: boolean;
+  composite: boolean;
+  backgroundMode: ThemeBackgroundMode;
+  backgroundColor: string;
+}
+
+export interface ThemeGenerationSettings extends ThemeGenerationOptions {
+  revision: number;
+  updatedAt: string;
+}
+
+export function getThemeGenerationSettingsApi() {
+  return requestClient.get<ThemeGenerationSettings>(
+    '/v1/admin/theme-generation-settings',
+  );
+}
+
+export function saveThemeGenerationSettingsApi(
+  input: ThemeGenerationOptions & { expectedRevision: number },
+) {
+  return requestClient.put<ThemeGenerationSettings>(
+    '/v1/admin/theme-generation-settings',
+    input,
+  );
+}
+
+export type ArtworkDirection = 'back' | 'front' | 'left' | 'right';
+
+/** 四向底图流水线设置；报价时冻结，修改只影响之后报价的任务。 */
+export interface ArtworkGenerationOptions {
+  /** 附带报馆图校正结构的方向，空数组即不使用报馆图 */
+  drawingDirections: ArtworkDirection[];
+  drawingGrayscale: boolean;
+}
+
+export interface ArtworkGenerationSettings extends ArtworkGenerationOptions {
+  revision: number;
+  updatedAt: string;
+}
+
+export function getArtworkGenerationSettingsApi() {
+  return requestClient.get<ArtworkGenerationSettings>(
+    '/v1/admin/artwork-generation-settings',
+  );
+}
+
+export function saveArtworkGenerationSettingsApi(
+  input: ArtworkGenerationOptions & { expectedRevision: number },
+) {
+  return requestClient.put<ArtworkGenerationSettings>(
+    '/v1/admin/artwork-generation-settings',
+    input,
+  );
+}
+
 export const PURPOSE_LABELS: Record<AiPurpose, string> = {
   selection_parse: 'AI 智选 · 需求解析',
   theme: 'AI 换主题',

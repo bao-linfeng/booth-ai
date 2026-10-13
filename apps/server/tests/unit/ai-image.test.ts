@@ -510,3 +510,53 @@ test('ark seedream shrinks oversized references and classifies blocked, empty or
     error => error instanceof ImageGenerationError && error.code === 'PROVIDER_REQUEST_FAILED' && !error.retryable && !error.outcomeUnknown,
   );
 });
+
+test('every image adapter sends supplementary references after the primary image in order', async t => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  const image = (background: string) =>
+    sharp({ create: { width: 32, height: 32, channels: 3, background } })
+      .png()
+      .toBuffer();
+  const [reference, top, elevation] = await Promise.all([image('#111111'), image('#222222'), image('#333333')]);
+  const dataUrl = (bytes: Buffer) => `data:image/png;base64,${bytes.toString('base64')}`;
+  const bodies: unknown[] = [];
+  globalThis.fetch = async (_input, init) => {
+    bodies.push(init?.body instanceof FormData ? init.body : JSON.parse(String(init?.body)));
+    return Response.json({
+      data: [{ b64_json: 'aW1n' }],
+      candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: 'aW1n' } }] } }],
+      output: { choices: [{ message: { content: [{ image: 'https://dashscope.oss.aliyuncs.com/a.png' }] } }] },
+    });
+  };
+  const references = [top, elevation];
+  for (const protocol of ['openai', 'ark', 'gemini', 'qwen-image'] as const) {
+    const model = activeModel(protocol, 'artwork');
+    assert.ok(imageAdapter(model).maxReferenceImages >= 3, protocol);
+    await edit(model, reference, 'prompt', { references });
+    await edit(model, reference, 'prompt');
+  }
+  const [openAi, openAiSingle, ark, arkSingle, gemini, geminiSingle, qwen, qwenSingle] = bodies as any[];
+  const blobs = async (form: FormData, field: string) =>
+    Promise.all(form.getAll(field).map(async blob => Buffer.from(await (blob as Blob).arrayBuffer())));
+  assert.deepEqual(await blobs(openAi, 'image[]'), [reference, top, elevation]);
+  assert.equal(openAi.has('image'), false);
+  assert.deepEqual(await blobs(openAiSingle, 'image'), [reference]);
+  assert.equal(openAiSingle.has('image[]'), false);
+  assert.deepEqual(ark.image, [reference, top, elevation].map(dataUrl));
+  assert.equal(arkSingle.image, dataUrl(reference));
+  const inline = (body: any) => body.contents[0].parts.slice(1).map((part: any) => part.inlineData.data);
+  assert.equal(gemini.contents[0].parts[0].text, 'prompt');
+  assert.deepEqual(
+    inline(gemini),
+    [reference, top, elevation].map(bytes => bytes.toString('base64')),
+  );
+  assert.deepEqual(inline(geminiSingle), [reference.toString('base64')]);
+  assert.deepEqual(qwen.input.messages[0].content, [
+    ...[reference, top, elevation].map(bytes => ({ image: dataUrl(bytes) })),
+    { text: 'prompt' },
+  ]);
+  assert.deepEqual(qwenSingle.input.messages[0].content, [{ image: dataUrl(reference) }, { text: 'prompt' }]);
+});

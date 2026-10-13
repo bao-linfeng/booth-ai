@@ -184,7 +184,8 @@ async function testConnection() {
       normalizedBaseUrl(values) === editing.value.baseUrl
     ) {
       // 未填新密钥且地址未改时用已保存的配置测试，并顺带更新模型目录；已保存的密钥不会被发往表单中的新地址
-      models = (await refreshAiProviderCatalogApi(editing.value.id)).models;
+      const catalog = await refreshAiProviderCatalogApi(editing.value.id);
+      models = catalog.models;
       emit('reload');
     } else {
       message.warning('修改了 Base URL，请同时填写 API Key 再测试');
@@ -254,11 +255,10 @@ defineExpose({ open });
         v-access:code="['ai-models.discover']"
         :loading="testing"
         @click="testConnection"
-        >测试连接</Button
       >
-      <span class="text-xs text-muted-foreground"
-        >用当前填写的地址与密钥拉取模型列表，不会保存</span
-      >
+        测试连接
+      </Button>
+      <span class="text-xs text-muted-foreground">用当前填写的地址与密钥拉取模型列表，不会保存</span>
     </div>
     <Alert
       v-if="testError"

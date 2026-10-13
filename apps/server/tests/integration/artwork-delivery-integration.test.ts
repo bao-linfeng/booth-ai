@@ -110,7 +110,26 @@ test(
       return id;
     }
     const checklist = await addAsset('checklist');
-    for (const type of ['model', 'drawing', 'artwork']) await addAsset(type);
+    for (const type of ['model', 'artwork']) await addAsset(type);
+    // 正视图左红右蓝、中间一道白线：发送内容可判断是否去色、背面是否为水平翻转
+    const frontDrawing = await sharp({ create: { width: 400, height: 200, channels: 3, background: '#2050D0' } })
+      .composite([
+        { input: { create: { width: 200, height: 200, channels: 3, background: '#D02020' } }, left: 0, top: 0 },
+        { input: { create: { width: 400, height: 20, channels: 3, background: '#FFFFFF' } }, left: 0, top: 90 },
+      ])
+      .png()
+      .toBuffer();
+    buffers.set('drawings/front.png', frontDrawing);
+    const drawingAsset = randomUUID();
+    await pool.query("INSERT INTO scheme_assets(id,scheme_id,type,name,metadata) VALUES($1,$2,'drawing','正视图',$3)", [
+      drawingAsset,
+      scheme,
+      JSON.stringify({ viewCodes: ['front'] }),
+    ]);
+    await pool.query(
+      "INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum,width_px,height_px) VALUES($1,'drawings/front.png','front.png','image/png',$2,$3,400,200)",
+      [drawingAsset, frontDrawing.length, createHash('sha256').update(frontDrawing).digest('hex')],
+    );
     for (let order = 0; order < 3; order++) await addAsset('mask', order, await addAsset('rendering', order));
     const bom = (
       await pool.query<{ id: string }>(
@@ -227,6 +246,7 @@ test(
     let calls = 0;
     let mode: 'complete' | 'partial' | 'storage' = 'complete';
     const prompts: string[] = [];
+    const sentImages: Buffer[][] = [];
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (!url.startsWith('https://api.openai.com/'))
@@ -237,8 +257,11 @@ test(
       prompts.push(prompt);
       assert.equal(form.get('n'), '1');
       assert.equal(form.get('size'), '2048x1152');
-      const sent = await (form.get('image') as Blob).arrayBuffer();
-      assert.equal(createHash('sha256').update(Buffer.from(sent)).digest('hex'), sourceChecksum);
+      const images = await Promise.all(
+        form.getAll(form.has('image[]') ? 'image[]' : 'image').map(async blob => Buffer.from(await (blob as Blob).arrayBuffer())),
+      );
+      assert.equal(createHash('sha256').update(images[0]!).digest('hex'), sourceChecksum);
+      sentImages.push(images);
       const data = mode === 'partial' && prompt.includes('背面正交') ? small : jpeg;
       return Response.json({ data: [{ b64_json: data.toString('base64') }] });
     }) as typeof fetch;
@@ -289,7 +312,22 @@ test(
     const frozen = (
       await pool.query<{ snapshot: ArtworkSnapshot }>('SELECT generation_snapshot AS snapshot FROM artwork_jobs WHERE id=$1', [jobId])
     ).rows[0]!.snapshot;
-    assert.equal(frozen.pipelineRevision, 5);
+    assert.equal(frozen.pipelineRevision, 6);
+    // 只有正视图：正面带原视图，背面带翻转后的正视图，左右没有可用立面
+    assert.deepEqual(Object.keys(frozen.drawings ?? {}).sort(), ['back', 'front']);
+    assert.deepEqual(
+      sentImages.map(images => images.length),
+      [2, 2, 1, 1],
+    );
+    const [frontSent, backSent] = [sentImages[0]![1]!, sentImages[1]![1]!];
+    const frontPixels = await sharp(frontSent).raw().toBuffer();
+    assert.equal(frontPixels[0], frontPixels[1]);
+    assert.equal(frontPixels[1], frontPixels[2]);
+    assert.notEqual(frontPixels[0], frontPixels[frontPixels.length - 3]);
+    assert.deepEqual(await sharp(frontSent).flop().raw().toBuffer(), await sharp(backSent).raw().toBuffer());
+    assert.match(prompts[0]!, /- 第2张 正面立面：/);
+    assert.match(prompts[1]!, /- 第2张 背面轮廓：由正视图水平翻转得到/);
+    assert.match(prompts[2]!, /根据提供的唯一一张主题效果参考图/);
     for (const [index, direction] of DIRECTIONS.entries()) {
       const prompt = prompts[index]!;
       assert.equal(prompt, frozen.directionPrompts?.[direction]);

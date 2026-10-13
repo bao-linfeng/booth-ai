@@ -7,11 +7,16 @@ import type { ActiveAiModel } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
 import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot, type Direction } from './types.js';
 import type { ArtworkRun } from './types.js';
+import { prepareDrawing } from './drawings.js';
 import { normalizeArtworkImage } from './image.js';
 import { lockRunningLease, publishGeneration, refreshGeneration, throwIfDraining } from '../execution.js';
 
-/** 模型与参考图只在第一个需要调用供应商的方向上加载，之后四个方向共用。 */
-type SharedInputs = { model(): Promise<ActiveAiModel | undefined>; reference(): Promise<Buffer> };
+/** 模型、参考图与报馆图只在第一个需要调用供应商的方向上加载，之后各方向共用。 */
+type SharedInputs = {
+  model(): Promise<ActiveAiModel | undefined>;
+  reference(): Promise<Buffer>;
+  drawings(direction: Direction): Promise<Buffer[]>;
+};
 
 const creditJob = (run: ArtworkRun) => ({ kind: 'artwork', id: run.jobId }) as const;
 
@@ -48,6 +53,9 @@ function sharedInputs(run: ArtworkRun, snapshot: ArtworkSnapshot): SharedInputs 
   let model: ActiveAiModel | undefined;
   let modelLoaded = false;
   let reference: Buffer | undefined;
+  // 同一张报馆图（如俯视图）会被多个方向共用，按版本与是否翻转缓存处理结果。
+  const prepared = new Map<string, Promise<Buffer>>();
+  const grayscale = snapshot.options?.drawingGrayscale ?? true;
   return {
     async model() {
       if (!modelLoaded) {
@@ -67,6 +75,20 @@ function sharedInputs(run: ArtworkRun, snapshot: ArtworkSnapshot): SharedInputs 
         reference = bytes;
       }
       return reference;
+    },
+    drawings(direction) {
+      return Promise.all(
+        (snapshot.drawings?.[direction] ?? []).map(drawing => {
+          const key = `${drawing.versionId}:${drawing.mirrored}`;
+          let image = prepared.get(key);
+          if (!image) {
+            image = prepareDrawing(run.storage, drawing, grayscale);
+            image.catch(() => prepared.delete(key));
+            prepared.set(key, image);
+          }
+          return image;
+        }),
+      );
     },
   };
 }
@@ -88,6 +110,7 @@ async function generateDirectionUrl(
     return undefined;
   }
   const reference = await inputs.reference();
+  const references = await inputs.drawings(direction);
   await updateDirection(run, direction, 'submitting');
   await publishGeneration(publish, jobId, { direction, status: 'submitting' });
   let providerRequestId: string | undefined;
@@ -96,6 +119,7 @@ async function generateDirectionUrl(
     const prompt = snapshot.directionPrompts?.[direction] ?? snapshot.prompt.replaceAll('{{directionLabel}}', DIRECTION_LABELS[direction]);
     const generated = await imageAdapter(model).edit(model, {
       reference,
+      ...(references.length ? { references } : {}),
       prompt,
       count: 1,
       deadline,

@@ -67,17 +67,25 @@ export const openAiImageParams: ParamField[] = [
 // 两条边均为 16 的倍数且严格 16:9；需模型支持自定义尺寸（如 gpt-image-2），仅支持固定尺寸的旧模型无法满足 16:9。
 const IMAGE_SIZE = { theme: '1792x1008', artwork: '2048x1152' } as const;
 
-// https://platform.openai.com/docs/api-reference/images/createEdit
+// https://platform.openai.com/docs/api-reference/images/createEdit — gpt-image takes up to 16 input images as `image[]`;
+// a single image keeps the plain `image` field that every relay accepts. The mask applies to the first image.
 export const openAiImage: ImageModelAdapter = {
   maxImagesPerRequest: 10,
+  maxReferenceImages: 16,
   downloadHosts: ['openai.com', 'blob.core.windows.net'],
-  async edit(model, { reference, prompt, count, deadline, mask, onProviderRequest }) {
+  async edit(model, { reference, references = [], prompt, count, deadline, mask, onProviderRequest }) {
     const url = await providerEndpoint(model.baseUrl, '/images/edits');
     const artwork = model.purpose === 'artwork';
     const quality = artwork ? 'high' : String(model.params.quality ?? 'auto');
     const form = new FormData();
     form.set('model', model.model);
-    form.set('image', new Blob([new Uint8Array(reference)], { type: await imageMimeType(reference) }), 'source.png');
+    const images = [reference, ...references];
+    for (const [index, image] of images.entries())
+      form.append(
+        images.length > 1 ? 'image[]' : 'image',
+        new Blob([new Uint8Array(image)], { type: await imageMimeType(image) }),
+        index ? `reference-${index}.png` : 'source.png',
+      );
     form.set('prompt', prompt);
     form.set('n', String(count));
     form.set('size', IMAGE_SIZE[model.purpose === 'artwork' ? 'artwork' : 'theme']);

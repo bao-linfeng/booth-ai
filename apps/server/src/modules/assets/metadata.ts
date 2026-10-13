@@ -1,7 +1,11 @@
 import type { AssetType } from './types.js';
 
+/** 报馆图视向：正视图、左视图与俯视图（SketchUp 标准三视图）。左右以站在正面入口外、面向展台时的左右手为准。 */
+export const DRAWING_VIEW_CODES = ['front', 'left', 'top'] as const;
+export type DrawingViewCode = (typeof DRAWING_VIEW_CODES)[number];
+
 /** 违反的规则，前端据此与字段名组合提示 */
-type MetadataRule = 'string' | 'string_array' | 'uuid' | 'positive_number' | 'unit';
+type MetadataRule = 'string' | 'string_array' | 'uuid' | 'positive_number' | 'unit' | 'view_code';
 
 function metadataError(message: string, field: string, rule: MetadataRule): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode: 400, reason: 'ASSET_METADATA_INVALID', details: { field, rule } });
@@ -15,6 +19,9 @@ export function validateAssetMetadata(type: AssetType, metadata: Record<string, 
       (!Array.isArray(metadata.viewCodes) || !metadata.viewCodes.every(value => typeof value === 'string'))
     ) {
       throw metadataError('drawing metadata.viewCodes must be a string array', 'viewCodes', 'string_array');
+    }
+    if (Array.isArray(metadata.viewCodes) && !metadata.viewCodes.every(code => (DRAWING_VIEW_CODES as readonly unknown[]).includes(code))) {
+      throw metadataError(`drawing metadata.viewCodes must be among ${DRAWING_VIEW_CODES.join(', ')}`, 'viewCodes', 'view_code');
     }
     for (const field of ['purpose', 'applicability', 'exportSpecVersion'] as const) {
       if (Object.hasOwn(metadata, field) && typeof metadata[field] !== 'string')
