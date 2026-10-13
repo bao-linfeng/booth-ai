@@ -5,6 +5,8 @@ import type { Redis } from 'ioredis';
 export const rateLimitPolicies = {
   login: { max: 20, windowSeconds: 60, identity: 'ip' },
   generation: { max: 10, windowSeconds: 60, identity: 'user' },
+  // 询价随表单参数自动刷新，单独计数，避免挤占提交生成的额度
+  generationOffer: { max: 60, windowSeconds: 60, identity: 'user' },
   quote: { max: 10, windowSeconds: 60, identity: 'user' },
   manual: { max: 10, windowSeconds: 60, identity: 'user' },
   anonymousProject: { max: 5, windowSeconds: 600, identity: 'ip' },

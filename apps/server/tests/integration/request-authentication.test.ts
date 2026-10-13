@@ -365,9 +365,25 @@ test('login/sync limits share one budget and private operations enforce configur
   const limited = await app.inject({ method: 'POST', url: '/api/v1/client/auth/login', payload: {} });
   assert.equal(limited.statusCode, 429);
   assert.equal(limited.headers['retry-after'], '60');
+  const themeJob = {
+    requestKey: randomUUID(),
+    offerId: 'offer',
+    schemeCode: 'S',
+    sourceAssetId: 'source',
+    input: { industryId: 'i', styleId: 's' },
+    requestedCount: 1,
+  };
+  const offerWindow = Math.floor(Date.now() / 60000);
+  counters.set(
+    `rate:client:generationOffer:${createHash('sha256').update(userId).digest('hex')}:${offerWindow}`,
+    rateLimitPolicies.generationOffer.max,
+  );
+  const submitted = await app.inject({ method: 'POST', url: '/api/v1/client/theme-jobs', payload: themeJob, headers });
+  assert.notEqual(submitted.statusCode, 429, 'exhausted offer budget must not block job submission');
   for (const [name, url, payload] of [
-    ['generation', '/theme-offers', { schemeCode: 'S', sourceAssetId: 'source' }],
-    ['generation', '/artwork-offers', { schemeCode: 'S', themeJobId: jobId, resultId: jobId, selectionRevision: 1 }],
+    ['generationOffer', '/theme-offers', { schemeCode: 'S', sourceAssetId: 'source' }],
+    ['generationOffer', '/artwork-offers', { schemeCode: 'S', themeJobId: jobId, resultId: jobId, selectionRevision: 1 }],
+    ['generation', '/theme-jobs', themeJob],
     [
       'quote',
       '/quote-requests',

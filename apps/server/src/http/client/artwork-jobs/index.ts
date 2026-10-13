@@ -48,11 +48,15 @@ export async function registerArtworkJobRoutes(
       await streamArtworkJobEvents(pool, redis, request.params.jobId, requirePrincipal(request, 'client'), reply);
     },
   );
-  routes.post('/artwork-offers', { preHandler: rateLimit(redis, 'generation'), schema: artworkOfferSchema }, async (request, reply) => {
-    reply.header('Cache-Control', 'private, no-store');
-    const userId = clientUserId(request);
-    return { code: 0, data: await createArtworkOffer(pool, redis, userId, request.body) } as const;
-  });
+  routes.post(
+    '/artwork-offers',
+    { preHandler: rateLimit(redis, 'generationOffer'), schema: artworkOfferSchema },
+    async (request, reply) => {
+      reply.header('Cache-Control', 'private, no-store');
+      const userId = clientUserId(request);
+      return { code: 0, data: await createArtworkOffer(pool, redis, userId, request.body) } as const;
+    },
+  );
   routes.post('/artwork-jobs', { preHandler: rateLimit(redis, 'generation'), schema: artworkSubmissionSchema }, async (request, reply) => {
     reply.header('Cache-Control', 'private, no-store');
     const userId = clientUserId(request);

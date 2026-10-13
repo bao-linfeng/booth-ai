@@ -58,7 +58,7 @@ export async function registerThemeModelRoutes(
   routes.post(
     '/theme-offers',
     {
-      preHandler: rateLimit(redis, 'generation'),
+      preHandler: rateLimit(redis, 'generationOffer'),
       schema: themeOfferSchema,
     },
     async request => {
