@@ -6,7 +6,7 @@ import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
 import { workbenchStream } from '../../src/http/admin/customer-service/index.js';
 import { customerStreamHeartbeat } from '../../src/http/client/customer-service/index.js';
-import { createSession, destroySession, encryptJwt } from '../../src/infra/session.js';
+import { createSession, destroySession } from '../../src/infra/session.js';
 import { requeueAgentConversations } from '../../src/modules/customer-service/agents.js';
 import {
   claimConversation,
@@ -32,7 +32,7 @@ import { updateSettings } from '../../src/modules/customer-service/settings.js';
 import { issueVisitor, mergeVisitor, resolveVisitor } from '../../src/modules/customer-service/visitors.js';
 import { seedAiModel } from '../helpers/ai-fixtures.js';
 import { themeContextObjectKey } from '../../src/modules/customer-service/contexts.js';
-import { resolvePrincipal, revokeAccountSessions } from '../../src/modules/identity/principal.js';
+import { resolvePrincipal } from '../../src/modules/identity/principal.js';
 import { csTestPool, csTestRedis, seedAdmin, seedProject, seedScheme, seedThemeJob, seedUser } from '../helpers/cs-fixtures.js';
 
 const enabled = { skip: !process.env.CS_TEST_DATABASE_URL || !process.env.CS_TEST_REDIS_URL };
@@ -477,7 +477,6 @@ test(
           localId,
           externalUserId: 1,
           username: 'test',
-          externalJwtCiphertext: encryptJwt('jwt', 'test-secret'),
           loginSource: 'password',
           sessionVersion,
         },
@@ -520,7 +519,7 @@ test(
       'logged-out sessions stop streaming',
     );
     assert.equal(await customerStreamHeartbeat(pool, redis, conversationId, subject, revoked, send), true);
-    await revokeAccountSessions(pool, 'client', customer);
+    await pool.query('UPDATE users SET session_version=session_version+1 WHERE id=$1', [customer]);
     assert.equal(
       await customerStreamHeartbeat(pool, redis, conversationId, subject, revoked, send),
       false,
@@ -566,7 +565,7 @@ test(
     const reading = workbenchStream(pool, redis, readerSession, false);
     assert.equal(await reading.heartbeat(), true);
     assert.equal(await redis.zscore('cs:presence', reader), null, 'read-only connections never count as online agents');
-    await revokeAccountSessions(pool, 'admin', reader);
+    await pool.query('UPDATE admins SET session_version=session_version+1 WHERE id=$1', [reader]);
     assert.equal(await reading.heartbeat(), false, 'revoked read-only sessions stop streaming');
     const demoted = workbenchStream(pool, redis, await login('admin', reader), false);
     await grant(reader, ['projects.read']);
@@ -737,7 +736,6 @@ test('HTTP: visitor tokens, isolation, rate limits and admin permissions (CS09/C
         localId,
         externalUserId: 1,
         username: 'test',
-        externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret),
         loginSource: 'password',
         sessionVersion: 1,
       },

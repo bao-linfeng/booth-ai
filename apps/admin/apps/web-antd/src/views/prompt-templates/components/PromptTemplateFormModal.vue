@@ -186,7 +186,8 @@ const [Form, formApi] = useVbenForm<FormValues>({
         rows: 14,
         maxlength: 30_000,
         showCount: true,
-        class: 'font-mono text-sm',
+        // showCount 时 class 挂在外层包裹元素上，需撑满才能与下方输入框同宽
+        class: 'w-full font-mono text-sm',
         onChange: invalidatePreview,
       },
     },
@@ -337,13 +338,11 @@ async function open(row?: PromptTemplate, mode: 'edit' | 'preview' = 'edit') {
   Object.keys(drafts).forEach((key) => {
     drafts[key as TemplatePurpose] = undefined;
   });
+  let title = '新建提示词模板';
+  if (mode === 'preview') title = '预览提示词模板';
+  else if (row) title = '编辑提示词模板';
   modalApi.setState({
-    title:
-      mode === 'preview'
-        ? '预览提示词模板'
-        : row
-          ? '编辑提示词模板'
-          : '新建提示词模板',
+    title,
     showConfirmButton: mode !== 'preview',
     confirmDisabled: true,
   });
@@ -490,7 +489,9 @@ defineExpose({ open });
             type="info"
             message="原文和字典通过 user 消息自动发送，无需在系统正文插入占位符。"
           />
-          <Button block @click="restoreDefault">载入内置默认正文</Button>
+          <Button block class="mt-2" @click="restoreDefault">
+            载入内置默认正文
+          </Button>
           <details class="text-xs">
             <summary class="cursor-pointer font-medium">
               查看系统固定约束
@@ -542,11 +543,9 @@ defineExpose({ open });
               <span
                 v-for="attachment in preview.attachments"
                 :key="attachment"
-                >{{ attachment }}</span
-              >
+                >{{ attachment }}</span>
               <span v-if="preview.dictionaryVersion">
-                实时字典版本：{{ preview.dictionaryVersion }}</span
-              >
+                实时字典版本：{{ preview.dictionaryVersion }}</span>
             </div>
             <Tabs v-if="preview.directionPrompts">
               <TabPane
@@ -570,8 +569,7 @@ defineExpose({ open });
             >
               <span
                 class="text-muted-foreground text-xs font-semibold uppercase"
-                >{{ item.role }}</span
-              >
+                >{{ item.role }}</span>
               <pre
                 class="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg border bg-muted/20 p-4 font-mono text-xs leading-6"
                 >{{ item.content }}</pre>

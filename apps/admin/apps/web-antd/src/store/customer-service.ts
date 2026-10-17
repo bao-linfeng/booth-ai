@@ -270,7 +270,18 @@ export const useCustomerServiceStore = defineStore('customer-service', () => {
     workbenchTab.value = 'queue';
   }
 
+  /** 退出登录时由 resetAllStores 调用：setup store 不实现 $reset 时 Pinia 开发模式会直接抛错 */
+  function $reset() {
+    stop();
+    lost = false;
+    counts.value = { mine: 0, offline: 0, queue: 0 };
+    // 在线状态属于上一位客服，换人登录时回到默认在线
+    presence.value = 'online';
+    sessionStorage.removeItem(PRESENCE_KEY);
+  }
+
   return {
+    $reset,
     connected,
     counts,
     presence,

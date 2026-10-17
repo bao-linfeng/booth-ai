@@ -4,7 +4,16 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import pg from 'pg';
 import { loadConfig } from '../../src/config.js';
-import { getAdminRole, listAdminRoles, resolveAdminPermissions, updateRolePermissions } from '../../src/modules/identity/roles.js';
+import type { Redis } from 'ioredis';
+import { getSession } from '../../src/infra/session.js';
+import { loginAdmin } from '../../src/modules/identity/admin-service.js';
+import {
+  getAdminRole,
+  listAdminRoles,
+  resolveAdminPermissions,
+  syncAdminRoles,
+  updateRolePermissions,
+} from '../../src/modules/identity/roles.js';
 import { allPermissionCodes, validatePermissionCodes } from '../../src/modules/identity/permissions.js';
 import { assertProjectAdmin } from '../../src/modules/projects/admin-service.js';
 import { configuredAssignee } from '../../src/modules/projects/assignment.js';
@@ -133,7 +142,8 @@ test(
     const actor = randomUUID();
     await pool.query("INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,1,'role-test',ARRAY['ROLE_ADMIN'])", [actor]);
     await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=$1', [actor]);
-    const initial = await listAdminRoles(config, pool, 'jwt');
+    await syncAdminRoles(config, pool, 'jwt');
+    const initial = await listAdminRoles(pool);
     assert.equal(initial.length, 3);
     assert.deepEqual((await getAdminRole(pool, 5)).permissionCodes.sort(), [...allPermissionCodes].sort());
     const initialRevision = (await getAdminRole(pool, 5)).revision;
@@ -144,7 +154,8 @@ test(
       'schemes.read',
       'users.read',
     ]);
-    assert.equal((await listAdminRoles(config, pool, 'jwt')).find(role => role.id === 4)?.revision, 1);
+    await syncAdminRoles(config, pool, 'jwt');
+    assert.equal((await listAdminRoles(pool)).find(role => role.id === 4)?.revision, 1);
     assert.deepEqual((await getAdminRole(pool, 4)).permissionCodes, ['schemes.read']);
     const concurrent = await Promise.allSettled([
       updateRolePermissions(pool, 4, ['schemes.read', 'schemes.create'], 1, actor),
@@ -157,7 +168,7 @@ test(
     const reduced = await updateRolePermissions(pool, 5, ['roles.read', 'roles.write'], initialRevision, actor);
     assert.equal(reduced.revision, initialRevision + 1);
     assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), ['roles.read', 'roles.write']);
-    await listAdminRoles(config, pool, 'jwt');
+    await syncAdminRoles(config, pool, 'jwt');
     assert.deepEqual((await getAdminRole(pool, 5)).permissionCodes, ['roles.read', 'roles.write']);
     assert.equal((await getAdminRole(pool, 5)).revision, initialRevision + 1);
     await assert.rejects(assertProjectAdmin(pool, actor), { statusCode: 403 });
@@ -184,7 +195,7 @@ test(
       await assert.rejects(assertProjectAdmin(pool, actor, 'projects.quotation'), { statusCode: 403 });
       assert.equal(await configuredAssignee(client), actor);
       await updateRolePermissions(pool, 5, [], initialRevision + 3, actor);
-      await listAdminRoles(config, pool, 'jwt');
+      await syncAdminRoles(config, pool, 'jwt');
       assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), []);
       assert.deepEqual((await getAdminRole(pool, 5)).permissionCodes, []);
       await assert.rejects(assertProjectAdmin(pool, actor), { statusCode: 403 });
@@ -193,18 +204,18 @@ test(
       client.release();
     }
     globalThis.fetch = async () => Response.json({ code: '500', success: false });
-    await assert.rejects(listAdminRoles(config, pool, 'jwt'), { statusCode: 502 });
+    await assert.rejects(syncAdminRoles(config, pool, 'jwt'), { statusCode: 502 });
     assert.equal((await getAdminRole(pool, 4)).revision, 2);
     globalThis.fetch = async () => Response.json({ code: '200', success: true, data: roles });
     roles = [
       { id: 5, name: 'ROLE_ADMIN' },
       { id: 4, name: 'ROLE_RENAMED' },
     ];
-    await listAdminRoles(config, pool, 'jwt');
+    await syncAdminRoles(config, pool, 'jwt');
     assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN_PRODUCT', 'ROLE_ADMIN_USER', 'ROLE_RENAMED']), []);
     await assert.rejects(getAdminRole(pool, 1), { statusCode: 404 });
     roles.push({ id: 1, name: 'ROLE_ADMIN_USER' });
-    await listAdminRoles(config, pool, 'jwt');
+    await syncAdminRoles(config, pool, 'jwt');
     assert.deepEqual((await getAdminRole(pool, 1)).permissionCodes, []);
     await pool.query("UPDATE admins SET roles=ARRAY['ROLE_RENAMED'] WHERE id=$1", [actor]);
     await pool.query("UPDATE admins SET roles=ARRAY['ROLE_ADMIN_USER'] WHERE id=$1", [actor]);
@@ -248,5 +259,91 @@ test(
     ]);
     await pool.query(migration);
     assert.equal((await getAdminRole(pool, 7)).revision, assets.revision);
+  },
+);
+
+test(
+  'admin login syncs the role list once for role viewers, keeps the session local and survives role sync failures',
+  { skip: !process.env.PROJECT_TEST_DATABASE_URL },
+  async t => {
+    const pool = await projectTestPool(t);
+    const originalFetch = globalThis.fetch;
+    t.after(() => {
+      globalThis.fetch = originalFetch;
+    });
+    const config = loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_URL: process.env.PROJECT_TEST_DATABASE_URL,
+      REDIS_URL: 'redis://localhost',
+      S3_ENDPOINT: 'http://localhost:9000',
+      S3_PUBLIC_ENDPOINT: 'http://localhost:9000',
+      S3_BUCKET: 'test',
+      S3_ACCESS_KEY: 'test',
+      S3_SECRET_KEY: 'test',
+      CORS_ORIGINS: 'http://localhost:5173',
+      SESSION_SECRET: 'test-session-secret-must-be-at-least-32-bytes',
+      AI_MODEL_ENCRYPTION_KEY: 'a'.repeat(64),
+      EXTERNAL_API_URL: 'https://api.example.test',
+    });
+    await pool.query("INSERT INTO admin_roles(id,name,permission_codes) VALUES(78,'ROLE_VIEWER',ARRAY['users.read'])");
+    const values = new Map<string, string>();
+    const redis = {
+      set: async (key: string, value: string) => {
+        values.set(key, value);
+        return 'OK';
+      },
+      get: async (key: string) => values.get(key) ?? null,
+      del: async (key: string) => Number(values.delete(key)),
+    } as unknown as Redis;
+    // 灵通 JWT 只剩 60 秒：本地会话仍按 SESSION_TTL_SECONDS 计算
+    const jwt = `e30.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 60 })).toString('base64url')}.sig`;
+    let account = { id: 9001, username: 'role-admin', roles: ['ROLE_ADMIN'] };
+    let roleList: () => Response = () =>
+      Response.json({
+        code: '200',
+        success: true,
+        data: [
+          { id: 5, name: 'ROLE_ADMIN' },
+          { id: 78, name: 'ROLE_VIEWER' },
+          { id: 79, name: 'ROLE_FROM_LINGTONG' },
+        ],
+      });
+    const roleCalls: string[] = [];
+    globalThis.fetch = async input => {
+      const url = String(input);
+      if (url.includes('/api/auth/login'))
+        return Response.json({ success: true, code: '200', data: { JWT: jwt, data: { id: account.id, username: account.username } } });
+      if (url.includes('/api/user/username/'))
+        return Response.json({
+          success: true,
+          data: { id: account.id, username: account.username, enabled: true, roles: account.roles.map(name => ({ name })) },
+        });
+      if (url.endsWith('/api/role/all')) {
+        roleCalls.push(url);
+        return roleList();
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    };
+
+    const before = Math.floor(Date.now() / 1000);
+    const login = await loginAdmin(config, pool, redis, account.username, 'secret');
+    assert.equal(roleCalls.length, 1);
+    assert.ok((await listAdminRoles(pool)).some(role => role.name === 'ROLE_FROM_LINGTONG'));
+    assert.ok(login.expiresAt >= before + config.sessionTtlSeconds);
+    const session = await getSession(redis, login.accessToken, 'admin');
+    assert.equal(session?.expiresAt, login.expiresAt);
+    assert.ok(![...values.values()].some(value => value.includes(jwt)), 'admin session does not keep the external JWT');
+
+    // 上游角色列表失败不影响登录，已同步的角色保持不变
+    roleList = () => Response.json({ code: '500', success: false });
+    await loginAdmin(config, pool, redis, account.username, 'secret');
+    assert.equal(roleCalls.length, 2);
+    assert.ok((await listAdminRoles(pool)).some(role => role.name === 'ROLE_FROM_LINGTONG'));
+
+    // 没有 roles.read 的管理员登录不拉角色列表
+    account = { id: 9002, username: 'viewer-admin', roles: ['ROLE_VIEWER'] };
+    const viewer = await loginAdmin(config, pool, redis, account.username, 'secret');
+    assert.deepEqual(viewer.user.permissions, ['users.read']);
+    assert.equal(roleCalls.length, 2);
   },
 );

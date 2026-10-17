@@ -76,8 +76,7 @@ test('every business route documents the shared error response, and auth routes 
   for (const path of ['/api/v1/client/auth/login', '/api/v1/client/auth/sync', '/api/v1/admin/auth/login']) {
     assert.ok(spec.paths[path]?.post?.responses?.['200']?.content?.['application/json']?.schema, path);
   }
-  for (const path of ['/api/v1/client/me', '/api/v1/admin/me'])
-    assert.ok(spec.paths[path]?.get?.responses?.['200']?.content?.['application/json']?.schema, path);
+  assert.ok(spec.paths['/api/v1/admin/me']?.get?.responses?.['200']?.content?.['application/json']?.schema);
 });
 
 test('current user schemas declare every field the identity module produces, so serialization never drops one', () => {

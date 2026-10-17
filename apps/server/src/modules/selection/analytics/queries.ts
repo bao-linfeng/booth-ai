@@ -103,7 +103,8 @@ export async function getSearch(pool: pg.Pool, id: string) {
      s.zero_match_reasons AS "zeroMatchReasons",s.match_diagnostics AS "matchDiagnostics",s.demand_terms AS "demandTerms",s.result_snapshot AS "resultSnapshot",
     s.rules_version AS "rulesVersion",s.dictionary_version AS "dictionaryVersion",s.degraded_parse AS "degradedParse",
     s.duration_ms AS "durationMs",s.created_at AS "createdAt",p.parser,p.degraded AS "parseDegraded",p.field_sources AS "fieldSources",
-    p.overrides,p.clarifications,p.unhandled_text AS "unhandledText",p.warnings,p.created_at AS "parsedAt",p.prompt_snapshot AS "promptSnapshot"
+    p.overrides,p.clarifications,p.unhandled_text AS "unhandledText",p.warnings,p.created_at AS "parsedAt",p.llm_attempts AS "llmAttempts",
+    p.prompt_snapshot AS "promptSnapshot"
     FROM selection_searches s LEFT JOIN selection_parses p ON p.id=s.parse_id WHERE s.id=$1`,
     [id],
   );

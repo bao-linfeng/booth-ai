@@ -3,7 +3,6 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { Config } from '../../config.js';
 import { registerClientAuthRoutes } from './auth/index.js';
-import { registerClientMeRoutes } from './me/index.js';
 import type { createStorage } from '../../infra/storage.js';
 import { registerSelectionRoutes } from './selection/index.js';
 import { registerClientBomRoutes } from './bill-of-materials/index.js';
@@ -29,7 +28,6 @@ export async function registerClientModule(
     async client => {
       registerAuthentication(client, pool, redis, 'client');
       await registerClientAuthRoutes(client, config, pool, redis);
-      await registerClientMeRoutes(client, config, pool, redis);
       await registerClientCreditRoutes(client, pool);
       await registerQuoteRequestRoutes(client, pool, redis);
       await registerClientProjectRoutes(client, pool, storage);

@@ -45,7 +45,8 @@ export const openAiChat: TextModelAdapter = {
         messages,
       }),
     });
-    if (!response.ok) throw new Error('Model unavailable');
+    // 状态码供调用方区分鉴权、限流与供应商故障，不含响应正文
+    if (!response.ok) throw Object.assign(new Error('Model unavailable'), { status: response.status });
     const payload: unknown = await response.json();
     const content = (payload as { choices?: { message?: { content?: unknown } }[] }).choices?.[0]?.message?.content;
     if (typeof content !== 'string') throw new Error('Invalid model response');

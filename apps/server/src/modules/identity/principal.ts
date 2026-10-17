@@ -25,11 +25,6 @@ export function authenticationError(statusCode = 401, reason = 'AUTH_REQUIRED'):
   return new AuthenticationError(statusCode, reason);
 }
 
-export async function revokeAccountSessions(pool: pg.Pool, site: SessionSite, localId: string): Promise<void> {
-  const table = site === 'client' ? 'users' : 'admins';
-  await pool.query(`UPDATE ${table} SET session_version=session_version+1 WHERE id=$1`, [localId]);
-}
-
 export async function resolvePrincipal(pool: pg.Pool, redis: Redis, token: string, site: SessionSite): Promise<Principal> {
   const session = await getSession(redis, token, site);
   if (!session) throw authenticationError();

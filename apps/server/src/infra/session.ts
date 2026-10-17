@@ -1,14 +1,14 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { Redis } from 'ioredis';
 
 export type SessionSite = 'client' | 'admin';
 
+/** 本项目签发的会话；灵通 JWT 只在登录时用来取资料，不保存。 */
 export interface SessionData {
   site: SessionSite;
   localId: string;
   externalUserId: number;
   username: string;
-  externalJwtCiphertext: string;
   expiresAt: number;
   loginSource: 'password' | 'sso_token';
   sessionVersion: number;
@@ -17,24 +17,6 @@ export interface SessionData {
 function tokenKey(token: string): string {
   const digest = createHash('sha256').update(token).digest('hex').slice(0, 32);
   return `session:${digest}`;
-}
-
-export function encryptJwt(jwt: string, secret: string): string {
-  const key = createHash('sha256').update(secret).digest();
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([cipher.update(jwt, 'utf8'), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
-}
-
-export function decryptJwt(ciphertext: string, secret: string): string {
-  const [ivHex, authTagHex, encHex] = ciphertext.split(':');
-  if (!ivHex || !authTagHex || !encHex) throw new Error('Invalid ciphertext');
-  const key = createHash('sha256').update(secret).digest();
-  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
-  decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
-  return decipher.update(Buffer.from(encHex, 'hex')).toString('utf8') + decipher.final('utf8');
 }
 
 export async function createSession(

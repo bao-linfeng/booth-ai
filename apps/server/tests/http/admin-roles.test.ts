@@ -5,7 +5,7 @@ import type { Redis } from 'ioredis';
 import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
 import { fetchExternalRoles, fetchExternalUserDetail } from '../../src/infra/external-auth.js';
-import { createSession, encryptJwt } from '../../src/infra/session.js';
+import { createSession } from '../../src/infra/session.js';
 import { adminRoutePolicies, routePermissions } from '../helpers/admin-route-policies.js';
 import {
   accessSummary,
@@ -233,7 +233,6 @@ test('action-only grants cannot mutate other operations, PATCH fields or other a
       externalUserId: 1,
       username: 'test',
       sessionVersion: 1,
-      externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret),
       loginSource: 'password',
     },
     3600,
@@ -358,7 +357,6 @@ for (const roleName of ['ROLE_ADMIN_PRODUCT', 'ROLE_ADMIN']) {
         externalUserId: 1,
         username: 'test',
         sessionVersion: 1,
-        externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret),
         loginSource: 'password',
       },
       3600,
@@ -485,7 +483,6 @@ test('role permission API saves current sign-in grants and rejects obsolete code
       externalUserId: 1,
       username: 'test',
       sessionVersion: 1,
-      externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret),
       loginSource: 'password',
     },
     3600,

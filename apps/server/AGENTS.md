@@ -7,7 +7,7 @@
 深入修改前先读对应代码：
 
 - 模块依赖规则：`tests/architecture/module-boundaries.test.ts` 用 AST 静态检查强制执行：技术层方向、业务模块间依赖白名单（必须无环）与对外公开文件、关键表写入归属（规则摘要见下文“模块开发规范”）
-- 认证体系：`src/http/authentication.ts` 统一建立请求级 principal，`src/modules/identity/principal.ts` 校验账户与 Session 版本
+- 认证体系：`src/http/authentication.ts` 统一建立请求级 principal，`src/modules/identity/principal.ts` 校验账户与 Session 版本。灵通 JWT 只在登录时使用（拉取用户资料；有 `roles.read` 的管理员登录时顺带把灵通角色列表同步进 `admin_roles`），会话里不保存，会话有效期只看 `SESSION_TTL_SECONDS`；登录后的接口（含 `/admin/me`、`/admin/roles`）只读本地表
 - 积分账本（预占、结算、释放）：`src/modules/credits/`，不读写生成任务表；job 行加锁由 `generation/credit-jobs.ts` 注入（`createJobLedger`，先锁用户再锁 job），任务与账本对账在 `generation/credit-reconciliation.ts`；违反账本不变量抛 `CreditInvariantError`（稳定 `code`，日志按 code 定位，不要改回普通 `Error`）
 - 生成任务 Outbox 与恢复：`src/workers/generation-outbox.ts`（主题/画稿共用分发）、`generation-recovery.ts`（恢复矩阵 `decideRecovery`）
 - 方案基线资产与用户生成素材的作用域隔离：`migrations/050_asset_scope.sql`（`scheme_baseline_assets` 视图）
@@ -130,10 +130,9 @@ GET  /openapi.json                   → OpenAPI schema（仅 NODE_ENV != produc
 GET  /docs                           → Swagger UI（仅 NODE_ENV != production）
 POST /api/v1/client/auth/login       → 参展商登录（外部 SSO，返回 accessToken）
 POST /api/v1/client/auth/logout      → 参展商登出（清除 Redis session）
-GET  /api/v1/client/me               → 参展商当前用户信息
 POST /api/v1/admin/auth/login        → 管理端登录（外部 SSO + 角色校验，返回 accessToken）
 POST /api/v1/admin/auth/logout       → 管理端登出（清除 Redis session）
-GET  /api/v1/admin/me                → 管理端当前用户信息
+GET  /api/v1/admin/me                → 管理端当前用户信息（读本地 admins 表）
 ```
 
 业务路由在 `http/client/index.ts`、`http/admin/index.ts` 中注册；上述仅列出基础认证路由。

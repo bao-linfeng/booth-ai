@@ -21,7 +21,11 @@ function unwrap<T>(response: { code: number; data: T }, name: string) {
 }
 
 export async function parseRequirement(body: ParseRequirementInput): Promise<ParseResponse> {
-  return unwrap(await apiFetch<{ code: number; data: ParseResponse }>('/api/v1/client/requirements/parse', { method: 'POST', body }), 'Parse')
+  // 服务端等模型最多 20 秒（超时后换备用模型），超过即退回规则解析，这里留出余量
+  return unwrap(
+    await apiFetch<{ code: number; data: ParseResponse }>('/api/v1/client/requirements/parse', { method: 'POST', body, timeout: 25000, retry: 0 }),
+    'Parse',
+  )
 }
 
 export async function matchSchemes(body: MatchSchemesInput): Promise<MatchResponse> {

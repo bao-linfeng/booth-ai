@@ -64,6 +64,7 @@ export function parseRequirement(
 ) {
   const ctx = createContext(text, form, locale);
 
+  parseLabeledDimensions(ctx, catalog);
   parseDimensions(ctx);
   parseBoothSize(ctx, catalog);
   const areaMentioned = parseArea(ctx);
@@ -98,6 +99,54 @@ export function parseRequirement(
 
 // ---------- 尺寸 / 面积 / 开口 ----------
 
+const DIMENSION_UNIT = '(毫米|厘米|mm|cm|米|meters?|metres?|メートル|m)';
+
+function toMm(value: number, unit: string): number {
+  return value * (/毫米|mm/i.test(unit) ? 1 : /厘米|cm/i.test(unit) ? 10 : 1000);
+}
+
+function overlapsConsumed(ctx: ParseContext, match: RegExpMatchArray): boolean {
+  return ctx.consumed.some(([start, end]) => match.index! < end && match.index! + match[0].length > start);
+}
+
+/**
+ * “长宽 6*3”“长×宽 6×3米”“length x width 6x3m”：标明了长在前、宽在后，按顺序赋值。
+ * “长宽高 6*3*4”的高度与“高4米”一样是方案高度，只用于定位固定尺寸组合，不当作场馆限高。
+ */
+function parseLabeledDimensions(ctx: ParseContext, catalog: Catalog) {
+  const separator = String.raw`\s*[×xX*/、和与]?\s*`;
+  const label = String.raw`(?:(?:展位)?长(?:度)?${separator}宽(?:度)?(${separator}高(?:度)?)?|\blength\s*(?:[×x*]|by|and)?\s*width|\bL\s*[×x*]\s*W|間口\s*[×x*]?\s*奥行き?)`;
+  const value = String.raw`(\d+(?:\.\d+)?)\s*${DIMENSION_UNIT}?`;
+  const pattern = new RegExp(
+    String.raw`${label}\s*(?:为|是|分别为|分别是|is|=|:|：|は)?\s*${value}\s*[×xX*]\s*${value}(?:\s*[×xX*]\s*${value})?(?![a-z\d])`,
+    'gi',
+  );
+  // 只写了“长宽”却给出三个数时无法确定第三个数的含义，不在这里处理
+  const matches = [...ctx.text.matchAll(pattern)].filter(match => Boolean(match[1]) === Boolean(match[6]));
+  const sizes = matches.map(([, , ...groups]) => {
+    const numbers = [groups[0], groups[2], groups[4]].filter(item => item !== undefined).map(Number);
+    const units = [groups[1], groups[3], groups[5]].slice(0, numbers.length);
+    const fallback = units.findLast(unit => unit !== undefined);
+    if (fallback) return numbers.map((item, index) => toMm(item, units[index] ?? fallback));
+    // 未写单位：展位尺寸通常以米表述，四位数以上视为毫米，介于两者之间无法判断
+    if (numbers.every(item => item <= 100)) return numbers.map(item => item * 1000);
+    if (numbers.every(item => item >= 1000)) return numbers;
+    return numbers.map(() => Number.NaN);
+  });
+  matches.forEach(ctx.consume);
+  if (new Set(sizes.map(size => size.join('x'))).size > 1) return ctx.clarify('lengthMm', ctx.t('parseDimMultiple'));
+  const [match, size] = [matches[0], sizes[0]];
+  if (!match || !size) return;
+  if (size.some(item => !Number.isInteger(item) || item <= 0 || item > 1_000_000)) return ctx.clarify('lengthMm', ctx.t('parseDimInvalid'));
+  const [lengthMm, widthMm, heightMm] = size as [number, number, number?];
+  ctx.set('lengthMm', lengthMm, match[0]);
+  ctx.set('widthMm', widthMm, match[0]);
+  if (heightMm === undefined) return;
+  const space = catalog.boothSpaces.find(item => item.lengthMm === lengthMm && item.widthMm === widthMm && item.heightMm === heightMm);
+  if (space) ctx.set('boothSpaceId', space.id, match[0]);
+  else ctx.clarify('boothSpaceId', ctx.t('parseHeightNoSize'));
+}
+
 function parseDimensions(ctx: ParseContext) {
   for (const [field, label] of [
     ['lengthMm', '(?:(?:展位)?长(?:度)?|\\blength|長さ|間口)'],
@@ -106,13 +155,12 @@ function parseDimensions(ctx: ParseContext) {
   ] as const) {
     const matches = [
       ...ctx.text.matchAll(
-        new RegExp(
-          `${label}\\s*(?:为|是|改为|改成|is|=|:|：|は)?\\s*(\\d+(?:\\.\\d+)?)\\s*(毫米|厘米|mm|cm|米|meters?|metres?|メートル|m)(?![a-z])`,
-          'gi',
-        ),
+        new RegExp(`${label}\\s*(?:为|是|改为|改成|is|=|:|：|は)?\\s*(\\d+(?:\\.\\d+)?)\\s*${DIMENSION_UNIT}(?![a-z])`, 'gi'),
       ),
-    ];
-    const values = matches.map(match => Number(match[1]) * (/毫米|mm/i.test(match[2]!) ? 1 : /厘米|cm/i.test(match[2]!) ? 10 : 1000));
+    ].filter(match => !overlapsConsumed(ctx, match));
+    const values = matches.map(match => toMm(Number(match[1]), match[2]!));
+    // 成对尺寸已赋值时，单独写的长或宽须与之一致
+    if (matches.length && ctx.fieldSources[field]?.source === 'text') values.push(ctx.requirement[field] as number);
 
     if (new Set(values).size > 1) {
       ctx.clarify(field, ctx.t('parseDimMultiple'));
@@ -133,11 +181,9 @@ function parseBoothSize(ctx: ParseContext, catalog: Catalog): void {
     ...ctx.text.matchAll(
       /(?:方案高(?:度)?|(?<!限)(?<!度)高(?:度)?|\bheight|高さ)\s*(?:为|是|is|=|:|：|は)?\s*(\d+(?:\.\d+)?)\s*(毫米|厘米|mm|cm|米|meters?|metres?|メートル|m)(?![a-z])/gi,
     ),
-  ].filter(match => !ctx.consumed.some(([start, end]) => match.index! < end && match.index! + match[0].length > start));
+  ].filter(match => !overlapsConsumed(ctx, match));
   if (!matches.length) return;
-  const heights = [
-    ...new Set(matches.map(match => Number(match[1]) * (/毫米|mm/i.test(match[2]!) ? 1 : /厘米|cm/i.test(match[2]!) ? 10 : 1000))),
-  ];
+  const heights = [...new Set(matches.map(match => toMm(Number(match[1]), match[2]!)))];
   if (ctx.fieldSources.lengthMm?.source !== 'text' || ctx.fieldSources.widthMm?.source !== 'text' || heights.length !== 1) {
     ctx.clarify('boothSpaceId', ctx.t('parseHeightNeedsSize'));
   } else {
@@ -165,6 +211,7 @@ function parseArea(ctx: ParseContext): boolean {
 /** “6×3”这类没有标明方向的长宽，只提示确认，不自行赋值。 */
 function flagAmbiguousDimensions(ctx: ParseContext) {
   for (const match of ctx.text.matchAll(/\d+(?:\.\d+)?\s*[×xX*]\s*\d+(?:\.\d+)?(?:\s*(?:米|m))?/g)) {
+    if (overlapsConsumed(ctx, match)) continue;
     ctx.clarify('lengthMm', ctx.t('parseDirection', { text: match[0] }));
     ctx.consume(match);
   }

@@ -67,7 +67,17 @@ export const useNotificationStore = defineStore('project-notification', () => {
     timer = undefined;
   }
 
+  /** 退出登录时由 resetAllStores 调用：setup store 不实现 $reset 时 Pinia 开发模式会直接抛错 */
+  function $reset() {
+    stop();
+    failures = 0;
+    unread.value = [];
+    unreadCount.value = 0;
+    version.value = 0;
+  }
+
   return {
+    $reset,
     markAllRead,
     markRead,
     refresh,

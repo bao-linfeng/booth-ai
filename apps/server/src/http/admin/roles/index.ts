@@ -1,8 +1,6 @@
 import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import type { Config } from '../../../config.js';
-import { decryptJwt } from '../../../infra/session.js';
 import { accessSummary, permissionCatalog } from '../../../modules/identity/permissions.js';
 import { getAdminRole, listAdminRoles, updateRolePermissions } from '../../../modules/identity/roles.js';
 import { requirePrincipal } from '../../authentication.js';
@@ -43,7 +41,7 @@ const roleSchema = {
   properties: { id: { type: 'integer' }, name: { type: 'string' }, permissionCodes: strings, revision: { type: 'integer' } },
 } as const;
 
-export async function registerAdminRoleRoutes(app: FastifyInstance, config: Config, pool: pg.Pool): Promise<void> {
+export async function registerAdminRoleRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   const routes = app.withTypeProvider<TypeProvider>();
   routes.get('/access', { config: { permissions: [] }, schema: { response: { 200: successResponse(accessSchema) } } }, async request => ({
     code: 0 as const,
@@ -57,11 +55,7 @@ export async function registerAdminRoleRoutes(app: FastifyInstance, config: Conf
   routes.get(
     '/roles',
     { config: { permissions: ['roles.read'] }, schema: { response: { 200: successResponse({ type: 'array', items: roleSchema }) } } },
-    async request => {
-      const { session } = requirePrincipal(request, 'admin');
-      const jwt = decryptJwt(session.externalJwtCiphertext, config.sessionSecret);
-      return { code: 0, data: await listAdminRoles(config, pool, jwt) } as const;
-    },
+    async () => ({ code: 0, data: await listAdminRoles(pool) }) as const,
   );
   routes.get(
     '/roles/:id',

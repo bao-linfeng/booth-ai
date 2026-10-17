@@ -18,7 +18,6 @@ const session = {
   localId: userId,
   externalUserId: 1,
   username: 'owner',
-  externalJwtCiphertext: '',
   expiresAt: Math.floor(Date.now() / 1000) + 3600,
   loginSource: 'password' as const,
   sessionVersion: 1,

@@ -6,9 +6,9 @@ import pg from 'pg';
 import type { Redis } from 'ioredis';
 import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
-import { createSession, destroySession, encryptJwt, getSession, type SessionSite } from '../../src/infra/session.js';
+import { createSession, destroySession, getSession, type SessionSite } from '../../src/infra/session.js';
 import { syncClientUser } from '../../src/modules/identity/client-service.js';
-import { syncAdmin } from '../../src/modules/identity/admin-service.js';
+import { getAdminProfile, syncAdmin } from '../../src/modules/identity/admin-service.js';
 import { resolvePrincipal } from '../../src/modules/identity/principal.js';
 import { getThemeJob, ownedThemeJob, selectThemeResult } from '../../src/modules/generation/theme/queries.js';
 import { rateLimitPolicies } from '../../src/http/rate-limits.js';
@@ -35,6 +35,20 @@ const config = loadConfig({
 const healthy = { database: async () => {}, redis: async () => {}, storage: async () => {} };
 const userId = '00000000-0000-4000-8000-000000000001';
 const jobId = '00000000-0000-4000-8000-000000000002';
+const adminProfile = {
+  id: userId,
+  externalUserId: '1',
+  username: 'test',
+  nickname: '管理员',
+  email: 'admin@example.test',
+  mobile: null,
+  avatarPath: null,
+  company: null,
+  country: null,
+  city: null,
+  languageCode: 'zh',
+  lastSyncedAt: new Date('2026-10-01T00:00:00.000Z'),
+};
 
 async function setup(t: TestContext, site: SessionSite = 'client') {
   const account = { enabled: true, roles: site === 'admin' ? ['ROLE_ADMIN'] : ['ROLE_USER'], sessionVersion: 1 };
@@ -47,6 +61,10 @@ async function setup(t: TestContext, site: SessionSite = 'client') {
     query: async (sql: string, params: unknown[]) => {
       queries.push(sql);
       if (sql.includes('session_version') && sql.startsWith('SELECT')) return { rows: [{ ...account }] };
+      if (sql.includes('last_synced_at AS "lastSyncedAt"') && sql.includes('FROM admins WHERE id=$1')) {
+        assert.deepEqual(params, [userId]);
+        return { rows: [{ ...adminProfile, enabled: account.enabled, roles: account.roles }] };
+      }
       if (sql.includes('unnest(permission_codes)')) {
         assert.deepEqual(params, [account.roles]);
         return { rows: rolePermissions.codes.map(code => ({ code })) };
@@ -99,7 +117,6 @@ async function setup(t: TestContext, site: SessionSite = 'client') {
       localId: userId,
       externalUserId: 1,
       username: 'test',
-      externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret),
       loginSource: 'password',
       sessionVersion: 1,
     },
@@ -123,7 +140,7 @@ async function setup(t: TestContext, site: SessionSite = 'client') {
   };
 }
 
-test('disabled client accounts are denied consistently before credits, generation, quotes, history and profile sync', async t => {
+test('disabled client accounts are denied consistently before credits, generation, quotes and history', async t => {
   const { app, account, headers, values, queries } = await setup(t);
   account.enabled = false;
   const raw = [...values.values()][0]!;
@@ -139,7 +156,6 @@ test('disabled client accounts are denied consistently before credits, generatio
     { method: 'POST' as const, url: '/manual-requests', payload: {} },
     { url: '/me/projects' },
     { url: '/me/searches' },
-    { url: '/me' },
     { url: '/catalog/options' },
   ];
   for (const route of routes) {
@@ -218,29 +234,27 @@ test('admin disabled state and role removal apply to me and business routes and 
   }
 });
 
-test('external profile rejection revokes all sessions, while temporary upstream errors preserve them', async t => {
+test('admin me reads the local admins row and resolved permissions without calling the external API', async t => {
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
-  for (const site of ['client', 'admin'] as const) {
-    const { app, headers, values, account, redis, token } = await setup(t, site);
-    const raw = [...values.values()][0]!;
-    const siblingKey = `session:${createHash('sha256').update('sibling').digest('hex').slice(0, 32)}`;
-    values.set(siblingKey, raw);
-    globalThis.fetch = async () => new Response('{}', { status: 503 });
-    assert.equal((await app.inject({ url: `/api/v1/${site}/me`, headers })).statusCode, 502);
-    assert.ok(await getSession(redis, token, site));
-    assert.equal(account.sessionVersion, 1);
-    globalThis.fetch = async () => new Response(JSON.stringify({ success: true, data: { id: 1, username: 'test', enabled: false } }));
-    const rejected = await app.inject({ url: `/api/v1/${site}/me`, headers });
-    assert.equal(rejected.statusCode, site === 'client' ? 403 : 401);
-    assert.equal(account.sessionVersion, 2);
-    assert.equal(await getSession(redis, token, site), null);
-    const sibling = await app.inject({ url: `/api/v1/${site}/me`, headers: { authorization: 'Bearer sibling' } });
-    assert.equal(sibling.statusCode, 401);
-    assert.equal(values.has(siblingKey), false);
-  }
+  globalThis.fetch = async () => assert.fail('admin me must not call the external API');
+  const { app, headers } = await setup(t, 'admin');
+  const response = await app.inject({ url: '/api/v1/admin/me', headers });
+  assert.equal(response.statusCode, 200, response.body);
+  const { data } = response.json();
+  assert.deepEqual(data, {
+    ...adminProfile,
+    accountType: 'admin',
+    enabled: true,
+    roles: ['ROLE_ADMIN'],
+    permissions: ['bom.read', 'schemes.read', 'dictionaries.read', 'generation.read', 'generation.detail'],
+    lastSyncedAt: adminProfile.lastSyncedAt.toISOString(),
+    loginSource: 'password',
+    homePath: data.homePath,
+  });
+  assert.equal(typeof data.homePath, 'string');
 });
 
 test('stale session versions, logout, expiry, malformed sessions and wrong portals are rejected without deleting another portal session', async t => {
@@ -258,7 +272,6 @@ test('stale session versions, logout, expiry, malformed sessions and wrong porta
       localId: userId,
       externalUserId: 1,
       username: 'test',
-      externalJwtCiphertext: 'cipher',
       loginSource: 'password',
       sessionVersion: 2,
     },
@@ -460,14 +473,20 @@ test(
       roles: ['ROLE_ADMIN'],
       permissions: [],
     };
-    const client = await syncClientUser(pool, detail, true, 'password');
+    const client = await syncClientUser(pool, detail, 'password');
     assert.equal(client.type, 'client');
-    const su = await syncClientUser(pool, detail, true, 'sso_token', 'su');
+    const su = await syncClientUser(pool, detail, 'sso_token', 'su');
     assert.equal(su.id, client.id);
     assert.equal(su.type, 'su');
-    assert.equal((await syncClientUser(pool, detail, false)).type, 'su');
-    assert.equal((await syncClientUser(pool, detail, true, 'password', 'client')).type, 'client');
-    const admin = await syncAdmin(pool, detail, true);
+    assert.equal((await syncClientUser(pool, detail, 'password', 'client')).type, 'client');
+    const admin = await syncAdmin(pool, detail);
+    const profile = await getAdminProfile(pool, admin.id, ['users.read'], 'password');
+    assert.equal(profile?.id, admin.id);
+    assert.equal(profile?.externalUserId, '1');
+    assert.deepEqual(profile?.roles, ['ROLE_ADMIN']);
+    assert.deepEqual(profile?.permissions, ['users.read']);
+    assert.ok(profile && !Number.isNaN(Date.parse(profile.lastSyncedAt)));
+    assert.equal(await getAdminProfile(pool, randomUUID(), [], 'password'), null);
     // 只执行到 060：ROLE_ADMIN 拥有 060 授予且仍在权限目录中的权限码
     const seeded = (await pool.query<{ permission_codes: string[] }>("SELECT permission_codes FROM admin_roles WHERE name='ROLE_ADMIN'"))
       .rows[0]!.permission_codes;
@@ -496,7 +515,6 @@ test(
           sessionVersion: account.sessionVersion,
           externalUserId: 1,
           username: 'test',
-          externalJwtCiphertext: 'cipher',
           loginSource: 'password',
         },
         3600,
@@ -504,8 +522,8 @@ test(
       );
       assert.ok(await resolvePrincipal(pool, redis, token, site));
       await pool.query(`UPDATE ${table} SET enabled=false WHERE id=$1`, [account.id]);
-      if (site === 'client') await assert.rejects(syncClientUser(pool, detail, false), { statusCode: 403 });
-      else await assert.rejects(syncAdmin(pool, detail, false), { statusCode: 403 });
+      if (site === 'client') await assert.rejects(syncClientUser(pool, detail, 'password'), { statusCode: 403 });
+      else await assert.rejects(syncAdmin(pool, detail), { statusCode: 403 });
       await pool.query(`UPDATE ${table} SET enabled=true WHERE id=$1`, [account.id]);
       await assert.rejects(resolvePrincipal(pool, redis, token, site), { statusCode: 401 });
       assert.equal((await pool.query(`SELECT session_version FROM ${table} WHERE id=$1`, [account.id])).rows[0].session_version, 2);
@@ -518,7 +536,7 @@ test(
     assert.equal((await pool.query('SELECT session_version FROM users WHERE id=$1', [client.id])).rows[0].session_version, 3);
     await pool.query("UPDATE admin_roles SET permission_codes='{}' WHERE name='ROLE_ADMIN'");
     assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), []);
-    await syncAdmin(pool, detail, true);
+    await syncAdmin(pool, detail);
     assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), []);
     const deniedToken = await createSession(
       redis,
@@ -528,7 +546,6 @@ test(
         sessionVersion: 4,
         externalUserId: 1,
         username: 'test',
-        externalJwtCiphertext: 'cipher',
         loginSource: 'password',
       },
       3600,

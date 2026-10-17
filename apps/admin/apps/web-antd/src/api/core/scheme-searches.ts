@@ -73,6 +73,25 @@ export interface SchemeSearchDetail extends SchemeSearchRecord {
   unhandledText?: string[];
   warnings?: Record<string, unknown>[];
   parsedAt?: string;
+  llmAttempts?: null | SchemeSearchLlmAttempt[];
+}
+
+export interface SchemeSearchLlmAttempt {
+  modelId: string;
+  model: string;
+  attempt: number;
+  durationMs: number;
+  outcome:
+    | 'invalid_evidence'
+    | 'invalid_json'
+    | 'invalid_requirement'
+    | 'invalid_structure'
+    | 'invalid_value'
+    | 'ok'
+    | 'provider_error'
+    | 'timeout';
+  httpStatus?: number;
+  field?: string;
 }
 
 export interface SchemeSearchStatistics {

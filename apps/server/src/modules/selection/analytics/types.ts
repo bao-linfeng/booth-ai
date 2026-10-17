@@ -1,4 +1,5 @@
 import type { Catalog, MatchDiagnostics, MatchItem, PublicImage, Requirement } from '../domain.js';
+import type { ExtractionAttempt } from '../llm.js';
 
 export type RecordedMatchItem = MatchItem<Pick<PublicImage, 'assetId' | 'order' | 'width' | 'height'>>;
 
@@ -25,6 +26,8 @@ export interface ParseRecordInput {
     dictionaryVersion: string;
   };
   durationMs: number;
+  /** 每次模型调用的结果；未配置模型时为 null */
+  llmAttempts?: ExtractionAttempt[] | null;
   promptSnapshot?: {
     source: string;
     templateId: string | null;

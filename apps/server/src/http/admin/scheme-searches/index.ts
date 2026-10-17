@@ -90,6 +90,7 @@ const searchDetail = {
     'unhandledText',
     'warnings',
     'parsedAt',
+    'llmAttempts',
     'promptSnapshot',
   ],
   properties: {
@@ -124,6 +125,7 @@ const searchDetail = {
     unhandledText: recorded('规则未识别的文本'),
     warnings: recorded('解析告警'),
     parsedAt: { anyOf: [dateTime, { type: 'null' }] },
+    llmAttempts: recorded('每次模型调用的模型、耗时与失败阶段'),
     promptSnapshot: recorded('解析时使用的提示词快照'),
   },
 } as const;

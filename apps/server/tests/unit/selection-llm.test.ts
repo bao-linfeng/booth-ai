@@ -238,6 +238,18 @@ test('unknown requirements survive recognized evidence and are deduplicated', ()
   assert.deepEqual(result.unhandledText, ['需要旋转舞台']);
 });
 
+test('model doubts about fragments the rules already recognized do not force clarification', () => {
+  // 实测模型按旧模板把已标明顺序的“长宽 6*3”当作方向不明
+  const result = mergeExtraction('长宽 6*3，需要旋转舞台', emptyRequirement(), fullCatalog, {
+    fields: {},
+    unhandledText: ['长宽 6*3', '需要旋转舞台'],
+  });
+  assert.deepEqual([result.requirement.lengthMm, result.requirement.widthMm], [6000, 3000]);
+  assert.deepEqual(result.unhandledText, ['需要旋转舞台']);
+  const recognized = mergeExtraction('长宽 6*3', emptyRequirement(), fullCatalog, { fields: {}, unhandledText: ['长宽 6*3'] });
+  assert.equal(recognized.status, 'ready');
+});
+
 test('conflicting scalar extraction and area do not silently override explicit dimensions', () => {
   const result = mergeExtraction('长6米，宽3米，面积20平方米', emptyRequirement(), fullCatalog, {
     fields: { lengthMm: { value: 9000, evidence: '长6米' } },
@@ -252,16 +264,69 @@ test('conflicting scalar extraction and area do not silently override explicit d
 
 test('primary failure switches to backup and both failures degrade to rules', async () => {
   const calls: string[] = [];
-  const result = await parseWithModels('简洁现代', emptyRequirement(), catalog, models, async model => {
+  const { result, attempts } = await parseWithModels('简洁现代', emptyRequirement(), catalog, models, async model => {
     calls.push(model.model);
-    if (model.model === 'qwen') throw new Error('timeout');
+    if (model.model === 'qwen') throw Object.assign(new Error('Model unavailable'), { status: 429 });
     return { fields: { styleIds: { value: ['modern'], evidence: '简洁现代' } }, unhandledText: [] };
   });
   assert.deepEqual(calls, ['qwen', 'qwen', 'deepseek']);
   assert.equal(result.parser, 'llm');
+  assert.deepEqual(
+    attempts.map(({ model, attempt, outcome, httpStatus }) => ({ model, attempt, outcome, httpStatus })),
+    [
+      { model: 'qwen', attempt: 1, outcome: 'provider_error', httpStatus: 429 },
+      { model: 'qwen', attempt: 2, outcome: 'provider_error', httpStatus: 429 },
+      { model: 'deepseek', attempt: 1, outcome: 'ok', httpStatus: undefined },
+    ],
+  );
+  assert.ok(attempts.every(item => item.modelId === models.find(model => model.model === item.model)!.id && item.durationMs >= 0));
   const degraded = await parseWithModels('简洁现代', emptyRequirement(), catalog, models, async () => {
     throw new Error('invalid');
   });
-  assert.equal(degraded.parser, 'rules');
-  assert.equal(degraded.degraded, true);
+  assert.equal(degraded.result.parser, 'rules');
+  assert.equal(degraded.result.degraded, true);
+  assert.equal(degraded.attempts.length, 4);
+});
+
+test('each failed attempt records the stage where extraction broke', async () => {
+  const outcomes = async (fail: () => unknown) =>
+    (
+      await parseWithModels('简洁现代', emptyRequirement(), catalog, models.slice(0, 1), async () => {
+        const raw = fail();
+        if (raw instanceof Error) throw raw;
+        return raw;
+      })
+    ).attempts.map(({ outcome, field }) => (field ? `${outcome}:${field}` : outcome));
+  const timeout = Object.assign(new Error('aborted'), { name: 'TimeoutError' });
+  // 超时不重试同一模型
+  assert.deepEqual(await outcomes(() => timeout), ['timeout']);
+  assert.deepEqual(await outcomes(() => ({ fields: [] })), ['invalid_structure', 'invalid_structure']);
+  assert.deepEqual(await outcomes(() => ({ fields: {}, unhandledText: ['原文没有'] })), [
+    'invalid_evidence:unhandledText',
+    'invalid_evidence:unhandledText',
+  ]);
+  assert.deepEqual(await outcomes(() => ({ fields: { styleIds: { value: ['modern'], evidence: '现代简约' } }, unhandledText: [] })), [
+    'invalid_evidence:styleIds',
+    'invalid_evidence:styleIds',
+  ]);
+  assert.deepEqual(await outcomes(() => ({ fields: { styleIds: { value: ['classic'], evidence: '简洁现代' } }, unhandledText: [] })), [
+    'invalid_value:styleIds',
+    'invalid_value:styleIds',
+  ]);
+  assert.deepEqual(await outcomes(() => ({ fields: { colors: { value: ['red'], evidence: '简洁' } }, unhandledText: [] })), [
+    'invalid_structure:colors',
+    'invalid_structure:colors',
+  ]);
+});
+
+test('request reports non-JSON model output and provider HTTP status separately', async t => {
+  const signal = new AbortController().signal;
+  const fetch = t.mock.method(
+    globalThis,
+    'fetch',
+    async () => new Response(JSON.stringify({ choices: [{ message: { content: '好的：{' } }] })),
+  );
+  await assert.rejects(requestExtraction(models[0]!, '测试需求', fullCatalog, signal), { stage: 'invalid_json' });
+  fetch.mock.mockImplementation(async () => new Response('{"error":"secret detail"}', { status: 401 }));
+  await assert.rejects(requestExtraction(models[0]!, '测试需求', fullCatalog, signal), { message: 'Model unavailable', status: 401 });
 });

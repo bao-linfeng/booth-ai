@@ -18,14 +18,12 @@ const server = await createServer({
       const path = id.replaceAll('\\', '/').replace(/\.ts$/, '')
       if (id === 'virtual:test-deps') return '\0test-deps'
       if (path.endsWith('/services/api/auth')) return '\0test-auth-api'
-      if (path.endsWith('/services/api/user')) return '\0test-user-api'
       if (path.endsWith('/features/customer-service/useCustomerService')) return '\0test-cs'
       if (path.endsWith('/stores/auth') && globalThis.__auth.mockStore) return '\0test-store'
     },
     load(id) {
       if (id === '\0test-deps') return "export { createApp } from 'vue'; export { createRouter, createMemoryHistory } from 'vue-router'; export { createPinia, setActivePinia } from 'pinia'"
       if (id === '\0test-auth-api') return 'export const login = async () => {}; export const logout = (...args) => globalThis.__auth.logout(...args)'
-      if (id === '\0test-user-api') return 'export const fetchCurrentUser = async () => ({})'
       if (id === '\0test-cs') return 'export const resetCustomerService = () => { globalThis.__auth.state.resets++ }; export const handleCustomerServiceLogin = () => {}'
       if (id === '\0test-store') return 'export const useAuthStore = () => globalThis.__auth.store'
     },

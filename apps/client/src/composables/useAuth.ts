@@ -2,7 +2,6 @@ import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { login as loginUser, logout as logoutUser } from '@/services/api/auth'
-import { fetchCurrentUser } from '@/services/api/user'
 import { useI18n } from 'vue-i18n'
 
 let loggingOut: Promise<void> | null = null
@@ -53,21 +52,10 @@ export function useAuth() {
     return loggingOut
   }
 
-  async function restoreSession() {
-    if (!authStore.token) return
-    try {
-      const user = await fetchCurrentUser()
-      authStore.setCurrentUser(user)
-    } catch {
-      authStore.clearAuth()
-    }
-  }
-
   return {
     login,
     loginWithWechat,
     logout,
-    restoreSession,
     loading,
     error,
     isLoggedIn: authStore.isLoggedIn,

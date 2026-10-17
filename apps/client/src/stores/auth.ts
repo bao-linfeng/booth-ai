@@ -19,10 +19,6 @@ export const useAuthStore = defineStore('auth', () => {
     void import('@/features/customer-service/useCustomerService').then(module => module.handleCustomerServiceLogin()).catch(() => undefined)
   }
 
-  function setCurrentUser(user: CurrentUser) {
-    currentUser.value = user
-  }
-
   function clearAuth() {
     const wasLoggedIn = Boolean(token.value)
     token.value = null
@@ -42,7 +38,6 @@ export const useAuthStore = defineStore('auth', () => {
     avatarPath,
     roles,
     setLoginResult,
-    setCurrentUser,
     clearAuth,
   }
 }, {

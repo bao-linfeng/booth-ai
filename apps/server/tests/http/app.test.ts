@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
-import { encryptJwt } from '../../src/infra/session.js';
 import { assignedRow } from '../helpers/ai-fixtures.js';
 import { registerAdminPromptTemplateRoutes } from '../../src/http/admin/prompt-templates/index.js';
 import { domainError } from '../../src/lib/errors.js';
@@ -205,7 +204,6 @@ test('administrator can list BOMs with local grants and without external scheme 
           externalUserId: 1,
           sessionVersion: 1,
           username: 'admin',
-          externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret),
           expiresAt: Math.floor(Date.now() / 1000) + 60,
         }),
     },
@@ -543,6 +541,11 @@ test('requirements parse inject uses the enabled filter template, model messages
     { source: 'template', templateId, revision: 4 },
   );
   assert.deepEqual(snapshot.messages, requestBody.messages);
+  const attempts = JSON.parse(String(parseInsert.params?.at(-2))) as { attempt: number; outcome: string }[];
+  assert.deepEqual(
+    attempts.map(({ attempt, outcome }) => ({ attempt, outcome })),
+    [{ attempt: 1, outcome: 'ok' }],
+  );
 });
 
 test('every business route declares a success response schema except SSE streams', async t => {

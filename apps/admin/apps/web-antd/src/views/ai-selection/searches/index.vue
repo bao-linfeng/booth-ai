@@ -2,6 +2,7 @@
 import type { VxeTableGridOptions } from '#/adapter/vxe-table';
 import type {
   SchemeSearchDetail,
+  SchemeSearchLlmAttempt,
   SchemeSearchRecord,
 } from '#/api/core/scheme-searches';
 
@@ -283,6 +284,27 @@ function statusColor(status: SchemeSearchRecord['status']) {
   return 'warning';
 }
 
+const attemptOutcomeLabels: Record<SchemeSearchLlmAttempt['outcome'], string> =
+  {
+    ok: '成功',
+    timeout: '超时',
+    provider_error: '供应商错误',
+    invalid_json: '输出不是 JSON',
+    invalid_structure: '输出结构不符',
+    invalid_evidence: '证据不在原文中',
+    invalid_value: '取值不合法',
+    invalid_requirement: '条件互相冲突',
+  };
+
+function attemptOutcome(attempt: SchemeSearchLlmAttempt): string {
+  const label = attemptOutcomeLabels[attempt.outcome] ?? attempt.outcome;
+  const extra = [
+    attempt.httpStatus ? `HTTP ${attempt.httpStatus}` : '',
+    attempt.field ? (requirementLabels[attempt.field] ?? attempt.field) : '',
+  ].filter(Boolean);
+  return extra.length > 0 ? `${label}（${extra.join('，')}）` : label;
+}
+
 const requirementLabels: Record<string, string> = {
   lengthMm: '长度 (mm)',
   widthMm: '宽度 (mm)',
@@ -305,7 +327,7 @@ const requirementLabels: Record<string, string> = {
 function requirementValue(value: unknown): string {
   if (Array.isArray(value))
     return value.length > 0
-      ? value.map(requirementOptionLabel).join('、')
+      ? value.map((v) => requirementOptionLabel(v)).join('、')
       : '不限';
   if (value === null || value === undefined || value === '') return '不限';
   if (typeof value === 'object') return JSON.stringify(value);
@@ -401,6 +423,22 @@ function requirementOptionLabel(value: unknown): string {
         </DescriptionsItem>
         <DescriptionsItem label="解析">
           {{ detail.parser || '—' }}{{ detail.parseDegraded ? '（降级）' : '' }}
+        </DescriptionsItem>
+        <DescriptionsItem label="模型调用">
+          <div v-if="detail.llmAttempts?.length" class="space-y-1">
+            <div
+              v-for="(attempt, index) in detail.llmAttempts"
+              :key="index"
+              class="flex flex-wrap items-center gap-x-2"
+            >
+              <span>{{ attempt.model }} 第 {{ attempt.attempt }} 次</span>
+              <Tag :color="attempt.outcome === 'ok' ? 'success' : 'error'">
+                {{ attemptOutcome(attempt) }}
+              </Tag>
+              <span class="text-gray-500">{{ attempt.durationMs }} ms</span>
+            </div>
+          </div>
+          <span v-else>未调用模型</span>
         </DescriptionsItem>
         <DescriptionsItem label="需求词">
           {{ detail.demandTerms.join('、') || '—' }}

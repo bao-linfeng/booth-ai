@@ -28,9 +28,10 @@ export async function requireAdminAccess(pool: pg.Pool, roles: string[]): Promis
   return permissions;
 }
 
-export async function listAdminRoles(config: Config, pool: pg.Pool, jwt: string): Promise<AdminRole[]> {
+/** 管理员登录时用灵通 JWT 拉取一次角色列表并写入 admin_roles；登录后角色页只读本地表。 */
+export async function syncAdminRoles(config: Config, pool: pg.Pool, jwt: string): Promise<void> {
   const roles = await fetchExternalRoles(config, jwt);
-  return transaction(pool, async client => {
+  await transaction(pool, async client => {
     await client.query('SELECT pg_advisory_xact_lock(19002402)');
     await client.query(
       "UPDATE admin_roles SET active=false,permission_codes='{}',revision=revision+1,updated_at=now() WHERE active AND NOT (id=ANY($1::bigint[]))",
@@ -46,11 +47,14 @@ export async function listAdminRoles(config: Config, pool: pg.Pool, jwt: string)
         [role.id, role.name],
       );
     }
-    const result = await client.query<AdminRole>(`
-      SELECT id::float8 AS id,name,permission_codes AS "permissionCodes",revision FROM admin_roles WHERE active ORDER BY id
-    `);
-    return result.rows;
   });
+}
+
+export async function listAdminRoles(pool: pg.Pool): Promise<AdminRole[]> {
+  const result = await pool.query<AdminRole>(`
+    SELECT id::float8 AS id,name,permission_codes AS "permissionCodes",revision FROM admin_roles WHERE active ORDER BY id
+  `);
+  return result.rows;
 }
 
 export async function getAdminRole(pool: pg.Pool, id: number): Promise<AdminRole> {

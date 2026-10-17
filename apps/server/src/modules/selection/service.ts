@@ -64,9 +64,9 @@ export async function parseSelection(
         messages: buildSelectionMessages(input.text, catalog, template?.body),
       }
     : null;
-  const parsed = models.length
+  const { result: parsed, attempts } = models.length
     ? await parseWithModels(input.text, form, catalog, models, undefined, template?.body, locale)
-    : parseRequirement(input.text, form, catalog, [], locale);
+    : { result: parseRequirement(input.text, form, catalog, [], locale), attempts: null };
   const data = { ...parsed, parser: parsed.parser as 'llm' | 'rules' | 'none', dictionaryVersion: catalog.dictionaryVersion };
   const parseId = await recordParse(pool, {
     attemptId,
@@ -75,6 +75,7 @@ export async function parseSelection(
     formRequirement: form,
     result: data,
     promptSnapshot,
+    llmAttempts: attempts,
     durationMs: performance.now() - startedAt,
   });
   return { ...data, attemptId, parseId, visitorId: identity.visitorId };

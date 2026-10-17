@@ -4,7 +4,7 @@ import type pg from 'pg';
 import type { Redis } from 'ioredis';
 import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
-import { createSession, encryptJwt } from '../../src/infra/session.js';
+import { createSession } from '../../src/infra/session.js';
 import { defaultUploadMaxBytes, workbookUploadMaxBytes } from '../../src/http/uploads.js';
 
 const config = loadConfig({
@@ -100,7 +100,6 @@ test('uploads at the limit reach the route while one extra byte is rejected with
       externalUserId: 1,
       username: 'test',
       sessionVersion: 1,
-      externalJwtCiphertext: encryptJwt('jwt', config.sessionSecret),
       loginSource: 'password',
     },
     3600,

@@ -37,9 +37,9 @@ export async function registerAdminModule(
     async admin => {
       registerAuthentication(admin, pool, redis, 'admin');
       registerAdminAuthorization(admin);
-      await registerAdminRoleRoutes(admin, config, pool);
+      await registerAdminRoleRoutes(admin, pool);
       await registerAdminAuthRoutes(admin, config, pool, redis);
-      await registerAdminMeRoutes(admin, config, pool, redis);
+      await registerAdminMeRoutes(admin, pool);
       await registerAdminDashboardRoutes(admin, pool);
       await registerAdminCreditRoutes(admin, pool);
       await registerAdminUserRoutes(admin, pool);

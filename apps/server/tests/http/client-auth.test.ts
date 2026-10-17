@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
-import { decryptJwt, getSession } from '../../src/infra/session.js';
+import { getSession } from '../../src/infra/session.js';
 import { currentUserSchema } from '../../src/http/schemas.js';
 
 const config = loadConfig({
@@ -39,15 +39,12 @@ const profile = {
 async function setup(t: TestContext) {
   const queries: { sql: string; values: unknown[] }[] = [];
   const sessions = new Map<string, string>();
-  let userType = 'client';
   const dependencies = {
     pool: {
       query: async (sql: string, values: unknown[] = []) => {
         queries.push({ sql, values });
-        if (sql.includes('INSERT INTO users')) {
-          if (values[13]) userType = String(values[15] ?? 'client');
-          return { rows: [{ id: 'local-user-id', enabled: true, sessionVersion: 1, type: userType }] };
-        }
+        if (sql.includes('INSERT INTO users'))
+          return { rows: [{ id: 'local-user-id', enabled: true, sessionVersion: 1, type: values[14] }] };
         if (sql.includes('FROM users WHERE id=')) return { rows: [{ enabled: true, roles: ['ROLE_USER'], sessionVersion: 1 }] };
         if (sql.startsWith('UPDATE selection_')) return { rows: [] };
         if (sql.includes('UPDATE projects SET customer_user_id')) return { rows: [] };
@@ -79,7 +76,9 @@ async function setup(t: TestContext) {
 
 test('external token login wraps the profile, synchronizes the visitor and creates a usable local session', async t => {
   const { app, dependencies, queries, sessions } = await setup(t);
-  const token = externalToken(profile.username);
+  // 灵通 JWT 只剩 60 秒：本地会话仍按 SESSION_TTL_SECONDS 计算，不跟随 JWT 过期
+  const token = externalToken(profile.username, Math.floor(Date.now() / 1000) + 60);
+  const before = Math.floor(Date.now() / 1000);
   const requests: { url: string; init?: RequestInit }[] = [];
   globalThis.fetch = async (url, init) => {
     requests.push({ url: String(url), init });
@@ -94,7 +93,8 @@ test('external token login wraps the profile, synchronizes the visitor and creat
   assert.equal(response.statusCode, 200);
   const result = response.json();
   assert.equal(result.code, 0);
-  assert.equal(result.data.expiresAt, expiresAt);
+  assert.ok(result.data.expiresAt >= before + config.sessionTtlSeconds);
+  assert.ok(result.data.expiresAt <= Math.floor(Date.now() / 1000) + config.sessionTtlSeconds);
   assert.equal(result.data.user.id, 'local-user-id');
   assert.equal(result.data.user.username, profile.username);
   assert.equal(result.data.user.nickname, profile.nickname);
@@ -105,7 +105,7 @@ test('external token login wraps the profile, synchronizes the visitor and creat
   assert.equal(requests[0]?.url, 'https://api.example.test/api/user/username/user%2Bdemo');
   assert.equal(new Headers(requests[0]?.init?.headers).get('authorization'), `Bearer ${token}`);
   assert.equal(queries[0]?.values[0], 123);
-  assert.equal(queries[0]?.values[13], true);
+  assert.equal(queries[0]?.values[13], 'sso_token');
   assert.equal(queries.filter(query => query.sql.startsWith('UPDATE selection_')).length, 3);
   assert.deepEqual(queries.find(query => query.sql.includes('UPDATE projects SET customer_user_id'))?.values, [
     'local-user-id',
@@ -115,24 +115,20 @@ test('external token login wraps the profile, synchronizes the visitor and creat
   const session = await getSession(dependencies.redis, result.data.accessToken, 'client');
   assert.ok(session);
   assert.equal(session.localId, 'local-user-id');
-  assert.equal(decryptJwt(session.externalJwtCiphertext, config.sessionSecret), token);
+  assert.equal(session.expiresAt, result.data.expiresAt);
+  assert.ok(![...sessions.values()].some(value => value.includes(token)), 'client session does not keep the external JWT');
   assert.ok(!response.body.includes(token));
   assert.ok(!response.body.includes(profile.password));
   assert.ok(!queries.some(query => query.values.includes(token) || query.values.includes(profile.password)));
 
-  const me = await app.inject({ url: '/api/v1/client/me', headers: { authorization: `Bearer ${result.data.accessToken}` } });
-  assert.equal(me.statusCode, 200);
-  assert.equal(me.json().data.id, 'local-user-id');
-  assert.equal(me.json().data.type, 'client');
   assert.deepEqual(
-    Object.keys(me.json().data).sort(),
+    Object.keys(result.data.user).sort(),
     Object.keys(currentUserSchema.properties).sort(),
     'response schema keeps every profile field',
   );
-  assert.deepEqual(Object.keys(result.data.user).sort(), Object.keys(currentUserSchema.properties).sort());
 });
 
-test('SU token login persists the entry type and profile refresh preserves it', async t => {
+test('SU token login persists the entry type and the next login overwrites it', async t => {
   const { app, queries } = await setup(t);
   globalThis.fetch = async () => new Response(JSON.stringify({ success: true, data: profile }), { status: 200 });
   const response = await app.inject({
@@ -144,10 +140,7 @@ test('SU token login persists the entry type and profile refresh preserves it', 
   const result = response.json().data;
   assert.equal(result.user.type, 'su');
   assert.equal(result.user.accountType, 'client');
-  assert.equal(queries[0]?.values[15], 'su');
-  const me = await app.inject({ url: '/api/v1/client/me', headers: { authorization: `Bearer ${result.accessToken}` } });
-  assert.equal(me.statusCode, 200);
-  assert.equal(me.json().data.type, 'su');
+  assert.equal(queries[0]?.values[14], 'su');
   const client = await app.inject({
     method: 'POST',
     url: '/api/v1/client/auth/sync',
@@ -241,7 +234,7 @@ test('password login uses the client type and returns the local session and user
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().data.user.id, 'local-user-id');
   assert.equal(response.json().data.user.type, 'client');
-  assert.equal(queries[0]?.values[15], 'client');
+  assert.equal(queries[0]?.values[14], 'client');
   const explicit = await app.inject({
     method: 'POST',
     url: '/api/v1/client/auth/login',

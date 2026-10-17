@@ -2,8 +2,8 @@ import type { Redis } from 'ioredis';
 import type pg from 'pg';
 import type { Config } from '../../config.js';
 import { fetchExternalUserDetail, loginExternal, type ExternalUserDetail } from '../../infra/external-auth.js';
-import { createSession, encryptJwt } from '../../infra/session.js';
-import { jwtExpiresAt, toCurrentUser, type UserType } from './service.js';
+import { createSession } from '../../infra/session.js';
+import { toCurrentUser, type UserType } from './service.js';
 
 interface LocalIdRow {
   id: string;
@@ -18,27 +18,25 @@ function errorWithStatus(message: string, statusCode: number): Error & { statusC
   return error;
 }
 
+/** 登录时把灵通资料同步到本地 users；登录后不再回调灵通，资料以本次登录时为准。 */
 export async function syncClientUser(
   pool: pg.Pool,
   detail: ExternalUserDetail,
-  updateLoginTime: boolean,
-  loginSource?: 'password' | 'sso_token',
-  type?: UserType,
+  loginSource: 'password' | 'sso_token',
+  type: UserType = 'client',
 ): Promise<LocalIdRow> {
   const result = await pool.query<LocalIdRow>(
     `
     INSERT INTO users (
       external_user_id, username, nickname, email, mobile, avatar_path, company, country, city, language_code,
       enabled, roles, permissions, last_login_at, last_login_source, last_synced_at, updated_at, user_type
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $14 THEN now() ELSE NULL END, $15, now(), now(), COALESCE($16, 'client'))
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14, now(), now(), $15)
     ON CONFLICT (external_user_id) DO UPDATE SET
       username = EXCLUDED.username, nickname = EXCLUDED.nickname, email = EXCLUDED.email, mobile = EXCLUDED.mobile,
       avatar_path = EXCLUDED.avatar_path, company = EXCLUDED.company, country = EXCLUDED.country, city = EXCLUDED.city,
       language_code = EXCLUDED.language_code, enabled = users.enabled AND EXCLUDED.enabled, roles = EXCLUDED.roles,
-      permissions = EXCLUDED.permissions, last_login_at = CASE WHEN $14 THEN now() ELSE users.last_login_at END,
-      last_login_source = CASE WHEN $14 THEN $15 ELSE users.last_login_source END,
-      user_type = CASE WHEN $14 THEN EXCLUDED.user_type ELSE users.user_type END,
-      last_synced_at = now(), updated_at = now()
+      permissions = EXCLUDED.permissions, last_login_at = now(), last_login_source = EXCLUDED.last_login_source,
+      user_type = EXCLUDED.user_type, last_synced_at = now(), updated_at = now()
     RETURNING id,enabled,session_version AS "sessionVersion",user_type AS type
   `,
     [
@@ -55,9 +53,8 @@ export async function syncClientUser(
       detail.enabled,
       detail.roles,
       detail.permissions,
-      updateLoginTime,
-      loginSource ?? null,
-      type ?? null,
+      loginSource,
+      type,
     ],
   );
   const account = result.rows[0];
@@ -77,16 +74,16 @@ async function establishClientSession(
   pool: pg.Pool,
   redis: Redis,
   detail: ExternalUserDetail,
-  externalJwt: string,
   visitorId: string | null,
   loginSource: 'password' | 'sso_token',
   type: UserType,
   onSignedIn: ClientSignedIn,
 ) {
   if (!detail.enabled) throw errorWithStatus('Account is disabled', 403);
-  const { id: localId, sessionVersion, type: userType } = await syncClientUser(pool, detail, true, loginSource, type);
+  const { id: localId, sessionVersion, type: userType } = await syncClientUser(pool, detail, loginSource, type);
   await onSignedIn({ userId: localId, email: detail.email, visitorId });
-  const expiresAt = jwtExpiresAt(externalJwt, config.sessionTtlSeconds);
+  // 会话寿命只看本项目配置，与灵通 JWT 的有效期无关；灵通 JWT 只用于本次登录取资料，不保存
+  const expiresAt = Math.floor(Date.now() / 1000) + config.sessionTtlSeconds;
   const accessToken = await createSession(
     redis,
     {
@@ -94,7 +91,6 @@ async function establishClientSession(
       localId,
       externalUserId: detail.externalUserId,
       username: detail.username,
-      externalJwtCiphertext: encryptJwt(externalJwt, config.sessionSecret),
       loginSource,
       sessionVersion,
     },
@@ -116,7 +112,7 @@ export async function loginClient(
   const login = await loginExternal(config, 'client', username, password);
   const detail = await fetchExternalUserDetail(config, login.username, login.externalJwt);
   if (detail.externalUserId !== login.externalUserId) throw errorWithStatus('External user identity mismatch', 502);
-  return establishClientSession(config, pool, redis, detail, login.externalJwt, visitorId, 'password', 'client', onSignedIn);
+  return establishClientSession(config, pool, redis, detail, visitorId, 'password', 'client', onSignedIn);
 }
 
 export async function syncClientSession(
@@ -147,5 +143,5 @@ export async function syncClientSession(
   const detail = await fetchExternalUserDetail(config, username, token);
   if (detail.username !== subject) throw errorWithStatus('External user identity mismatch', 401);
   if (tokenExpiresAt <= Math.floor(Date.now() / 1000)) throw errorWithStatus('Expired external token', 401);
-  return establishClientSession(config, pool, redis, detail, token, visitorId, 'sso_token', type, onSignedIn);
+  return establishClientSession(config, pool, redis, detail, visitorId, 'sso_token', type, onSignedIn);
 }

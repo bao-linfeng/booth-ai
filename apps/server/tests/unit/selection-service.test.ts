@@ -55,7 +55,8 @@ test('selection service parses without HTTP and records rule fallback with ident
   assert.ok(recorded);
   assert.deepEqual(recorded.params.slice(0, 4), ['attempt-1', identity.visitorId, identity.userId, '长6米，宽3米']);
   assert.equal(recorded.params[14], result.dictionaryVersion);
-  assert.equal(recorded.params.at(-1), 'null');
+  // 未配置模型：没有模型调用记录，也没有提示词快照
+  assert.deepEqual(recorded.params.slice(-2), ['null', 'null']);
 });
 
 test('selection service records no-match diagnostics and links search to parse and identity', async () => {

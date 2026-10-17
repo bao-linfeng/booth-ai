@@ -34,8 +34,8 @@ export async function recordParse(pool: pg.Pool, input: ParseRecordInput): Promi
     `
     INSERT INTO selection_parses(
       attempt_id,visitor_id,user_id,input_text,form_requirement,final_requirement,parser,degraded,
-      field_sources,overrides,clarifications,unhandled_text,warnings,rules_version,dictionary_version,duration_ms,prompt_snapshot
-    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      field_sources,overrides,clarifications,unhandled_text,warnings,rules_version,dictionary_version,duration_ms,llm_attempts,prompt_snapshot
+    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
     RETURNING id`,
     [
       input.attemptId,
@@ -54,6 +54,7 @@ export async function recordParse(pool: pg.Pool, input: ParseRecordInput): Promi
       input.result.rulesVersion,
       input.result.dictionaryVersion,
       Math.max(0, Math.round(input.durationMs)),
+      JSON.stringify(input.llmAttempts ?? null),
       JSON.stringify(input.promptSnapshot ?? null),
     ],
   );

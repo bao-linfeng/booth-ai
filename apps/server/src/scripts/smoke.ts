@@ -7,7 +7,7 @@ import { createRedis, waitForRedis } from '../infra/redis.js';
 import { createStorage } from '../infra/storage.js';
 import { createQueue, TASK_NAME } from '../infra/queue.js';
 import { submitEchoTask, processEchoTask, type Task } from '../modules/tasks/service.js';
-import { createSession, encryptJwt } from '../infra/session.js';
+import { createSession } from '../infra/session.js';
 
 const config = loadConfig();
 const database = createDatabase(config);
@@ -205,7 +205,6 @@ async function customerServiceSmoke(api: string) {
       localId: cs.adminId,
       externalUserId: cs.roleId,
       username: `smoke-cs-${probe}`,
-      externalJwtCiphertext: encryptJwt('smoke', config.sessionSecret),
       loginSource: 'password',
       sessionVersion: 1,
     },

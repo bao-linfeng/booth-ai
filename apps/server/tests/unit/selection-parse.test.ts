@@ -45,6 +45,53 @@ test('ambiguous dimension and unknown text block matching until clarified', () =
   assert.ok(unknown.unhandledText.length);
 });
 
+test('dimension pairs labelled length-then-width are assigned in order', () => {
+  for (const [text, lengthMm, widthMm] of [
+    ['长宽 6*3', 6000, 3000],
+    ['长×宽：6×3米', 6000, 3000],
+    ['展位长宽为9x4.5m', 9000, 4500],
+    ['长宽 6000*3000', 6000, 3000],
+    ['长宽 600*300厘米', 6000, 3000],
+    ['length x width 6x3m', 6000, 3000],
+  ] as const) {
+    const result = parseRequirement(text, emptyRequirement(), catalog);
+    assert.equal(result.status, 'ready', text);
+    assert.deepEqual(
+      [result.requirement.lengthMm, result.requirement.widthMm, result.requirement.areaM2],
+      [lengthMm, widthMm, (lengthMm * widthMm) / 1e6],
+      text,
+    );
+    assert.deepEqual(result.unhandledText, [], text);
+    assert.equal(result.fieldSources.lengthMm?.evidence, text.trim());
+  }
+  // “宽 6米”不能被单项尺寸规则误认成宽度
+  assert.equal(parseRequirement('长宽 6米*3米', emptyRequirement(), catalog).requirement.widthMm, 3000);
+});
+
+test('dimension pairs that cannot be read reliably still ask for confirmation', () => {
+  const unitless = parseRequirement('长宽 600*300', emptyRequirement(), catalog);
+  assert.equal(unitless.requirement.lengthMm, null);
+  assert.ok(unitless.clarifications.some(item => item.field === 'lengthMm'));
+  const conflict = parseRequirement('长宽 6*3，长9米', emptyRequirement(), catalog);
+  assert.equal(conflict.status, 'needs_clarification');
+  assert.ok(conflict.clarifications.some(item => item.field === 'lengthMm'));
+  // 只写“长宽”却给出三个数，第三个数含义不明
+  const extra = parseRequirement('长宽 6*3*4', emptyRequirement(), catalog);
+  assert.ok(extra.clarifications.some(item => item.field === 'lengthMm'));
+});
+
+test('length-width-height triples select the matching booth space', () => {
+  const spaces = { ...catalog, boothSpaces: [{ id: 'space-634', label: '6 × 3 × 4 m', lengthMm: 6000, widthMm: 3000, heightMm: 4000 }] };
+  const matched = parseRequirement('长宽高 6*3*4', emptyRequirement(), spaces);
+  assert.equal(matched.status, 'ready');
+  assert.equal(matched.requirement.boothSpaceId, 'space-634');
+  assert.equal(matched.requirement.maxHeightMm, null);
+  const missing = parseRequirement('长宽高 6*3*5', emptyRequirement(), spaces);
+  assert.equal(missing.requirement.boothSpaceId, null);
+  assert.equal(missing.requirement.lengthMm, 6000);
+  assert.ok(missing.clarifications.some(item => item.field === 'boothSpaceId'));
+});
+
 test('strong requirements are preserved separately from soft preferences', () => {
   const result = parseRequirement('必须有储藏间', emptyRequirement(), catalog);
   assert.deepEqual(result.requirement.requiredZoneIds, ['storage']);

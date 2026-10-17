@@ -7,6 +7,37 @@ import { buildSelectionMessages } from './prompt.js';
 
 type Field = keyof Requirement;
 
+/** 模型解析失败所在阶段，写入解析记录供后台定位降级原因 */
+export type ExtractionFailure =
+  | 'timeout'
+  | 'provider_error'
+  | 'invalid_json'
+  | 'invalid_structure'
+  | 'invalid_evidence'
+  | 'invalid_value'
+  | 'invalid_requirement';
+
+export interface ExtractionAttempt {
+  modelId: string;
+  model: string;
+  attempt: number;
+  durationMs: number;
+  outcome: 'ok' | ExtractionFailure;
+  /** 供应商返回的 HTTP 状态码，仅 provider_error 时可能存在 */
+  httpStatus?: number;
+  /** 校验未通过的字段，仅字段级失败时存在 */
+  field?: string;
+}
+
+export class ExtractionError extends Error {
+  constructor(
+    readonly stage: Exclude<ExtractionFailure, 'timeout' | 'provider_error'>,
+    readonly field?: string,
+  ) {
+    super('Invalid extraction');
+  }
+}
+
 export async function requestExtraction(
   model: ActiveAiModel,
   text: string,
@@ -20,8 +51,12 @@ export async function requestExtraction(
     json: true,
     signal,
   });
-  if (content.length > 12000) throw new Error('Invalid model response');
-  return JSON.parse(content) as unknown;
+  if (content.length > 12000) throw new ExtractionError('invalid_json');
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    throw new ExtractionError('invalid_json');
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,10 +76,11 @@ export function mergeExtraction(
     !Array.isArray(raw.unhandledText) ||
     Object.keys(raw).some(key => !['fields', 'unhandledText'].includes(key)) ||
     raw.unhandledText.length > 20 ||
-    raw.unhandledText.some(item => typeof item !== 'string' || !item.trim() || !text.includes(item)) ||
+    raw.unhandledText.some(item => typeof item !== 'string' || !item.trim()) ||
     Object.keys(raw.fields).length > 18
   )
-    throw new Error('Invalid extraction');
+    throw new ExtractionError('invalid_structure');
+  if (raw.unhandledText.some(item => !text.includes(item as string))) throw new ExtractionError('invalid_evidence', 'unhandledText');
   const rules = parseRequirement(text, form, catalog, [], locale);
   const requirement = structuredClone(rules.requirement);
   const fieldSources = { ...rules.fieldSources };
@@ -61,10 +97,10 @@ export function mergeExtraction(
       !isRecord(entry) ||
       Object.keys(entry).some(key => !['value', 'evidence'].includes(key)) ||
       typeof entry.evidence !== 'string' ||
-      !entry.evidence.trim() ||
-      !text.includes(entry.evidence)
+      !entry.evidence.trim()
     )
-      throw new Error('Invalid extraction');
+      throw new ExtractionError('invalid_structure', field);
+    if (!text.includes(entry.evidence)) throw new ExtractionError('invalid_evidence', field);
     const key = field as Field;
     const value = entry.value;
     const options =
@@ -90,7 +126,7 @@ export function mergeExtraction(
         (field !== 'areaM2' && !Number.isInteger(value)) ||
         (field === 'openingCount' && !catalog.openingCounts.some(option => option.id === String(value)))
       )
-        throw new Error('Invalid extraction');
+        throw new ExtractionError('invalid_value', field);
     } else if (Array.isArray(requirement[key])) {
       if (
         !Array.isArray(value) ||
@@ -99,8 +135,8 @@ export function mergeExtraction(
         value.some(id => typeof id !== 'string' || !options.some(option => option.id === id)) ||
         new Set(value).size !== value.length
       )
-        throw new Error('Invalid extraction');
-    } else if (typeof value !== 'string' || !options.some(option => option.id === value)) throw new Error('Invalid extraction');
+        throw new ExtractionError('invalid_value', field);
+    } else if (typeof value !== 'string' || !options.some(option => option.id === value)) throw new ExtractionError('invalid_value', field);
     if (blocked.has(field)) continue;
     const oppositeFields =
       field === 'zoneIds' || field === 'requiredZoneIds'
@@ -163,11 +199,14 @@ export function mergeExtraction(
   try {
     Object.assign(requirement, validateRequirement(requirement, catalog));
   } catch {
-    throw new Error('Invalid extraction');
+    throw new ExtractionError('invalid_requirement');
   }
-  const unhandledText = [
-    ...new Set([...parseRequirement(text, form, catalog, [...handled], locale).unhandledText, ...(raw.unhandledText as string[])]),
-  ];
+  // 规则已确定识别的片段（如“长宽 6*3”）不因模型更保守的判断再要求确认
+  const ruleEvidence = Object.values(rules.fieldSources).flatMap(source =>
+    source.source === 'text' && source.evidence ? [source.evidence] : [],
+  );
+  const modelUnhandled = (raw.unhandledText as string[]).filter(item => !ruleEvidence.some(evidence => evidence.includes(item)));
+  const unhandledText = [...new Set([...parseRequirement(text, form, catalog, [...handled], locale).unhandledText, ...modelUnhandled])];
   if (unhandledText.length)
     clarifications.push({ field: 'text', reason: 'NEEDS_CONFIRMATION', question: message(locale, 'llmUnhandled'), candidates: [] });
   return {
@@ -184,6 +223,17 @@ export function mergeExtraction(
   };
 }
 
+/** 单次模型调用的超时；整轮解析（含换备用模型）不超过总预算，须小于 HTTP 请求超时（app.ts requestTimeout） */
+const ATTEMPT_TIMEOUT_MS = 10_000;
+const PARSE_BUDGET_MS = 20_000;
+
+function failureOf(error: unknown): Pick<ExtractionAttempt, 'outcome' | 'httpStatus' | 'field'> {
+  if (error instanceof ExtractionError) return { outcome: error.stage, ...(error.field ? { field: error.field } : {}) };
+  const { name, status } = (error ?? {}) as { name?: unknown; status?: unknown };
+  if (name === 'TimeoutError' || name === 'AbortError') return { outcome: 'timeout' };
+  return { outcome: 'provider_error', ...(typeof status === 'number' ? { httpStatus: status } : {}) };
+}
+
 export async function parseWithModels(
   text: string,
   form: Requirement,
@@ -193,18 +243,33 @@ export async function parseWithModels(
   templateBody?: string,
   locale: MessageLocale = DEFAULT_MESSAGE_LOCALE,
 ) {
-  const deadline = Date.now() + 2800;
+  const deadline = Date.now() + PARSE_BUDGET_MS;
+  const attempts: ExtractionAttempt[] = [];
   for (const model of models) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const remaining = deadline - Date.now();
-      if (remaining < 200) return parseRequirement(text, form, catalog, [], locale);
+      if (remaining < 200) return { result: parseRequirement(text, form, catalog, [], locale), attempts };
+      const startedAt = performance.now();
+      const record = (outcome: Pick<ExtractionAttempt, 'outcome' | 'httpStatus' | 'field'>) =>
+        attempts.push({
+          modelId: model.id,
+          model: model.model,
+          attempt: attempt + 1,
+          durationMs: Math.round(performance.now() - startedAt),
+          ...outcome,
+        });
       try {
-        const raw = await extract(model, text, catalog, AbortSignal.timeout(Math.min(1800, remaining)), templateBody);
-        return mergeExtraction(text, form, catalog, raw, locale);
-      } catch {
-        // A second attempt is bounded; the rule parser remains available when both models fail.
+        const raw = await extract(model, text, catalog, AbortSignal.timeout(Math.min(ATTEMPT_TIMEOUT_MS, remaining)), templateBody);
+        const result = mergeExtraction(text, form, catalog, raw, locale);
+        record({ outcome: 'ok' });
+        return { result, attempts };
+      } catch (error) {
+        const failure = failureOf(error);
+        record(failure);
+        // 超时的模型立即重试多半仍会超时，直接换备用模型；全部失败时由规则解析兜底
+        if (failure.outcome === 'timeout') break;
       }
     }
   }
-  return parseRequirement(text, form, catalog, [], locale);
+  return { result: parseRequirement(text, form, catalog, [], locale), attempts };
 }
