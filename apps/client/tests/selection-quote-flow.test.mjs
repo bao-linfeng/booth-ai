@@ -53,6 +53,7 @@ const server = await createServer({
 })
 after(async () => { delete globalThis.__selectionQuote; await server.close(); await window.happyDOM.close() })
 const { createApp, h, nextTick, createRouter, createMemoryHistory, RouterView } = await server.ssrLoadModule('virtual:test-vue')
+const { createI18n } = await server.ssrLoadModule('vue-i18n')
 const { default: AISelection } = await server.ssrLoadModule('/src/pages/AISelection.vue')
 const { default: SchemeDetail } = await server.ssrLoadModule('/src/pages/SchemeDetail.vue')
 const { default: QuoteRequest } = await server.ssrLoadModule('/src/pages/QuoteRequest.vue')
@@ -124,7 +125,7 @@ async function mount() {
     { path: '/:pathMatch(.*)*', component: { render: () => null } },
   ] })
   await router.push('/ai-selection'); await router.isReady()
-  const app = createApp({ render: () => h(RouterView) }); app.use(router); app.mount(container); await settle()
+  const app = createApp({ render: () => h(RouterView) }); app.use(router); app.use(createI18n()); app.mount(container); await settle()
   return { container, router, calls, close: async () => { app.unmount(); container.remove(); await settle() } }
 }
 

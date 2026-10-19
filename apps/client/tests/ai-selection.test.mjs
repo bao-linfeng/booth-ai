@@ -56,6 +56,7 @@ after(async () => {
   await window.happyDOM.close()
 })
 const { createApp, h, nextTick, createRouter, createMemoryHistory } = await server.ssrLoadModule('virtual:test-vue')
+const { createI18n } = await server.ssrLoadModule('vue-i18n')
 const { default: AISelection } = await server.ssrLoadModule('/src/pages/AISelection.vue')
 const { emptyRequirement } = await server.ssrLoadModule('/src/features/selection/types.ts')
 const { readManualHandoff, readSelectionQuoteHandoff, writeManualHandoff } = await server.ssrLoadModule('/src/features/selection/handoff.ts')
@@ -114,6 +115,7 @@ async function mount({ restore = false, status = 'matched', schemeImages, parsed
   document.body.append(container)
   const app = createApp({ render: () => h(AISelection) })
   app.use(router)
+  app.use(createI18n())
   app.mount(container)
   await settle()
   return { container, calls, close: async () => { app.unmount(); container.remove(); await settle() } }
