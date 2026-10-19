@@ -85,7 +85,21 @@
 - [ ] SU 专用 API：`http/su/`（S1 身份同步、S1 当前用户与积分、S2 导出）与 `http/admin/su-exports/`（B4 复核），目前均为单行占位注释、未注册路由
 - [ ] 伙伴项目接口：`http/client/partner/index.ts`（A6），单行占位
 - [ ] 运维告警：Outbox 最老待处理时间、通知失败数、积分对账异常数、生成任务超期数、Worker 连续失败与 stale、邮件/翻译 dead letter
-- [ ] 数据库性能：按真实数据量对候选池、`asset_versions`、`scheme_reviews`、`selection_searches` 分页及项目 JSONB 搜索执行 `EXPLAIN ANALYZE`，按需加复合索引
+- [x] 数据库性能：dev 库只有几十行，改在独立临时库按合成数据量（方案 5,000、资产 36 万、`asset_versions` 42 万、`scheme_reviews` 3 万、`selection_searches` 100 万、项目 10 万）对代码中的原样 SQL 执行 `EXPLAIN ANALYZE`，新增迁移 `087_query_indexes.sql`。热缓存下用 psql `\timing` 实测（Docker Desktop 上波动约 ±20%，取约数）：
+
+  | 查询 | 前 | 后 | 处理 |
+  |---|---|---|---|
+  | 智选展位尺寸目录 | ~75 ms | ~20 ms | `scheme_reviews (scheme_id, scheme_revision, phase, created_at DESC, id DESC) INCLUDE (decision)`，最新整体审核走 Index Only Scan |
+  | 智选候选方案 | ~210 ms | ~155 ms | 同上 |
+  | 智选候选资产（4.8 万行） | ~320 ms | ~245 ms | `asset_versions (asset_id, created_at DESC, id DESC)`，取最新版本不再额外排序；所有取最新版本的查询共用 |
+  | 检索历史缩略图 `latestVersionKeys` | ~30–50 ms | ~1 ms | 原先 `asset_id::text = ANY(...)` 导致全表扫描；改为先过滤 UUID 格式再按 uuid 比较 |
+  | 管理端检索记录按方案编号筛选（count） | ~1,100 ms | ~3 ms | 改写为 `jsonb_path_query_array(result_snapshot, '$[*].code') @> ...`，配 GIN 表达式索引（100 万行时 13 MB） |
+  | 管理端项目列表默认首页 | ~24 ms | ~1 ms | `projects (updated_at DESC, id DESC)` |
+
+  同时删除被新索引覆盖的 `scheme_reviews_scheme_id_idx`、`asset_versions_asset_id_idx`，以及与唯一约束重复的 `scheme_reviews_request_key_idx`。客户端检索历史分页、就绪检查、按状态/时间筛选检索记录、我的项目等原本已在 1 ms 内，无需处理。集成测试 `search-history.test.ts` 补充方案编号筛选与非 UUID 资产 ID 用例
+- [ ] 智选候选池每次检索全量加载已发布方案及其资产后在内存匹配，耗时随方案数线性增长（合成 4,000 个已发布方案时两条查询合计约 400 ms），索引已无进一步空间。当前方案数为几十个，到上千个时再考虑按方案/审核/资产变更失效的候选池缓存
+- [ ] 管理端检索记录的访客下拉（`GET /admin/scheme-searches/visitors`）一次返回全部访客：100 万条检索、30 万访客时查询 570 ms 且返回 30 万个选项。需改为按输入搜索并限制条数（接口与管理端页面同时调整）
+- [ ] 以下在合成数据量下仍为数十到数百毫秒，暂不处理：检索记录无筛选 count（100 万行约 100 ms）、资产列表深分页（OFFSET 4 万约 240 ms）、项目按展会名称/城市/客户名模糊搜索与展会开始日期筛选（10 万行约 20–40 ms，需要时可用 `pg_trgm` 表达式索引）
 - [ ] 真实环境验收：灵通 SSO、AI 供应商请求与超时、SMTP、Webhook 外部投递、生产反向代理 / HTTPS / 跨域 / 多副本
 
 ---

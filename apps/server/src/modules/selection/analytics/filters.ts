@@ -28,7 +28,8 @@ export function searchFilter(query: SearchQuery, values: unknown[]): string {
   }
   if (query.schemeCode) {
     values.push(query.schemeCode);
-    filters.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(s.result_snapshot) item WHERE item->>'code' = $${values.length})`);
+    // 与 selection_searches_scheme_codes_idx 的表达式一致才能走索引
+    filters.push(`jsonb_path_query_array(s.result_snapshot, '$[*].code') @> jsonb_build_array($${values.length}::text)`);
   }
   return filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 }
