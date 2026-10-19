@@ -32,6 +32,8 @@ x-server: &server
     SMTP_PASSWORD: ${SMTP_PASSWORD:-}
     SMTP_FROM: ${SMTP_FROM:-}
     CLIENT_PUBLIC_URL: ${CLIENT_PUBLIC_URL:-http://localhost:5173}
+    PROJECT_NOTIFICATION_WEBHOOK_URL: ${PROJECT_NOTIFICATION_WEBHOOK_URL:-}
+    PROJECT_NOTIFICATION_WEBHOOK_SECRET: ${PROJECT_NOTIFICATION_WEBHOOK_SECRET:-}
   volumes:
     - ../apps/server/src:/app/src:ro
     - ../apps/server/migrations:/app/migrations:ro

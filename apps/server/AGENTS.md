@@ -186,7 +186,7 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 | `S3_REGION` | 默认 `us-east-1` |
 | `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | Bucket 与凭据 |
 
-可选：`NODE_ENV`（默认 `development`）、`HOST`（默认 `0.0.0.0`）、`PORT`（默认 `3000`）、`LOG_LEVEL`（默认 `info`）、`PROJECT_NOTIFICATION_WEBHOOK_URL` / `PROJECT_NOTIFICATION_WEBHOOK_SECRET`（未配置时项目通知停留在 `project_notification_outbox`，见 `src/worker.ts`）。
+可选：`NODE_ENV`（默认 `development`）、`HOST`（默认 `0.0.0.0`）、`PORT`（默认 `3000`）、`LOG_LEVEL`（默认 `info`）、`PROJECT_NOTIFICATION_WEBHOOK_URL` / `PROJECT_NOTIFICATION_WEBHOOK_SECRET`（配置 URL 后 secret 必填且至少 32 字节，否则所有服务端进程启动失败；未配置 URL 时项目通知停留在 `project_notification_outbox`，见 `src/worker.ts`）。
 
 - `TRUST_PROXY`：反向代理信任范围，填代理跳数（如 `1`）或逗号分隔的 IP/CIDR/关键字（`loopback`/`linklocal`/`uniquelocal`）。默认不信任，`request.ip` 为直连地址；部署在代理后必须配置，否则按 IP 的限流（登录、智选、匿名询价）会共用代理地址。
 - 回执邮件（询价/人工需求受理）与在线客服邮件（离线留言通知、回复提醒，outbox 为 `cs_email_outbox`）共用以下配置：`SMTP_HOST` / `SMTP_PORT`（默认 465，非 465 默认 STARTTLS）/ `SMTP_SECURE` / `SMTP_USER` + `SMTP_PASSWORD` / `SMTP_FROM`，以及邮件链接用的 `CLIENT_PUBLIC_URL`（生产须 https）。未配置 `SMTP_HOST` 时邮件停留在 `project_receipt_emails`；同一收件人 24 小时最多入队 5 封。
