@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { CurrentUser } from '@/services/types/user.type'
 import { rotateVisitorId } from '@/lib/visitor-id'
+// 与客服模块互相引用，双方只在函数内使用对方，求值顺序不影响
+import { handleCustomerServiceLogin, resetCustomerService } from '@/features/customer-service/useCustomerService'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(null)
@@ -16,7 +18,7 @@ export const useAuthStore = defineStore('auth', () => {
   function setLoginResult(accessToken: string, user: CurrentUser) {
     token.value = accessToken
     currentUser.value = user
-    void import('@/features/customer-service/useCustomerService').then(module => module.handleCustomerServiceLogin()).catch(() => undefined)
+    void handleCustomerServiceLogin().catch(() => undefined)
   }
 
   function clearAuth() {
@@ -27,7 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
     // 以便登录时把匿名检索归属到账号、合并客服会话
     if (!wasLoggedIn) return
     rotateVisitorId()
-    void import('@/features/customer-service/useCustomerService').then(module => module.resetCustomerService()).catch(() => undefined)
+    resetCustomerService()
   }
 
   return {

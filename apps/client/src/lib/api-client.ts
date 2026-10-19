@@ -1,5 +1,9 @@
 import { ofetch } from 'ofetch'
 import { appLocale } from '@/plugins/i18n'
+import pinia from '@/plugins/pinia/setup'
+// router → 外部登录守卫 → services/api/auth → 本模块构成循环引用；router 只在函数内使用，求值顺序不影响
+import router from '@/router'
+import { useAuthStore } from '@/stores/auth'
 import { getVisitorId } from './visitor-id'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -9,12 +13,6 @@ const API_TIMEOUT = 10000
 export { getVisitorId, rotateVisitorId } from './visitor-id'
 
 async function handleUnauthorized() {
-  const [{ default: router }, { useAuthStore }, { default: pinia }] = await Promise.all([
-    import('@/router'),
-    import('@/stores/auth'),
-    import('@/plugins/pinia/setup'),
-  ])
-
   const authStore = useAuthStore(pinia)
   if (!authStore.token) return
 
@@ -23,8 +21,6 @@ async function handleUnauthorized() {
 }
 
 async function injectBearerToken(options: Parameters<typeof ofetch>[1]): Promise<boolean> {
-  const { useAuthStore } = await import('@/stores/auth')
-  const { default: pinia } = await import('@/plugins/pinia/setup')
   const authStore = useAuthStore(pinia)
   if (authStore.token) {
     const headers = new Headers(options?.headers as HeadersInit | undefined)
