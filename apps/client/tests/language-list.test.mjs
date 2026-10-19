@@ -23,7 +23,7 @@ const server = await createServer({
       if (path === '@/plugins/i18n' || path.endsWith('/src/plugins/i18n')) return '\0test-i18n'
     },
     load(id) {
-      if (id === '\0test-router') return 'export default globalThis.__languageList.router'
+      if (id === '\0test-router') return 'export default { get currentRoute() { return globalThis.__languageList.router.currentRoute }, push: to => globalThis.__languageList.router.push(to) }'
       if (id === '\0test-auth') return 'export const useAuthStore = () => globalThis.__languageList.auth'
       if (id === '\0test-pinia') return 'export default {}'
       if (id === '\0test-i18n') return "export const appLocale = { value: 'zh' }"

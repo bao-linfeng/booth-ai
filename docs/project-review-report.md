@@ -61,11 +61,11 @@
 
 ## P3 — 工程小项
 
-- [ ] `apps/client/src/composables/useFont.ts`：调用前判断 `document.fonts?.load` 是否存在
-- [ ] 跑一遍 client 测试，确认 `i18n-t` warning 是否仍存在（`tests/mock-i18n.ts` 已注册 `i18n-t`），存在则修复
-- [ ] CI（`.github/workflows/ci.yml`）client 任务改用自己的 Node 版本来源，不再借用 `apps/admin/.node-version`；同步 `lefthook.yml` 与 `apps/client/AGENTS.md`
-- [ ] 排查 client 构建中 auth、客服、Pinia、router 的动态/静态重复导入 warning
-- [ ] 构建后排查全局 CSS 体积（报告称约 1.16 MB，未复核）
+- [x] `apps/client/src/composables/useFont.ts`：调用前判断 `document.fonts?.load` 是否存在，不存在时跳过预加载，仍设置字体变量
+- [x] `i18n-t` warning 仍存在（40 条，来自 `ai-selection`、`selection-quote-flow`）：mock 只在 `createI18n()` 插件里注册 `i18n-t`，这两个测试未安装插件。已改为 `app.use(createI18n())`，与真实应用一致，warning 清零
+- [x] CI client 任务改读 `apps/client/.node-version`（新增，24.16.0）与 `apps/client/package.json` 的 `packageManager`（新增，pnpm@11.16.0，与 CI 原先实际使用的版本相同）；`apps/client/AGENTS.md` 已补充说明。`lefthook.yml` 只在本机执行命令、不指定版本，无需改动
+- [x] 4 条重复导入 warning：动态导入原本只为避开循环引用，且被导入模块本就在主 chunk，不起拆包作用。`api-client` 改为静态导入 router、auth store、pinia，auth store 改为静态导入客服模块；双方只在函数内使用对方，求值顺序不影响。构建 warning 清零，`language-list` 测试的 router 替身改为调用时读取
+- [x] 全局 CSS 复核属实（1,161 kB / gzip 135 kB）：`tailwind.config.js` 的 safelist 按 11 种颜色 × 全部色阶 × 透明度 × 6 种变体生成约 1.86 万条规则，而唯一的动态类名是外观设置里 6 个色块的 `bg-{color}-500`。已删除 safelist，色块改为完整类名映射；CSS 降至 73 kB / gzip 12.7 kB，对比前后选择器，删除的均为 safelist 生成的颜色类、无其他类丢失
 
 ---
 

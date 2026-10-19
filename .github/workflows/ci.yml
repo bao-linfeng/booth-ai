@@ -55,10 +55,10 @@ jobs:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
         with:
-          package_json_file: apps/admin/package.json
+          package_json_file: apps/client/package.json
       - uses: actions/setup-node@v5
         with:
-          node-version-file: apps/admin/.node-version
+          node-version-file: apps/client/.node-version
           cache: pnpm
           cache-dependency-path: apps/client/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile

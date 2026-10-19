@@ -14,6 +14,7 @@ pnpm test         # node:test 跑 tests/*.test.mjs（逐个文件串行）
 node --test tests/<file>.test.mjs  # 单文件
 ```
 
+- 版本：Node 见 `.node-version`，pnpm 见 `package.json` 的 `packageManager`（pnpm 会自动切换到该版本）；CI 的 client 任务读取这两处，与 admin 各自独立。
 - 无独立 lint 脚本；类型验证入口是 `pnpm build`（内含 `vue-tsc --noEmit`）。
 - **检查流程**：非平凡改动后依次跑 `pnpm build`、`pnpm test`，两者都通过才算完成；不要并行跑，测试文件也保持 `--test-concurrency=1`（单文件峰值约 1 GB）。
 
@@ -57,7 +58,7 @@ node --test tests/<file>.test.mjs  # 单文件
 - 颜色系统完全基于 HSL CSS 变量（`--background`, `--primary`, `--foreground` 等），**不要在代码里硬编码颜色值**。
 - 多主题 CSS 变量定义在 `src/components/theming/themes.css`，主题逻辑在 `src/utils/theme.ts` 和 `src/components/theming/themeManager.ts`。
 - 暗色模式：HTML 根元素 `class` 切换（`darkMode: ["class"]`），`index.html` 内联脚本在页面加载前读取 `localStorage.getItem('darkMode')` 防止 FOUC，不要移除此脚本。
-- Tailwind safelist 已为动态主题类名（`theme-*`, `bg-zinc-*` 等）加白名单，动态拼接主题类名是安全的。
+- Tailwind 不设 safelist，只生成源码中完整出现的类名：**不要用字符串拼接 Tailwind 类名**（如 `` `bg-${color}-500` ``），按取值写完整类名的映射表（参考 `ThemingSettings.vue` 的 `colorSwatches`）。`theme-*` 是 `themes.css` 中的普通 CSS，不受影响。原先按颜色加的 safelist 连同透明度与变体生成了约 1 MB CSS，已删除。
 
 ---
 

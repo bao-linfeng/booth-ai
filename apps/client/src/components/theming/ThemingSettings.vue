@@ -50,6 +50,11 @@ const colorLabels = computed<Record<string, string>>(() => ({
   red: t('appearance.red'), rose: t('appearance.rose'), orange: t('appearance.orange'),
   green: t('appearance.green'), blue: t('appearance.blue'), violet: t('appearance.violet'),
 }))
+// 写完整类名，Tailwind 才能扫描到，不要改成字符串拼接
+const colorSwatches: Record<string, string> = {
+  red: 'bg-red-500', rose: 'bg-rose-500', orange: 'bg-orange-500',
+  green: 'bg-green-500', blue: 'bg-blue-500', violet: 'bg-violet-500',
+}
 
 function getStoredState() {
   try {
@@ -204,7 +209,7 @@ onMounted(() => {
                       >
                         <span 
                           class="absolute left-2 h-4 w-4 rounded-full"
-                          :class="`bg-${color}-500`"
+                          :class="colorSwatches[color]"
                         />
                         <span class="flex-1 text-center">{{ colorLabels[color] }}</span>
                       </Button>
