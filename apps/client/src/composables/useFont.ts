@@ -1,7 +1,8 @@
 export function useFont() {
   const loadFont = async (fontFamily: string) => {
     try {
-      await document.fonts.load(`1rem "${fontFamily}"`)
+      // 部分环境（旧浏览器、测试用 DOM）没有 FontFaceSet，跳过预加载，仍设置字体变量
+      if (typeof document.fonts?.load === 'function') await document.fonts.load(`1rem "${fontFamily}"`)
       document.documentElement.style.setProperty('--font-sans', `"${fontFamily}", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`)
     } catch (error) {
       console.error(`Failed to load font: ${fontFamily}`, error)
