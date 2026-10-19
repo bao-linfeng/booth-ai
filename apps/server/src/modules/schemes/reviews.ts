@@ -63,8 +63,8 @@ interface ReviewRow extends Omit<ReviewRecord, 'createdAt'> {
   createdAt: Date | string;
 }
 
-function requestError(message: string, statusCode: number): Error & { statusCode: number } {
-  return Object.assign(new Error(message), { statusCode });
+function requestError(message: string, statusCode: number, reason?: string): Error & { statusCode: number } {
+  return Object.assign(new Error(message), { statusCode }, reason ? { reason } : {});
 }
 
 function toIsoString(value: Date | string): string {
@@ -93,13 +93,27 @@ async function findScheme(client: DbClient, code: string, lock = false): Promise
   return scheme;
 }
 
+/** requestKey 全局唯一：只有同一方案、同一内容的重放才返回原记录，否则 409 */
+async function findReplay(client: DbClient, schemeId: string, input: CreateReviewInput): Promise<ReviewRecord | null> {
+  const result = await client.query<ReviewRow & { matches: boolean }>(
+    `SELECT ${reviewColumns},
+       (scheme_id = $2 AND scheme_revision = $3 AND phase = $4 AND decision = $5
+        AND checks = $6::jsonb AND notes IS NOT DISTINCT FROM $7) AS matches
+     FROM scheme_reviews WHERE request_key = $1`,
+    [input.requestKey, schemeId, input.schemeRevision, input.phase, input.decision, JSON.stringify(input.checks), input.notes ?? null],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  const { matches, ...review } = row;
+  if (!matches) throw requestError('Review request key reused with different content', 409, 'IDEMPOTENCY_CONFLICT');
+  return toReviewRecord(review);
+}
+
 export async function createReview(pool: pg.Pool, code: string, adminId: string, input: CreateReviewInput): Promise<ReviewRecord> {
   return transaction(pool, async client => {
     const scheme = await findScheme(client, code, true);
-    const previous = await client.query<ReviewRow>(`SELECT ${reviewColumns} FROM scheme_reviews WHERE request_key = $1`, [
-      input.requestKey,
-    ]);
-    if (previous.rows[0]) return toReviewRecord(previous.rows[0]);
+    const previous = await findReplay(client, scheme.id, input);
+    if (previous) return previous;
     if (scheme.revision !== input.schemeRevision) throw requestError('Scheme revision conflict', 409);
     if (input.phase === 'overall' && input.decision === 'pass') {
       if (!['assetsComplete', 'bomVerified', 'renderingsAndMasks', 'drawingsComplete'].every(key => input.checks[key] === true))
@@ -134,11 +148,10 @@ export async function createReview(pool: pg.Pool, code: string, adminId: string,
       });
       return toReviewRecord(inserted.rows[0]);
     }
-    const existing = await client.query<ReviewRow>(`SELECT ${reviewColumns} FROM scheme_reviews WHERE request_key = $1`, [
-      input.requestKey,
-    ]);
-    if (!existing.rows[0]) throw requestError('Failed to create review', 500);
-    return toReviewRecord(existing.rows[0]);
+    // 其他方案的并发请求先占用了同一个 key
+    const existing = await findReplay(client, scheme.id, input);
+    if (!existing) throw requestError('Failed to create review', 500);
+    return existing;
   });
 }
 

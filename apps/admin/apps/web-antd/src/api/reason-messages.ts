@@ -20,6 +20,8 @@ export const REASON_MESSAGES: Record<string, string> = {
   PROVIDER_IN_USE: '供应商下仍有模型，请先删除模型',
   PURPOSE_UNSUPPORTED: '所选模型不能用于该用途',
   REVISION_CONFLICT: '配置已被他人修改，请刷新后重试',
+  IDEMPOTENCY_CONFLICT:
+    '重复提交且内容与上次不一致：上次提交可能已生效，请刷新后确认',
   // 项目跟进与报价
   ASSIGNMENT_CONFIG_CHANGED: '默认承接人配置已被他人修改，请刷新后重试',
   INVALID_ASSIGNEE: '所选人员不能承接项目：账号已停用或缺少项目查看/跟进权限',
@@ -79,7 +81,6 @@ export const REASON_MESSAGES: Record<string, string> = {
   CONVERSATION_CLOSED: '会话已结束',
   CONVERSATION_NOT_ACTIVE: '会话已在队列中，无需退回',
   CONVERSATION_NOT_FOUND: '会话不存在或无权查看',
-  IDEMPOTENCY_CONFLICT: '消息重复提交且内容不一致',
   MESSAGE_INVALID: '消息不能为空、超过 2000 字或包含控制字符',
   NOT_CONVERSATION_AGENT: '仅当前接待坐席可执行此操作',
   TRANSFER_REASON_REQUIRED: '请填写改派原因（最多 500 字）',
