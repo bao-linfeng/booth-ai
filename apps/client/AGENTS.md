@@ -14,6 +14,7 @@ pnpm test         # node:test 跑 tests/*.test.mjs（逐个文件串行）
 node --test tests/<file>.test.mjs  # 单文件
 ```
 
+- 版本：Node 见 `.node-version`，pnpm 见 `package.json` 的 `packageManager`（pnpm 会自动切换到该版本）；CI 的 client 任务读取这两处，与 admin 各自独立。
 - 无独立 lint 脚本；类型验证入口是 `pnpm build`（内含 `vue-tsc --noEmit`）。
 - **检查流程**：非平凡改动后依次跑 `pnpm build`、`pnpm test`，两者都通过才算完成；不要并行跑，测试文件也保持 `--test-concurrency=1`（单文件峰值约 1 GB）。
 
