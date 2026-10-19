@@ -9,7 +9,8 @@ import type { createStorage } from '../../src/infra/storage.js';
 import { registerClientSearchRoutes } from '../../src/http/client/searches/index.js';
 import { registerAuthentication } from '../../src/http/authentication.js';
 import { listSearchJobs } from '../../src/modules/generation/search-jobs.js';
-import { listClientSearches } from '../../src/modules/selection/analytics/queries.js';
+import { listClientSearches, listSearches } from '../../src/modules/selection/analytics/queries.js';
+import { latestVersionKeys } from '../../src/modules/assets/queries.js';
 import { assertThemeSearch, themeRequestHash, type ThemeParameters } from '../../src/modules/generation/theme/service.js';
 
 const storage = { signDownload: async (key: string) => `https://assets.example/${key}` } as ReturnType<typeof createStorage>;
@@ -375,5 +376,20 @@ test(
     });
     await pool.query('UPDATE theme_jobs SET selection_revision=2 WHERE id=$1', [latest]);
     assert.equal((await listSearchJobs(pool, storage, user, searches)).get(searches[1]!)?.get(code)?.artwork, null);
+
+    // 管理端按方案编号筛选：精确匹配结果中的编号，不做部分匹配
+    const searchCount = async (schemeCode: string) => (await listSearches(pool, { page: 1, pageSize: 20, schemeCode })).total;
+    assert.equal(await searchCount(code), 3);
+    assert.equal(await searchCount('SEARCH'), 0);
+    assert.equal(await searchCount('OTHER'), 0);
+
+    // 历史快照里的非 UUID 资产 ID 直接忽略；同一资产返回最新版本
+    await pool.query(
+      `INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum,created_at)
+       VALUES($1,'source-v2.png','source-v2.png','image/png',10,'test',now()+interval '1 day')`,
+      [source.id],
+    );
+    assert.deepEqual(await latestVersionKeys(pool, [source.id, 'not-a-uuid']), [{ assetId: source.id, objectKey: 'source-v2.png' }]);
+    assert.deepEqual(await latestVersionKeys(pool, ['not-a-uuid']), []);
   },
 );
