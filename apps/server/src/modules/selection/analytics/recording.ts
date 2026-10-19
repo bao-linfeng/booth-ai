@@ -99,6 +99,7 @@ export function extractDemandTerms(inputText: string, requirement: Requirement, 
   return [...new Set(terms.map(term => term.trim()).filter(term => term.length >= 2))].slice(0, 50);
 }
 
+/** parseId 来自客户端：只关联同一尝试下的解析记录（尝试已由 ensureAttempt 限定为当前访客），其他访客的或不存在的记为 null */
 export async function recordSearch(pool: pg.Pool, input: SearchRecordInput): Promise<string> {
   const result = await pool.query<{ id: string }>(
     `
@@ -106,7 +107,7 @@ export async function recordSearch(pool: pg.Pool, input: SearchRecordInput): Pro
       attempt_id,parse_id,visitor_id,user_id,mode,status,input_text,final_requirement,
        direct_count,reference_count,random_count,result_count,zero_match_reasons,demand_terms,
        result_snapshot,rules_version,dictionary_version,degraded_parse,duration_ms,match_diagnostics
-     ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+     ) VALUES($1,(SELECT id FROM selection_parses WHERE id=$2::uuid AND attempt_id=$1),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
     RETURNING id`,
     [
       input.attemptId,

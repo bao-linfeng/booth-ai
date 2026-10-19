@@ -118,7 +118,9 @@ test('selection service replaces an attempt owned by another visitor instead of 
   assert.equal(inserts.length, 2);
   assert.match(inserts[0]!.sql, /ON CONFLICT \(id\) DO NOTHING/);
   const recorded = calls.find(call => call.sql.includes('INSERT INTO selection_searches'));
-  assert.deepEqual(recorded?.params.slice(0, 2), [result.attemptId, null]);
+  // 旧尝试的解析记录由 SQL 限定在新尝试内而被丢弃，见 selection-parse-attempts-integration
+  assert.deepEqual(recorded?.params.slice(0, 2), [result.attemptId, 'parse-foreign']);
+  assert.match(recorded!.sql, /\(SELECT id FROM selection_parses WHERE id=\$2::uuid AND attempt_id=\$1\)/);
 });
 
 test('selection dependency errors preserve HTTP status semantics and invisible schemes remain unavailable', async () => {

@@ -112,11 +112,10 @@ export async function matchSelection(
     attemptId,
     visitorId: identity.visitorId,
   };
-  // 尝试被重建时，传入的解析记录属于旧尝试，不能挂到新检索上
-  const parseId = attemptId === input.attemptId ? (input.parseId ?? null) : null;
+  // 尝试被重建或 parseId 不属于该尝试时，recordSearch 不会关联该解析记录
   const searchId = await recordSearch(pool, {
     attemptId,
-    parseId,
+    parseId: input.parseId ?? null,
     identity,
     mode: input.mode,
     inputText: input.inputContext.text ?? '',

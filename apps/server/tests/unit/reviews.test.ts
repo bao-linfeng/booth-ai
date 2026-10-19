@@ -138,7 +138,7 @@ test('review request keys replay the stored record, even after a revision change
   };
   const pool = poolFor(sql => {
     if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
-    if (sql.includes('FROM scheme_reviews')) return { rows: [existing] };
+    if (sql.includes('FROM scheme_reviews')) return { rows: [{ ...existing, matches: true }] };
     throw new Error(`Unexpected query: ${sql}`);
   });
   const record = await createReview(pool, 'S-1', adminId, {
@@ -150,6 +150,19 @@ test('review request keys replay the stored record, even after a revision change
   });
   assert.equal(record.id, 'review-id');
   assert.equal(record.createdAt, '2026-01-01T00:00:00.000Z');
+  assert.equal('matches' in record, false);
+});
+
+test('a reused review request key with another scheme or payload is a conflict', async () => {
+  const pool = poolFor(sql => {
+    if (sql.includes('FROM schemes WHERE code')) return { rows: [scheme] };
+    if (sql.includes('FROM scheme_reviews')) return { rows: [{ id: 'review-id', matches: false }] };
+    throw new Error(`Unexpected query: ${sql}`);
+  });
+  await assert.rejects(
+    createReview(pool, 'S-1', adminId, { requestKey: 'key', schemeRevision: 2, phase: 'overall', decision: 'reject', checks: {} }),
+    { statusCode: 409, reason: 'IDEMPOTENCY_CONFLICT' },
+  );
 });
 
 test('review rejects stale revisions before insertion', async () => {

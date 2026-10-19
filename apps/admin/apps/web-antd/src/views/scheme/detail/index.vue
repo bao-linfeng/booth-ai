@@ -705,7 +705,11 @@ async function handleReviewSubmit() {
     reviewModalVisible.value = false;
     await refreshStatus();
   } catch (error: any) {
-    if (error?.response?.status === 409 || error?.status === 409) {
+    if (error?.response?.data?.error?.reason === 'IDEMPOTENCY_CONFLICT') {
+      // 本次弹窗的审核已提交过（如上次响应丢失），提示由全局拦截器给出
+      reviewModalVisible.value = false;
+      await refreshStatus();
+    } else if (error?.response?.status === 409 || error?.status === 409) {
       message.error('方案已被修改，请刷新后重试');
     } else {
       message.error(error?.message || '提交审核失败');

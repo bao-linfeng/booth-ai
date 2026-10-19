@@ -50,13 +50,6 @@ const itemSchema = {
     sourceRow: { type: ['integer', 'null'], minimum: 1 },
   },
 } as const;
-function decode(raw: string): string {
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    throw bomError('INVALID_INPUT', 400);
-  }
-}
 const string = { type: 'string' } as const;
 const nullableString = { type: ['string', 'null'] } as const;
 const integer = { type: 'integer' } as const;
@@ -240,7 +233,7 @@ export async function registerAdminBomRoutes(
         file.subarray(0, 4).toString('hex') !== '504b0304'
       )
         throw bomError('INVALID_WORKBOOK', 415);
-      const schemeCode = decode(request.params.code);
+      const schemeCode = request.params.code;
       await assertImportBaseline(pool, schemeCode, expected);
       const parsed = await parseBomWorkbook(file, schemeCode);
       const objectKey = `schemes/${encodeURIComponent(schemeCode)}/bom-imports/${randomUUID()}_${filename}`;
@@ -302,7 +295,7 @@ export async function registerAdminBomRoutes(
         data: await createOrReplaceBomFromImport(
           pool,
           adminUserId(request),
-          decode(request.params.code),
+          request.params.code,
           request.params.importId,
           request.body.expectedRevision,
         ),
@@ -321,8 +314,8 @@ export async function registerAdminBomRoutes(
     async request =>
       ({
         code: 0,
-        data: (await getBom(pool, decode(request.params.code))) ?? {
-          schemeCode: decode(request.params.code),
+        data: (await getBom(pool, request.params.code)) ?? {
+          schemeCode: request.params.code,
           revision: 0,
           status: 'absent',
           items: [],
@@ -346,7 +339,7 @@ export async function registerAdminBomRoutes(
       },
     },
     async request => {
-      await deleteBom(pool, adminUserId(request), decode(request.params.code), request.query.expectedRevision);
+      await deleteBom(pool, adminUserId(request), request.params.code, request.query.expectedRevision);
       return { code: 0, data: null } as const;
     },
   );
@@ -374,14 +367,7 @@ export async function registerAdminBomRoutes(
       const body = request.body;
       return {
         code: 0,
-        data: await updateBomItems(
-          pool,
-          adminUserId(request),
-          decode(request.params.code),
-          body.expectedRevision,
-          body.changeReason,
-          body.items,
-        ),
+        data: await updateBomItems(pool, adminUserId(request), request.params.code, body.expectedRevision, body.changeReason, body.items),
       } as const;
     },
   );
@@ -404,13 +390,7 @@ export async function registerAdminBomRoutes(
     async request =>
       ({
         code: 0,
-        data: await deleteBomItem(
-          pool,
-          adminUserId(request),
-          decode(request.params.code),
-          request.params.itemId,
-          request.query.expectedRevision,
-        ),
+        data: await deleteBomItem(pool, adminUserId(request), request.params.code, request.params.itemId, request.query.expectedRevision),
       }) as const,
   );
   routes.post(
@@ -435,7 +415,7 @@ export async function registerAdminBomRoutes(
       },
     },
     async (request, reply) => {
-      const { replayed, ...result } = await submitBomVerification(pool, adminUserId(request), decode(request.params.code), request.body);
+      const { replayed, ...result } = await submitBomVerification(pool, adminUserId(request), request.params.code, request.body);
       return reply.code(replayed ? 200 : 201).send({ code: 0, data: result });
     },
   );
@@ -451,7 +431,7 @@ export async function registerAdminBomRoutes(
       },
     },
     async (request, reply) => {
-      const schemeCode = decode(request.params.code);
+      const schemeCode = request.params.code;
       const requested = request.query.revision;
       const bom = await getBom(pool, schemeCode);
       if (!bom || bom.status !== 'verified') throw bomError('BOM_NOT_AVAILABLE', 409);

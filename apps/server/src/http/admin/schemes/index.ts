@@ -166,14 +166,6 @@ const optionItem = {
 } as const;
 const schemeResponse = { 200: successResponse(schemeSchema) } as const;
 
-function decodedCode(code: string): string {
-  try {
-    return decodeURIComponent(code);
-  } catch {
-    throw Object.assign(new Error('Invalid scheme code'), { statusCode: 400 });
-  }
-}
-
 function listOptions(query: Partial<ListSchemesOptions>): ListSchemesOptions {
   return {
     page: query.page ?? 1,
@@ -226,7 +218,7 @@ export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.
   routes.get(
     '/schemes/:code',
     { config: { permissions: ['schemes.read'] }, schema: { tags: ['admin-schemes'], params: codeParamsSchema, response: schemeResponse } },
-    async request => ({ code: 0, data: await getScheme(pool, decodedCode(request.params.code)) }) as const,
+    async request => ({ code: 0, data: await getScheme(pool, request.params.code) }) as const,
   );
   routes.post(
     '/schemes',
@@ -255,7 +247,7 @@ export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.
       const { editRevision, ...input } = request.body;
       return {
         code: 0,
-        data: await updateScheme(pool, decodedCode(request.params.code), adminUserId(request), input, editRevision),
+        data: await updateScheme(pool, request.params.code, adminUserId(request), input, editRevision),
       } as const;
     },
   );
@@ -270,7 +262,7 @@ export async function registerAdminSchemesRoutes(app: FastifyInstance, pool: pg.
       },
     },
     async request => {
-      await deleteScheme(pool, adminUserId(request), decodedCode(request.params.code));
+      await deleteScheme(pool, adminUserId(request), request.params.code);
       return { code: 0, data: null } as const;
     },
   );

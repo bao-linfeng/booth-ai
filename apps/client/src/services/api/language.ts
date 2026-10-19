@@ -1,4 +1,4 @@
-import { lingtongFetch } from '@/lib/api-client'
+import { lingtongPublicFetch } from '@/lib/api-client'
 import type { LtResponse } from '@/services/types/response.type'
 
 export interface LanguageItem {
@@ -9,7 +9,7 @@ export interface LanguageItem {
 }
 
 export async function getLanguageList() {
-  return lingtongFetch<LtResponse<LanguageItem[]>>('/api/language/list', {
+  return lingtongPublicFetch<LtResponse<LanguageItem[]>>('/api/language/list', {
     method: 'GET',
   })
 }
