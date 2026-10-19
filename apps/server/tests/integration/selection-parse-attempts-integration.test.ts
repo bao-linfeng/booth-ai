@@ -89,3 +89,74 @@ test(
     assert.equal((await record(null)).llmAttempts, null);
   },
 );
+
+test(
+  'searches only link parses from the same attempt and ignore foreign or missing parse IDs',
+  { skip: !process.env.SELECTION_TEST_DATABASE_URL },
+  async t => {
+    const schema = `selection_parse_owner_${randomUUID().replaceAll('-', '')}`;
+    const adminPool = new pg.Pool({ connectionString: process.env.SELECTION_TEST_DATABASE_URL });
+    await adminPool.query(`CREATE SCHEMA ${schema}`);
+    const pool = new pg.Pool({ connectionString: process.env.SELECTION_TEST_DATABASE_URL, options: `-c search_path=${schema}` });
+    t.after(async () => {
+      await pool.end();
+      await adminPool.query(`DROP SCHEMA ${schema} CASCADE`);
+      await adminPool.end();
+    });
+    const names = (await readdir(new URL('../../migrations/', import.meta.url))).filter(name => /^\d+_.+\.sql$/.test(name)).sort();
+    for (const name of names) await pool.query(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
+
+    const owner = { visitorId: 'visitor_parse_owner_a', userId: null };
+    const other = { visitorId: 'visitor_parse_owner_b', userId: null };
+    const ownerAttempt = await ensureAttempt(pool, undefined, owner);
+    const otherAttempt = await ensureAttempt(pool, undefined, other);
+    const parseId = await recordParse(pool, {
+      attemptId: ownerAttempt,
+      identity: owner,
+      inputText: '简洁现代',
+      formRequirement: emptyRequirement(),
+      result: {
+        requirement: emptyRequirement(),
+        parser: 'none',
+        degraded: false,
+        fieldSources: {},
+        overrides: [],
+        clarifications: [],
+        unhandledText: [],
+        warnings: [],
+        rulesVersion: 'rules',
+        dictionaryVersion: 'dictionary',
+      },
+      durationMs: 5,
+    });
+    const search = async (attemptId: string, identity: typeof owner, parse: string | null) => {
+      const searchId = await recordSearch(pool, {
+        attemptId,
+        parseId: parse,
+        identity,
+        mode: 'random',
+        inputText: '',
+        catalog,
+        result: {
+          status: 'no_match',
+          requirement: emptyRequirement(),
+          counts: { direct: 0, reference: 0, random: 0, total: 0 },
+          reasons: [],
+          diagnostics: { reviewedPublished: 0, ready: 0, exclusions: {} } as never,
+          items: [],
+          rulesVersion: 'rules',
+          dictionaryVersion: 'dictionary',
+        },
+        degradedParse: false,
+        durationMs: 1,
+      });
+      return (await pool.query<{ parseId: string | null }>('SELECT parse_id AS "parseId" FROM selection_searches WHERE id=$1', [searchId]))
+        .rows[0]!.parseId;
+    };
+
+    assert.equal(await search(ownerAttempt, owner, parseId), parseId);
+    assert.equal(await search(otherAttempt, other, parseId), null);
+    assert.equal(await search(ownerAttempt, owner, randomUUID()), null);
+    assert.equal(await search(ownerAttempt, owner, null), null);
+  },
+);
