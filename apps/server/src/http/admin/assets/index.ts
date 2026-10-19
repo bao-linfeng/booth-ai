@@ -154,14 +154,6 @@ function requestError(message: string, statusCode: number, reason?: string): Err
   return Object.assign(new Error(message), { statusCode }, reason ? { reason } : {});
 }
 
-function decodedCode(code: string): string {
-  try {
-    return decodeURIComponent(code);
-  } catch {
-    throw requestError('Invalid scheme code', 400);
-  }
-}
-
 export async function registerAdminAssetsRoutes(
   app: FastifyInstance,
   pool: pg.Pool,
@@ -220,7 +212,7 @@ export async function registerAdminAssetsRoutes(
     async request => {
       const query = request.query;
       if (query.type) requireAdminPermission(request, assetPermissionCode(query.type, 'read'));
-      const assets = await listSchemeAssets(pool, decodedCode(request.params.code), query.type);
+      const assets = await listSchemeAssets(pool, request.params.code, query.type);
       const permissions = requirePrincipal(request, 'admin').permissions;
       return { code: 0, data: assets.filter(asset => permissions.includes(assetPermissionCode(asset.type, 'read'))) } as const;
     },
@@ -244,7 +236,7 @@ export async function registerAdminAssetsRoutes(
       }
       // 缩略图仍按效果图预览权限签发，无预览权限时只返回文件信息
       const canPreview = hasAdminPermission(permissions, assetPermissionCode('rendering', 'preview'));
-      const candidates = await listMaskPairingCandidates(pool, decodedCode(request.params.code));
+      const candidates = await listMaskPairingCandidates(pool, request.params.code);
       const data = await Promise.all(
         candidates.map(async ({ rendering, pairedMask }) => {
           const version = rendering.currentVersion;
@@ -270,7 +262,7 @@ export async function registerAdminAssetsRoutes(
     },
     async request => {
       const { file, fields } = await readAssetMultipart(request);
-      const input = parseCreateAssetFields(decodedCode(request.params.code), fields);
+      const input = parseCreateAssetFields(request.params.code, fields);
       requireAdminPermission(request, assetPermissionCode(input.type, 'upload'));
       return { code: 0, data: await uploadAsset(pool, storage, adminUserId(request), input, file, parseIdempotencyKey(fields)) } as const;
     },
@@ -301,11 +293,11 @@ export async function registerAdminAssetsRoutes(
     async request => {
       const { expectedRevision, ...input } = request.body;
       const params = request.params;
-      const asset = await getAsset(pool, decodedCode(params.code), params.assetId);
+      const asset = await getAsset(pool, params.code, params.assetId);
       requireAdminPermission(request, assetPermissionCode(asset.type, 'update'));
       return {
         code: 0,
-        data: await updateAsset(pool, adminUserId(request), decodedCode(params.code), params.assetId, input, expectedRevision),
+        data: await updateAsset(pool, adminUserId(request), params.code, params.assetId, input, expectedRevision),
       } as const;
     },
   );
@@ -318,7 +310,7 @@ export async function registerAdminAssetsRoutes(
     },
     async request => {
       const params = request.params;
-      const schemeCode = decodedCode(params.code);
+      const schemeCode = params.code;
       const asset = await getAsset(pool, schemeCode, params.assetId);
       requireAdminPermission(request, assetPermissionCode(asset.type, 'replace'));
       const { file, fields } = await readAssetMultipart(request);
@@ -355,10 +347,10 @@ export async function registerAdminAssetsRoutes(
     async request => {
       const params = request.params;
       const { expectedRevision, withPairedMasks } = request.body;
-      const asset = await getAsset(pool, decodedCode(params.code), params.assetId);
+      const asset = await getAsset(pool, params.code, params.assetId);
       requireAdminPermission(request, assetPermissionCode(asset.type, 'delete'));
       if (withPairedMasks && asset.type === 'rendering') requireAdminPermission(request, assetPermissionCode('mask', 'delete'));
-      const revision = await deleteAsset(pool, adminUserId(request), decodedCode(params.code), params.assetId, expectedRevision, {
+      const revision = await deleteAsset(pool, adminUserId(request), params.code, params.assetId, expectedRevision, {
         withPairedMasks: withPairedMasks === true,
       });
       return { code: 0, data: { revision } } as const;
@@ -392,7 +384,7 @@ export async function registerAdminAssetsRoutes(
     },
     async request => {
       const params = request.params;
-      const asset = await getAsset(pool, decodedCode(params.code), params.assetId);
+      const asset = await getAsset(pool, params.code, params.assetId);
       const query = request.query;
       requireAdminPermission(request, assetPermissionCode(asset.type, query.disposition === 'preview' ? 'preview' : 'download'));
       const version = query.assetVersionId ? await getAssetVersion(pool, asset.id, query.assetVersionId) : asset.currentVersion;

@@ -96,14 +96,6 @@ const publishedSchemeSchema = {
   properties: { id: string, code: string, revision: integer, publishStatus: string, verificationStatus: string, updatedAt: string },
 } as const;
 
-function decodedCode(code: string): string {
-  try {
-    return decodeURIComponent(code);
-  } catch {
-    throw Object.assign(new Error('Invalid scheme code'), { statusCode: 400 });
-  }
-}
-
 export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   const routes = app.withTypeProvider<TypeProvider>();
   routes.get(
@@ -112,7 +104,7 @@ export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.
       config: { permissions: ['schemes.readiness'] },
       schema: { tags: ['admin-reviews'], params: codeParams, response: { 200: successResponse(readinessSchema) } },
     },
-    async request => ({ code: 0, data: mapReadinessResponse(await getSchemeReadiness(pool, decodedCode(request.params.code))) }) as const,
+    async request => ({ code: 0, data: mapReadinessResponse(await getSchemeReadiness(pool, request.params.code)) }) as const,
   );
   routes.post(
     '/schemes/:code/reviews',
@@ -137,8 +129,7 @@ export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.
         response: { 200: successResponse(reviewSchema) },
       },
     },
-    async request =>
-      ({ code: 0, data: await createReview(pool, decodedCode(request.params.code), adminUserId(request), request.body) }) as const,
+    async request => ({ code: 0, data: await createReview(pool, request.params.code, adminUserId(request), request.body) }) as const,
   );
   routes.post(
     '/schemes/:code/publish',
@@ -146,7 +137,7 @@ export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.
       config: { permissions: ['schemes.publish'] },
       schema: { tags: ['admin-reviews'], params: codeParams, response: { 200: successResponse(publishedSchemeSchema) } },
     },
-    async request => ({ code: 0, data: await publishScheme(pool, decodedCode(request.params.code), adminUserId(request)) }) as const,
+    async request => ({ code: 0, data: await publishScheme(pool, request.params.code, adminUserId(request)) }) as const,
   );
   routes.post(
     '/schemes/:code/unpublish',
@@ -162,7 +153,7 @@ export async function registerAdminReviewsRoutes(app: FastifyInstance, pool: pg.
     async request =>
       ({
         code: 0,
-        data: await unpublishScheme(pool, decodedCode(request.params.code), adminUserId(request), request.body?.reason),
+        data: await unpublishScheme(pool, request.params.code, adminUserId(request), request.body?.reason),
       }) as const,
   );
 }
