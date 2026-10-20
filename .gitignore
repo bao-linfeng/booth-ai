@@ -24,3 +24,7 @@ apps/shadcn-vue-admin-main/
 .stylelintcache
 
 .claude/.server-deploy-fingerprint
+
+# 部署打包产物（服务端镜像 tar、数据导出等统一放 release/）
+release/
+dist.zip
