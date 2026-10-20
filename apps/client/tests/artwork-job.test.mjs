@@ -89,7 +89,7 @@ function artworkJob(ready = true, version = 0) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function settle() { for (let i = 0; i < 5; i++) { await nextTick(); await sleep(5) } }
 
-async function mount({ path = createPath, keepStorage = false, offers = [offer()], create = () => ({ jobId: 'job-1', status: 'queued', deliveryStatus: 'pending' }), job = () => artworkJob() } = {}) {
+async function mount({ path = createPath, keepStorage = false, offers = [offer()], create = () => ({ jobId: 'job-1', status: 'queued', deliveryStatus: 'pending' }), job = () => artworkJob(), singleContentType = 'image/jpeg' } = {}) {
   if (!keepStorage) sessionStorage.clear()
   const calls = []
   let offerIndex = 0
@@ -108,7 +108,7 @@ async function mount({ path = createPath, keepStorage = false, offers = [offer()
     },
     raw: async url => {
       calls.push({ url, method: 'GET' })
-      const type = url.endsWith('/download') && !url.includes('/assets/') ? 'application/zip' : 'image/png'
+      const type = url.endsWith('/download') && !url.includes('/assets/') ? 'application/zip' : singleContentType
       return { _data: new Blob(['file'], { type }), headers: new Headers({ 'content-type': type }) }
     },
   }
@@ -284,6 +284,21 @@ test('a complete job downloads single directions and the ZIP and links the quote
     const quote = [...mounted.container.querySelectorAll('a')].find(element => element.textContent.includes('携带素材申请报价'))
     assert.ok(quote)
     assert.equal(quote.getAttribute('href'), '/schemes/SC-6030/quote?themeJobId=theme-1&artworkJobId=job-1')
+  } finally { await mounted.close() }
+})
+
+test('a historical PNG direction remains downloadable', async () => {
+  downloads.length = 0
+  const mounted = await mount({ path: '/artwork-jobs/job-1', singleContentType: 'image/png; charset=binary', job: () => {
+    const result = artworkJob()
+    result.directions[0].filename = 'front.png'
+    return result
+  } })
+  try {
+    [...mounted.container.querySelectorAll('button')].find(element => element.textContent.trim() === '单张').click()
+    await settle()
+    assert.deepEqual(mounted.calls.filter(call => call.url.includes('/assets/')).map(call => call.url), ['/api/v1/client/artwork-jobs/job-1/assets/asset-front/download'])
+    assert.deepEqual(downloads, ['front.png'])
   } finally { await mounted.close() }
 })
 

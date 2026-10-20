@@ -186,17 +186,20 @@ export async function postCustomerMessage(
 
 /** 客户已读：只前进不后退，上限为最后一条 public 消息；读完后取消待发的回复提醒 */
 export async function markCustomerRead(pool: pg.Pool, redis: Redis, subject: Subject, conversationId: string, seq: number) {
-  const [condition, subjectId] = subjectCondition(subject, 'c', 2);
-  const row = (
-    await pool.query<{ customerReadSeq: string; allRead: boolean; status: ConversationRow['status']; agentAdminId: string | null }>(
-      `UPDATE cs_conversations c SET customer_read_seq=GREATEST(c.customer_read_seq, LEAST($3::bigint, COALESCE(c.last_public_seq,0)))
+  const row = await transaction(pool, async client => {
+    const [condition, subjectId] = subjectCondition(subject, 'c', 2);
+    const updated = (
+      await client.query<{ customerReadSeq: string; allRead: boolean; status: ConversationRow['status']; agentAdminId: string | null }>(
+        `UPDATE cs_conversations c SET customer_read_seq=GREATEST(c.customer_read_seq, LEAST($3::bigint, COALESCE(c.last_public_seq,0)))
      WHERE c.id=$1 AND ${condition} AND c.deleted_at IS NULL
      RETURNING c.customer_read_seq AS "customerReadSeq", c.customer_read_seq >= COALESCE(c.last_public_seq,0) AS "allRead", c.status, c.agent_admin_id AS "agentAdminId"`,
-      [conversationId, subjectId, seq],
-    )
-  ).rows[0];
-  if (!row) throw notFound();
-  if (row.allRead) await cancelReplyNotices(pool, conversationId);
+        [conversationId, subjectId, seq],
+      )
+    ).rows[0];
+    if (!updated) throw notFound();
+    if (updated.allRead) await cancelReplyNotices(client, conversationId);
+    return updated;
+  });
   await publishAgents(redis, { type: 'read', conversationId, status: row.status, agentAdminId: row.agentAdminId });
   return { customerReadSeq: Number(row.customerReadSeq) };
 }

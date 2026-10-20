@@ -38,7 +38,8 @@ export function openArtworkJobEvents(jobId: string, ticket: string, onUpdate: ()
 export async function downloadArtwork(jobId: string, assetId?: string) {
   const suffix = assetId ? `assets/${encodeURIComponent(assetId)}/download` : 'download'
   const response = await apiFetch.raw<Blob, 'blob'>(`/api/v1/client/artwork-jobs/${encodeURIComponent(jobId)}/${suffix}`, { responseType: 'blob', retry: 0, timeout: 120000 })
-  const expected = assetId ? 'image/png' : 'application/zip'
-  if (!response._data?.size || !response.headers.get('content-type')?.includes(expected)) throw new Error('Invalid artwork download')
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase()
+  const validContentType = assetId ? ['image/jpeg', 'image/png'].includes(contentType ?? '') : contentType === 'application/zip'
+  if (!response._data?.size || !validContentType) throw new Error('Invalid artwork download')
   return response._data
 }

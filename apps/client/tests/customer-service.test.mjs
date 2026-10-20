@@ -341,6 +341,47 @@ test('replies arriving while the page is in the background are only marked read 
   unmount()
 })
 
+test('closing the panel cancels a delayed read; reopening and later replies can still be marked read', async t => {
+  const calls = setup({ messages: [message(1), message(2, { senderType: 'agent' })] })
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)) }
+  const reads = () => calls.filter(call => call.path.endsWith('/read')).map(call => call.body)
+  try {
+    await cs.openWith(undefined, 'floating')
+    await flush()
+    assert.deepEqual(reads(), [{ seq: 2 }])
+
+    FakeEventSource.instances[0].emit('update', { type: 'message.created', message: message(3, { senderType: 'agent' }) })
+    t.mock.timers.tick(299)
+    await flush()
+    assert.deepEqual(reads(), [{ seq: 2 }], 'the reply is not read before the delay expires')
+    cs.closePanel()
+    t.mock.timers.tick(1)
+    await flush()
+    assert.deepEqual(reads(), [{ seq: 2 }], 'closing before the deadline prevents the delayed read request')
+
+    await cs.openWith(undefined, 'floating')
+    await flush()
+    assert.deepEqual(reads(), [{ seq: 2 }, { seq: 3 }], 'reopening marks the previously unread reply read')
+    FakeEventSource.instances.at(-1).emit('update', { type: 'message.created', message: message(4, { senderType: 'agent' }) })
+    t.mock.timers.tick(300)
+    await flush()
+    assert.deepEqual(reads(), [{ seq: 2 }, { seq: 3 }, { seq: 4 }], 'delayed reads still work while the panel stays open')
+  } finally {
+    cs.closePanel()
+  }
+})
+
+test('the read entry point ignores unread replies while the panel is closed', async () => {
+  const calls = setup()
+  await cs.openWith(undefined, 'floating')
+  await settle()
+  FakeEventSource.instances[0].emit('update', { type: 'message.created', message: message(1, { senderType: 'agent' }) })
+  cs.closePanel()
+  await cs.markRead()
+  assert.equal(calls.filter(call => call.path.endsWith('/read')).length, 0, 'a queued read callback cannot mark a closed panel read')
+})
+
 test('messages render as plain text, agent replies show translations, events and RTL layout', async () => {
   setup({ current: conversation({ status: 'active', agent: { displayName: null } }), messages: [
     message(1, { body: '<b>bold</b><img src=x onerror=alert(1)>' }),

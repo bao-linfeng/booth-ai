@@ -36,6 +36,101 @@ const content = (overrides: Partial<EmailContent> = {}): EmailContent => ({
   ...overrides,
 });
 
+test(
+  'reading replies and cancelling notices is atomic with a concurrent agent reply',
+  { skip: !process.env.CS_TEST_DATABASE_URL || !process.env.CS_TEST_REDIS_URL, timeout: 20_000 },
+  async t => {
+    const pool = await csTestPool(t);
+    const redis = csTestRedis(t);
+    const viewer = { adminId: await seedAdmin(pool), supervise: false };
+    const customer: Subject = { kind: 'user', userId: await seedUser(pool, 'reader@example.com') };
+    const { conversation } = await openConversation(pool, redis, customer, { entryPoint: 'floating' }, 'zh');
+    await postCustomerMessage(pool, redis, customer, conversation.id, { clientMessageId: randomUUID(), body: '你好', kind: 'text' }, 'zh');
+    await claimConversation(pool, redis, viewer, conversation.id);
+    const reply = (body: string) =>
+      postAgentMessage(pool, redis, viewer, conversation.id, { clientMessageId: randomUUID(), body, kind: 'text' });
+    const first = await reply('已经读到的回复');
+    const lockKey = Number.parseInt(randomUUID().replaceAll('-', '').slice(0, 7), 16);
+    const blocker = await pool.connect();
+    const waitFor = async (check: () => Promise<boolean>) => {
+      const deadline = Date.now() + 5000;
+      while (!(await check())) {
+        assert.ok(Date.now() < deadline, 'the controlled database interleaving reached its deadline');
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    };
+    await pool.query(`CREATE FUNCTION pause_notice_cancellation() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN PERFORM pg_advisory_xact_lock(${lockKey}::bigint); RETURN NEW; END $$`);
+    await pool.query(`CREATE TRIGGER pause_notice_cancellation BEFORE UPDATE ON cs_email_outbox
+      FOR EACH ROW WHEN (OLD.cancelled_at IS NULL AND NEW.cancelled_at IS NOT NULL)
+      EXECUTE FUNCTION pause_notice_cancellation()`);
+    await blocker.query('SELECT pg_advisory_lock($1::bigint)', [lockKey]);
+    let reading: ReturnType<typeof markCustomerRead> | undefined;
+    let replying: ReturnType<typeof reply> | undefined;
+    try {
+      reading = markCustomerRead(pool, redis, customer, conversation.id, first.message.seq);
+      await waitFor(
+        async () =>
+          (await pool.query("SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=0 AND objid=$1::oid AND NOT granted", [lockKey]))
+            .rowCount === 1,
+      );
+      const readPid = (
+        await pool.query<{ pid: number }>(
+          "SELECT pid FROM pg_locks WHERE locktype='advisory' AND classid=0 AND objid=$1::oid AND NOT granted",
+          [lockKey],
+        )
+      ).rows[0]!.pid;
+      let replyFinished = false;
+      replying = reply('并发到达的未读回复');
+      void replying.then(
+        () => {
+          replyFinished = true;
+        },
+        () => {
+          replyFinished = true;
+        },
+      );
+      await waitFor(
+        async () =>
+          replyFinished ||
+          (await pool.query('SELECT 1 FROM pg_stat_activity WHERE $1::int = ANY(pg_blocking_pids(pid))', [readPid])).rowCount !== 0,
+      );
+    } finally {
+      await blocker.query('SELECT pg_advisory_unlock($1::bigint)', [lockKey]);
+      blocker.release();
+      await Promise.allSettled([reading, replying]);
+    }
+    assert.ok(reading !== undefined);
+    assert.ok(replying !== undefined);
+    const [read, next] = await Promise.all([reading, replying]);
+    assert.equal(read.customerReadSeq, first.message.seq);
+    assert.ok(next.message.seq > read.customerReadSeq);
+    const notices = (
+      await pool.query<{ cancelled: boolean }>(
+        `SELECT cancelled_at IS NOT NULL AS cancelled FROM cs_email_outbox
+       WHERE conversation_id=$1 AND kind='reply_notice' ORDER BY created_at`,
+        [conversation.id],
+      )
+    ).rows;
+    assert.deepEqual(notices, [{ cancelled: true }, { cancelled: false }], 'only the already-read reply loses its reminder');
+    await pool.query('UPDATE cs_email_outbox SET due_at=now() WHERE conversation_id=$1', [conversation.id]);
+    const sent: MailMessage[] = [];
+    const result = await deliverCsEmails(
+      pool,
+      redis,
+      async message => {
+        sent.push(message);
+      },
+      'https://booth.example.com',
+      logger,
+    );
+    assert.equal(result.delivered, 1);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0]!.text, /并发到达的未读回复/);
+    assert.doesNotMatch(sent[0]!.text, /已经读到的回复/);
+  },
+);
+
 test('reply notices use translations, cap three replies at 200 characters, escape HTML and link without credentials', () => {
   const lines = ['one', 'two', 'three', 'four'].map((body, index) => ({
     seq: String(index + 1),

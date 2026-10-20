@@ -250,6 +250,8 @@ export async function sendPageContext() {
 
 export function closePanel() {
   state.open = false
+  clearTimeout(readTimer)
+  readTimer = undefined
   connection.close()
 }
 
@@ -262,9 +264,9 @@ export function markRead() {
   return markReadFor(generation)
 }
 
-/** 只在页面可见时标记已读：面板开着但页面在后台不算读到，服务端据此照常发送回复提醒邮件；切回前台时再补标 */
+/** 只在面板打开且页面可见时标记已读：页面在后台不算读到，服务端据此照常发送回复提醒邮件；切回前台时再补标 */
 async function markReadFor(epoch: number) {
-  if (document.visibilityState !== 'visible') return
+  if (!state.open || document.visibilityState !== 'visible') return
   for (const [conversationId, seq] of readTargets(state.messages)) {
     if (seq <= (readSeqs.get(conversationId) ?? 0)) continue
     try {

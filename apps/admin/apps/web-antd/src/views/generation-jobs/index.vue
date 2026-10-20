@@ -7,7 +7,7 @@ import type {
   JobType,
 } from '#/api/core/generation-jobs';
 
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -249,15 +249,30 @@ const [Grid] = useVbenVxeGrid({
 const detailOpen = ref(false);
 const detail = ref<GenerationJobDetail>();
 const detailLoading = ref(false);
+let detailRequestId = 0;
+
+watch(
+  detailOpen,
+  (open) => {
+    if (!open) {
+      detailRequestId++;
+      detail.value = undefined;
+      detailLoading.value = false;
+    }
+  },
+  { flush: 'sync' },
+);
 
 async function openDetail(id: string) {
+  const requestId = ++detailRequestId;
   detailOpen.value = true;
   detailLoading.value = true;
   detail.value = undefined;
   try {
-    detail.value = await getGenerationJobApi(id);
+    const result = await getGenerationJobApi(id);
+    if (requestId === detailRequestId) detail.value = result;
   } finally {
-    detailLoading.value = false;
+    if (requestId === detailRequestId) detailLoading.value = false;
   }
 }
 
