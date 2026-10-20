@@ -13,6 +13,7 @@ import {
   type JobSummary,
 } from './types.js';
 import type { GenerationCredits } from '../credits-view.js';
+import { ARTWORK_MIME_TYPES } from './image.js';
 
 export function artworkHash(context: ArtworkContext): string {
   return digest([context.schemeCode, context.themeJobId, context.resultId, context.selectionRevision]);
@@ -100,7 +101,7 @@ export function completeArtworkFiles(files: ArtworkFile[]): boolean {
     DIRECTIONS.every(d => files.filter(f => f.direction === d).length === 1) &&
     files.every(
       f =>
-        f.mimeType === 'image/png' &&
+        ARTWORK_MIME_TYPES.includes(f.mimeType) &&
         f.byteSize > 0 &&
         f.byteSize <= ARTWORK_QUALITY.maxBytes &&
         meetsArtworkResolution(f) &&

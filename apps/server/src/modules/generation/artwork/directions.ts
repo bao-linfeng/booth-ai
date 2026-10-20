@@ -9,7 +9,7 @@ import { transaction } from '../../../infra/database.js';
 import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot, type Direction } from './types.js';
 import type { ArtworkRun } from './types.js';
 import { prepareDrawing } from './drawings.js';
-import { encodeUploadImage, normalizeArtworkImage } from './image.js';
+import { ARTWORK_FILE, encodeUploadImage, normalizeArtworkImage } from './image.js';
 import { artworkDirectionConcurrency } from './settings.js';
 import { lockRunningLease, publishGeneration, refreshGeneration, throwIfDraining } from '../execution.js';
 
@@ -191,9 +191,10 @@ async function storeDirectionResult(
   const assetId = randomUUID();
   const versionId = randomUUID();
   await refreshGeneration(database, creditJob(run), run.lease, GENERATING_PHASE);
-  const objectKey = `artwork-results/${jobId}/${direction}.png`;
+  const filename = `${direction}.${ARTWORK_FILE.extension}`;
+  const objectKey = `artwork-results/${jobId}/${filename}`;
   const checksum = createHash('sha256').update(image.bytes).digest('hex');
-  await storage.putBuffer(objectKey, image.bytes, 'image/png');
+  await storage.putBuffer(objectKey, image.bytes, ARTWORK_FILE.mimeType);
   await transaction(database, async client => {
     await lockRunningLease(client, creditJob(run), run.lease);
     await client.query(
@@ -210,8 +211,8 @@ async function storeDirectionResult(
     );
     await client.query(
       `INSERT INTO asset_versions(id,asset_id,object_key,original_filename,mime_type,byte_size,checksum,width_px,height_px)
-      VALUES($1,$2,$3,$4,'image/png',$5,$6,$7,$8)`,
-      [versionId, assetId, objectKey, `${direction}.png`, image.bytes.length, checksum, image.width, image.height],
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [versionId, assetId, objectKey, filename, ARTWORK_FILE.mimeType, image.bytes.length, checksum, image.width, image.height],
     );
     await client.query(
       `INSERT INTO artwork_job_results(job_id,ordinal,asset_id,asset_version_id,direction,width,height) VALUES($1,$2,$3,$4,$5,$6,$7)`,

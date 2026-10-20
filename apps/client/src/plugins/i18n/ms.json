@@ -620,7 +620,7 @@
     "schemeLabel": "Reka bentuk",
     "themeRevision": "Semakan pilihan tema",
     "deliveryStandard": "Piawaian serahan",
-    "deliveryDesc": "Imej dinyahkod dan ditukar kepada PNG. Sisi panjang ≥ 1536 px, sisi pendek ≥ 1024 px; pembesaran interpolasi tidak menggantikan pengesahan resolusi tinggi.",
+    "deliveryDesc": "Imej dinyahkod dan dihantar dalam format JPEG. Sisi panjang ≥ 1536 px, sisi pendek ≥ 1024 px; pembesaran interpolasi tidak menggantikan pengesahan resolusi tinggi.",
     "deliveryNote": "Bahan ialah imej asas empat arah. Pemetaan senarai grafik, dimensi fizikal dan kesesuaian cetakan masih perlu disahkan.",
     "projectLabel": "Projek",
     "generateTitle": "02 / Jana set lengkap",

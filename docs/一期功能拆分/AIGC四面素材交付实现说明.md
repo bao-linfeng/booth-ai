@@ -5,7 +5,7 @@
 ## 1. 本次冻结口径
 
 - 正、背、左、右各一张，使用 `front/back/left/right` 命名。清单画面映射返回 `mappingStatus=unresolved`，不阻止方向底图下载。
-- 统一解码、自动旋转并转为 sRGB PNG；实际长边至少 1536 px、短边至少 1024 px。不放大低分辨率图片通过验收。仅接受单帧 PNG/JPEG/WebP 来源，交付均为 PNG。
+- 交付为 sRGB JPEG（2026-10-20 起；此前的任务为 PNG，下载与 ZIP 按实际格式命名）：供应商按 JPEG 95 返回，已是标准 sRGB 且无旋转的 JPEG 完整解码校验后原样入库，其余单帧 PNG/JPEG/WebP 来源自动旋转并编码为 JPEG 95。改动原因：服务器上行带宽有限，转 PNG 会让每张大 3～4 倍且没有画质收益。实际长边至少 1536 px、短边至少 1024 px，不放大低分辨率图片通过验收。
 - 单张上限 30 MiB、4000 万像素。四方向齐全且通过文件检查才为 `deliveryStatus=ready`。
 - 沿用后台 `artwork` 模型每张积分价格：提交原子预占四张费用；合格方向按张扣费，失败方向释放。明确免费、缓存免费复用和缺方向补生不在本次收费规则内。
 - 重新生成创建新的四方向任务，需要再次确认预占费用。网络重试使用原 `requestKey`，查询原受理结果。
@@ -34,12 +34,12 @@
 | GET `/artwork-jobs/{jobId}` | 本人历史任务、方向状态、缺项、交付状态、预览及积分事实；非本人统一 404 |
 | POST `/artwork-jobs/{jobId}/events-ticket` | 验证有效客户端会话及任务归属，返回五分钟有效单次票据 `{ticket}`；非本人统一 404 |
 | GET `/artwork-jobs/{jobId}/events?ticket={ticket}` | 原子消费绑定任务/用户的票据，失效、已消费或任务不符返回 401；成功返回 `text/event-stream`，事件名为 `update` |
-| GET `/artwork-jobs/{jobId}/assets/{assetId}/download` | 固定版本 PNG 附件流；跨任务资产 404，存储/哈希异常 503 |
+| GET `/artwork-jobs/{jobId}/assets/{assetId}/download` | 固定版本图片附件流（`image/jpeg`，历史任务为 `image/png`）；跨任务资产 404，存储/哈希异常 503 |
 | GET `/artwork-jobs/{jobId}/download` | 完整 `ready` 集合 ZIP；缺方向 409，存储/哈希异常 503 |
 | PUT `/me/projects/{projectId}/artworks` | `artworkJobId, requestKey, expectedRevision`；本人项目、固定主题一致、完整套装才可绑定 |
 | POST `/quote-requests` | 可选 `artworkJobId` 必须和 `themeSelection` 同传，与标准库 `artworkRevision` 互斥 |
 
-PNG 下载和 ZIP 在响应前核实 SHA-256 及字节数，响应带 `Cache-Control: private, no-store`。预览为短时签名地址，不向浏览器暴露容器内部域名。
+单张下载和 ZIP 在响应前核实 SHA-256 及字节数，响应带 `Cache-Control: private, no-store`。预览为短时签名地址，不向浏览器暴露容器内部域名。
 
 原方案库素材继续使用 `/schemes/{code}/artworks`；私有素材使用上述任务路由，避免与公共集合修订混用。
 
@@ -82,7 +82,7 @@ SSE 使用 Redis `artwork-job:{jobId}` 频道。先建立订阅再读取当前�
 
 ## 6. 验证入口
 
-- `apps/server/tests/artwork-jobs.test.ts`：四份独立提示词快照、单一相机规则、左右侧的画面方位/投影轴/内外面/遮挡、自定义模板选择，真实 JPEG→PNG、分辨率/坏文件/字节限制、Redis 分发失败回滚。
+- `apps/server/tests/artwork-jobs.test.ts`：四份独立提示词快照、单一相机规则、左右侧的画面方位/投影轴/内外面/遮挡、自定义模板选择，供应商 JPEG 原样入库与其他格式转 JPEG、分辨率/坏文件/字节限制、Redis 分发失败回滚。
 - `apps/server/tests/artwork-events.test.ts`：票据鉴权/归属/单次消费、真实 HTTP SSE 初始快照、方向与结算通知、CORS、断开清理和 Redis/快照异常。
 - `apps/server/tests/artwork-delivery-integration.test.ts`：显式启用 `ARTWORK_TEST_DATABASE_URL`，创建临时隔离 Schema 并顺序应用迁移；真实 SQL 与模拟提供商/对象存储，覆盖四次请求的参考图与固定方向提示词、历史提示词复用、并发受理、预占/部分结算、故障恢复、越权、ZIP 原件、项目快照及公共素材隔离。
 - `apps/server/tests/ai-models.test.ts`：用途/提供商独立配置与凭据安全。

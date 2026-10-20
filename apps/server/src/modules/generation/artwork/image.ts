@@ -10,12 +10,20 @@ export function encodeUploadImage(image: Sharp): Promise<Buffer> {
 }
 
 /**
- * 校验并转为 PNG；通用的 `IMAGE_*` 错误码改写为 `ARTWORK_*`，写入方向失败原因。
+ * 四面素材按 JPEG 入库与交付：供应商本就返回 JPEG 95，再转 PNG 只会让文件大几倍、没有画质收益，
+ * 而预览与下载都经服务器有限的上行带宽发出。历史任务的结果仍为 PNG，按 `artworkFileExtension` 识别。
+ */
+export const ARTWORK_FILE = { mimeType: 'image/jpeg', extension: 'jpg' } as const;
+export const ARTWORK_MIME_TYPES = ['image/jpeg', 'image/png'];
+export const artworkFileExtension = (mimeType: string) => (mimeType === 'image/png' ? 'png' : 'jpg');
+
+/**
+ * 校验并编码为 JPEG（已是 JPEG 的原样保留）；通用的 `IMAGE_*` 错误码改写为 `ARTWORK_*`，写入方向失败原因。
  * 低于高清门槛的图片照常入库并结算，只是交付不完整（见 `completeArtworkFiles`），由用户决定是否重新生成。
  */
 export async function normalizeArtworkImage(bytes: Buffer) {
   try {
-    const image = await normalizeGeneratedImage(bytes);
+    const image = await normalizeGeneratedImage(bytes, 1, 1, 'jpeg');
     if (!isOutputAspect(image.width, image.height)) throw new ImageGenerationError('IMAGE_ASPECT_INVALID');
     return image;
   } catch (error) {

@@ -638,7 +638,7 @@
     "schemeLabel": "Plan",
     "themeRevision": "Revisión de selección de tema",
     "deliveryStandard": "Estándar de entrega",
-    "deliveryDesc": "Decodificado y convertido a PNG. Lado largo ≥ 1536 px, lado corto ≥ 1024 px. Sin interpolación.",
+    "deliveryDesc": "Decodificado y entregado en JPEG. Lado largo ≥ 1536 px, lado corto ≥ 1024 px. Sin interpolación.",
     "deliveryNote": "Los materiales son imágenes base 4 direcciones. El mapeo, dimensiones físicas y adaptación de impresión deben confirmarse.",
     "projectLabel": "Proyecto",
     "generateTitle": "02 / Generación completa",

@@ -638,7 +638,7 @@
     "schemeLabel": "Design",
     "themeRevision": "Überarbeitung der Themenauswahl",
     "deliveryStandard": "Lieferstandard",
-    "deliveryDesc": "Bilder werden dekodiert und in PNG konvertiert. Lange Kante ≥ 1536 px, kurze Kante ≥ 1024 px; Eine interpolationsbasierte Hochskalierung gilt nicht als hochauflösende Akzeptanz.",
+    "deliveryDesc": "Bilder werden dekodiert und als JPEG geliefert. Lange Kante ≥ 1536 px, kurze Kante ≥ 1024 px; Eine interpolationsbasierte Hochskalierung gilt nicht als hochauflösende Akzeptanz.",
     "deliveryNote": "Bei diesen Assets handelt es sich um Basisbilder für die vier Seiten. Die Zuordnung der Bildmaterialliste, die physischen Abmessungen und die Druckeignung müssen noch bestätigt werden.",
     "projectLabel": "Projekt",
     "generateTitle": "02 / Einen kompletten Satz generieren",

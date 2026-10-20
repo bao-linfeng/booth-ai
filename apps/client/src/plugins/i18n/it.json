@@ -638,7 +638,7 @@
     "schemeLabel": "Piano",
     "themeRevision": "Revisione selezione tema",
     "deliveryStandard": "Standard di consegna",
-    "deliveryDesc": "Decodificato e convertito in PNG. Lato lungo ≥ 1536 px, lato corto ≥ 1024 px. Nessuna interpolazione.",
+    "deliveryDesc": "Decodificato e consegnato in JPEG. Lato lungo ≥ 1536 px, lato corto ≥ 1024 px. Nessuna interpolazione.",
     "deliveryNote": "I materiali sono immagini base 4 direzioni. Mapping, dimensioni fisiche e adattamento stampa vanno confermati.",
     "projectLabel": "Progetto",
     "generateTitle": "02 / Generazione completa",
