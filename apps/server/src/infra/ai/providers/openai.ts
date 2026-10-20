@@ -81,12 +81,16 @@ export const openAiImage: ImageModelAdapter = {
     const form = new FormData();
     form.set('model', model.model);
     const images = [reference, ...references];
-    for (const [index, image] of images.entries())
+    for (const [index, image] of images.entries()) {
+      const type = await imageMimeType(image);
+      // 部分中转按文件扩展名判断格式，扩展名须与实际编码一致
+      const extension = type === 'image/jpeg' ? 'jpg' : type.slice('image/'.length);
       form.append(
         images.length > 1 ? 'image[]' : 'image',
-        new Blob([new Uint8Array(image)], { type: await imageMimeType(image) }),
-        index ? `reference-${index}.png` : 'source.png',
+        new Blob([new Uint8Array(image)], { type }),
+        `${index ? `reference-${index}` : 'source'}.${extension}`,
       );
+    }
     form.set('prompt', prompt);
     form.set('n', String(count));
     form.set('size', IMAGE_SIZE[model.purpose === 'artwork' ? 'artwork' : 'theme']);

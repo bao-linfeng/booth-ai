@@ -127,6 +127,7 @@ test('drawings are verified, trimmed of flat borders, desaturated and mirrored b
   };
   const storage = { getBuffer: async () => source };
   const prepared = await prepareDrawing(storage, drawing, true);
+  assert.equal((await sharp(prepared).metadata()).format, 'jpeg');
   const { data, info } = await sharp(prepared).raw().toBuffer({ resolveWithObject: true });
   // 边界在缩小后的图上识别，允许几个像素的误差
   assert.ok(Math.abs(info.width - 800) <= 4, `width ${info.width}`);
@@ -134,15 +135,17 @@ test('drawings are verified, trimmed of flat borders, desaturated and mirrored b
   assert.equal(info.channels, 3);
   const middle = Math.floor(info.height / 2) * info.width;
   const pixel = (x: number) => [...data.subarray((middle + x) * info.channels, (middle + x) * info.channels + 3)];
-  for (const x of [10, info.width - 10]) assert.equal(new Set(pixel(x)).size, 1);
-  assert.notDeepEqual(pixel(10), pixel(info.width - 10));
+  // JPEG 有损，颜色比较留出编码误差
+  const near = (actual: number[], expected: number[]) => actual.every((value, index) => Math.abs(value - expected[index]!) <= 6);
+  for (const x of [10, info.width - 10]) assert.ok(near(pixel(x), [pixel(x)[0]!, pixel(x)[0]!, pixel(x)[0]!]), `gray at ${x}`);
+  assert.ok(Math.abs(pixel(10)[0]! - pixel(info.width - 10)[0]!) > 5);
 
   const mirrored = await prepareDrawing(storage, { ...drawing, mirrored: true }, false);
   const flipped = await sharp(mirrored).raw().toBuffer({ resolveWithObject: true });
   const row = Math.floor(flipped.info.height / 2) * flipped.info.width;
   const at = (x: number) => [...flipped.data.subarray((row + x) * flipped.info.channels, (row + x) * flipped.info.channels + 3)];
-  assert.deepEqual(at(flipped.info.width - 10), [0xd0, 0x20, 0x20]);
-  assert.deepEqual(at(10), [0x20, 0x50, 0xd0]);
+  assert.ok(near(at(flipped.info.width - 10), [0xd0, 0x20, 0x20]), String(at(flipped.info.width - 10)));
+  assert.ok(near(at(10), [0x20, 0x50, 0xd0]), String(at(10)));
 
   await assert.rejects(prepareDrawing(storage, { ...drawing, checksum: 'other' }, true), /integrity/);
 });

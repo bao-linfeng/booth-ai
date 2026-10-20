@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { IMAGE_LIMITS, normalizeGeneratedImage } from '../../../infra/ai/image.js';
+import { encodeUploadImage } from './image.js';
 import type { ArtworkStorage, Database, Direction } from './types.js';
 
 /** 报馆图视向，与资产元数据 `viewCodes` 的取值一致（见 assets/metadata.ts）。 */
@@ -126,7 +127,7 @@ async function trimUniformBorders(image: Buffer): Promise<Buffer> {
     .toBuffer();
 }
 
-/** 读取并校验报馆图，裁掉纯色边条、按需去色与水平翻转，输出发送用 PNG。 */
+/** 读取并校验报馆图，裁掉纯色边条、按需去色与水平翻转，输出发送用 JPEG。 */
 export async function prepareDrawing(storage: Pick<ArtworkStorage, 'getBuffer'>, drawing: ArtworkDrawing, grayscale: boolean) {
   const bytes = await storage.getBuffer(drawing.objectKey, IMAGE_LIMITS.maxBytes);
   if (createHash('sha256').update(bytes).digest('hex') !== drawing.checksum.toLowerCase())
@@ -137,5 +138,5 @@ export async function prepareDrawing(storage: Pick<ArtworkStorage, 'getBuffer'>,
     .resize({ width: MAX_DRAWING_EDGE, height: MAX_DRAWING_EDGE, fit: 'inside', withoutEnlargement: true });
   if (grayscale) image = image.grayscale().toColourspace('srgb');
   if (drawing.mirrored) image = image.flop();
-  return image.png().toBuffer();
+  return encodeUploadImage(image);
 }
