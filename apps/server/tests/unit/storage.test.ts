@@ -59,3 +59,42 @@ test('bounded S3 binary reads preserve bytes and reject oversized and unavailabl
   assert.equal(await storage.objectSize('binary'), bytes.length);
   await assert.rejects(storage.objectSize('missing'));
 });
+
+test('signed download URLs stay identical within a signing window and carry a cache policy', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 9, 20, 8, 0, 30) });
+  const storage = createStorage(
+    loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgres://localhost/test',
+      REDIS_URL: 'redis://localhost',
+      S3_ENDPOINT: 'http://127.0.0.1:9',
+      S3_PUBLIC_ENDPOINT: 'https://files.example.test',
+      S3_BUCKET: 'test',
+      S3_ACCESS_KEY: 'test-only',
+      S3_SECRET_KEY: 'test-only',
+      EXTERNAL_API_URL: 'https://api.example.test',
+      SESSION_SECRET: 'test-session-secret-must-be-at-least-32-bytes',
+      AI_MODEL_ENCRYPTION_KEY: 'a'.repeat(64),
+    }),
+  );
+  t.after(() => storage.close());
+  const first = new URL(await storage.signDownload('a/b.png', 300));
+  t.mock.timers.tick(9 * 60 * 1000);
+  const sameWindow = new URL(await storage.signDownload('a/b.png', 300));
+  assert.equal(sameWindow.href, first.href);
+  assert.equal(first.searchParams.get('X-Amz-Date'), '20261020T080000Z');
+  // 窗口起点 + 300 秒 + 一个窗口，剩余有效期不少于调用方要求的 300 秒
+  assert.equal(first.searchParams.get('X-Amz-Expires'), '900');
+  assert.equal(first.searchParams.get('response-cache-control'), 'private, max-age=900, immutable');
+
+  t.mock.timers.tick(60 * 1000);
+  const nextWindow = new URL(await storage.signDownload('a/b.png', 300));
+  assert.equal(nextWindow.searchParams.get('X-Amz-Date'), '20261020T081000Z');
+  assert.notEqual(nextWindow.href, first.href);
+
+  const named = new URL(await storage.signDownloadWithName('a/b.png', '方案.png', 60));
+  assert.equal(named.searchParams.get('X-Amz-Expires'), '660');
+  assert.match(named.searchParams.get('response-content-disposition') ?? '', /^attachment;/);
+  assert.equal(named.searchParams.get('response-cache-control'), 'private, max-age=660, immutable');
+  await assert.rejects(storage.signDownload('a/b.png', 901), /Invalid signed URL lifetime/);
+});

@@ -10,6 +10,19 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Config } from '../config.js';
 
+// 签名时间按窗口取整：同一对象在同一窗口内签出相同 URL，浏览器缓存才能命中（轮询、重进页面不再重复下载）。
+// 有效期补上一个窗口，保证剩余有效期不少于调用方要求的时长。
+const SIGNING_WINDOW_SECONDS = 600;
+
+function signingWindow(expiresIn: number) {
+  if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > 900) throw new Error('Invalid signed URL lifetime');
+  const windowMs = SIGNING_WINDOW_SECONDS * 1000;
+  const signingDate = new Date(Math.floor(Date.now() / windowMs) * windowMs);
+  const lifetime = expiresIn + SIGNING_WINDOW_SECONDS;
+  // 对象 key 写入后不再修改，缓存可以标记 immutable；private 禁止中间代理缓存
+  return { options: { signingDate, expiresIn: lifetime }, cacheControl: `private, max-age=${lifetime}, immutable` };
+}
+
 export function createStorage(config: Config) {
   const options = {
     region: config.s3.region,
@@ -106,14 +119,22 @@ export function createStorage(config: Config) {
     },
     // Call only after the business layer has checked ownership and download permission.
     async signDownload(key: string, expiresIn = 300) {
-      if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > 900) throw new Error('Invalid signed URL lifetime');
-      return getSignedUrl(publicClient, new GetObjectCommand({ Bucket, Key: key }), { expiresIn });
+      const signing = signingWindow(expiresIn);
+      return getSignedUrl(
+        publicClient,
+        new GetObjectCommand({ Bucket, Key: key, ResponseCacheControl: signing.cacheControl }),
+        signing.options,
+      );
     },
     async signDownloadWithName(key: string, filename: string, expiresIn = 300) {
-      if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > 900) throw new Error('Invalid signed URL lifetime');
+      const signing = signingWindow(expiresIn);
       const encoded = encodeURIComponent(filename);
       const disposition = `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`;
-      return getSignedUrl(publicClient, new GetObjectCommand({ Bucket, Key: key, ResponseContentDisposition: disposition }), { expiresIn });
+      return getSignedUrl(
+        publicClient,
+        new GetObjectCommand({ Bucket, Key: key, ResponseContentDisposition: disposition, ResponseCacheControl: signing.cacheControl }),
+        signing.options,
+      );
     },
     close() {
       client.destroy();
