@@ -638,7 +638,7 @@
     "schemeLabel": "方案",
     "themeRevision": "主题选择修订",
     "deliveryStandard": "交付标准",
-    "deliveryDesc": "实际解码并统一转为 PNG。长边 ≥ 1536 px，短边 ≥ 1024 px；不以插值放大代替高清验收。",
+    "deliveryDesc": "实际解码并统一为 JPEG。长边 ≥ 1536 px，短边 ≥ 1024 px；不以插值放大代替高清验收。",
     "deliveryNote": "素材为四面方向底图。画面清单映射、物理尺寸与印刷适配尚需确认。",
     "projectLabel": "项目",
     "generateTitle": "02 / 成套生成",

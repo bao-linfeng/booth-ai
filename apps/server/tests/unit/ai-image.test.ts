@@ -105,6 +105,73 @@ test('supplier errors distinguish explicit rejection from uncertain acceptance w
   await assert.rejects(edit(model, reference, 'prompt'), /PROVIDER_OUTCOME_UNKNOWN/);
 });
 
+test('submitted requests keep reading a slow response body past the header timeout and give up only when it stalls', async t => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const reference = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#123456' } })
+    .png()
+    .toBuffer();
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const encoder = new TextEncoder();
+  const run = async (scenario: (push: (text: string) => void, close: () => void) => Promise<void>) => {
+    let signal: AbortSignal | undefined;
+    let respond!: (response: Response) => void;
+    const called = new Promise<void>(resolve => {
+      globalThis.fetch = (_input, init) => {
+        signal = init!.signal!;
+        resolve();
+        return new Promise<Response>(resolveResponse => (respond = resolveResponse));
+      };
+    });
+    const result = edit(activeModel('openai', 'artwork'), reference, 'prompt', { deadline: new Date(Date.now() + 600_000) });
+    result.catch(() => {});
+    await called;
+    // 出图期间（等待响应头）不超过 180 秒不中止
+    t.mock.timers.tick(179_000);
+    assert.equal(signal!.aborted, false);
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({ start: controller => void (stream = controller) });
+    signal!.addEventListener('abort', () => stream.error(new DOMException('aborted', 'AbortError')));
+    respond(new Response(body));
+    await flush();
+    await scenario(
+      text => stream.enqueue(encoder.encode(text)),
+      () => stream.close(),
+    );
+    return { result, signal: signal! };
+  };
+
+  // 响应头之后持续有数据：累计远超 180 秒也读完
+  const slow = await run(async (push, close) => {
+    for (const part of ['{"data":[{"b64_', 'json":"aW1n"}', ']}']) {
+      t.mock.timers.tick(50_000);
+      push(part);
+      await flush();
+    }
+    close();
+  });
+  assert.deepEqual(await slow.result, ['data:image/jpeg;base64,aW1n']);
+  assert.equal(slow.signal.aborted, false);
+
+  // 响应体 60 秒收不到数据才放弃，结果不明、不可重试
+  const stalled = await run(async push => {
+    push('{"data":');
+    await flush();
+    t.mock.timers.tick(59_000);
+    await flush();
+    t.mock.timers.tick(2_000);
+    await flush();
+  });
+  assert.equal(stalled.signal.aborted, true);
+  await assert.rejects(
+    stalled.result,
+    error => error instanceof ImageGenerationError && error.code === 'PROVIDER_OUTCOME_UNKNOWN' && error.outcomeUnknown && !error.retryable,
+  );
+});
+
 test('gemini edits send the documented generateContent payload and keep only final images', async t => {
   const original = globalThis.fetch;
   t.after(() => {
@@ -306,13 +373,16 @@ test('openai adapter derives size and quality from the purpose and model params'
     forms.push(init?.body as FormData);
     return Response.json({ data: [{ b64_json: 'aW1n' }] });
   };
-  assert.deepEqual(await edit(activeModel('openai', 'artwork'), reference, 'prompt'), ['data:image/png;base64,aW1n']);
+  assert.deepEqual(await edit(activeModel('openai', 'artwork'), reference, 'prompt'), ['data:image/jpeg;base64,aW1n']);
   await edit(activeModel('openai', 'theme'), reference, 'prompt', { count: 3, mask: reference });
   await edit(activeModel('openai', 'theme', { params: { quality: 'medium' } }), reference, 'prompt');
   assert.deepEqual(
     [forms[0]?.get('model'), forms[0]?.get('size'), forms[0]?.get('quality'), forms[0]?.get('n')],
     ['gpt-image-1.5', '2048x1152', 'high', '1'],
   );
+  // 四面素材要 JPEG 95 以减小经慢链路下载的响应体；换主题不指定输出格式
+  assert.deepEqual([forms[0]?.get('output_format'), forms[0]?.get('output_compression')], ['jpeg', '95']);
+  assert.deepEqual([forms[1]?.has('output_format'), forms[1]?.has('output_compression')], [false, false]);
   assert.deepEqual(
     [forms[1]?.get('size'), forms[1]?.get('quality'), forms[1]?.get('n'), forms[1]?.has('mask')],
     ['1792x1008', null, '3', true],

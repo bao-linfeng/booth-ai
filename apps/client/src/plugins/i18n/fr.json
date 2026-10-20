@@ -638,7 +638,7 @@
     "schemeLabel": "Stand",
     "themeRevision": "Révision de la sélection du thème",
     "deliveryStandard": "Standard de livraison",
-    "deliveryDesc": "Décodé et converti en PNG. Côté long ≥ 1536 px, côté court ≥ 1024 px. Pas d'agrandissement par interpolation.",
+    "deliveryDesc": "Décodé et livré au format JPEG. Côté long ≥ 1536 px, côté court ≥ 1024 px. Pas d'agrandissement par interpolation.",
     "deliveryNote": "Les visuels sont des images de base 4 directions. Le mapping, les dimensions physiques et l'adaptation à l'impression doivent être confirmés.",
     "projectLabel": "Projet",
     "generateTitle": "02 / Génération complète",

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type pg from 'pg';
 import sharp from 'sharp';
-import { normalizeArtworkImage } from '../../src/modules/generation/artwork/image.js';
-import { meetsArtworkResolution } from '../../src/modules/generation/artwork/queries.js';
+import { artworkFileExtension, normalizeArtworkImage } from '../../src/modules/generation/artwork/image.js';
+import { completeArtworkFiles, meetsArtworkResolution } from '../../src/modules/generation/artwork/queries.js';
 import { loadArtworkSnapshot } from '../../src/modules/generation/artwork/service.js';
 import type { ProviderProtocol } from '../../src/infra/ai/types.js';
 import { DIRECTIONS, DIRECTION_LABELS } from '../../src/modules/generation/artwork/types.js';
@@ -138,22 +138,48 @@ test('artwork snapshot freezes the first assigned model able to render artwork',
   assert.deepEqual(snapshot.model, { id: 'gemini-model', model: 'gemini-3.1-flash-image', revision: 3, unitCredits: 6 });
 });
 
-test('artwork acceptance converts actual JPEG pixels to PNG, keeps low resolution and rejects corrupt and oversized content', async () => {
+test('artwork acceptance keeps provider JPEG bytes, encodes other formats as JPEG, keeps low resolution and rejects corrupt and oversized content', async () => {
   const jpeg = await sharp({ create: { width: 2048, height: 1152, channels: 3, background: '#345678' } })
     .jpeg()
     .toBuffer();
   const image = await normalizeArtworkImage(jpeg);
-  assert.deepEqual([...image.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.ok(image.bytes.equals(jpeg), 'standard sRGB JPEG is stored without re-encoding');
   assert.equal(image.width, 2048);
   assert.equal(image.height, 1152);
-  assert.equal((await sharp(image.bytes).metadata()).format, 'png');
   const small = await sharp(jpeg).resize(1024, 576).png().toBuffer();
   const kept = await normalizeArtworkImage(small);
+  assert.equal((await sharp(kept.bytes).metadata()).format, 'jpeg');
   assert.deepEqual([kept.width, kept.height, meetsArtworkResolution(kept)], [1024, 576, false]);
+  // EXIF 方向不为 1 的 JPEG 需要转正后重新编码
+  const rotated = await sharp(jpeg).withMetadata({ orientation: 6 }).jpeg().toBuffer();
+  await assert.rejects(normalizeArtworkImage(rotated), /ARTWORK_ASPECT_INVALID/);
   assert.equal(meetsArtworkResolution(image), true);
   const threeByTwo = await sharp(jpeg).resize(1920, 1280, { fit: 'fill' }).png().toBuffer();
   await assert.rejects(normalizeArtworkImage(threeByTwo), /ARTWORK_ASPECT_INVALID/);
   await assert.rejects(normalizeArtworkImage(Buffer.from('fake PNG')));
   await assert.rejects(normalizeArtworkImage(jpeg.subarray(0, 100)));
   await assert.rejects(normalizeArtworkImage(Buffer.alloc(30 * 1024 * 1024 + 1)), /ARTWORK_SIZE_INVALID/);
+});
+
+test('artwork delivery accepts JPEG results and historical PNG results', () => {
+  const file = (direction: (typeof DIRECTIONS)[number], mimeType: string) => ({
+    assetId: direction,
+    versionId: direction,
+    type: 'artwork',
+    name: direction,
+    revision: 1,
+    objectKey: `${direction}.${artworkFileExtension(mimeType)}`,
+    checksum: 'a'.repeat(64),
+    filename: `${direction}.${artworkFileExtension(mimeType)}`,
+    mimeType,
+    metadata: {},
+    direction,
+    width: 2048,
+    height: 1152,
+    byteSize: 1000,
+  });
+  assert.equal(completeArtworkFiles(DIRECTIONS.map(d => file(d, 'image/jpeg'))), true);
+  assert.equal(completeArtworkFiles(DIRECTIONS.map(d => file(d, 'image/png'))), true);
+  assert.equal(completeArtworkFiles(DIRECTIONS.map(d => file(d, 'image/webp'))), false);
+  assert.deepEqual([artworkFileExtension('image/jpeg'), artworkFileExtension('image/png')], ['jpg', 'png']);
 });

@@ -638,7 +638,7 @@
     "schemeLabel": "Design",
     "themeRevision": "Theme selection revision",
     "deliveryStandard": "Delivery standard",
-    "deliveryDesc": "Images are decoded and converted to PNG. Long edge ≥ 1536 px, short edge ≥ 1024 px; interpolation-based upscaling does not qualify as high-resolution acceptance.",
+    "deliveryDesc": "Images are decoded and delivered as JPEG. Long edge ≥ 1536 px, short edge ≥ 1024 px; interpolation-based upscaling does not qualify as high-resolution acceptance.",
     "deliveryNote": "These assets are base images for the four sides. Artwork list mapping, physical dimensions and print suitability still need confirmation.",
     "projectLabel": "Project",
     "generateTitle": "02 / Generate a complete set",

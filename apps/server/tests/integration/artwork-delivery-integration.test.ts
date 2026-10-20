@@ -89,7 +89,7 @@ test(
       objectSize: async (key: string) => read(key).length,
       openRead: async (key: string) => [read(key)],
       putBuffer: async (key: string, bytes: Buffer, mime: string) => {
-        assert.equal(mime, 'image/png');
+        assert.equal(mime, 'image/jpeg');
         buffers.set(key, bytes);
       },
       signDownload: async (key: string) => `https://assets.example.test/${key}`,
@@ -360,11 +360,15 @@ test(
     assert.equal(calls, 4);
     assert.equal((await pool.query('SELECT * FROM credit_transactions WHERE artwork_job_id=$1', [jobId])).rowCount, 1);
     const zip = await JSZip.loadAsync(await streamBuffer((await artworkArchive(pool, storage, user, jobId)).stream));
-    assert.deepEqual(Object.keys(zip.files).sort(), ['back.png', 'front.png', 'left.png', 'right.png']);
+    assert.deepEqual(Object.keys(zip.files).sort(), ['back.jpg', 'front.jpg', 'left.jpg', 'right.jpg']);
     for (const direction of DIRECTIONS)
-      assert.equal((await sharp(await zip.file(`${direction}.png`)!.async('nodebuffer')).metadata()).format, 'png');
+      assert.equal((await sharp(await zip.file(`${direction}.jpg`)!.async('nodebuffer')).metadata()).format, 'jpeg');
     const files = await artworkFiles(pool, jobId);
-    assert.equal((await app.inject({ url: `/artwork-jobs/${jobId}/assets/${files[0]!.assetId}/download`, headers })).statusCode, 200);
+    assert.ok(files.every(file => file.mimeType === 'image/jpeg' && file.filename === `${file.direction}.jpg`));
+    const single = await app.inject({ url: `/artwork-jobs/${jobId}/assets/${files[0]!.assetId}/download`, headers });
+    assert.equal(single.statusCode, 200);
+    assert.equal(single.headers['content-type'], 'image/jpeg');
+    assert.match(String(single.headers['content-disposition']), /filename="front\.jpg"/);
     assert.equal((await app.inject({ url: `/artwork-jobs/${jobId}`, headers: { authorization: 'Bearer other' } })).statusCode, 404);
     assert.equal(
       (await app.inject({ url: `/artwork-jobs/${jobId}/download`, headers: { authorization: 'Bearer other' } })).statusCode,

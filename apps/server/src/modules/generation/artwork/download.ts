@@ -3,6 +3,7 @@ import type pg from 'pg';
 import type { createStorage } from '../../../infra/storage.js';
 import { domainError as projectError } from '../../../lib/errors.js';
 import { storedZipStream } from '../../../infra/zip.js';
+import { artworkFileExtension } from './image.js';
 import { artworkFiles, ownedArtworkJob, readyArtworkFiles, type ArtworkFile } from './queries.js';
 
 async function* verifiedArtwork(source: AsyncIterable<Uint8Array>, file: ArtworkFile) {
@@ -34,7 +35,7 @@ export async function artworkArchive(
   return {
     stream: storedZipStream(
       files.map(file => ({
-        name: `${file.direction}.png`,
+        name: `${file.direction}.${artworkFileExtension(file.mimeType)}`,
         open: async () => verifiedArtwork(await storage.openRead(file.objectKey, file.byteSize), file),
       })),
     ),
@@ -60,5 +61,5 @@ export async function downloadArtworkAsset(
   } catch {
     throw projectError('ARTWORK_STORAGE_UNAVAILABLE', 503);
   }
-  return { bytes, filename: `${file.direction}.png` };
+  return { bytes, mimeType: file.mimeType, filename: `${file.direction}.${artworkFileExtension(file.mimeType)}` };
 }

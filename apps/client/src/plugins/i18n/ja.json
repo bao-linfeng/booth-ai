@@ -638,7 +638,7 @@
     "schemeLabel": "プラン",
     "themeRevision": "テーマ選択改訂",
     "deliveryStandard": "納品基準",
-    "deliveryDesc": "実際にデコードしてPNGに統一変換。長辺≥1536px、短辺≥1024px。補間拡大は行いません。",
+    "deliveryDesc": "実際にデコードしてJPEGで納品。長辺≥1536px、短辺≥1024px。補間拡大は行いません。",
     "deliveryNote": "素材は四方向の底画です。画面リスト対応・物理サイズ・印刷適合は別途確認が必要です。",
     "projectLabel": "プロジェクト",
     "generateTitle": "02 / 一式生成",

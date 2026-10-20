@@ -171,5 +171,5 @@ export const artworkAssetSchema = {
     required: ['jobId', 'assetId'],
     properties: { jobId: uuid, assetId: uuid },
   },
-  response: fileResponse('png'),
+  response: fileResponse('jpg；历史任务为 png'),
 } as const;

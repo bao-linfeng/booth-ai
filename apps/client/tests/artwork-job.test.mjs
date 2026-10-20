@@ -81,7 +81,7 @@ function artworkJob(ready = true, version = 0) {
     credits: { status: 'settled', reservedCredits: 20, heldCredits: 0, chargedCredits: done.length * 5, releasedCredits: (4 - done.length) * 5 }, pollAfterMs: null,
     schemeCode: 'SC-6030', phase: null, themeSelection: { themeJobId: 'theme-1', resultId: 'result-1', selectionRevision: 3 }, referencePreviewUrl: `/reference.png?v=${version}`,
     directions: directions.map(direction => done.includes(direction)
-      ? { direction, status: 'succeeded', reason: null, assetId: `asset-${direction}`, width: 1536, height: 1024, byteSize: 100, filename: `${direction}.png`, previewUrl: `/${direction}.png?v=${version}` }
+      ? { direction, status: 'succeeded', reason: null, assetId: `asset-${direction}`, width: 1536, height: 1024, byteSize: 100, filename: `${direction}.jpg`, previewUrl: `/${direction}.png?v=${version}` }
       : { direction, status: 'failed', reason: 'RESOLUTION_LOW' }),
     missingDirections: directions.filter(direction => !done.includes(direction)), mappingStatus: 'unresolved', quality: { minLongEdge: 1536, minShortEdge: 1024 },
   }
@@ -250,7 +250,8 @@ test('a direction below the HD standard is shown and downloadable but asks for r
   const lowResolution = () => {
     const job = artworkJob()
     Object.assign(job, { deliveryStatus: 'incomplete' })
-    job.directions = job.directions.map(item => ({ ...item, belowQuality: item.direction === 'left', ...(item.direction === 'left' ? { width: 1024, height: 576 } : {}) }))
+    // 左侧模拟历史任务的 PNG 结果，其余为新任务的 JPEG
+    job.directions = job.directions.map(item => ({ ...item, belowQuality: item.direction === 'left', ...(item.direction === 'left' ? { width: 1024, height: 576, filename: 'left.png' } : {}) }))
     return job
   }
   const mounted = await mount({ path: '/artwork-jobs/job-1', job: lowResolution })
@@ -258,6 +259,7 @@ test('a direction below the HD standard is shown and downloadable but asks for r
     const text = mounted.container.textContent
     assert.equal(mounted.container.querySelectorAll('img[alt$="方向底图"]').length, 4)
     assert.match(text, /1024 × 576 px · PNG/)
+    assert.equal(text.match(/1536 × 1024 px · JPEG/g)?.length, 3)
     assert.equal(text.match(/低于高清(?!标准)/g)?.length, 1)
     assert.match(text, /左侧低于高清标准/)
     assert.doesNotMatch(text, /缺少：/)
@@ -277,7 +279,7 @@ test('a complete job downloads single directions and the ZIP and links the quote
     await click(mounted.container, '下载完整四面 ZIP')
     assert.deepEqual(mounted.calls.filter(call => call.url.includes('download')).map(call => call.url), ['/api/v1/client/artwork-jobs/job-1/assets/asset-front/download', '/api/v1/client/artwork-jobs/job-1/download'])
     assert.equal(downloads.length, 2)
-    assert.equal(downloads[0], 'front.png')
+    assert.equal(downloads[0], 'front.jpg')
     assert.match(downloads[1], /\.zip$/)
     const quote = [...mounted.container.querySelectorAll('a')].find(element => element.textContent.includes('携带素材申请报价'))
     assert.ok(quote)

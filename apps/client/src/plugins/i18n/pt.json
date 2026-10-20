@@ -620,7 +620,7 @@
     "schemeLabel": "Projeto",
     "themeRevision": "Revisão da seleção de identidade",
     "deliveryStandard": "Padrão de entrega",
-    "deliveryDesc": "As imagens são decodificadas e convertidas para PNG. Lado maior ≥ 1536 px, lado menor ≥ 1024 px. Ampliação por interpolação não substitui a validação de alta resolução.",
+    "deliveryDesc": "As imagens são decodificadas e entregues em JPEG. Lado maior ≥ 1536 px, lado menor ≥ 1024 px. Ampliação por interpolação não substitui a validação de alta resolução.",
     "deliveryNote": "São imagens-base das quatro direções. A relação com a lista de artes, dimensões físicas e adaptação para impressão ainda precisa ser confirmada.",
     "projectLabel": "Projeto",
     "generateTitle": "02 / Gerar conjunto completo",

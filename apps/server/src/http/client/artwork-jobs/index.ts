@@ -73,7 +73,7 @@ export async function registerArtworkJobRoutes(
     reply.header('Cache-Control', 'private, no-store');
     return { code: 0, data: await getArtworkJob(pool, storage, clientUserId(request), request.params.jobId) } as const;
   });
-  // 下载返回 zip / png 文件，不走类型化的 JSON 响应
+  // 下载返回 zip / 图片文件，不走类型化的 JSON 响应
   app.get<{ Params: { jobId: string } }>('/artwork-jobs/:jobId/download', { schema: artworkDownloadSchema }, async (request, reply) => {
     const archive = await artworkArchive(pool, storage, clientUserId(request), request.params.jobId);
     return reply
@@ -87,10 +87,10 @@ export async function registerArtworkJobRoutes(
     { schema: artworkAssetSchema },
     async (request, reply) => {
       const userId = clientUserId(request);
-      const { bytes, filename } = await downloadArtworkAsset(pool, storage, userId, request.params.jobId, request.params.assetId);
+      const { bytes, mimeType, filename } = await downloadArtworkAsset(pool, storage, userId, request.params.jobId, request.params.assetId);
       return reply
         .header('Cache-Control', 'private, no-store')
-        .type('image/png')
+        .type(mimeType)
         .header('Content-Disposition', `attachment; filename="${filename}"`)
         .send(bytes);
     },
