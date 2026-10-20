@@ -68,6 +68,14 @@ test('request IDs, explicit CORS, input validation and errors', async t => {
   assert.equal(response.headers['access-control-allow-origin'], 'http://localhost:5173');
   const deniedOrigin = await app.inject({ url: '/health/live', headers: { origin: 'https://untrusted.example' } });
   assert.equal(deniedOrigin.headers['access-control-allow-origin'], undefined);
+  const preflight = await app.inject({
+    method: 'OPTIONS',
+    url: '/api/v1/admin/anything',
+    headers: { origin: 'http://localhost:5173', 'access-control-request-method': 'PUT' },
+  });
+  assert.equal(preflight.statusCode, 204);
+  const allowedMethods = String(preflight.headers['access-control-allow-methods']).split(/,\s*/);
+  for (const method of ['PUT', 'PATCH', 'DELETE']) assert.ok(allowedMethods.includes(method), method);
   const invalid = await app.inject({ method: 'POST', url: '/test-validation', payload: { name: 'valid', extra: true } });
   assert.equal(invalid.statusCode, 400);
   assert.equal(invalid.json().error.code, 'VALIDATION_ERROR');
