@@ -41,6 +41,13 @@ Docker 网络 1panel-network：
 - 1Panel → 容器 中确认 OpenResty 是 `host` 网络，否则代理 `127.0.0.1` 会 502。
 - 服务器能访问 `https://api.lingtong.net.cn`（灵通登录）和所用的 AI 供应商接口。
 - CPU 架构：`uname -m`，`x86_64` 或 `aarch64`，第 3 步打包时要对应。
+- 参展商端用 history 路由，静态网站必须回退到 `index.html`，否则站内跳转正常、刷新子页面（如 `/my-searches`）却返回 nginx 404。网站 → `boothai.baolinfeng.cn` → 伪静态，选「自定义」填入下面内容并保存。若校验报 `duplicate location "/"`，改为在「配置文件」原有的 `location /` 里加 `try_files` 这一行。管理端用 hash 路由，不需要配置。
+
+  ```nginx
+  location / {
+      try_files $uri $uri/ /index.html;
+  }
+  ```
 
 ---
 
@@ -311,6 +318,8 @@ curl -sS -i -X OPTIONS $B/api/v1/client/auth/login -H 'Origin: https://boothai.b
 # access-control-allow-origin: https://boothai.baolinfeng.cn
 curl -sS $B/api/v1/admin/me; echo
 # 401，reason 为 AUTH_REQUIRED
+curl -sS -o /dev/null -w '%{http_code}\n' https://boothai.baolinfeng.cn/my-searches
+# 200；404 说明参展商端没配 index.html 回退（见第 1 节）
 ```
 
 用 Silo 凭据生成一个指向不存在对象的签名 URL 再访问，应返回 `NoSuchKey`（签名通过、只是没有文件）；返回 `SignatureDoesNotMatch` 则是代理改了 Host 或路径。
@@ -409,6 +418,7 @@ rm -rf booth.dump silo-export.tar.gz silo-export
 | api 日志 `Migration failed` | 数据库地址/密码不对；若是 `permission denied for schema public`，在 PostgreSQL 中执行 `ALTER DATABASE booth OWNER TO booth; ALTER SCHEMA public OWNER TO booth;`（连 `booth` 库执行后者） |
 | api 日志 `Waiting for Silo` 后失败 | silo 容器没在 `1panel-network`，或 `S3_ACCESS_KEY/S3_SECRET_KEY` 与 Silo 环境变量不一致 |
 | `/health/ready` 返回 503 | 看 `checks` 中 database / redis / storage 哪一项失败 |
+| 参展商端刷新子页面 404 Not Found（nginx） | 参展商端网站没配伪静态 `try_files $uri $uri/ /index.html;`（见第 1 节） |
 | 网站 502 | `curl 127.0.0.1:3000/health/live` 是否通；OpenResty 是否 host 网络 |
 | 浏览器 CORS 报错 | `CORS_ORIGINS` 与地址栏来源是否完全一致（协议、子域名、端口） |
 | 图片 403 `SignatureDoesNotMatch` | 代理改了 Host 或路径；`S3_PUBLIC_ENDPOINT` 误带 `/booth-assets`；服务器时间不准 |
