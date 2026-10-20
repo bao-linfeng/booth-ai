@@ -9,6 +9,8 @@ export interface SchemeDeliverable {
   mimeType: string;
   byteSize: number;
   sortOrder: number;
+  // 图片资料的缩略图地址，其他类型为 null
+  thumbnailUrl: string | null;
 }
 
 export interface SchemeDeliverables {

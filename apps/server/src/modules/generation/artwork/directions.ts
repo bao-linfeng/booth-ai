@@ -12,6 +12,7 @@ import { prepareDrawing } from './drawings.js';
 import { ARTWORK_FILE, encodeUploadImage, normalizeArtworkImage } from './image.js';
 import { artworkDirectionConcurrency } from './settings.js';
 import { lockRunningLease, publishGeneration, refreshGeneration, throwIfDraining } from '../execution.js';
+import { createRenditionsOrDefer } from '../../media/renditions.js';
 
 /** 模型、参考图与报馆图只在第一个需要调用供应商的方向上加载，之后各方向（含并发的方向）共用。 */
 type SharedInputs = {
@@ -195,6 +196,7 @@ async function storeDirectionResult(
   const objectKey = `artwork-results/${jobId}/${filename}`;
   const checksum = createHash('sha256').update(image.bytes).digest('hex');
   await storage.putBuffer(objectKey, image.bytes, ARTWORK_FILE.mimeType);
+  const renditions = await createRenditionsOrDefer(storage, objectKey, image.bytes, run.log);
   await transaction(database, async client => {
     await lockRunningLease(client, creditJob(run), run.lease);
     await client.query(
@@ -210,9 +212,20 @@ async function storeDirectionResult(
       ],
     );
     await client.query(
-      `INSERT INTO asset_versions(id,asset_id,object_key,original_filename,mime_type,byte_size,checksum,width_px,height_px)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [versionId, assetId, objectKey, filename, ARTWORK_FILE.mimeType, image.bytes.length, checksum, image.width, image.height],
+      `INSERT INTO asset_versions(id,asset_id,object_key,original_filename,mime_type,byte_size,checksum,width_px,height_px,renditions)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        versionId,
+        assetId,
+        objectKey,
+        filename,
+        ARTWORK_FILE.mimeType,
+        image.bytes.length,
+        checksum,
+        image.width,
+        image.height,
+        renditions && JSON.stringify(renditions),
+      ],
     );
     await client.query(
       `INSERT INTO artwork_job_results(job_id,ordinal,asset_id,asset_version_id,direction,width,height) VALUES($1,$2,$3,$4,$5,$6,$7)`,

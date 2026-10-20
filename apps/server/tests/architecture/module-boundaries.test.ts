@@ -77,7 +77,7 @@ test('domain modules and infrastructure cannot depend on HTTP portals or worker 
 // 新增跨模块依赖时先确认方向：被依赖的一方不应了解调用方，跨模块用例放到上层编排模块（如 client-sign-in、prompt-preview）。
 const moduleRules: Record<string, { dependsOn: string[]; exposes: string[] }> = {
   'ai-models': { dependsOn: [], exposes: [] },
-  assets: { dependsOn: ['schemes'], exposes: ['deliverables.ts'] },
+  assets: { dependsOn: ['media', 'schemes'], exposes: ['deliverables.ts'] },
   audit: { dependsOn: [], exposes: [] },
   'client-sign-in': { dependsOn: ['identity', 'projects', 'selection'], exposes: [] },
   credits: { dependsOn: [], exposes: ['service.ts', 'management-service.ts'] },
@@ -85,16 +85,17 @@ const moduleRules: Record<string, { dependsOn: string[]; exposes: string[] }> = 
   dashboard: { dependsOn: ['projects'], exposes: [] },
   dictionaries: { dependsOn: [], exposes: ['service.ts', 'language.ts', 'sizes.ts'] },
   generation: {
-    dependsOn: ['credits', 'prompts'],
+    dependsOn: ['credits', 'media', 'prompts'],
     exposes: ['artwork/queries.ts', 'artwork/prompt.ts', 'theme/prompt.ts', 'theme/domain.ts'],
   },
   identity: { dependsOn: [], exposes: ['service.ts', 'client-service.ts', 'roles.ts'] },
+  media: { dependsOn: [], exposes: ['links.ts', 'renditions.ts'] },
   projects: { dependsOn: ['dictionaries', 'generation', 'identity', 'schemes', 'selection'], exposes: ['claims.ts', 'domain.ts'] },
   'prompt-preview': { dependsOn: ['generation', 'prompts', 'selection'], exposes: [] },
   prompts: { dependsOn: [], exposes: ['service.ts', 'template.ts'] },
   schemes: { dependsOn: ['dictionaries'], exposes: ['publication.ts', 'image-spec.ts', 'readiness.ts', 'bill-of-materials/repository.ts'] },
   selection: {
-    dependsOn: ['assets', 'dictionaries', 'prompts'],
+    dependsOn: ['assets', 'dictionaries', 'media', 'prompts'],
     exposes: ['domain.ts', 'match.ts', 'prompt.ts', 'repository.ts', 'messages/index.ts', 'analytics/recording.ts'],
   },
   tasks: { dependsOn: [], exposes: [] },

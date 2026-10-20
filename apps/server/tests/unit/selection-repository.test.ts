@@ -76,6 +76,14 @@ test('candidate pool groups assets per scheme and only returned items get signed
         order,
         relatedAssetId: null,
         objectKey: `${schemeId}/r${order}`,
+        // 第一张效果图已生成衍生图，其余回退原图
+        renditions:
+          order === 0
+            ? {
+                thumb: { key: `thumb/${schemeId}`, width: 480, height: 270, bytes: 1 },
+                preview: { key: `preview/${schemeId}`, width: 1600, height: 900, bytes: 1 },
+              }
+            : null,
         width: 1600,
         height: 900,
         mime: 'image/png',
@@ -112,13 +120,23 @@ test('candidate pool groups assets per scheme and only returned items get signed
   const { items } = matchSchemes(candidates, { ...emptyRequirement(), productSystemId: 'fs62' }, 'filtered', false, diagnostics);
   const publicItems = await signMatchItems(storage, items);
   assert.equal(publicItems.length, 3);
-  assert.equal(signed.length, 9);
+  assert.equal(signed.length, 27);
   assert.deepEqual(publicItems[0]!.images[0], {
     assetId: 'id-A-r0',
     order: 0,
     width: 1600,
     height: 900,
-    url: 'https://assets.example/id-A/r0',
-    thumbnailUrl: 'https://assets.example/id-A/r0',
+    thumbnailUrl: 'https://assets.example/thumb/id-A',
+    previewUrl: 'https://assets.example/preview/id-A',
+    originalUrl: 'https://assets.example/id-A/r0',
+  });
+  assert.deepEqual(publicItems[0]!.images[1], {
+    assetId: 'id-A-r1',
+    order: 1,
+    width: 1600,
+    height: 900,
+    thumbnailUrl: 'https://assets.example/id-A/r1',
+    previewUrl: 'https://assets.example/id-A/r1',
+    originalUrl: 'https://assets.example/id-A/r1',
   });
 });

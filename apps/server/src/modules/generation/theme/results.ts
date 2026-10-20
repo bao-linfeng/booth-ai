@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { downloadGeneratedImage } from '../../../infra/ai/protocols.js';
 import { ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
 import { transaction } from '../../../infra/database.js';
+import { createRenditionsOrDefer } from '../../media/renditions.js';
 import { lockRunningLease, refreshGeneration } from '../execution.js';
 import { compositeThemeResult } from './composite.js';
 import { loadThemeImages, themeOptions, type ThemeImages } from './source.js';
@@ -41,15 +42,16 @@ async function compositeResult(run: ThemeRun, ordinal: number, image: Normalized
   }
 }
 
-/** 先上传对象，再在租约保护的事务内写入资产、版本与结果行。 */
+/** 先上传对象与展示用衍生图，再在租约保护的事务内写入资产、版本与结果行。 */
 async function storeResult(run: ThemeRun, ordinal: number, image: NormalizedImage) {
-  const { database, jobId, lease, job, storage } = run;
+  const { database, jobId, lease, job, storage, log } = run;
   const assetId = randomUUID();
   const versionId = randomUUID();
   const resultId = randomUUID();
   const objectKey = `theme-results/${jobId}/${ordinal}.png`;
   await storage.putBuffer(objectKey, image.bytes, 'image/png');
   const previewUrl = await storage.signDownload(objectKey, 900);
+  const renditions = await createRenditionsOrDefer(storage, objectKey, image.bytes, log);
   await transaction(database, async client => {
     await lockRunningLease(client, { kind: 'theme', id: run.jobId }, lease);
     await client.query(
@@ -58,8 +60,8 @@ async function storeResult(run: ThemeRun, ordinal: number, image: NormalizedImag
       [assetId, `AI 换主题结果 ${ordinal}`, ordinal - 1, JSON.stringify({ themeJobId: jobId }), job.schemeCode, job.userId],
     );
     await client.query(
-      `INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, width_px, height_px)
-      VALUES ($1, $2, $3, $4, 'image/png', $5, $6, $7, $8)`,
+      `INSERT INTO asset_versions (id, asset_id, object_key, original_filename, mime_type, byte_size, checksum, width_px, height_px, renditions)
+      VALUES ($1, $2, $3, $4, 'image/png', $5, $6, $7, $8, $9)`,
       [
         versionId,
         assetId,
@@ -69,6 +71,7 @@ async function storeResult(run: ThemeRun, ordinal: number, image: NormalizedImag
         createHash('sha256').update(image.bytes).digest('hex'),
         image.width,
         image.height,
+        renditions && JSON.stringify(renditions),
       ],
     );
     await client.query(

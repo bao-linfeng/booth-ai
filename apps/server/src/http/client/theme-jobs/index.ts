@@ -5,6 +5,7 @@ import type pg from 'pg';
 import { clientUserId, issueEventTicket, requirePrincipal } from '../../authentication.js';
 import { rateLimit } from '../../rate-limits.js';
 import type { createStorage } from '../../../infra/storage.js';
+import { signImage, signImageLinks } from '../../../modules/media/links.js';
 import { streamThemeJobEvents } from './events.js';
 import {
   eventsTicketSchema,
@@ -90,13 +91,15 @@ export async function registerThemeModelRoutes(
     const results = await Promise.all(
       rows.map(async r => ({
         resultId: r.id,
-        previewUrl: await storage.signDownload(r.objectKey, 900),
+        ...(await signImageLinks(storage, r, 900)),
         width: r.width ?? 0,
         height: r.height ?? 0,
       })),
     );
     const isTerminal = ['succeeded', 'partially_succeeded', 'failed'].includes(job.status);
-    const originalPreviewUrl = job.sourceObjectKey ? await storage.signDownload(job.sourceObjectKey, 900) : null;
+    const originalPreviewUrl = job.sourceObjectKey
+      ? await signImage(storage, { objectKey: job.sourceObjectKey, renditions: job.sourceRenditions }, 'preview', 900)
+      : null;
 
     return {
       code: 0 as const,

@@ -339,7 +339,7 @@ function setDialogOpen(open: boolean) {
       <div v-else class="grid items-start gap-8 xl:gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section :aria-label="t('schemeTheme.canvasAriaLabel')" class="min-w-0 space-y-5 lg:sticky lg:top-24">
           <h2 class="text-sm font-medium">{{ t('schemeTheme.originalImageTitle') }}</h2>
-          <SchemeGallery v-model:active="activeImageIndex" :images="galleryImages" :code="schemeCode" :preview="isPreview" :variant="previewVariant" :disabled="creatingJob || confirmDialogOpen" @image-error="imageLinks.onImageError" />
+          <SchemeGallery v-model:active="activeImageIndex" :images="galleryImages" :code="schemeCode" :preview="isPreview" :variant="previewVariant" :disabled="creatingJob || confirmDialogOpen" priority @image-error="imageLinks.onImageError" />
           <div class="flex items-start gap-3 border-t pt-5">
             <Sparkles class="mt-0.5 size-4 shrink-0 text-primary" />
             <div class="space-y-2 text-sm leading-relaxed text-muted-foreground">

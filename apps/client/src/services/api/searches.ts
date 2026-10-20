@@ -7,6 +7,7 @@ export interface SearchTheme {
   jobId: string
   status: ThemeJob['status']
   createdAt: string
+  thumbnailUrl: string | null
   previewUrl: string | null
 }
 
@@ -15,7 +16,7 @@ export interface SearchArtwork {
   status: ThemeJob['status']
   createdAt: string
   deliveryStatus: 'pending' | 'incomplete' | 'ready'
-  views: Array<{ direction: Direction; previewUrl: string }>
+  views: Array<{ direction: Direction; thumbnailUrl: string; previewUrl: string }>
 }
 
 export interface SearchHistoryItem {
@@ -23,6 +24,7 @@ export interface SearchHistoryItem {
   matchType: 'direct' | 'reference' | 'random'
   specifications: Specifications
   thumbnail: string
+  preview: string
   theme: SearchTheme | null
   artwork: SearchArtwork | null
 }

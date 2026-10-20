@@ -77,7 +77,7 @@ function matchResponse(body, status) {
   const random = body.mode === 'random'
   const items = status === 'no_match' ? [] : [{
     code: 'SC-6030', matchType: random ? 'random' : 'direct',
-    images: [{ assetId: 'front', url: '/front.jpg', thumbnailUrl: '/front-thumb.jpg', order: 0, width: 1600, height: 1200 }],
+    images: [{ assetId: 'front', thumbnailUrl: '/front-thumb.webp', previewUrl: '/front.webp', originalUrl: '/front.png', order: 0, width: 1600, height: 1200 }],
     specifications: { lengthMm: 6000, widthMm: 3000, heightMm: 3000, areaM2: 18, openingCount: 2, productSystemId: 'standard', productSystemLabel: '标准模块' },
     reasons: random ? [] : ['尺寸满足需求'], differences: [], pendingConfirmations: [], preferenceMisses: [],
   }]
@@ -309,10 +309,10 @@ test('manual handoff drops malformed or unparsable context', () => {
   }
 })
 
-const freshFront = { assetId: 'front', url: '/front-fresh.jpg', thumbnailUrl: '/front-fresh-thumb.jpg', order: 0, width: 1600, height: 1200 }
+const freshFront = { assetId: 'front', thumbnailUrl: '/front-fresh-thumb.webp', previewUrl: '/front-fresh.webp', originalUrl: '/front-fresh.png', order: 0, width: 1600, height: 1200 }
 for (const scenario of [
-  { name: 'refreshes them by assetId and extends the deadline', images: [freshFront], url: '/front-fresh.jpg', extended: true },
-  { name: 'keeps old links and the expired deadline when an asset is missing', images: [], url: '/front.jpg', extended: false },
+  { name: 'refreshes them by assetId and extends the deadline', images: [freshFront], url: '/front-fresh.webp', extended: true },
+  { name: 'keeps old links and the expired deadline when an asset is missing', images: [], url: '/front.webp', extended: false },
 ]) {
   test(`restoring expired image links ${scenario.name}`, async () => {
     let mounted = await mount()
@@ -324,7 +324,7 @@ for (const scenario of [
       mounted = await mount({ restore: true, schemeImages: scenario.images })
       assert.equal(mounted.calls.filter(call => call.path === '/api/v1/client/schemes/SC-6030').length, 1)
       assert.equal(posts(mounted).length, 0)
-      assert.equal(saved().liveMatchData.items[0].images[0].url, scenario.url)
+      assert.equal(saved().liveMatchData.items[0].images[0].previewUrl, scenario.url)
       assert.equal(saved().imagesExpiresAt > Date.now() + 200_000, scenario.extended)
       assert.deepEqual(saved().activeImageByCode, { 'SC-6030': 0 })
     } finally { await mounted.close() }

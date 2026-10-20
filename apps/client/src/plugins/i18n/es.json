@@ -131,9 +131,8 @@
     "currentAngle": "Vista actual",
     "previewSpace": "Ilustración del espacio, no es una imagen real del diseño.",
     "schemeImageNote": "Imagen del diseño solo como referencia visual y espacial.",
-    "originalUnavailable": "La imagen original no está disponible. Prueba otra vista.",
     "switchEnlargedAngle": "Cambiar vista ampliada",
-    "originalEffectAlt": "Imagen original {index} de {code}"
+    "viewOriginal": "Ver original"
   },
   "controls": {
     "switchLanguage": "Cambiar idioma",

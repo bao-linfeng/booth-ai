@@ -130,7 +130,13 @@ test('theme job details include ordered results with nullable fields normalized'
   const response = await app.inject({ method: 'GET', url: `/theme-jobs/${jobId}`, headers: { authorization: `Bearer ${token}` } });
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json().data.results, [
-    { resultId, previewUrl: 'https://assets.example/generated/image.png', width: 0, height: 720 },
+    {
+      resultId,
+      thumbnailUrl: 'https://assets.example/generated/image.png',
+      previewUrl: 'https://assets.example/generated/image.png',
+      width: 0,
+      height: 720,
+    },
   ]);
   assert.deepEqual(response.json().data.original, { assetId: 'source', previewUrl: 'https://assets.example/source/image.png' });
 });

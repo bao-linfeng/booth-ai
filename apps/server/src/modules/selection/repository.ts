@@ -13,6 +13,8 @@ import {
   type PublicImage,
 } from './domain.js';
 import { localizedLabel, type DictionaryAlias } from '../dictionaries/language.js';
+import { signImageLinks } from '../media/links.js';
+import type { Renditions } from '../media/renditions.js';
 
 interface CandidateRow {
   id: string;
@@ -40,6 +42,7 @@ interface AssetRow {
   order: number;
   relatedAssetId: string | null;
   objectKey: string;
+  renditions: Renditions | null;
   width: number | null;
   height: number | null;
   mime: string;
@@ -141,7 +144,7 @@ export async function loadCandidatePool(
   const assets = await pool.query<AssetRow>(
     `
     SELECT a.id, a.scheme_id AS "schemeId", a.type, a.sort_order AS "order", a.related_asset_id AS "relatedAssetId",
-      v.object_key AS "objectKey", v.width_px AS width, v.height_px AS height, v.mime_type AS mime
+      v.object_key AS "objectKey", v.renditions, v.width_px AS width, v.height_px AS height, v.mime_type AS mime
     FROM scheme_baseline_assets a
     JOIN LATERAL (SELECT * FROM asset_versions WHERE asset_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) v ON true
     WHERE a.scheme_id = ANY($1::uuid[]) AND a.is_active = true AND v.byte_size > 0
@@ -212,6 +215,7 @@ export async function loadCandidatePool(
       images: images.map(image => ({
         assetId: image.id,
         objectKey: image.objectKey,
+        renditions: image.renditions,
         order: image.order,
         width: image.width!,
         height: image.height!,
@@ -232,9 +236,12 @@ type Signer = Pick<ReturnType<typeof createStorage>, 'signDownload'>;
 
 export function signImages(storage: Signer, images: CandidateImage[]): Promise<PublicImage[]> {
   return Promise.all(
-    images.map(async ({ objectKey, ...image }) => {
-      const url = await storage.signDownload(objectKey, 300);
-      return { ...image, url, thumbnailUrl: url };
+    images.map(async ({ objectKey, renditions, ...image }) => {
+      const [links, originalUrl] = await Promise.all([
+        signImageLinks(storage, { objectKey, renditions }, 300),
+        storage.signDownload(objectKey, 300),
+      ]);
+      return { ...image, ...links, originalUrl };
     }),
   );
 }

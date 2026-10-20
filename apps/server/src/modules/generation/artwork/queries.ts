@@ -2,6 +2,8 @@ import type pg from 'pg';
 import { digest } from '../../../lib/digest.js';
 import { domainError as projectError } from '../../../lib/errors.js';
 import type { createStorage } from '../../../infra/storage.js';
+import { signImage } from '../../media/links.js';
+import type { Renditions } from '../../media/renditions.js';
 import type { ThemeInput } from '../theme/service.js';
 import {
   ARTWORK_QUALITY,
@@ -145,6 +147,17 @@ export async function getArtworkJob(
       [jobId],
     )
   ).rows;
+  // 页面展示用预览图；文件本身（含项目冻结的快照）只引用原图版本
+  const reference = job.snapshot?.source;
+  const versionIds = [...files.map(file => file.versionId), ...(reference ? [reference.versionId] : [])];
+  const renditions = new Map(
+    (
+      await pool.query<{ id: string; renditions: Renditions | null }>(
+        'SELECT id, renditions FROM asset_versions WHERE id = ANY($1::uuid[])',
+        [versionIds],
+      )
+    ).rows.map(row => [row.id, row.renditions]),
+  );
   const directions = await Promise.all(
     DIRECTIONS.map(async direction => {
       const file = files.find(f => f.direction === direction);
@@ -161,7 +174,12 @@ export async function getArtworkJob(
               byteSize: file.byteSize,
               filename: file.filename,
               belowQuality: !meetsArtworkResolution(file),
-              previewUrl: await storage.signDownload(file.objectKey, 300),
+              previewUrl: await signImage(
+                storage,
+                { objectKey: file.objectKey, renditions: renditions.get(file.versionId) },
+                'preview',
+                300,
+              ),
             }
           : {}),
       };
@@ -172,7 +190,9 @@ export async function getArtworkJob(
     schemeCode: job.schemeCode,
     phase: job.phase,
     themeSelection: { themeJobId: job.themeJobId, resultId: job.resultId, selectionRevision: job.selectionRevision },
-    referencePreviewUrl: job.snapshot ? await storage.signDownload(job.snapshot.source.objectKey, 300) : null,
+    referencePreviewUrl: reference
+      ? await signImage(storage, { objectKey: reference.objectKey, renditions: renditions.get(reference.versionId) }, 'preview', 300)
+      : null,
     directions,
     missingDirections: DIRECTIONS.filter(d => !files.some(f => f.direction === d)),
     mappingStatus: 'unresolved',

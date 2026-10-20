@@ -6,6 +6,7 @@ import { getProvidedVisitorId } from '../selection/identity.js';
 import { listClientSearches } from '../../../modules/selection/analytics/queries.js';
 import { listSearchJobs } from '../../../modules/generation/search-jobs.js';
 import { latestVersionKeys } from '../../../modules/assets/queries.js';
+import { signImageLinks } from '../../../modules/media/links.js';
 import { successResponse } from '../../schemas.js';
 
 type SearchSnapshotItem = {
@@ -39,8 +40,14 @@ const snapshotValue = { description: '检索时冻结的快照字段，原样返
 const themeSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['jobId', 'status', 'createdAt', 'previewUrl'],
-  properties: { jobId: { type: 'string' }, status: { type: 'string' }, createdAt: dateTime, previewUrl: nullableString },
+  required: ['jobId', 'status', 'createdAt', 'thumbnailUrl', 'previewUrl'],
+  properties: {
+    jobId: { type: 'string' },
+    status: { type: 'string' },
+    createdAt: dateTime,
+    thumbnailUrl: nullableString,
+    previewUrl: nullableString,
+  },
 } as const;
 const artworkSchema = {
   type: 'object',
@@ -56,8 +63,8 @@ const artworkSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['direction', 'previewUrl'],
-        properties: { direction: { type: 'string' }, previewUrl: { type: 'string' } },
+        required: ['direction', 'thumbnailUrl', 'previewUrl'],
+        properties: { direction: { type: 'string' }, thumbnailUrl: { type: 'string' }, previewUrl: { type: 'string' } },
       },
     },
   },
@@ -95,12 +102,13 @@ const searchHistorySchema = {
             items: {
               type: 'object',
               additionalProperties: false,
-              required: ['thumbnail', 'theme', 'artwork'],
+              required: ['thumbnail', 'preview', 'theme', 'artwork'],
               properties: {
                 code: snapshotValue,
                 matchType: snapshotValue,
                 specifications: snapshotValue,
                 thumbnail: { type: 'string' },
+                preview: { type: 'string' },
                 theme: { anyOf: [themeSchema, { type: 'null' }] },
                 artwork: { anyOf: [artworkSchema, { type: 'null' }] },
               },
@@ -152,7 +160,7 @@ export async function registerClientSearchRoutes(app: FastifyInstance, pool: pg.
       const assetIds = [...new Set(snapshotItems.map(getFirstImageAssetId).filter((assetId): assetId is string => Boolean(assetId)))];
       const versions = await latestVersionKeys(pool, assetIds);
       const signedUrls = new Map(
-        await Promise.all(versions.map(async version => [version.assetId, await storage.signDownload(version.objectKey, 270)] as const)),
+        await Promise.all(versions.map(async version => [version.assetId, await signImageLinks(storage, version, 270)] as const)),
       );
 
       return {
@@ -169,7 +177,8 @@ export async function registerClientSearchRoutes(app: FastifyInstance, pool: pg.
               code: item.code,
               matchType: item.matchType,
               specifications: item.specifications,
-              thumbnail: signedUrls.get(getFirstImageAssetId(item) ?? '') ?? '',
+              thumbnail: signedUrls.get(getFirstImageAssetId(item) ?? '')?.thumbnailUrl ?? '',
+              preview: signedUrls.get(getFirstImageAssetId(item) ?? '')?.previewUrl ?? '',
               theme: typeof item.code === 'string' ? (jobs?.get(search.id)?.get(item.code)?.theme ?? null) : null,
               artwork: typeof item.code === 'string' ? (jobs?.get(search.id)?.get(item.code)?.artwork ?? null) : null,
             })),

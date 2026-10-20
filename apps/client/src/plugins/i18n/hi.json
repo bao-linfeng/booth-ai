@@ -131,9 +131,8 @@
     "currentAngle": "वर्तमान दृश्य",
     "previewSpace": "स्थान का चित्रण, वास्तविक डिज़ाइन रेंडरिंग नहीं।",
     "schemeImageNote": "डिज़ाइन रेंडरिंग केवल दृश्य और स्थानिक संदर्भ के लिए है।",
-    "originalUnavailable": "मूल तस्वीर उपलब्ध नहीं है। दूसरा दृश्य चुनें।",
     "switchEnlargedAngle": "बड़ा दृश्य बदलें",
-    "originalEffectAlt": "{code} की मूल रेंडरिंग {index}"
+    "viewOriginal": "मूल छवि देखें"
   },
   "controls": {
     "switchLanguage": "भाषा बदलें",

@@ -64,6 +64,7 @@ test('published scheme deliverables are accessible anonymously without exposing 
   assert.equal(anonymous.statusCode, 200);
   assert.equal(anonymous.headers['cache-control'], 'no-store');
   assert.equal(anonymous.json().data.items[0].name, '平面图');
+  assert.equal(anonymous.json().data.items[0].thumbnailUrl, null);
   assert.ok(!anonymous.body.includes('private/key'));
   assert.ok(!deps.queries.some(sql => sql.includes('FROM users')));
   assert.ok(deps.queries.some(sql => sql.includes("s.publish_status = 'published'")));
@@ -82,6 +83,7 @@ function archiveSetup() {
     versionId: `version-${id}`,
     checksum: createHash('sha256').update(content).digest('hex'),
     objectKey: `private/${id}`,
+    renditions: null as Record<'thumb' | 'preview', { key: string; width: number; height: number; bytes: number }> | null,
   });
   const state = {
     published: true,
@@ -105,6 +107,7 @@ function archiveSetup() {
       assert.equal(maxBytes, content.length);
       return content;
     },
+    signDownload: async (key: string) => `https://files.example/${key.replace('private/', 'p/')}`,
   } as unknown as ReturnType<typeof createStorage>;
   return { state, reads, queries, pool, storage, content, makeRow };
 }
@@ -166,8 +169,18 @@ test('archive revisions reject stale lists and are stable across repeated downlo
   const deps = archiveSetup();
   const app = await archiveApp(t, deps);
   const base = '/schemes/S-1/drawings';
-  const revision = (await app.inject(base)).json().data.revision;
+  const first = (await app.inject(base)).json().data;
+  const revision = first.revision;
+  assert.equal(first.items[0].thumbnailUrl, 'https://files.example/p/drawing-1');
   assert.equal((await app.inject(`${base}/download?revision=${revision}`)).statusCode, 200);
+  // Worker 补齐衍生图后列表改给缩略图，资料摘要不变，已拿到的摘要仍可打包
+  deps.state.drawings[0]!.renditions = {
+    thumb: { key: 'renditions/d1/thumb.webp', width: 480, height: 270, bytes: 1 },
+    preview: { key: 'renditions/d1/preview.webp', width: 1600, height: 900, bytes: 1 },
+  };
+  const filled = (await app.inject(base)).json().data;
+  assert.equal(filled.revision, revision);
+  assert.equal(filled.items[0].thumbnailUrl, 'https://files.example/renditions/d1/thumb.webp');
   assert.equal((await app.inject(`${base}/download?revision=${revision}`)).statusCode, 200);
   deps.reads.length = 0;
   deps.state.drawings[0]!.assetRevision++;

@@ -70,7 +70,7 @@ function job(overrides = {}) {
   return {
     jobId, schemeCode: 'SC-6030', searchId: 'search-42', status: 'succeeded', phase: null,
     requestedCount: 3, usableCount: 3, original: { assetId: 'original', previewUrl: '/original.jpg' },
-    results: [1, 2, 3].map(number => ({ resultId: `result-${number}`, previewUrl: `/result-${number}.jpg`, width: 1600, height: 900 })),
+    results: [1, 2, 3].map(number => ({ resultId: `result-${number}`, thumbnailUrl: `/result-${number}-thumb.webp`, previewUrl: `/result-${number}.jpg`, width: 1600, height: 900 })),
     selection: { resultId: null, revision: 0 },
     credits: { status: 'settled', reservedCredits: 30, chargedCredits: 30, releasedCredits: 0 },
     failure: null, pollAfterMs: null, ...overrides,
@@ -133,7 +133,7 @@ test('thumbnail browsing only changes preview; unselected state emphasizes selec
     assert.match(details.textContent, new RegExp(jobId))
     const thumbnails = mounted.container.querySelectorAll('[aria-label="切换效果预览"] button')
     assert.equal(thumbnails.length, 3)
-    assert.ok([...thumbnails].every(element => element.querySelector('img')))
+    assert.deepEqual([...thumbnails].map(element => element.querySelector('img').getAttribute('src')), [1, 2, 3].map(number => `/result-${number}-thumb.webp`))
     await preview(mounted, 2)
     assert.match(mounted.container.querySelector('#preview-heading').textContent, /正在预览第 2 张/)
     assert.equal(mounted.container.querySelector('img[alt="正在预览的第 2 张主题效果"]').getAttribute('src'), '/result-2.jpg')
@@ -403,7 +403,7 @@ test('unknown failure reasons fall back to a generic message', async () => {
 
 test('an expired result link is re-signed once by re-reading the task without touching the selection', async () => {
   let version = 0
-  const mounted = await mount({ get: () => job({ selection: { resultId: 'result-1', revision: 1 }, results: [1, 2, 3].map(number => ({ resultId: `result-${number}`, previewUrl: `/result-${number}.jpg?v=${version}`, width: 1600, height: 900 })) }) })
+  const mounted = await mount({ get: () => job({ selection: { resultId: 'result-1', revision: 1 }, results: [1, 2, 3].map(number => ({ resultId: `result-${number}`, thumbnailUrl: `/result-${number}-thumb.webp?v=${version}`, previewUrl: `/result-${number}.jpg?v=${version}`, width: 1600, height: 900 })) }) })
   const realNow = Date.now
   try {
     const reads = () => mounted.calls.filter(call => call.path === endpoint).length

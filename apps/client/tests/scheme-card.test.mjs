@@ -45,8 +45,8 @@ const { Translation } = await server.ssrLoadModule('vue-i18n')
 const item = {
   code: 'SC-6030', matchType: 'direct',
   images: [
-    { assetId: 'front', url: 'front.jpg', thumbnailUrl: 'front-thumb.jpg', order: 0, width: 1600, height: 1200 },
-    { assetId: 'side', url: 'side.jpg', thumbnailUrl: 'side-thumb.jpg', order: 1, width: 1600, height: 1200 },
+    { assetId: 'front', thumbnailUrl: 'front-thumb.webp', previewUrl: 'front-preview.webp', originalUrl: 'front.png', order: 0, width: 1600, height: 1200 },
+    { assetId: 'side', thumbnailUrl: 'side-thumb.webp', previewUrl: 'side-preview.webp', originalUrl: 'side.png', order: 1, width: 1600, height: 1200 },
   ],
   specifications: { lengthMm: 6000, widthMm: 3000, heightMm: 4500, areaM2: 18, openingCount: 2, productSystemId: 'system-a', productSystemLabel: '标准模块' },
   reasons: ['尺寸满足需求', '开口数量匹配', '标准资料完整', '第四条较次要理由'],
@@ -98,6 +98,33 @@ test('SchemeCard shows pending confirmations and keeps the multi-view gallery av
     assert.equal(view.getAttribute('aria-pressed'), 'true')
     assert.match(view.textContent, /当前视角/)
     assert.doesNotMatch(mounted.container.querySelector('[aria-label="查看第 1 张"]').textContent, /当前视角/)
+  } finally { mounted.close() }
+})
+
+test('gallery loads previews for the main image and dialog, thumbnails for views, and the original only on request', async () => {
+  const mounted = mount({ preview: false })
+  try {
+    const sources = () => [...mounted.container.querySelectorAll('img')].map(img => img.getAttribute('src'))
+    assert.deepEqual(sources(), ['front-preview.webp', 'front-thumb.webp', 'side-thumb.webp'])
+    const main = mounted.container.querySelector('img')
+    assert.equal(main.getAttribute('fetchpriority'), 'high')
+    assert.equal(main.getAttribute('loading'), 'eager')
+    mounted.container.querySelector('[aria-label="查看第 2 张"]').click()
+    await nextTick()
+    assert.deepEqual(sources(), ['side-preview.webp', 'front-thumb.webp', 'side-thumb.webp'])
+    mounted.container.querySelector('[aria-label="放大 SC-6030 第 2 张图片"]').click()
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const dialog = document.querySelector('[role="dialog"]')
+    assert.ok(dialog)
+    assert.deepEqual([...dialog.querySelectorAll('img')].map(img => img.getAttribute('src')), ['side-preview.webp'])
+    const original = [...dialog.querySelectorAll('a')].find(link => link.textContent.includes('查看原图'))
+    assert.ok(original)
+    assert.equal(original.getAttribute('href'), 'side.png')
+    assert.equal(original.getAttribute('target'), '_blank')
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 50))
   } finally { mounted.close() }
 })
 

@@ -131,9 +131,8 @@
     "currentAngle": "Current view",
     "previewSpace": "Spatial illustration, not an actual design rendering.",
     "schemeImageNote": "Design rendering for visual and spatial reference only.",
-    "originalUnavailable": "Original image unavailable. Try another view.",
     "switchEnlargedAngle": "Switch enlarged view",
-    "originalEffectAlt": "Original rendering {index} of {code}"
+    "viewOriginal": "View original"
   },
   "controls": {
     "switchLanguage": "Switch language",

@@ -1,10 +1,12 @@
 import type pg from 'pg';
+import type { Renditions } from '../../media/renditions.js';
 
 interface ThemeJobDetail {
   id: string;
   schemeCode: string;
   sourceAssetId: string;
   sourceObjectKey: string | null;
+  sourceRenditions: Renditions | null;
   status: string;
   phase: string | null;
   requestedCount: number;
@@ -32,20 +34,29 @@ export async function ownedThemeJob(pool: pg.Pool, userId: string, jobId: string
 export async function getThemeJob(pool: pg.Pool, userId: string, jobId: string) {
   const job = (
     await pool.query<ThemeJobDetail>(
-      `SELECT id, scheme_code AS "schemeCode", source_asset_id AS "sourceAssetId",
-      COALESCE(generation_snapshot->'source'->>'objectKey',
-        (SELECT av.object_key FROM asset_versions av WHERE av.asset_id = source_asset_id ORDER BY av.created_at DESC, av.id DESC LIMIT 1)) AS "sourceObjectKey",
+      `SELECT id, scheme_code AS "schemeCode", source_asset_id AS "sourceAssetId", src.key AS "sourceObjectKey",
+      (SELECT av.renditions FROM asset_versions av WHERE av.object_key = src.key) AS "sourceRenditions",
       status, phase, requested_count AS "requestedCount", usable_count AS "usableCount",
       selected_result_id AS "selectedResultId", selection_revision AS "selectionRevision",
       unit_credits AS "unitCredits", cache_hit AS "cacheHit", input, created_at AS "createdAt", updated_at AS "updatedAt", search_id AS "searchId"
-     FROM theme_jobs WHERE id = $1 AND user_id = $2`,
+     FROM theme_jobs j
+     CROSS JOIN LATERAL (SELECT COALESCE(j.generation_snapshot->'source'->>'objectKey',
+       (SELECT av.object_key FROM asset_versions av WHERE av.asset_id = j.source_asset_id ORDER BY av.created_at DESC, av.id DESC LIMIT 1)) AS key) src
+     WHERE id = $1 AND user_id = $2`,
       [jobId, userId],
     )
   ).rows[0];
   if (!job) throw themeError('RESOURCE_NOT_FOUND', 404);
   const results = (
-    await pool.query<{ id: string; ordinal: number; width: number | null; height: number | null; objectKey: string }>(
-      `SELECT tjr.id, tjr.ordinal, tjr.width, tjr.height, av.object_key AS "objectKey"
+    await pool.query<{
+      id: string;
+      ordinal: number;
+      width: number | null;
+      height: number | null;
+      objectKey: string;
+      renditions: Renditions | null;
+    }>(
+      `SELECT tjr.id, tjr.ordinal, tjr.width, tjr.height, av.object_key AS "objectKey", av.renditions
      FROM theme_job_results tjr
      JOIN scheme_assets sa ON sa.id = tjr.asset_id
        AND sa.source = 'theme_generation' AND sa.visibility = 'private' AND sa.owner_user_id = $2

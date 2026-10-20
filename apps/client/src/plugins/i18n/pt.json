@@ -113,9 +113,8 @@
     "currentAngle": "Ângulo atual",
     "previewSpace": "Ilustração do espaço, não é uma imagem real do projeto.",
     "schemeImageNote": "Imagem do projeto apenas como referência visual e espacial.",
-    "originalUnavailable": "Imagem original indisponível. Escolha outro ângulo.",
     "switchEnlargedAngle": "Alternar ângulo ampliado",
-    "originalEffectAlt": "Imagem original {index} de {code}"
+    "viewOriginal": "Ver original"
   },
   "controls": {
     "switchLanguage": "Mudar idioma",

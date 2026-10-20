@@ -60,7 +60,7 @@ const { getVisitorId } = await server.ssrLoadModule('/src/lib/visitor-id.ts')
 const endpoints = { scheme: '/api/v1/client/schemes/SC-6030', catalog: '/api/v1/client/catalog/options', models: '/api/v1/client/theme-models', offer: '/api/v1/client/theme-offers', job: '/api/v1/client/theme-jobs' }
 const detail = {
   code: 'SC-6030',
-  images: ['front', 'side'].map((assetId, order) => ({ assetId, url: `https://assets.example/${assetId}.jpg`, thumbnailUrl: `https://assets.example/${assetId}-thumb.jpg`, order, width: 1600, height: 1200 })),
+  images: ['front', 'side'].map((assetId, order) => ({ assetId, thumbnailUrl: `https://assets.example/${assetId}-thumb.webp`, previewUrl: `https://assets.example/${assetId}-preview.webp`, originalUrl: `https://assets.example/${assetId}.png`, order, width: 1600, height: 1200 })),
 }
 const catalog = {
   industries: [{ id: 'industry-tech', label: '科技' }, { id: 'industry-energy', label: '能源' }],

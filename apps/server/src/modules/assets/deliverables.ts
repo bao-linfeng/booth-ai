@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 import type pg from 'pg';
 import type { createStorage } from '../../infra/storage.js';
+import { signImage } from '../media/links.js';
+import type { Renditions } from '../media/renditions.js';
 
 export type DeliverableType = 'drawing' | 'artwork' | 'model';
 
@@ -16,6 +18,7 @@ export interface Deliverable {
 
 interface DeliverableRow extends Deliverable {
   objectKey: string;
+  renditions: Renditions | null;
   versionId: string;
   checksum: string;
 }
@@ -31,6 +34,7 @@ interface DeliverableSetRow {
   objectKey: string | null;
   versionId: string | null;
   checksum: string | null;
+  renditions: Renditions | null;
 }
 
 export function deliverableError(statusCode: number, reason?: string): Error & { statusCode: number; reason?: string } {
@@ -59,11 +63,11 @@ export async function getDeliverableSet(
     `
     SELECT a.id::text AS "assetId", a.name, a.sort_order AS "sortOrder", a.revision AS "assetRevision",
       v.original_filename AS "originalFilename", v.mime_type AS "mimeType",
-      v.byte_size::float8 AS "byteSize", v.object_key AS "objectKey", v.id::text AS "versionId", v.checksum
+      v.byte_size::float8 AS "byteSize", v.object_key AS "objectKey", v.id::text AS "versionId", v.checksum, v.renditions
     FROM schemes s
     JOIN scheme_baseline_assets a ON a.scheme_id = s.id AND a.is_active = true AND a.type = $2
     LEFT JOIN LATERAL (
-      SELECT id, object_key, original_filename, mime_type, byte_size, checksum
+      SELECT id, object_key, original_filename, mime_type, byte_size, checksum, renditions
       FROM asset_versions WHERE asset_id = a.id
       ORDER BY created_at DESC, id DESC LIMIT 1
     ) v ON true
@@ -72,8 +76,9 @@ export async function getDeliverableSet(
   `,
     [code, type],
   );
+  // 衍生图由 Worker 异步补齐，不属于资料内容，不参与摘要，否则补齐前后打包下载会误判资料已变
   const revision = createHash('sha256')
-    .update(JSON.stringify([code, type, result.rows]))
+    .update(JSON.stringify([code, type, result.rows.map(({ renditions: _renditions, ...row }) => row)]))
     .digest('hex');
   return { revision, rows: result.rows };
 }
@@ -83,15 +88,24 @@ export async function listDeliverables(pool: pg.Pool, code: string, type: Delive
   return set.rows.filter(isReady);
 }
 
-export function publicDeliverables(rows: DeliverableSetRow[]): Deliverable[] {
-  return rows.filter(isReady).map(({ assetId, name, originalFilename, mimeType, byteSize, sortOrder }) => ({
-    assetId,
-    name,
-    originalFilename,
-    mimeType,
-    byteSize,
-    sortOrder,
-  }));
+const PREVIEWABLE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+/** 图片资料附带缩略图地址，列表一次拿全，不再逐张请求签名。 */
+export function publicDeliverables(
+  storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>,
+  rows: DeliverableSetRow[],
+): Promise<Array<Deliverable & { thumbnailUrl: string | null }>> {
+  return Promise.all(
+    rows.filter(isReady).map(async ({ assetId, name, originalFilename, mimeType, byteSize, sortOrder, objectKey, renditions }) => ({
+      assetId,
+      name,
+      originalFilename,
+      mimeType,
+      byteSize,
+      sortOrder,
+      thumbnailUrl: PREVIEWABLE_IMAGE_TYPES.includes(mimeType) ? await signImage(storage, { objectKey, renditions }, 'thumb', 900) : null,
+    })),
+  );
 }
 
 const MAX_ARCHIVE_FILES = 30;
@@ -181,13 +195,14 @@ export async function signDeliverable(
   const items = await listDeliverables(pool, code, type);
   const asset = assetId ? items.find(item => item.assetId === assetId) : items[0];
   if (!asset) throw deliverableError(404);
-  if (preview && (type === 'model' || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(asset.mimeType))) {
+  if (preview && (type === 'model' || ![...PREVIEWABLE_IMAGE_TYPES, 'application/pdf'].includes(asset.mimeType))) {
     throw deliverableError(415);
   }
   const expiresIn = 60;
   const filename = asset.originalFilename;
+  // 图片预览给预览图，PDF 预览与下载给原文件
   const downloadUrl = preview
-    ? await storage.signDownload(asset.objectKey, expiresIn)
+    ? await signImage(storage, asset, 'preview', expiresIn)
     : await storage.signDownloadWithName(asset.objectKey, filename, expiresIn);
   await assertPublished(pool, code);
   return { downloadUrl, filename, mimeType: asset.mimeType, expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString() };

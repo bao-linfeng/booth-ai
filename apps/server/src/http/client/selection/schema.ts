@@ -78,8 +78,16 @@ const specificationsSchema = {
 const publicImageSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['assetId', 'url', 'thumbnailUrl', 'order', 'width', 'height'],
-  properties: { assetId: string, url: string, thumbnailUrl: string, order: integer, width: integer, height: integer },
+  required: ['assetId', 'thumbnailUrl', 'previewUrl', 'originalUrl', 'order', 'width', 'height'],
+  properties: {
+    assetId: string,
+    thumbnailUrl: string,
+    previewUrl: string,
+    originalUrl: string,
+    order: integer,
+    width: integer,
+    height: integer,
+  },
 } as const;
 
 const matchItemSchema = {

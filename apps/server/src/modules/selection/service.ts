@@ -3,6 +3,7 @@ import type { Config } from '../../config.js';
 import { activeAiModels } from '../../infra/ai/config.js';
 import type { createStorage } from '../../infra/storage.js';
 import { deliverableAvailability } from '../assets/deliverables.js';
+import { signImage } from '../media/links.js';
 import { getActivePromptTemplate } from '../prompts/service.js';
 import { PROMPT_DEFAULT_VERSION } from '../prompts/template.js';
 import { ensureAttempt, recordParse, recordSearch } from './analytics/recording.js';
@@ -139,7 +140,7 @@ export async function getSelectionScheme(pool: pg.Pool, storage: Pick<ReturnType
   return { candidate: { ...candidate, images }, availability };
 }
 
-/** 方案封面（第一张效果图）的短时下载地址；可见性与方案详情一致，供客服卡片等长期展示的位置按需换签 */
+/** 方案封面（第一张效果图预览图）的短时地址；可见性与方案详情一致，供客服卡片等长期展示的位置按需换签 */
 export async function getSchemeCoverUrl(
   pool: pg.Pool,
   storage: Pick<ReturnType<typeof createStorage>, 'signDownload'>,
@@ -152,5 +153,5 @@ export async function getSchemeCoverUrl(
   } = await selectionDependency(() => loadCandidatePool(pool, catalog, code));
   const cover = candidate?.images.toSorted((left, right) => left.order - right.order)[0];
   if (!cover) throw Object.assign(new Error('Scheme not visible'), { statusCode: 404 });
-  return selectionDependency(() => storage.signDownload(cover.objectKey, expiresIn));
+  return selectionDependency(() => signImage(storage, cover, 'preview', expiresIn));
 }

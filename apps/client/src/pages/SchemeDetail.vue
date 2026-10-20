@@ -68,27 +68,9 @@ const previewOpen = computed({
 const previewImageError = ref(false);
 let previewTrigger: HTMLElement | null = null;
 const previewLoading = ref<string | null>(null);
-const assetUrlMap = ref<Map<string, string>>(new Map());
+// 列表自带缩略图地址；加载失败（多为链接过期）的条目改显示文件图标
+const failedThumbnails = ref<Set<string>>(new Set());
 let resourceRequest = 0;
-
-async function fetchAssetUrls(type: SchemeAssetType, items: SchemeDeliverable[]) {
-  if (!item.value?.code || preview.value) return;
-  const code = item.value.code;
-  const request = resourceRequest;
-  
-  await Promise.all(items.filter(i => i.mimeType.startsWith('image/')).map(async (asset) => {
-    try {
-      const link = await getSchemeDownload(code, type, asset.assetId, true);
-      if (request === resourceRequest && activeResource.value === type && item.value?.code === code) {
-        const newMap = new Map(assetUrlMap.value);
-        newMap.set(asset.assetId, link.downloadUrl);
-        assetUrlMap.value = newMap;
-      }
-    } catch {
-      // ignore
-    }
-  }));
-}
 
 async function toggleResource(type: SchemeAssetType) {
   if (activeResource.value === type) {
@@ -101,7 +83,7 @@ async function toggleResource(type: SchemeAssetType) {
   resourceItems.value = [];
   resourceRevision.value = '';
   downloadError.value = '';
-  assetUrlMap.value = new Map();
+  failedThumbnails.value = new Set();
   await fetchResource(type);
 }
 
@@ -116,7 +98,6 @@ async function fetchResource(type: SchemeAssetType) {
     if (request === resourceRequest && activeResource.value === type && item.value?.code === code) {
       resourceItems.value = result.items;
       resourceRevision.value = result.revision;
-      fetchAssetUrls(type, result.items);
     }
   } catch {
     if (request === resourceRequest && activeResource.value === type) resourceError.value = t('schemeDetail.errorLoadFailed');
@@ -155,7 +136,7 @@ async function downloadAllResources(type: SchemeAssetType) {
       previewAsset.value = null;
       resourceItems.value = [];
       resourceRevision.value = '';
-      assetUrlMap.value = new Map();
+      failedThumbnails.value = new Set();
       downloadError.value = t('schemeDetail.errorStale');
       await fetchResource(type);
     } else if (response?.status === 413) {
@@ -168,7 +149,7 @@ async function downloadAllResources(type: SchemeAssetType) {
       previewAsset.value = null;
       resourceItems.value = [];
       resourceRevision.value = '';
-      assetUrlMap.value = new Map();
+      failedThumbnails.value = new Set();
       downloadError.value = t('schemeDetail.errorUnavailable');
     } else {
       downloadError.value = t('schemeDetail.errorZipFailed');
@@ -401,7 +382,7 @@ onMounted(() => {
       <template v-if="item">
         <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:gap-12">
           <section :aria-label="t('schemeDetail.galleryAriaLabel')" class="min-w-0">
-            <SchemeGallery v-model:active="activeImageIndex" :images="item.images" :code="item.code" :preview="preview" :variant="Math.max(0, previewItems.findIndex(i => i.code === item?.code))" @image-error="imageLinks.onImageError" />
+            <SchemeGallery v-model:active="activeImageIndex" :images="item.images" :code="item.code" :preview="preview" :variant="Math.max(0, previewItems.findIndex(i => i.code === item?.code))" priority @image-error="imageLinks.onImageError" />
             <p class="mt-3 text-sm leading-relaxed text-muted-foreground">{{ preview ? t('schemeDetail.galleryPreviewNote') : t('schemeDetail.galleryNote') }}</p>
           </section>
 
@@ -519,7 +500,7 @@ onMounted(() => {
                     <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                       <article v-for="asset in resourceItems" :key="asset.assetId" class="min-w-0 overflow-hidden border-b">
                         <div class="flex aspect-video items-center justify-center rounded-md bg-image-surface p-3">
-                          <img v-if="asset.mimeType.startsWith('image/') && assetUrlMap.has(asset.assetId)" :src="assetUrlMap.get(asset.assetId)" :alt="asset.name" loading="lazy" class="h-full w-full object-contain" @error="assetUrlMap.delete(asset.assetId)" />
+                          <img v-if="asset.thumbnailUrl && !failedThumbnails.has(asset.assetId)" :src="asset.thumbnailUrl" :alt="asset.name" loading="lazy" class="h-full w-full object-contain" @error="failedThumbnails = new Set(failedThumbnails).add(asset.assetId)" />
                           <div v-else class="flex flex-col items-center gap-2 text-muted-foreground"><FileText class="size-8" aria-hidden="true" /><span class="text-xs">{{ asset.mimeType.startsWith('image/') ? t('schemeDetail.assetPreviewClickable') : asset.mimeType === 'application/pdf' ? t('schemeDetail.assetPreviewPdf') : t('schemeDetail.assetPreviewNoPreview') }}</span></div>
                         </div>
                         <div class="space-y-3 p-4">

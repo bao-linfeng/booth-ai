@@ -41,7 +41,8 @@ export interface Catalog {
   dictionaryVersion?: string
 }
 
-export interface SchemeImage { assetId: string; url: string; thumbnailUrl: string; order: number; width: number; height: number }
+// 缩略图用于视角切换，预览图用于主图与放大弹窗，原图只在用户点「查看原图」时加载
+export interface SchemeImage { assetId: string; thumbnailUrl: string; previewUrl: string; originalUrl: string; order: number; width: number; height: number }
 export type MatchType = 'direct' | 'reference' | 'random'
 export interface Specifications {
   lengthMm: number; widthMm: number; heightMm: number; areaM2: number
