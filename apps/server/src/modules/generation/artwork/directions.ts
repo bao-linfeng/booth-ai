@@ -1,14 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
+import sharp from 'sharp';
 import { downloadGeneratedImage, imageAdapter } from '../../../infra/ai/protocols.js';
 import { activeAiModels } from '../../../infra/ai/config.js';
-import { ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
+import { IMAGE_LIMITS, ImageGenerationError, normalizeGeneratedImage } from '../../../infra/ai/image.js';
 import type { ActiveAiModel } from '../../../infra/ai/types.js';
 import { transaction } from '../../../infra/database.js';
 import { ARTWORK_QUALITY, DIRECTIONS, DIRECTION_LABELS, type ArtworkSnapshot, type Direction } from './types.js';
 import type { ArtworkRun } from './types.js';
 import { prepareDrawing } from './drawings.js';
-import { normalizeArtworkImage } from './image.js';
+import { encodeUploadImage, normalizeArtworkImage } from './image.js';
 import { artworkDirectionConcurrency } from './settings.js';
 import { lockRunningLease, publishGeneration, refreshGeneration, throwIfDraining } from '../execution.js';
 
@@ -79,7 +80,7 @@ function sharedInputs(run: ArtworkRun, snapshot: ArtworkSnapshot): SharedInputs 
       if (createHash('sha256').update(bytes).digest('hex') !== snapshot.source.checksum)
         throw new Error('Artwork reference integrity mismatch');
       await normalizeGeneratedImage(bytes);
-      return bytes;
+      return encodeUploadImage(sharp(bytes, { limitInputPixels: IMAGE_LIMITS.maxPixels }));
     }),
     drawings(direction) {
       return Promise.all(

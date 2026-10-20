@@ -264,7 +264,10 @@ test(
       const images = await Promise.all(
         form.getAll(form.has('image[]') ? 'image[]' : 'image').map(async blob => Buffer.from(await (blob as Blob).arrayBuffer())),
       );
-      assert.equal(createHash('sha256').update(images[0]!).digest('hex'), sourceChecksum);
+      // 参考图与报馆图转为 JPEG 上传，尺寸保持不变
+      for (const image of images) assert.equal((await sharp(image).metadata()).format, 'jpeg');
+      const sent = await sharp(images[0]!).metadata();
+      assert.deepEqual([sent.width, sent.height], [2048, 1152]);
       sentImages.push(images);
       // partial：背面比例不合格判失败；左侧低于高清仍入库结算，但任务不能完整交付
       const data = mode !== 'partial' ? jpeg : prompt.includes('背面正交') ? square : prompt.includes('左侧正交') ? small : jpeg;
@@ -325,11 +328,14 @@ test(
       [2, 2, 1, 1],
     );
     const [frontSent, backSent] = [sentImages[0]![1]!, sentImages[1]![1]!];
+    // JPEG 有损，像素比较留出编码误差
+    const near = (a: number, b: number) => Math.abs(a - b) <= 2;
     const frontPixels = await sharp(frontSent).raw().toBuffer();
-    assert.equal(frontPixels[0], frontPixels[1]);
-    assert.equal(frontPixels[1], frontPixels[2]);
-    assert.notEqual(frontPixels[0], frontPixels[frontPixels.length - 3]);
-    assert.deepEqual(await sharp(frontSent).flop().raw().toBuffer(), await sharp(backSent).raw().toBuffer());
+    assert.ok(near(frontPixels[0]!, frontPixels[1]!) && near(frontPixels[1]!, frontPixels[2]!));
+    assert.ok(Math.abs(frontPixels[0]! - frontPixels[frontPixels.length - 3]!) > 5);
+    const [flipped, backPixels] = await Promise.all([sharp(frontSent).flop().raw().toBuffer(), sharp(backSent).raw().toBuffer()]);
+    assert.equal(flipped.length, backPixels.length);
+    assert.ok(flipped.reduce((sum, value, index) => sum + Math.abs(value - backPixels[index]!), 0) / flipped.length < 2);
     assert.match(prompts[0]!, /- 第2张 正面立面：/);
     assert.match(prompts[1]!, /- 第2张 背面轮廓：由正视图水平翻转得到/);
     assert.match(prompts[2]!, /根据提供的唯一一张主题效果参考图/);
