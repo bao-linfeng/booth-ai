@@ -40,6 +40,7 @@ import { failTranslation, translateMessage } from './modules/customer-service/tr
 import { dispatchCsTranslations } from './workers/cs-translation.js';
 import { deliverCsEmails } from './workers/cs-emails.js';
 import { runCsRetention, sweepCsAgents } from './workers/cs-maintenance.js';
+import { processPendingRenditions } from './modules/media/sweeper.js';
 
 // Liveness marker for the container healthcheck (mtime) and a JSON status report for diagnosis.
 const heartbeatPath = '/tmp/worker-ready';
@@ -264,6 +265,18 @@ async function main() {
   } else {
     log.warn('SMTP not configured; receipt and customer service emails stay pending in project_receipt_emails / cs_email_outbox');
   }
+  // Thumbnails and previews for uploads, backfill and failed inline generation; pages fall back to originals meanwhile.
+  tasks.push({
+    name: 'image-renditions',
+    intervalMs: 5000,
+    staleAfterMs: 300_000,
+    critical: false,
+    lane: BACKGROUND_LANE,
+    run: async () => {
+      const renditions = await processPendingRenditions(database, storage, log);
+      if (renditions.generated || renditions.failed) log.info({ renditions }, 'Image renditions');
+    },
+  });
   // Metrics are diagnostics only and never decide worker health.
   let metrics: unknown = null;
   tasks.push({

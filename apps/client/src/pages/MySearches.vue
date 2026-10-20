@@ -152,7 +152,7 @@ onMounted(() => load())
                 <ul v-if="expanded[record.id]" :id="`record-${record.id}`" class="divide-y rounded-lg border">
                   <li v-for="item in record.items" :key="item.code" class="grid gap-3 p-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.4fr)] md:gap-5">
                     <div class="flex min-w-0 gap-3">
-                      <Button v-if="item.thumbnail" variant="ghost" class="aspect-video w-28 shrink-0 overflow-hidden rounded-md border bg-muted/40 p-0 hover:bg-muted/60" :aria-label="t('searches.enlargeOriginalAriaLabel', { code: item.code })" @click="expandedImage = { url: item.thumbnail, label: `${item.code} · ${t('searches.originalImageTitle')}` }">
+                      <Button v-if="item.thumbnail" variant="ghost" class="aspect-video w-28 shrink-0 overflow-hidden rounded-md border bg-muted/40 p-0 hover:bg-muted/60" :aria-label="t('searches.enlargeOriginalAriaLabel', { code: item.code })" @click="expandedImage = { url: item.preview, label: `${item.code} · ${t('searches.originalImageTitle')}` }">
                         <img :src="item.thumbnail" :alt="item.code" class="h-full w-full object-contain" loading="lazy" />
                       </Button>
                       <span v-else class="flex aspect-video w-28 md:w-40 shrink-0 items-center justify-center rounded-md border bg-muted/40 text-muted-foreground" role="img" :aria-label="`${item.code} ${t('searches.noOriginalImage')}`"><Image class="size-5 opacity-50" /></span>
@@ -176,7 +176,7 @@ onMounted(() => load())
                       </div>
                       <div v-if="item.theme" class="flex flex-wrap items-center gap-3">
                         <Button v-if="item.theme.previewUrl" variant="ghost" class="aspect-video w-20 md:w-28 overflow-hidden rounded-md border bg-muted/40 p-0 hover:bg-muted/60" :aria-label="t('searches.enlargeThemeAriaLabel', { code: item.code })" @click="expandedImage = { url: item.theme.previewUrl, label: `${item.code} · ${t('searches.themeTitle')}` }">
-                          <img :src="item.theme.previewUrl" :alt="t('searches.themeResultAlt')" class="h-full w-full object-contain" loading="lazy" />
+                          <img :src="item.theme.thumbnailUrl ?? undefined" :alt="t('searches.themeResultAlt')" class="h-full w-full object-contain" loading="lazy" />
                         </Button>
                         <div class="space-y-1 text-xs text-muted-foreground">
                           <p>{{ formatDate(item.theme.createdAt) }}</p>
@@ -194,7 +194,7 @@ onMounted(() => load())
                       <div v-if="item.artwork" class="space-y-2">
                         <div v-if="item.artwork.views.length" class="flex flex-wrap gap-2">
                           <Button v-for="view in item.artwork.views" :key="view.direction" variant="ghost" class="h-auto w-20 md:w-28 flex-col gap-1 p-0 hover:bg-transparent" :aria-label="t('searches.enlargeArtworkAriaLabel', { code: item.code, dir: directionLabels[view.direction] })" @click="expandedImage = { url: view.previewUrl, label: `${item.code} · ${directionLabels[view.direction]} · ${t('searches.artworkTitle')}` }">
-                            <img :src="view.previewUrl" :alt="`${item.code} · ${directionLabels[view.direction]} · ${t('searches.artworkTitle')}`" class="aspect-video w-full rounded-md border bg-muted/40 object-contain" loading="lazy" />
+                            <img :src="view.thumbnailUrl" :alt="`${item.code} · ${directionLabels[view.direction]} · ${t('searches.artworkTitle')}`" class="aspect-video w-full rounded-md border bg-muted/40 object-contain" loading="lazy" />
                             <span class="text-xs font-normal text-muted-foreground">{{ directionLabels[view.direction] }}</span>
                           </Button>
                         </div>

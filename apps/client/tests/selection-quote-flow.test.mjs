@@ -69,7 +69,7 @@ const catalog = {
   productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [{ id: 'meeting', label: '洽谈区' }], features: [],
 }
 const specifications = { lengthMm: 6000, widthMm: 3000, heightMm: 4500, areaM2: 18, openingCount: 2, productSystemId: 'standard', productSystemLabel: '标准模块' }
-const images = ['front', 'side'].map((assetId, order) => ({ assetId, url: `/${assetId}.jpg`, thumbnailUrl: `/${assetId}-thumb.jpg`, order, width: 1600, height: 1200 }))
+const images = ['front', 'side'].map((assetId, order) => ({ assetId, thumbnailUrl: `/${assetId}-thumb.webp`, previewUrl: `/${assetId}.webp`, originalUrl: `/${assetId}.png`, order, width: 1600, height: 1200 }))
 const detail = {
   code: 'SC-6030', images, specifications,
   resources: { model: true, bom: true, renderings: true, masks: true, drawings: true, artworks: true },

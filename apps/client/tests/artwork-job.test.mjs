@@ -69,7 +69,7 @@ const submitLabel = '确认费用，生成四面素材'
 const retryLabel = '确认上次提交结果'
 const themeJob = {
   jobId: 'theme-1', schemeCode: 'SC-6030', searchId: 'search-1', status: 'succeeded', phase: null, requestedCount: 1, usableCount: 1,
-  original: { assetId: 'source', previewUrl: '/source.png' }, results: [{ resultId: 'result-1', previewUrl: '/theme-result.png', width: 1600, height: 900 }],
+  original: { assetId: 'source', previewUrl: '/source.png' }, results: [{ resultId: 'result-1', thumbnailUrl: '/theme-result-thumb.webp', previewUrl: '/theme-result.png', width: 1600, height: 900 }],
   selection: { resultId: 'result-1', revision: 3 }, credits: { status: 'settled', reservedCredits: 10, chargedCredits: 10, releasedCredits: 0 }, failure: null, pollAfterMs: null,
 }
 const offer = (id = 'offer-1', unitCredits = 5, ttlMs = 300_000) => ({ id, expiresAt: new Date(Date.now() + ttlMs).toISOString(), unitCredits, maxCredits: unitCredits * 4, settlementRule: 'per_usable_direction' })

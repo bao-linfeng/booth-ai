@@ -25,7 +25,7 @@ export const previewStates: { id: string; labelKey: string }[] = [
 export const previewItems: MatchItem[] = [0, 1, 2].map(index => ({
   code: ['DEMO_63_001', 'DEMO_63_002', 'DEMO_66_003'][index]!,
   matchType: index === 0 ? 'direct' : 'reference',
-  images: [1, 2, 3].map(order => ({ assetId: `demo-${index}-${order}`, url: '', thumbnailUrl: '', order, width: 1600, height: 900 })),
+  images: [1, 2, 3].map(order => ({ assetId: `demo-${index}-${order}`, thumbnailUrl: '', previewUrl: '', originalUrl: '', order, width: 1600, height: 900 })),
   specifications: { lengthMm: 6000, widthMm: index === 2 ? 6000 : 3000, heightMm: 3500, areaM2: index === 2 ? 36 : 18, openingCount: index === 1 ? 3 : 2, productSystemId: 'fs62', productSystemLabel: 'FS62' },
   reasons: [],
   differences: [],

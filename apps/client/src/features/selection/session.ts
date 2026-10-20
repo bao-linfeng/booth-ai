@@ -78,7 +78,7 @@ function isMatchResponse(value: unknown): value is MatchResponse {
     (value.mode === 'filtered' || value.mode === 'random') &&
     value.items.every(item => {
       if (!isRecord(item) || typeof item.code !== 'string' || !['direct', 'reference', 'random'].includes(String(item.matchType))) return false
-      if (!Array.isArray(item.images) || !item.images.every(image => isRecord(image) && typeof image.assetId === 'string' && typeof image.url === 'string' && typeof image.thumbnailUrl === 'string' && typeof image.order === 'number' && typeof image.width === 'number' && typeof image.height === 'number')) return false
+      if (!Array.isArray(item.images) || !item.images.every(image => isRecord(image) && typeof image.assetId === 'string' && typeof image.thumbnailUrl === 'string' && typeof image.previewUrl === 'string' && typeof image.originalUrl === 'string' && typeof image.order === 'number' && typeof image.width === 'number' && typeof image.height === 'number')) return false
       const specifications = item.specifications
       return isRecord(specifications) && ['lengthMm', 'widthMm', 'heightMm', 'areaM2', 'openingCount'].every(field => typeof specifications[field] === 'number') &&
         typeof specifications.productSystemId === 'string' && typeof specifications.productSystemLabel === 'string' &&

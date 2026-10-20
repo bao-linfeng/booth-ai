@@ -131,9 +131,8 @@
     "currentAngle": "当前视角",
     "previewSpace": "空间示意，非真实方案效果图。",
     "schemeImageNote": "方案效果图，仅作视觉及空间参考。",
-    "originalUnavailable": "原图暂不可用，请切换其他视角。",
     "switchEnlargedAngle": "切换放大视角",
-    "originalEffectAlt": "{code} 第 {index} 张原始效果图"
+    "viewOriginal": "查看原图"
   },
   "controls": {
     "switchLanguage": "切换语言",

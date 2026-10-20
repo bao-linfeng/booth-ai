@@ -5,6 +5,7 @@ import type pg from 'pg';
 import type { Config } from '../../../config.js';
 import type { createStorage } from '../../../infra/storage.js';
 import { themeContextObjectKey } from '../../../modules/customer-service/contexts.js';
+import { signImageByKey } from '../../../modules/media/links.js';
 import { currentConversation, openConversation, ownedConversation, sendContext } from '../../../modules/customer-service/conversations.js';
 import { notFound, type Subject } from '../../../modules/customer-service/domain.js';
 import { conversationChannel } from '../../../modules/customer-service/events.js';
@@ -145,7 +146,7 @@ export async function registerClientCustomerServiceRoutes(
 
       // 客户与坐席的 <img> 都带不了 Bearer，凭只在会话内可见的上下文 ID 换签；浏览器缓存短于签名有效期
       scope.get('/contexts/:contextId/theme-cover', { schema: contextThemeCoverSchema }, async (request, reply) => {
-        const url = await storage.signDownload(await themeContextObjectKey(pool, request.params.contextId), 300);
+        const url = await signImageByKey(pool, storage, await themeContextObjectKey(pool, request.params.contextId), 'preview', 300);
         reply.header('Cache-Control', 'private, max-age=240');
         return reply.redirect(url, 302);
       });

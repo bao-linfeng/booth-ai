@@ -58,7 +58,7 @@ watch(() => props.item, () => { reasonsExpanded.value = false })
   <article class="border-t py-7 md:py-9" :aria-labelledby="`${reasonsId}-title`">
     <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] lg:gap-9">
       <div class="min-w-0 lg:sticky lg:top-24">
-        <SchemeGallery v-model:active="active" :images="item.images" :code="item.code" :preview="preview" :variant="index" />
+        <SchemeGallery v-model:active="active" :images="item.images" :code="item.code" :preview="preview" :variant="index" :priority="index === 0" />
       </div>
       <div class="flex min-w-0 flex-col gap-5">
         <div class="flex items-center justify-between gap-3">

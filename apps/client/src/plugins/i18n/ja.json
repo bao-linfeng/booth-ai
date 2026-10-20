@@ -131,9 +131,8 @@
     "currentAngle": "現在のアングル",
     "previewSpace": "空間イメージです。実際のデザイン画像ではありません。",
     "schemeImageNote": "デザイン画像は視覚・空間の参考用です。",
-    "originalUnavailable": "元画像を利用できません。別のアングルをお試しください。",
     "switchEnlargedAngle": "拡大表示のアングルを切り替え",
-    "originalEffectAlt": "{code}の元画像{index}"
+    "viewOriginal": "元画像を表示"
   },
   "controls": {
     "switchLanguage": "言語を切り替え",

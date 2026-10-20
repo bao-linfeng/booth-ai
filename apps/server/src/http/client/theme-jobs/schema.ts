@@ -190,9 +190,10 @@ export const themeJobSchema = {
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['resultId', 'previewUrl', 'width', 'height'],
+            required: ['resultId', 'thumbnailUrl', 'previewUrl', 'width', 'height'],
             properties: {
               resultId: { type: 'string' },
+              thumbnailUrl: { type: 'string' },
               previewUrl: { type: 'string' },
               width: { type: 'integer' },
               height: { type: 'integer' },

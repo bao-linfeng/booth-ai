@@ -119,8 +119,9 @@ test(
     let uploads = 0;
     const failingStorage = {
       ...storage,
-      putBuffer: async () => {
-        if (++uploads === 2) throw new Error('storage outage');
+      // 只统计原图上传；衍生图就地生成失败不影响任务，由 Worker 补齐
+      putBuffer: async (key: string) => {
+        if (!key.startsWith('renditions/') && ++uploads === 2) throw new Error('storage outage');
       },
     };
     await assert.rejects(processThemeJob(pool, partial, config, failingStorage), /storage outage/);

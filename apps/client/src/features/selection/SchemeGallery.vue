@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Expand, ImageOff } from 'lucide-vue-next'
+import { Expand, ExternalLink, ImageOff } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import BoothIllustration from './BoothIllustration.vue'
 import type { SchemeImage } from './types'
 import { useI18n } from 'vue-i18n'
-const props = withDefaults(defineProps<{ images: SchemeImage[]; code: string; preview?: boolean; variant?: number; disabled?: boolean }>(), { preview: false, variant: 0, disabled: false })
+// priority：首屏主图（第一张方案卡片、详情页）立即以高优先级加载，其余主图懒加载
+const props = withDefaults(defineProps<{ images: SchemeImage[]; code: string; preview?: boolean; variant?: number; disabled?: boolean; priority?: boolean }>(), { preview: false, variant: 0, disabled: false, priority: false })
 const { t } = useI18n()
 // 图片加载失败（常见于预签名链接过期）时通知页面，由页面决定是否换新链接
 const emit = defineEmits<{ 'image-error': [] }>()
 const active = defineModel<number>('active', { default: 0 })
 const expanded = ref(false)
 const failed = ref(false)
-const originalFailed = ref(false)
+const enlargedFailed = ref(false)
 let previewTrigger: HTMLElement | null = null
 const currentImage = computed(() => props.images[active.value])
 function openPreview(event: MouseEvent) {
@@ -32,9 +33,9 @@ function normalizeActive(value: number) {
 watch(() => [props.code, props.images, active.value], () => {
   active.value = normalizeActive(active.value)
 }, { immediate: true })
-watch(() => [props.code, currentImage.value?.thumbnailUrl, currentImage.value?.url], () => {
+watch(() => [props.code, currentImage.value?.previewUrl], () => {
   failed.value = false
-  originalFailed.value = false
+  enlargedFailed.value = false
 })
 </script>
 
@@ -43,7 +44,7 @@ watch(() => [props.code, currentImage.value?.thumbnailUrl, currentImage.value?.u
     <Button variant="ghost" class="relative block aspect-video h-auto w-full overflow-hidden rounded-md bg-image-surface p-0 hover:bg-image-surface" :disabled="!images.length" :aria-label="images.length ? t('gallery.enlargeImage', { code, index: active + 1 }) : t('gallery.noImages', { code })" @click="openPreview">
       <div v-if="preview" class="h-full w-full [&>svg.booth-illustration]:h-full [&>svg.booth-illustration]:w-full"><BoothIllustration :variant="variant" :view="active" class="h-full w-full" /></div>
       <span v-else-if="!currentImage || failed" class="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.imageUnavailable') : t('gallery.noEffectImage') }}</span>
-      <img v-else :key="currentImage.thumbnailUrl" :src="currentImage.thumbnailUrl" :alt="t('gallery.effectAlt', { code, index: active + 1 })" class="h-full w-full object-contain" loading="lazy" @error="failed = true; emit('image-error')" />
+      <img v-else :key="currentImage.previewUrl" :src="currentImage.previewUrl" :alt="t('gallery.effectAlt', { code, index: active + 1 })" class="h-full w-full object-contain" :loading="priority ? 'eager' : 'lazy'" :fetchpriority="priority ? 'high' : 'auto'" @error="failed = true; emit('image-error')" />
       <span v-if="images.length" class="absolute bottom-3 start-3 rounded bg-background/90 px-2 py-1 font-mono text-xs"><bdi dir="ltr">{{ active + 1 }} / {{ images.length }}</bdi></span>
       <span v-if="images.length" class="absolute bottom-3 end-3 flex items-center gap-1.5 rounded bg-background/90 px-2 py-1 text-xs"><Expand class="size-3.5" aria-hidden="true" />{{ t('gallery.enlarge') }}</span>
     </Button>
@@ -59,10 +60,13 @@ watch(() => [props.code, currentImage.value?.thumbnailUrl, currentImage.value?.u
         <DialogTitle class="break-all pe-6 text-start text-base"><bdi dir="ltr">{{ code }} · {{ images.length ? active + 1 : 0 }} / {{ images.length }}</bdi></DialogTitle>
         <DialogDescription>{{ preview ? t('gallery.previewSpace') : t('gallery.schemeImageNote') }}</DialogDescription>
         <BoothIllustration v-if="preview" :variant="variant" :view="active" class="w-full" />
-        <div v-else-if="!currentImage || originalFailed" class="flex min-h-48 flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.originalUnavailable') : t('gallery.noEffectImage') }}</div>
-        <img v-else :key="currentImage.url" :src="currentImage.url" :alt="t('gallery.originalEffectAlt', { code, index: active + 1 })" class="max-h-[65dvh] w-full object-contain" @error="originalFailed = true; emit('image-error')" />
+        <div v-else-if="!currentImage || enlargedFailed" class="flex min-h-48 flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.imageUnavailable') : t('gallery.noEffectImage') }}</div>
+        <img v-else :key="currentImage.previewUrl" :src="currentImage.previewUrl" :alt="t('gallery.effectAlt', { code, index: active + 1 })" class="max-h-[65dvh] w-full object-contain" @error="enlargedFailed = true; emit('image-error')" />
         <div class="flex flex-wrap justify-center gap-2" role="group" :aria-label="t('gallery.switchEnlargedAngle')">
           <Button v-for="(_, index) in images" :key="index" :variant="active === index ? 'default' : 'outline'" :aria-pressed="active === index" :disabled="disabled" @click="active = index">{{ t('gallery.angle', { index: index + 1 }) }}</Button>
+        </div>
+        <div v-if="!preview && currentImage" class="flex justify-center">
+          <Button as-child variant="link" size="sm"><a :href="currentImage.originalUrl" target="_blank" rel="noopener noreferrer"><ExternalLink class="mr-1 size-3.5" aria-hidden="true" />{{ t('gallery.viewOriginal') }}</a></Button>
         </div>
       </DialogContent>
     </Dialog>

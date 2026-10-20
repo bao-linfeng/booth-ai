@@ -36,7 +36,7 @@ const candidate: Candidate = {
     productSystemId: 'fs62',
     productSystemLabel: 'FS62',
   },
-  images: [{ assetId: 'asset-1', objectKey: 'renderings/1.png', order: 1, width: 1600, height: 900 }],
+  images: [{ assetId: 'asset-1', objectKey: 'renderings/1.png', renditions: null, order: 1, width: 1600, height: 900 }],
   styleId: 'tech',
   industryIds: [],
   budgetTierId: null,
@@ -92,10 +92,11 @@ test('catalog, parse and match responses keep every field the selection module p
   ]) {
     const items = result.items.map(item => ({
       ...item,
-      images: item.images.map(({ objectKey, ...image }) => ({
+      images: item.images.map(({ objectKey, renditions: _renditions, ...image }) => ({
         ...image,
-        url: `https://s3.example/${objectKey}`,
-        thumbnailUrl: `https://s3.example/${objectKey}`,
+        thumbnailUrl: `https://s3.example/${objectKey}/thumb`,
+        previewUrl: `https://s3.example/${objectKey}/preview`,
+        originalUrl: `https://s3.example/${objectKey}`,
       })),
     }));
     const data = { ...result, items, ...identity, searchId: 'search-1' };

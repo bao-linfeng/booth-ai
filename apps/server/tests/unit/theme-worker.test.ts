@@ -156,7 +156,15 @@ test('theme worker persists generation, accepts real images and settles once des
   assert.equal(calls, 1);
   assert.equal(f.state(), 'succeeded');
   assert.equal(f.results.length, 2);
-  assert.equal(f.stored.length, 2);
+  // 每个结果一张原图加缩略图、预览图两张衍生图，衍生图记录随资产版本一并写入
+  assert.deepEqual(
+    f.stored.filter(key => !key.startsWith('renditions/')),
+    [1, 2].map(ordinal => `theme-results/${f.jobId}/${ordinal}.png`),
+  );
+  assert.equal(f.stored.filter(key => key.startsWith('renditions/')).length, 4);
+  const versions = f.queries.filter(q => q.sql.includes('INSERT INTO asset_versions'));
+  assert.equal(versions.length, 2);
+  for (const version of versions) assert.match(String(version.params?.[8]), /"preview":\{"key":"renditions\/v1\/theme-results\//);
   const charges = f.queries.filter(q => q.sql.includes('INSERT INTO credit_transactions'));
   assert.equal(charges.length, 1);
   assert.deepEqual(charges[0]?.params, [f.userId, -6, `theme_job:${f.jobId}`, f.jobId]);
@@ -261,8 +269,7 @@ test('theme storage retry with partial generation never submits again and skips 
   const storage = {
     ...f.storage,
     putBuffer: async (key: string, bytes: Buffer) => {
-      uploads++;
-      if (uploads === 2) throw new Error('Storage outage');
+      if (!key.startsWith('renditions/') && ++uploads === 2) throw new Error('Storage outage');
       await f.storage.putBuffer(key, bytes);
     },
   };

@@ -1,3 +1,5 @@
+import type { Renditions } from '../media/renditions.js';
+
 export const rulesVersion = 'selection-2026-10-06';
 
 export interface MatchDiagnostics {
@@ -74,15 +76,18 @@ export interface Specifications {
 export interface CandidateImage {
   assetId: string;
   objectKey: string;
+  renditions: Renditions | null;
   order: number;
   width: number;
   height: number;
 }
 
+/** 缩略图用于视角切换，预览图用于主图与放大弹窗，原图只在用户明确查看原图时加载。 */
 export interface PublicImage {
   assetId: string;
-  url: string;
   thumbnailUrl: string;
+  previewUrl: string;
+  originalUrl: string;
   order: number;
   width: number;
   height: number;

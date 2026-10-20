@@ -2,6 +2,7 @@ import type { TypeProvider } from '../../type-provider.js';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { createStorage } from '../../../infra/storage.js';
+import { signImageByKey } from '../../../modules/media/links.js';
 import { clientUserId } from '../../authentication.js';
 import { successResponse } from '../../schemas.js';
 import { getProject, listProjects, type ProjectRecord } from '../../../modules/projects/repository.js';
@@ -279,7 +280,7 @@ export async function registerClientProjectRoutes(app: FastifyInstance, pool: pg
         data: {
           ...data,
           selectedThemeSummary: theme
-            ? { ...data.selectedThemeSummary!, previewUrl: await storage.signDownload(theme.asset.objectKey, 300) }
+            ? { ...data.selectedThemeSummary!, previewUrl: await signImageByKey(pool, storage, theme.asset.objectKey, 'preview', 300) }
             : null,
         },
       } as const;

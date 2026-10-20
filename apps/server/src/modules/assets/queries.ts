@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import type { Renditions } from '../media/renditions.js';
 import type { AssetType, AssetVersion, ListAssetsOptions, SchemeAsset } from './types.js';
 
 interface AssetRow extends Omit<SchemeAsset, 'createdAt' | 'updatedAt' | 'currentVersion'> {
@@ -214,13 +215,13 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 export async function latestVersionKeys(
   pool: Pick<pg.Pool, 'query'>,
   assetIds: string[],
-): Promise<{ assetId: string; objectKey: string }[]> {
+): Promise<{ assetId: string; objectKey: string; renditions: Renditions | null }[]> {
   // ID 来自历史快照，可能不是 UUID；先过滤再按 uuid 比较，列上不做类型转换才能走索引
   const ids = assetIds.filter(id => uuidPattern.test(id));
   if (ids.length === 0) return [];
   return (
-    await pool.query<{ assetId: string; objectKey: string }>(
-      `SELECT DISTINCT ON (v.asset_id) v.asset_id::text AS "assetId",v.object_key AS "objectKey"
+    await pool.query<{ assetId: string; objectKey: string; renditions: Renditions | null }>(
+      `SELECT DISTINCT ON (v.asset_id) v.asset_id::text AS "assetId",v.object_key AS "objectKey",v.renditions
      FROM asset_versions v
      WHERE v.asset_id = ANY($1::uuid[])
      ORDER BY v.asset_id,v.created_at DESC,v.id DESC`,

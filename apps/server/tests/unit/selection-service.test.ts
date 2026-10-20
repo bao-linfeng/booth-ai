@@ -179,6 +179,10 @@ test('scheme cover signs the first rendering by order and hides schemes outside 
         order,
         relatedAssetId: null,
         objectKey: `scheme/r${order}`,
+        renditions: {
+          thumb: { key: `scheme/r${order}/thumb.webp`, width: 480, height: 270, bytes: 1 },
+          preview: { key: `scheme/r${order}/preview.webp`, width: 1600, height: 900, bytes: 1 },
+        },
         width: 1600,
         height: 900,
         mime: 'image/png',
@@ -211,7 +215,7 @@ test('scheme cover signs the first rendering by order and hides schemes outside 
       return `https://assets.example/${key}`;
     },
   };
-  assert.equal(await getSchemeCoverUrl(pool, storage, 'COVER', 300), 'https://assets.example/scheme/r0');
-  assert.deepEqual(signed, [['scheme/r0', 300]]);
+  assert.equal(await getSchemeCoverUrl(pool, storage, 'COVER', 300), 'https://assets.example/scheme/r0/preview.webp');
+  assert.deepEqual(signed, [['scheme/r0/preview.webp', 300]]);
   await assert.rejects(getSchemeCoverUrl(pool, storage, 'HIDDEN', 300), { statusCode: 404 });
 });

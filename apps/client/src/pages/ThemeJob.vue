@@ -281,7 +281,7 @@ const failureReason = computed(() => failureReasonText(jobData.value?.failure?.r
                   :class="cn('min-w-0 overflow-hidden rounded-lg border bg-background text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background', activeResultIndex === index ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-primary/50')"
                   @click="previewResultId = result.resultId"
                 >
-                  <img :src="result.previewUrl" alt="" class="aspect-video w-full bg-muted/40 object-contain" @error="imageLinks.onImageError" />
+                  <img :src="result.thumbnailUrl" alt="" class="aspect-video w-full bg-muted/40 object-contain" @error="imageLinks.onImageError" />
                   <span class="flex flex-wrap items-center justify-between gap-1 p-2 text-xs">
                     <span>{{ t('themeJob.thumbnailLabel', { n: index + 1 }) }}</span>
                     <span v-if="result.resultId === selectedResultId && !selectionUncertain" class="flex items-center gap-1 text-success"><CheckCircle2 class="size-3" />{{ t('themeJob.thumbnailSelected') }}</span>

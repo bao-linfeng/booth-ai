@@ -68,7 +68,7 @@ const { default: SchemeDetail } = await server.ssrLoadModule('/src/pages/SchemeD
 
 const detail = {
   code: 'SC-6030',
-  images: [{ assetId: 'front', url: 'https://assets.example/front.jpg', thumbnailUrl: 'https://assets.example/front-thumb.jpg', order: 0, width: 1600, height: 1200 }],
+  images: [{ assetId: 'front', thumbnailUrl: 'https://assets.example/front-thumb.webp', previewUrl: 'https://assets.example/front-preview.webp', originalUrl: 'https://assets.example/front.png', order: 0, width: 1600, height: 1200 }],
   specifications: { lengthMm: 6000, widthMm: 3000, heightMm: 4500, areaM2: 18, openingCount: 2, productSystemId: 'system-a', productSystemLabel: '标准模块' },
   resources: { model: true, bom: true, renderings: true, masks: true, drawings: true, artworks: true },
   actions: { theme: 'available', quote: 'available', bom: 'available', drawings: 'available', artworks: 'available', modelDownload: 'available' },
@@ -77,7 +77,7 @@ const bom = revision => ({
   schemeCode: detail.code, revision, status: 'verified', verifiedAt: '2026-10-04T00:00:00Z',
   items: [{ id: 'row-1', ordinal: 1, productName: '铝框立柱', productModel: 'FS62', specificationMm: '3000', quantity: '6', sourceUnit: '根', erpCode: 'ERP-01', totalWeightKg: '12.5', measurementKind: 'count' }],
 })
-const asset = { assetId: 'drawing-1', name: '正视图', originalFilename: 'SC-6030 正视图.png', mimeType: 'image/png', byteSize: 1024, sortOrder: 0 }
+const asset = { assetId: 'drawing-1', name: '正视图', originalFilename: 'SC-6030 正视图.png', mimeType: 'image/png', byteSize: 1024, sortOrder: 0, thumbnailUrl: 'https://assets.example/drawing-thumb.webp' }
 const assetLink = (filename = asset.originalFilename) => ({ downloadUrl: 'https://assets.example/drawing.png', filename, mimeType: 'image/png', expiresAt: '2026-10-04T01:00:00Z' })
 
 async function settle() {
@@ -188,6 +188,9 @@ test('resource filenames, real Dialog preview, Escape/close, and trigger focus r
     assert.deepEqual(mounted.calls.filter(call => call.name === 'getSchemeDeliverables'), [{ name: 'getSchemeDeliverables', args: ['SC-6030', 'drawings'] }])
     const article = mounted.container.querySelector('article')
     assert.match(article.textContent, /SC-6030 正视图\.png/)
+    // 列表自带缩略图，不再逐张请求签名；点预览才请求预览地址
+    assert.equal(article.querySelector('img').getAttribute('src'), asset.thumbnailUrl)
+    assert.deepEqual(mounted.calls.filter(call => call.name === 'getSchemeDownload'), [])
     const trigger = article.querySelector('[aria-label="预览 SC-6030 正视图.png"]')
     assert.ok(article.querySelector('[aria-label="下载 SC-6030 正视图.png"]'))
     for (const closeBy of ['escape', 'button']) {
@@ -366,12 +369,12 @@ test('BOM load errors retry; stale XLSX displays refresh status and quote revisi
 
 test('an expired gallery link is re-signed by re-reading the scheme detail once the link is no longer fresh', async () => {
   let version = 0
-  const signed = () => ({ ...detail, images: detail.images.map(image => ({ ...image, url: `${image.url}?v=${version}`, thumbnailUrl: `${image.thumbnailUrl}?v=${version}` })) })
+  const signed = () => ({ ...detail, images: detail.images.map(image => ({ ...image, thumbnailUrl: `${image.thumbnailUrl}?v=${version}`, previewUrl: `${image.previewUrl}?v=${version}`, originalUrl: `${image.originalUrl}?v=${version}` })) })
   const mounted = await mount({ api: { apiFetch: async () => ({ code: 0, data: signed() }) } })
   const realNow = Date.now
   try {
     const reads = () => mounted.calls.filter(call => call.name === 'apiFetch').length
-    const gallery = () => mounted.container.querySelector('img[src^="https://assets.example/front-thumb.jpg"]')
+    const gallery = () => mounted.container.querySelector('img[src^="https://assets.example/front-preview.webp"]')
     assert.equal(reads(), 1)
     gallery().dispatchEvent(new Event('error'))
     await settle()
@@ -381,6 +384,6 @@ test('an expired gallery link is re-signed by re-reading the scheme detail once 
     mounted.container.querySelector('[role="group"] img').dispatchEvent(new Event('error'))
     await settle()
     assert.equal(reads(), 2)
-    assert.equal(gallery().getAttribute('src'), 'https://assets.example/front-thumb.jpg?v=1')
+    assert.equal(gallery().getAttribute('src'), 'https://assets.example/front-preview.webp?v=1')
   } finally { Date.now = realNow; await mounted.close() }
 })

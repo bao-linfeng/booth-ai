@@ -29,6 +29,7 @@ export interface ThemeJobInput {
 
 export interface ThemeJobResult {
   resultId: string
+  thumbnailUrl: string
   previewUrl: string
   width: number
   height: number

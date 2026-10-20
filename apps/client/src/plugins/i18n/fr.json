@@ -131,9 +131,8 @@
     "currentAngle": "Vue actuelle",
     "previewSpace": "Illustration de l’espace, pas un rendu réel du projet.",
     "schemeImageNote": "Rendu du projet fourni uniquement à titre de référence visuelle et spatiale.",
-    "originalUnavailable": "Image originale indisponible. Essayez une autre vue.",
     "switchEnlargedAngle": "Changer la vue agrandie",
-    "originalEffectAlt": "Rendu original {index} de {code}"
+    "viewOriginal": "Voir l'original"
   },
   "controls": {
     "switchLanguage": "Changer de langue",

@@ -42,9 +42,10 @@ const deliverableListSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['assetId', 'name', 'originalFilename', 'mimeType', 'byteSize', 'sortOrder'],
+        required: ['assetId', 'name', 'originalFilename', 'mimeType', 'byteSize', 'sortOrder', 'thumbnailUrl'],
         properties: {
           assetId: { type: 'string' },
+          thumbnailUrl: { type: ['string', 'null'], description: '图片资料的缩略图地址，其他类型为 null' },
           name: { type: 'string' },
           originalFilename: { type: 'string' },
           mimeType: { type: 'string' },
@@ -89,7 +90,8 @@ export async function registerClientSchemeAssetRoutes(
       },
       async request => {
         const set = await getDeliverableSet(pool, request.params.code, type);
-        return { code: 0, data: { schemeCode: request.params.code, revision: set.revision, items: publicDeliverables(set.rows) } } as const;
+        const items = await publicDeliverables(storage, set.rows);
+        return { code: 0, data: { schemeCode: request.params.code, revision: set.revision, items } } as const;
       },
     );
     // 打包下载返回 zip 文件，不走类型化的 JSON 响应

@@ -62,7 +62,7 @@ const requirement = { lengthMm: 6000, widthMm: 3000, maxHeightMm: 4500, areaM2: 
 const themeJobId = '11111111-1111-1111-1111-111111111111'
 const artworkJobId = '22222222-2222-2222-2222-222222222222'
 function scheme(code, overrides = {}) {
-  return { code, matchType: 'direct', specifications, thumbnail: `/${code}.jpg`, theme: null, artwork: null, ...overrides }
+  return { code, matchType: 'direct', specifications, thumbnail: `/${code}-thumb.webp`, preview: `/${code}.webp`, theme: null, artwork: null, ...overrides }
 }
 function record(overrides = {}) {
   return {
@@ -70,10 +70,10 @@ function record(overrides = {}) {
     counts: { direct: 5, reference: 1, random: 0, total: 6 }, createdAt: '2026-10-01T08:00:00.000Z',
     items: [
       scheme('SC-1', {
-        theme: { jobId: themeJobId, status: 'succeeded', createdAt: '2026-10-01T09:00:00.000Z', previewUrl: '/theme.jpg' },
-        artwork: { jobId: artworkJobId, status: 'partially_succeeded', createdAt: '2026-10-01T10:00:00.000Z', deliveryStatus: 'incomplete', views: [{ direction: 'front', previewUrl: '/front.jpg' }, { direction: 'left', previewUrl: '/left.jpg' }] },
+        theme: { jobId: themeJobId, status: 'succeeded', createdAt: '2026-10-01T09:00:00.000Z', thumbnailUrl: '/theme-thumb.webp', previewUrl: '/theme.webp' },
+        artwork: { jobId: artworkJobId, status: 'partially_succeeded', createdAt: '2026-10-01T10:00:00.000Z', deliveryStatus: 'incomplete', views: [{ direction: 'front', thumbnailUrl: '/front-thumb.webp', previewUrl: '/front.webp' }, { direction: 'left', thumbnailUrl: '/left-thumb.webp', previewUrl: '/left.webp' }] },
       }),
-      scheme('SC-2', { theme: { jobId: 'theme-running', status: 'running', createdAt: '2026-10-01T09:30:00.000Z', previewUrl: null } }),
+      scheme('SC-2', { theme: { jobId: 'theme-running', status: 'running', createdAt: '2026-10-01T09:30:00.000Z', thumbnailUrl: null, previewUrl: null } }),
       scheme('SC-3'), scheme('SC-4'), scheme('SC-5', { matchType: 'reference' }), scheme('SC-6'),
     ],
     ...overrides,
@@ -140,6 +140,7 @@ test('expanding reveals task links, compact empty states and only the existing f
   assert.ok(first.textContent.includes('已完成') && first.textContent.includes('部分完成'))
   assert.deepEqual([...first.querySelectorAll('button[aria-label^="放大 SC-1 "]')].map(item => item.getAttribute('aria-label')), ['放大 SC-1 原始方案', '放大 SC-1 AI 换主题效果', '放大 SC-1 正面视图', '放大 SC-1 左侧视图'])
   assert.ok(first.textContent.includes('正面') && !first.textContent.includes('背面'))
+  assert.deepEqual([...first.querySelectorAll('button[aria-label^="放大 SC-1 "] img')].map(img => img.getAttribute('src')), ['/SC-1-thumb.webp', '/theme-thumb.webp', '/front-thumb.webp', '/left-thumb.webp'])
   assert.ok(rows[1].textContent.includes('生成中') && rows[1].textContent.includes('未生成四面素材'))
   assertNoNode(rows[1].querySelector('button[aria-label*="换主题效果"]'), "rows[1].querySelector('button[aria-label*=\"换主题效果\"]')")
   assert.ok(rows[2].textContent.includes('未换主题') && rows[2].textContent.includes('未生成四面素材'))
@@ -163,7 +164,9 @@ test('expansion is per record and enlarging a result opens the dialog', async ()
   const dialog = document.body.querySelector('[role="dialog"]')
   assert.ok(dialog)
   assert.ok(dialog.textContent.includes('SC-9 · 原始方案'))
-  assert.equal(dialog.querySelector('img').getAttribute('src'), '/SC-9.jpg')
+  // 列表加载缩略图，放大弹窗才加载预览图
+  assert.equal(mounted.container.querySelector('button[aria-label="放大 SC-9 原始方案"] img').getAttribute('src'), '/SC-9-thumb.webp')
+  assert.equal(dialog.querySelector('img').getAttribute('src'), '/SC-9.webp')
   await mounted.close()
 })
 

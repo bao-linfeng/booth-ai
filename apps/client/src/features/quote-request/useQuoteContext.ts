@@ -56,7 +56,7 @@ export function useQuoteContext(code: string, enabled: boolean, status: { error:
     try {
       const loaded = await getQuoteContext(code)
       if (!alive()) return
-      void getSchemeImages(code).then(images => { if (alive()) standardPreview.value = images[0]?.url ?? '' }).catch(() => { if (alive()) standardPreview.value = '' })
+      void getSchemeImages(code).then(images => { if (alive()) standardPreview.value = images[0]?.previewUrl ?? '' }).catch(() => { if (alive()) standardPreview.value = '' })
       if (typeof route.query.bomRevision === 'string' && Number(route.query.bomRevision) !== loaded.bomRevision) {
         status.conflict.value = true
         status.error.value = t('quoteRequest.errorBomStale')

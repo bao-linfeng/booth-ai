@@ -131,9 +131,8 @@
     "currentAngle": "المنظور الحالي",
     "previewSpace": "رسم توضيحي للمساحة وليس صورة تصميم فعلية.",
     "schemeImageNote": "صورة التصميم مرجع بصري ومكاني فقط.",
-    "originalUnavailable": "الصورة الأصلية غير متاحة. جرّب منظورًا آخر.",
     "switchEnlargedAngle": "تغيير المنظور المكبّر",
-    "originalEffectAlt": "الصورة الأصلية {index} للتصميم {code}"
+    "viewOriginal": "عرض الصورة الأصلية"
   },
   "controls": {
     "switchLanguage": "تغيير اللغة",

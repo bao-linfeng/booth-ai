@@ -113,9 +113,8 @@
     "currentAngle": "Pandangan semasa",
     "previewSpace": "Ilustrasi ruang, bukan paparan reka bentuk sebenar.",
     "schemeImageNote": "Paparan reka bentuk untuk rujukan visual dan ruang sahaja.",
-    "originalUnavailable": "Imej asal tidak tersedia. Cuba pandangan lain.",
     "switchEnlargedAngle": "Tukar pandangan dibesarkan",
-    "originalEffectAlt": "Paparan asal {index} bagi {code}"
+    "viewOriginal": "Lihat imej asal"
   },
   "controls": {
     "switchLanguage": "Tukar bahasa",

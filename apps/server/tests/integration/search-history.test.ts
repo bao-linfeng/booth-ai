@@ -57,11 +57,16 @@ test('search history returns one inline theme and its artwork previews per searc
             status: 'succeeded',
             createdAt: '2026-10-01T03:00:00.000Z',
             objectKey: 'theme.png',
+            renditions: {
+              thumb: { key: 'theme-thumb.webp', width: 480, height: 270, bytes: 1 },
+              preview: { key: 'theme-preview.webp', width: 1600, height: 900, bytes: 1 },
+            },
             artworkJobId,
             artworkStatus: 'succeeded',
             deliveryStatus: 'ready',
             artworkCreatedAt: '2026-10-01T04:00:00.000Z',
-            views: [{ direction: 'front', objectKey: 'front.png' }],
+            // 衍生图尚未补齐时回退原图
+            views: [{ direction: 'front', objectKey: 'front.png', renditions: null }],
           },
         ],
       };
@@ -86,9 +91,12 @@ test('search history returns one inline theme and its artwork previews per searc
     jobId: themeJobId,
     status: 'succeeded',
     createdAt: '2026-10-01T03:00:00.000Z',
-    previewUrl: 'https://assets.example/theme.png',
+    thumbnailUrl: 'https://assets.example/theme-thumb.webp',
+    previewUrl: 'https://assets.example/theme-preview.webp',
   });
-  assert.deepEqual(items[0].artwork.views, [{ direction: 'front', previewUrl: 'https://assets.example/front.png' }]);
+  assert.deepEqual(items[0].artwork.views, [
+    { direction: 'front', thumbnailUrl: 'https://assets.example/front.png', previewUrl: 'https://assets.example/front.png' },
+  ]);
   assert.equal(items[0].artwork.jobId, artworkJobId);
   assert.equal(items[1].theme, null);
   assert.equal(items[1].artwork, null);
@@ -164,6 +172,7 @@ test('visitor search history uses browser identity and pagination without readin
   assert.equal(data.pageSize, 2);
   assert.equal(data.items[0].id, searchId);
   assert.equal(data.items[0].items[0].thumbnail, 'https://assets.example/original.png');
+  assert.equal(data.items[0].items[0].preview, 'https://assets.example/original.png');
   assert.equal(data.items[0].items[0].theme, null);
   assert.equal(data.items[0].items[0].artwork, null);
 });
@@ -389,7 +398,9 @@ test(
        VALUES($1,'source-v2.png','source-v2.png','image/png',10,'test',now()+interval '1 day')`,
       [source.id],
     );
-    assert.deepEqual(await latestVersionKeys(pool, [source.id, 'not-a-uuid']), [{ assetId: source.id, objectKey: 'source-v2.png' }]);
+    assert.deepEqual(await latestVersionKeys(pool, [source.id, 'not-a-uuid']), [
+      { assetId: source.id, objectKey: 'source-v2.png', renditions: null },
+    ]);
     assert.deepEqual(await latestVersionKeys(pool, ['not-a-uuid']), []);
   },
 );

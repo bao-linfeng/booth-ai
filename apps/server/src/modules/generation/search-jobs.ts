@@ -1,10 +1,13 @@
 import type pg from 'pg';
 import type { createStorage } from '../../infra/storage.js';
+import { signImageLinks } from '../media/links.js';
+import type { Renditions } from '../media/renditions.js';
 
 interface SearchTheme {
   jobId: string;
   status: string;
   createdAt: string;
+  thumbnailUrl: string | null;
   previewUrl: string | null;
 }
 
@@ -13,7 +16,7 @@ interface SearchArtwork {
   status: string;
   deliveryStatus: string;
   createdAt: string;
-  views: Array<{ direction: string; previewUrl: string }>;
+  views: Array<{ direction: string; thumbnailUrl: string; previewUrl: string }>;
 }
 
 interface SearchGeneration {
@@ -36,11 +39,12 @@ export async function listSearchJobs(
     status: string;
     createdAt: string;
     objectKey: string | null;
+    renditions: Renditions | null;
     artworkJobId: string | null;
     artworkStatus: string;
     deliveryStatus: string;
     artworkCreatedAt: string;
-    views: Array<{ direction: string; objectKey: string }>;
+    views: Array<{ direction: string; objectKey: string; renditions: Renditions | null }>;
   }>(
     `WITH latest_theme AS (
        SELECT DISTINCT ON (search_id, scheme_code) * FROM theme_jobs
@@ -48,12 +52,12 @@ export async function listSearchJobs(
        ORDER BY search_id, scheme_code, created_at DESC, id DESC
      )
      SELECT t.search_id AS "searchId", t.scheme_code AS "schemeCode", t.id AS "jobId", t.status::text,
-       t.created_at AS "createdAt", preview.object_key AS "objectKey", a.id AS "artworkJobId",
+       t.created_at AS "createdAt", preview.object_key AS "objectKey", preview.renditions, a.id AS "artworkJobId",
        a.status::text AS "artworkStatus", a.delivery_status AS "deliveryStatus", a.created_at AS "artworkCreatedAt",
        COALESCE(views.items, '[]'::jsonb) AS views
      FROM latest_theme t
      LEFT JOIN LATERAL (
-       SELECT v.object_key FROM theme_job_results r JOIN asset_versions v ON v.id = r.asset_version_id AND v.asset_id = r.asset_id
+       SELECT v.object_key, v.renditions FROM theme_job_results r JOIN asset_versions v ON v.id = r.asset_version_id AND v.asset_id = r.asset_id
        WHERE r.job_id = t.id AND (t.selected_result_id IS NULL OR r.id = t.selected_result_id)
        ORDER BY r.ordinal, r.id LIMIT 1
      ) preview ON true
@@ -63,7 +67,7 @@ export async function listSearchJobs(
        ORDER BY created_at DESC, id DESC LIMIT 1
      ) a ON true
      LEFT JOIN LATERAL (
-       SELECT jsonb_agg(jsonb_build_object('direction', r.direction, 'objectKey', v.object_key)
+       SELECT jsonb_agg(jsonb_build_object('direction', r.direction, 'objectKey', v.object_key, 'renditions', v.renditions)
          ORDER BY CASE r.direction WHEN 'front' THEN 1 WHEN 'back' THEN 2 WHEN 'left' THEN 3 WHEN 'right' THEN 4 END) AS items
        FROM artwork_job_results r JOIN asset_versions v ON v.id = r.asset_version_id AND v.asset_id = r.asset_id
        WHERE r.job_id = a.id AND r.direction IS NOT NULL
@@ -78,7 +82,9 @@ export async function listSearchJobs(
         jobId: row.jobId,
         status: row.status,
         createdAt: row.createdAt,
-        previewUrl: row.objectKey ? await storage.signDownload(row.objectKey, 900) : null,
+        ...(row.objectKey
+          ? await signImageLinks(storage, { objectKey: row.objectKey, renditions: row.renditions }, 900)
+          : { thumbnailUrl: null, previewUrl: null }),
       };
       const artwork = row.artworkJobId
         ? {
@@ -87,7 +93,7 @@ export async function listSearchJobs(
             deliveryStatus: row.deliveryStatus,
             createdAt: row.artworkCreatedAt,
             views: await Promise.all(
-              row.views.map(async view => ({ direction: view.direction, previewUrl: await storage.signDownload(view.objectKey, 900) })),
+              row.views.map(async view => ({ direction: view.direction, ...(await signImageLinks(storage, view, 900)) })),
             ),
           }
         : null;

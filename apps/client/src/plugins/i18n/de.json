@@ -131,9 +131,8 @@
     "currentAngle": "Aktuelle Ansicht",
     "previewSpace": "Raumillustration, keine echte Darstellung des Entwurfs.",
     "schemeImageNote": "Entwurfsdarstellung nur als visuelle und räumliche Referenz.",
-    "originalUnavailable": "Originalbild nicht verfügbar. Wechseln Sie die Ansicht.",
     "switchEnlargedAngle": "Vergrößerte Ansicht wechseln",
-    "originalEffectAlt": "Originaldarstellung {index} von {code}"
+    "viewOriginal": "Original anzeigen"
   },
   "controls": {
     "switchLanguage": "Sprache wechseln",
