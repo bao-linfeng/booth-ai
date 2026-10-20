@@ -44,7 +44,12 @@ export async function buildApp(config: Config, dependencies: HealthDependencies,
     ajv: { customOptions: { removeAdditional: false } },
     trustProxy: typeof config.trustProxy === 'number' ? trustHops(config.trustProxy) : config.trustProxy,
   });
-  await app.register(cors, { origin: config.corsOrigins, credentials: true });
+  // @fastify/cors 默认只放行 GET/HEAD/POST，跨域的 PUT/PATCH/DELETE 预检会被拒
+  await app.register(cors, {
+    origin: config.corsOrigins,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
+  });
   await app.register(helmet);
   await app.register(multipart, { limits: { fileSize: defaultUploadMaxBytes } });
   await app.register(swagger, {
