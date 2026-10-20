@@ -11,6 +11,7 @@ import { button, flush } from './fake-vben';
 
 const api = vi.hoisted(() => ({
   assetDownloadApi: vi.fn(),
+  assetImagesApi: vi.fn(),
   getProjectApi: vi.fn(),
 }));
 const access = vi.hoisted(() => ({ codes: new Set<string>() }));
@@ -63,8 +64,13 @@ vi.mock('ant-design-vue', async () => {
     Descriptions: passthrough,
     DescriptionsItem: passthrough,
     Image: defineComponent({
-      props: { alt: String, src: String },
-      setup: (props) => () => render('img', { alt: props.alt, src: props.src }),
+      props: { alt: String, preview: Object, src: String },
+      setup: (props) => () =>
+        render('img', {
+          alt: props.alt,
+          'data-preview': (props.preview as undefined | { src?: string })?.src,
+          src: props.src,
+        }),
     }),
     ImagePreviewGroup: passthrough,
     Pagination: defineComponent(() => () => render('nav')),
@@ -117,6 +123,7 @@ let container: HTMLElement;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  api.assetImagesApi.mockResolvedValue([]);
   access.codes = new Set(['projects.asset-download']);
   container = document.createElement('div');
   document.body.append(container);
@@ -198,12 +205,14 @@ it('labels request codes in Chinese and previews image assets while other files 
     artworks: { assets: [], status: 'pending' },
   };
   api.getProjectApi.mockResolvedValue(detail);
-  api.assetDownloadApi.mockImplementation(
-    async (_: string, version: string) => {
-      if (version === 'drawing-3') throw new Error('expired');
-      return { downloadUrl: `https://s3.test/${version}`, filename: version };
+  // 服务端只返回能签发的图片；没有地址的图片（drawing-3）退回下载按钮
+  api.assetImagesApi.mockResolvedValue([
+    {
+      versionId: 'drawing-1',
+      thumbnailUrl: 'https://s3.test/drawing-1/thumb',
+      previewUrl: 'https://s3.test/drawing-1/preview',
     },
-  );
+  ]);
   app = createApp({ render: () => h(ProjectWorkspace) });
   app.directive('access', {});
   app.mount(container);
@@ -215,16 +224,16 @@ it('labels request codes in Chinese and previews image assets while other files 
   expect(text).toContain('范围说明：全权负责');
   expect(text).toContain('清单缺失 / 图纸已就绪 / 素材待生成');
   expect(text).not.toMatch(/theme_result|graphics|available/);
-  expect(api.assetDownloadApi).toHaveBeenCalledTimes(2);
-  expect(api.assetDownloadApi).not.toHaveBeenCalledWith(
-    'project-1',
-    'drawing-2',
-  );
+  expect(api.assetImagesApi).toHaveBeenCalledTimes(1);
+  expect(api.assetImagesApi).toHaveBeenCalledWith('project-1');
+  expect(api.assetDownloadApi).not.toHaveBeenCalled();
   const images = [
-    ...container.querySelectorAll('[data-asset-group="图纸"] img'),
+    ...container.querySelectorAll<HTMLElement>('[data-asset-group="图纸"] img'),
   ];
-  expect(images.map((image) => image.getAttribute('src'))).toEqual([
-    'https://s3.test/drawing-1',
+  expect(
+    images.map((image) => [image.getAttribute('src'), image.dataset.preview]),
+  ).toEqual([
+    ['https://s3.test/drawing-1/thumb', 'https://s3.test/drawing-1/preview'],
   ]);
   expect(button(container, '下载：侧面方向底图')).toBeTruthy();
   expect(button(container, '下载：施工图')).toBeTruthy();
@@ -245,6 +254,6 @@ it('does not request image urls without asset download permission', async () => 
   app.mount(container);
   await flush();
 
-  expect(api.assetDownloadApi).not.toHaveBeenCalled();
+  expect(api.assetImagesApi).not.toHaveBeenCalled();
   expect(container.querySelector('img')).toBeNull();
 });

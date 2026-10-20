@@ -39,6 +39,12 @@ export interface SchemeAsset {
   updatedAt: string;
 }
 
+/** 单方案资产列表附带的图片地址；非图片或无查看权限时为 null，原图仍走下载接口 */
+export interface SchemeAssetWithImage extends SchemeAsset {
+  thumbnailUrl: null | string;
+  previewUrl: null | string;
+}
+
 export interface AssetListParams {
   page?: number;
   pageSize?: number;
@@ -89,7 +95,7 @@ export async function listSchemeAssetsApi(
   schemeCode: string,
   type?: AssetType,
 ) {
-  return requestClient.get<SchemeAsset[]>(
+  return requestClient.get<SchemeAssetWithImage[]>(
     `/v1/admin/schemes/${encodeURIComponent(schemeCode)}/assets`,
     {
       params: type ? { type } : undefined,

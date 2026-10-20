@@ -90,7 +90,7 @@ const moduleRules: Record<string, { dependsOn: string[]; exposes: string[] }> = 
   },
   identity: { dependsOn: [], exposes: ['service.ts', 'client-service.ts', 'roles.ts'] },
   media: { dependsOn: [], exposes: ['links.ts', 'renditions.ts'] },
-  projects: { dependsOn: ['dictionaries', 'generation', 'identity', 'schemes', 'selection'], exposes: ['claims.ts', 'domain.ts'] },
+  projects: { dependsOn: ['dictionaries', 'generation', 'identity', 'media', 'schemes', 'selection'], exposes: ['claims.ts', 'domain.ts'] },
   'prompt-preview': { dependsOn: ['generation', 'prompts', 'selection'], exposes: [] },
   prompts: { dependsOn: [], exposes: ['service.ts', 'template.ts'] },
   schemes: { dependsOn: ['dictionaries'], exposes: ['publication.ts', 'image-spec.ts', 'readiness.ts', 'bill-of-materials/repository.ts'] },

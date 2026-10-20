@@ -1,6 +1,8 @@
 import type pg from 'pg';
 import { domainError } from '../../lib/errors.js';
 import { getJobCreditLedger } from '../credits/management-service.js';
+import { loadRenditions, signImageLinks, type StoredImage } from '../media/links.js';
+import type { Renditions } from '../media/renditions.js';
 import { artworkFiles } from './artwork/queries.js';
 import { DIRECTIONS, type ArtworkSnapshot } from './artwork/types.js';
 
@@ -123,11 +125,23 @@ export async function listGenerationJobs(pool: pg.Pool, params: GenerationJobQue
   return { data: records.rows.map(jobMetrics), total: Number(count.rows[0]?.total ?? 0), page, pageSize };
 }
 
-export async function getGenerationJob(
-  pool: pg.Pool,
-  jobId: string,
-  storage?: { signDownload: (key: string, expiresIn: number) => Promise<string> } | null,
-) {
+type Signer = { signDownload: (key: string, expiresIn: number) => Promise<string> };
+const noImage = { thumbnailUrl: null, previewUrl: null };
+
+/** 后台详情的缩略图与预览图；签名失败只影响图片显示，不阻断任务详情。 */
+async function imageLinks(
+  storage: Signer | null | undefined,
+  image: StoredImage | undefined,
+): Promise<{ thumbnailUrl: string | null; previewUrl: string | null }> {
+  if (!storage || !image) return noImage;
+  try {
+    return await signImageLinks(storage, image, 300);
+  } catch {
+    return noImage;
+  }
+}
+
+export async function getGenerationJob(pool: pg.Pool, jobId: string, storage?: Signer | null) {
   const job = (
     await pool.query<JobRow>(
       `SELECT ${listColumns},j.source_asset_id AS "sourceAssetId",j.offer_id AS "offerId",
@@ -145,11 +159,12 @@ export async function getGenerationJob(
       ordinal: number;
       assetId: string;
       objectKey: string;
+      renditions: Renditions | null;
       width: number | null;
       height: number | null;
       createdAt: Date;
     }>(
-      `SELECT r.id,r.ordinal,r.asset_id AS "assetId",v.object_key AS "objectKey",r.width,r.height,
+      `SELECT r.id,r.ordinal,r.asset_id AS "assetId",v.object_key AS "objectKey",v.renditions,r.width,r.height,
        r.created_at AS "createdAt" FROM theme_job_results r
        JOIN asset_versions v ON v.id=r.asset_version_id AND v.asset_id=r.asset_id
        WHERE r.job_id=$1 ORDER BY r.ordinal ASC,r.id ASC`,
@@ -159,11 +174,11 @@ export async function getGenerationJob(
       'SELECT id::text AS id, item_label AS label FROM dictionary_items WHERE id = ANY($1::uuid[])',
       [[input.industryId, input.styleId].filter(Boolean)],
     ),
-    pool.query<{ objectKey: string }>(
-      `SELECT v.object_key AS "objectKey"
+    pool.query<{ objectKey: string; renditions: Renditions | null }>(
+      `SELECT v.object_key AS "objectKey", v.renditions
       FROM scheme_assets a
       JOIN LATERAL (
-        SELECT object_key FROM asset_versions
+        SELECT object_key, renditions FROM asset_versions
         WHERE asset_id = a.id
         ORDER BY created_at DESC, id DESC
         LIMIT 1
@@ -175,34 +190,26 @@ export async function getGenerationJob(
   ]);
   const industryLabel = labelRows.rows.find(label => label.id === input.industryId)?.label ?? null;
   const styleLabel = labelRows.rows.find(label => label.id === input.styleId)?.label ?? null;
-  const objectKey = sourceRows.rows[0]?.objectKey;
-  let sourcePreviewUrl: string | null = null;
-  if (storage && objectKey) {
-    try {
-      sourcePreviewUrl = await storage.signDownload(objectKey, 300);
-    } catch {
-      // Preview is optional; signing failures must not block job details.
-    }
-  }
+  const source = await imageLinks(storage, sourceRows.rows[0]);
   const results = await Promise.all(
-    resultRows.rows.map(async ({ objectKey: key, ...result }) => {
-      let previewUrl: string | null = null;
-      if (storage && key) {
-        try {
-          previewUrl = await storage.signDownload(key, 300);
-        } catch {}
-      }
-      return { ...result, previewUrl };
-    }),
+    resultRows.rows.map(async ({ objectKey, renditions, ...result }) => ({
+      ...result,
+      ...(await imageLinks(storage, { objectKey, renditions })),
+    })),
   );
-  return { ...jobMetrics(job), results, isSelected: job.selectedResultId !== null, industryLabel, styleLabel, sourcePreviewUrl, credits };
+  return {
+    ...jobMetrics(job),
+    results,
+    isSelected: job.selectedResultId !== null,
+    industryLabel,
+    styleLabel,
+    sourceThumbnailUrl: source.thumbnailUrl,
+    sourcePreviewUrl: source.previewUrl,
+    credits,
+  };
 }
 
-async function getArtworkGenerationJob(
-  pool: pg.Pool,
-  jobId: string,
-  storage?: { signDownload: (key: string, expiresIn: number) => Promise<string> } | null,
-) {
+async function getArtworkGenerationJob(pool: pg.Pool, jobId: string, storage?: Signer | null) {
   const job = (
     await pool.query<
       JobRow & {
@@ -229,12 +236,20 @@ async function getArtworkGenerationJob(
     )
   ).rows;
   const { snapshot, ...publicJob } = job;
+  const renditions = storage
+    ? await loadRenditions(pool, [...files.map(file => file.versionId), ...(snapshot ? [snapshot.source.versionId] : [])])
+    : new Map<string, Renditions | null>();
+  const source = await imageLinks(
+    storage,
+    snapshot ? { objectKey: snapshot.source.objectKey, renditions: renditions.get(snapshot.source.versionId) } : undefined,
+  );
   return {
     ...jobMetrics({ ...publicJob, jobType: 'artwork' }),
     isSelected: false,
     industryLabel: null,
     styleLabel: null,
-    sourcePreviewUrl: storage && snapshot ? await storage.signDownload(snapshot.source.objectKey, 300) : null,
+    sourceThumbnailUrl: source.thumbnailUrl,
+    sourcePreviewUrl: source.previewUrl,
     generationSnapshot: snapshot
       ? {
           model: snapshot.model,
@@ -258,7 +273,7 @@ async function getArtworkGenerationJob(
         assetId: file.assetId,
         width: file.width,
         height: file.height,
-        previewUrl: storage ? await storage.signDownload(file.objectKey, 300) : null,
+        ...(await imageLinks(storage, { objectKey: file.objectKey, renditions: renditions.get(file.versionId) })),
         createdAt: job.updatedAt,
       })),
     ),

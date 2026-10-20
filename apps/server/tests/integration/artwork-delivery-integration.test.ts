@@ -22,6 +22,8 @@ import { bindProjectArtworks } from '../../src/modules/projects/artwork-delivery
 import { createQuoteRequest } from '../../src/modules/projects/service.js';
 import { getGenerationJob, listGenerationJobs } from '../../src/modules/generation/queries.js';
 import { listDeliverables } from '../../src/modules/assets/deliverables.js';
+import { loadRenditions } from '../../src/modules/media/links.js';
+import { listProjectImageVersions } from '../../src/modules/projects/repository.js';
 import type { QuoteInput } from '../../src/modules/projects/domain.js';
 
 test(
@@ -390,6 +392,21 @@ test(
     assert.ok('generationSnapshot' in adminDetail);
     assert.deepEqual(adminDetail.generationSnapshot?.directionPrompts, frozen.directionPrompts);
     assert.equal(JSON.stringify(adminDetail).includes('"objectKey"'), false);
+    // 后台详情列表显示缩略图、放大看预览图；衍生图未生成时回退原图
+    const fileRenditions = await loadRenditions(
+      pool,
+      files.map(file => file.versionId),
+    );
+    assert.deepEqual(
+      adminDetail.results.map(result => [result.thumbnailUrl, result.previewUrl]),
+      files.map(file => {
+        const renditions = fileRenditions.get(file.versionId);
+        return [
+          `https://assets.example.test/${renditions?.thumb.key ?? file.objectKey}`,
+          `https://assets.example.test/${renditions?.preview.key ?? file.objectKey}`,
+        ];
+      }),
+    );
     assert.equal((await listDeliverables(pool, code, 'artwork')).length, 1);
     const quote: QuoteInput = {
       requestKey: randomUUID(),
@@ -430,6 +447,9 @@ test(
     assert.deepEqual(deliveries[0], deliveries[1]);
     assert.equal((await pool.query("SELECT id FROM project_events WHERE project_id=$1 AND kind='artworks'", [projectId])).rowCount, 1);
     const pinned = (await pool.query('SELECT materials_snapshot FROM projects WHERE id=$1', [projectId])).rows[0].materials_snapshot;
+    const projectImages = await listProjectImageVersions(pool, projectId);
+    for (const file of files)
+      assert.ok(projectImages.some(image => image.versionId === file.versionId && image.objectKey === file.objectKey));
     for (const file of files)
       await pool.query(
         "INSERT INTO asset_versions(asset_id,object_key,original_filename,mime_type,byte_size,checksum) VALUES($1,$2,'new.png','image/png',10,'new')",

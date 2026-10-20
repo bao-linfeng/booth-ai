@@ -13,9 +13,11 @@ import {
   saveAssignmentConfig,
   statusTransitions,
 } from '../../../modules/projects/admin-service.js';
+import { signImageLinks } from '../../../modules/media/links.js';
 import {
   findProjectAssetVersion,
   getProject,
+  listProjectImageVersions,
   listProjects,
   projectEvents,
   requirementOptionLabels,
@@ -372,6 +374,36 @@ export async function registerAdminProjectRoutes(app: FastifyInstance, pool: pg.
           .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
           .header('Content-Disposition', `attachment; filename="${project.projectNo}-quotation-r${quotation.revision}.xlsx"`)
           .send(buffer);
+      },
+    );
+
+    // 工作区图片列表显示缩略图、点开看预览图，原图仍走下载接口
+    routes.get(
+      '/projects/:projectId/asset-images',
+      {
+        config: { permissions: ['projects.asset-download'] },
+        schema: {
+          params: projectParams,
+          response: {
+            200: successResponse({
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['versionId', 'thumbnailUrl', 'previewUrl'],
+                properties: { versionId: string, thumbnailUrl: string, previewUrl: string },
+              },
+            }),
+          },
+        },
+      },
+      async request => {
+        await getProject(pool, request.params.projectId);
+        const images = await listProjectImageVersions(pool, request.params.projectId);
+        const data = await Promise.all(
+          images.map(async ({ versionId, ...image }) => ({ versionId, ...(await signImageLinks(storage, image, 600)) })),
+        );
+        return { code: 0, data } as const;
       },
     );
 

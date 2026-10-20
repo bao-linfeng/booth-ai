@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import type { MatchingSummary, ProjectDetail } from '#/api/core/projects';
+import type {
+  MatchingSummary,
+  ProjectAssetImage,
+  ProjectDetail,
+} from '#/api/core/projects';
 
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -23,6 +27,7 @@ import {
 
 import {
   assetDownloadApi,
+  assetImagesApi,
   assigneeStatusLabels,
   getProjectApi,
   statusLabels,
@@ -69,8 +74,8 @@ const assetGroups = computed(() => {
       files: group.assets.filter((asset) => !isImageAsset(asset)),
     }));
 });
-/** 图片资料的签名地址，按 versionId 索引；取址失败的图片退回下载按钮。 */
-const imageUrls = ref<Record<string, string>>({});
+/** 图片资料的缩略图与预览图地址，按 versionId 索引；取址失败的图片退回下载按钮。 */
+const imageUrls = ref<Record<string, ProjectAssetImage>>({});
 let imageLoad = 0;
 const downloadOnly = (group: (typeof assetGroups.value)[number]) => [
   ...group.images.filter((asset) => !imageUrls.value[asset.versionId]),
@@ -133,20 +138,16 @@ async function loadImageUrls(projectId: string) {
   const current = ++imageLoad;
   imageUrls.value = {};
   if (!hasAccessByCodes(['projects.asset-download'])) return;
-  const images = assetGroups.value.flatMap((group) => group.images);
-  const entries = await Promise.all(
-    images.map(async (asset) => {
-      try {
-        const result = await assetDownloadApi(projectId, asset.versionId);
-        return [asset.versionId, result.downloadUrl] as const;
-      } catch {
-        return undefined;
-      }
-    }),
-  );
+  if (!assetGroups.value.some((group) => group.images.length > 0)) return;
+  let images: ProjectAssetImage[];
+  try {
+    images = await assetImagesApi(projectId);
+  } catch {
+    return;
+  }
   if (current !== imageLoad) return;
   imageUrls.value = Object.fromEntries(
-    entries.filter((entry) => entry !== undefined),
+    images.map((image) => [image.versionId, image]),
   );
 }
 async function download(version: string) {
@@ -347,7 +348,8 @@ onMounted(load);
               <template v-for="asset in group.images" :key="asset.versionId">
                 <figure v-if="imageUrls[asset.versionId]" class="m-0 w-40">
                   <Image
-                    :src="imageUrls[asset.versionId]"
+                    :src="imageUrls[asset.versionId]!.thumbnailUrl"
+                    :preview="{ src: imageUrls[asset.versionId]!.previewUrl }"
                     :alt="asset.name"
                     :width="160"
                     :height="110"

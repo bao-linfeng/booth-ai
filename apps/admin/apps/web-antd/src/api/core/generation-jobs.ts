@@ -15,6 +15,7 @@ export interface GenerationJobResult {
   id: string;
   ordinal: number;
   assetId: string;
+  thumbnailUrl: null | string;
   previewUrl: null | string;
   width: null | number;
   height: null | number;
@@ -87,6 +88,7 @@ export interface GenerationJobDetail extends GenerationJob {
   selectedResultId: null | string;
   industryLabel: null | string;
   styleLabel: null | string;
+  sourceThumbnailUrl: null | string;
   sourcePreviewUrl: null | string;
   results: GenerationJobResult[];
 }

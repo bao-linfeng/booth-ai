@@ -2,8 +2,7 @@ import type pg from 'pg';
 import { digest } from '../../../lib/digest.js';
 import { domainError as projectError } from '../../../lib/errors.js';
 import type { createStorage } from '../../../infra/storage.js';
-import { signImage } from '../../media/links.js';
-import type { Renditions } from '../../media/renditions.js';
+import { loadRenditions, signImage } from '../../media/links.js';
 import type { ThemeInput } from '../theme/service.js';
 import {
   ARTWORK_QUALITY,
@@ -150,14 +149,7 @@ export async function getArtworkJob(
   // 页面展示用预览图；文件本身（含项目冻结的快照）只引用原图版本
   const reference = job.snapshot?.source;
   const versionIds = [...files.map(file => file.versionId), ...(reference ? [reference.versionId] : [])];
-  const renditions = new Map(
-    (
-      await pool.query<{ id: string; renditions: Renditions | null }>(
-        'SELECT id, renditions FROM asset_versions WHERE id = ANY($1::uuid[])',
-        [versionIds],
-      )
-    ).rows.map(row => [row.id, row.renditions]),
-  );
+  const renditions = await loadRenditions(pool, versionIds);
   const directions = await Promise.all(
     DIRECTIONS.map(async direction => {
       const file = files.find(f => f.direction === direction);

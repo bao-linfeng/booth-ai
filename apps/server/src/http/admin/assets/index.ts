@@ -8,7 +8,8 @@ import { hasAdminPermission, requireAdminPermission } from '../authorization.js'
 import { assetPermissionCode } from '../../../modules/identity/permissions.js';
 import { getAsset, getAssetVersion, listAssets, listMaskPairingCandidates, listSchemeAssets } from '../../../modules/assets/queries.js';
 import { deleteAsset, updateAsset } from '../../../modules/assets/service.js';
-import type { ListAssetsOptions } from '../../../modules/assets/types.js';
+import type { ListAssetsOptions, SchemeAsset } from '../../../modules/assets/types.js';
+import { loadRenditions, signImage, signImageLinks } from '../../../modules/media/links.js';
 import { uploadAsset, uploadAssetVersion } from '../../../modules/assets/upload.js';
 import {
   assetTypes,
@@ -116,6 +117,13 @@ const schemeAssetSchema = {
   },
 } as const;
 
+// 方案详情的资产汇总直接显示缩略图、点开看预览图；原图仍走下载接口
+const schemeAssetWithImageSchema = {
+  ...schemeAssetSchema,
+  required: [...schemeAssetSchema.required, 'thumbnailUrl', 'previewUrl'],
+  properties: { ...schemeAssetSchema.properties, thumbnailUrl: nullableString, previewUrl: nullableString },
+} as const;
+
 const maskCandidateSchema = {
   type: 'object',
   additionalProperties: false,
@@ -149,6 +157,14 @@ const maskCandidateSchema = {
     },
   },
 } as const;
+
+/** 能预览或下载该类资产的管理员才签发图片地址；效果图只有预览权限，报馆图、平面素材只有下载权限。 */
+function canViewImage(permissions: string[], asset: SchemeAsset): boolean {
+  return (
+    !!asset.currentVersion?.mimeType.startsWith('image/') &&
+    ['preview', 'download'].some(action => hasAdminPermission(permissions, assetPermissionCode(asset.type, action)))
+  );
+}
 
 function requestError(message: string, statusCode: number, reason?: string): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode }, reason ? { reason } : {});
@@ -206,15 +222,31 @@ export async function registerAdminAssetsRoutes(
         tags,
         params: codeParamsSchema,
         querystring: { type: 'object', additionalProperties: false, properties: { type: assetTypeSchema } },
-        response: { 200: successResponse({ type: 'array', items: schemeAssetSchema }) },
+        response: { 200: successResponse({ type: 'array', items: schemeAssetWithImageSchema }) },
       },
     },
     async request => {
       const query = request.query;
       if (query.type) requireAdminPermission(request, assetPermissionCode(query.type, 'read'));
-      const assets = await listSchemeAssets(pool, request.params.code, query.type);
+      const listed = await listSchemeAssets(pool, request.params.code, query.type);
       const permissions = requirePrincipal(request, 'admin').permissions;
-      return { code: 0, data: assets.filter(asset => permissions.includes(assetPermissionCode(asset.type, 'read'))) } as const;
+      const assets = listed.filter(asset => permissions.includes(assetPermissionCode(asset.type, 'read')));
+      const images = assets.filter(asset => canViewImage(permissions, asset));
+      const renditions = await loadRenditions(
+        pool,
+        images.map(asset => asset.currentVersion!.id),
+      );
+      const links = new Map(
+        await Promise.all(
+          images.map(async asset => {
+            const version = asset.currentVersion!;
+            const image = { objectKey: version.objectKey, renditions: renditions.get(version.id) };
+            return [asset.id, await signImageLinks(storage, image, 600)] as const;
+          }),
+        ),
+      );
+      const data = assets.map(asset => ({ ...asset, ...(links.get(asset.id) ?? { thumbnailUrl: null, previewUrl: null }) }));
+      return { code: 0, data } as const;
     },
   );
 
@@ -237,6 +269,8 @@ export async function registerAdminAssetsRoutes(
       // 缩略图仍按效果图预览权限签发，无预览权限时只返回文件信息
       const canPreview = hasAdminPermission(permissions, assetPermissionCode('rendering', 'preview'));
       const candidates = await listMaskPairingCandidates(pool, request.params.code);
+      const versionIds = candidates.flatMap(({ rendering }) => (rendering.currentVersion ? [rendering.currentVersion.id] : []));
+      const renditions = await loadRenditions(pool, canPreview ? versionIds : []);
       const data = await Promise.all(
         candidates.map(async ({ rendering, pairedMask }) => {
           const version = rendering.currentVersion;
@@ -245,7 +279,10 @@ export async function registerAdminAssetsRoutes(
             name: rendering.name,
             sortOrder: rendering.sortOrder,
             file: version ? { originalFilename: version.originalFilename, widthPx: version.widthPx, heightPx: version.heightPx } : null,
-            thumbnailUrl: version && canPreview ? await storage.signDownload(version.objectKey, 600) : null,
+            thumbnailUrl:
+              version && canPreview
+                ? await signImage(storage, { objectKey: version.objectKey, renditions: renditions.get(version.id) }, 'thumb', 600)
+                : null,
             pairedMask: pairedMask ? { id: pairedMask.id, name: pairedMask.name, revision: pairedMask.revision } : null,
           };
         }),
