@@ -9,20 +9,20 @@ import {
 /** 发布要求的效果图 + 蒙版组数，与服务端就绪检查一致。 */
 export const REQUIRED_PAIRS = 3;
 
-export interface PairSlot {
+export interface PairSlot<T extends SchemeAsset = SchemeAsset> {
   /** 第几组（从 1 起） */
   index: number;
-  rendering: null | SchemeAsset;
-  mask: null | SchemeAsset;
+  rendering: null | T;
+  mask: null | T;
   issues: string[];
 }
 
-export interface PairChecklist {
-  slots: PairSlot[];
+export interface PairChecklist<T extends SchemeAsset = SchemeAsset> {
+  slots: PairSlot<T>[];
   /** 超出 3 张、需删除或替换的效果图 */
-  extraRenderings: SchemeAsset[];
+  extraRenderings: T[];
   /** 未配对或指向已失效效果图的蒙版 */
-  unpairedMasks: SchemeAsset[];
+  unpairedMasks: T[];
 }
 
 function bySortOrder(a: SchemeAsset, b: SchemeAsset): number {
@@ -68,7 +68,9 @@ function pairIssues(
 }
 
 /** 按发布要求把效果图与蒙版排成 3 组，列出每组缺口，以及多余的效果图和未配对的蒙版。 */
-export function renderingMaskChecklist(assets: SchemeAsset[]): PairChecklist {
+export function renderingMaskChecklist<T extends SchemeAsset>(
+  assets: T[],
+): PairChecklist<T> {
   const renderings = assets
     .filter((asset) => asset.type === 'rendering')
     .toSorted((a, b) => bySortOrder(a, b));
@@ -81,7 +83,7 @@ export function renderingMaskChecklist(assets: SchemeAsset[]): PairChecklist {
       (orderCounts.get(rendering.sortOrder) ?? 0) + 1,
     );
   }
-  const slots: PairSlot[] = renderings
+  const slots: PairSlot<T>[] = renderings
     .slice(0, REQUIRED_PAIRS)
     .map((rendering, index) => {
       const mask =

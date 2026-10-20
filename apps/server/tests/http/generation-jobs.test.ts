@@ -102,7 +102,7 @@ test('admin artwork list queries real task records and mixed lists include both 
   assert.ok(!queries[3]!.includes('theme_job_provider_attempts'), 'count query must not compute models');
 });
 
-test('admin generation job detail loads results, labels and signed original preview', async () => {
+test('admin generation job detail loads results, labels and signed thumbnails and previews', async () => {
   const queries: { sql: string; args: unknown[] }[] = [];
   const pool = {
     query: async (sql: string, args: unknown[]) => {
@@ -111,7 +111,19 @@ test('admin generation job detail loads results, labels and signed original prev
       if (sql.includes('FROM theme_job_results'))
         return {
           rows: [
-            { id: resultId, ordinal: 1, assetId: 'asset', objectKey: 'result/key', width: null, height: null, createdAt: row.updatedAt },
+            {
+              id: resultId,
+              ordinal: 1,
+              assetId: 'asset',
+              objectKey: 'result/key',
+              renditions: {
+                thumb: { key: 'result/thumb', width: 480, height: 270, bytes: 1 },
+                preview: { key: 'result/preview', width: 1600, height: 900, bytes: 1 },
+              },
+              width: null,
+              height: null,
+              createdAt: row.updatedAt,
+            },
           ],
         };
       if (sql.includes('FROM dictionary_items'))
@@ -121,7 +133,7 @@ test('admin generation job detail loads results, labels and signed original prev
             { id: resultId, label: '风格' },
           ],
         };
-      if (sql.includes('FROM scheme_assets')) return { rows: [{ objectKey: 'original/key' }] };
+      if (sql.includes('FROM scheme_assets')) return { rows: [{ objectKey: 'original/key', renditions: null }] };
       if (sql.includes('FROM credit_reservations WHERE theme_job_id'))
         return { rows: [{ status: 'settled', amount: 20, createdAt: row.createdAt, updatedAt: row.updatedAt }] };
       if (sql.includes('FROM credit_transactions WHERE theme_job_id'))
@@ -133,7 +145,7 @@ test('admin generation job detail loads results, labels and signed original prev
   const detail = await getGenerationJob(pool, jobId, {
     signDownload: async (...args) => {
       signed.push(args);
-      return 'https://example.test/original';
+      return `https://example.test/${args[0]}`;
     },
   });
   assert.equal(detail.totalCreditsConsumed, null);
@@ -142,12 +154,18 @@ test('admin generation job detail loads results, labels and signed original prev
   assert.equal(detail.results[0]?.id, resultId);
   assert.equal(detail.industryLabel, '行业');
   assert.equal(detail.styleLabel, '风格');
-  assert.equal(detail.sourcePreviewUrl, 'https://example.test/original');
+  // 源图还没有衍生图时回退原图
+  assert.equal(detail.sourceThumbnailUrl, 'https://example.test/original/key');
+  assert.equal(detail.sourcePreviewUrl, 'https://example.test/original/key');
   assert.deepEqual(signed, [
     ['original/key', 300],
-    ['result/key', 300],
+    ['original/key', 300],
+    ['result/thumb', 300],
+    ['result/preview', 300],
   ]);
-  assert.equal(detail.results[0]?.previewUrl, 'https://example.test/original');
+  assert.equal(detail.results[0]?.thumbnailUrl, 'https://example.test/result/thumb');
+  assert.equal(detail.results[0]?.previewUrl, 'https://example.test/result/preview');
+  assert.equal(JSON.stringify(detail).includes('renditions'), false);
   assert.match(queries[1]?.sql ?? '', /ORDER BY r\.ordinal ASC,r\.id ASC/);
   assert.match(queries[3]?.sql ?? '', /ORDER BY created_at DESC, id DESC/);
   assert.deepEqual(
@@ -198,6 +216,7 @@ test('admin generation job detail tolerates missing labels, missing asset and si
       throw new Error('Signing failed');
     },
   });
+  assert.equal(failure.sourceThumbnailUrl, null);
   assert.equal(failure.sourcePreviewUrl, null);
 });
 

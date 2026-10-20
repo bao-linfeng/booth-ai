@@ -279,6 +279,16 @@ export const quotationDownloadApi = (id: string, revision: number) =>
     responseType: 'blob',
     responseReturn: 'body',
   });
+/** 项目冻结的图片资料：缩略图用于列表，预览图用于放大查看，原图走下载接口 */
+export interface ProjectAssetImage {
+  versionId: string;
+  thumbnailUrl: string;
+  previewUrl: string;
+}
+export const assetImagesApi = (id: string) =>
+  requestClient.get<ProjectAssetImage[]>(
+    `/v1/admin/projects/${id}/asset-images`,
+  );
 export const assetDownloadApi = (id: string, version: string) =>
   requestClient.get<{ downloadUrl: string; filename: string }>(
     `/v1/admin/projects/${id}/assets/${version}/download`,

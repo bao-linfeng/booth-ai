@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import type { AssetType, SchemeAsset } from '#/api/core/assets';
+import type {
+  AssetType,
+  SchemeAsset,
+  SchemeAssetWithImage,
+} from '#/api/core/assets';
 import type { BomItem, BomRecord } from '#/api/core/bom';
 import type { ReadinessResult } from '#/api/core/reviews';
 import type {
@@ -199,7 +203,9 @@ const changedKeys = computed(() =>
 const isDirty = computed(() => changedKeys.value.length > 0);
 
 const modelAssets = ref<SchemeAsset[]>([]);
-const schemeAssets = ref<SchemeAsset[]>([]);
+const schemeAssets = ref<SchemeAssetWithImage[]>([]);
+/** 资产列表附带的图片地址有时效（至少 10 分钟），记录拉取时间以便过期前刷新 */
+let schemeAssetsLoadedAt = 0;
 const modelUploading = ref(false);
 // 同一模型文件上传失败后重选重试沿用同一幂等键，避免响应丢失时重复新建
 const modelUploadKey = createUploadKey();
@@ -298,6 +304,7 @@ async function fetchDetail(preserveEdits = false) {
     assetCounts.checklist = assets.filter((a) => a.type === 'checklist').length;
     modelAssets.value = assets.filter((a) => a.type === 'model');
     schemeAssets.value = assets;
+    schemeAssetsLoadedAt = Date.now();
 
     formData.editRevision = res.editRevision;
     if (preserveEdits && isDirty.value) return;
@@ -514,16 +521,14 @@ const pairChecklist = computed(() =>
   renderingMaskChecklist(schemeAssets.value),
 );
 /**
- * 各类资产缩略图的取图权限：效果图、蒙版走预览权限；报馆图、平面素材没有预览权限，
- * 改用下载地址（附件响应头不影响 img 显示）
+ * 各类资产在资产汇总中的查看权限：效果图、蒙版看预览权限，报馆图、平面素材看下载权限；
+ * 缩略图与预览图地址由资产列表接口按同样规则签发
  */
-const thumbnailAccess: Partial<
-  Record<AssetType, { code: string; disposition: 'attachment' | 'preview' }>
-> = {
-  rendering: { code: 'assets-renderings.preview', disposition: 'preview' },
-  mask: { code: 'assets-masks.preview', disposition: 'preview' },
-  drawing: { code: 'assets-drawings.download', disposition: 'attachment' },
-  artwork: { code: 'assets-artworks.download', disposition: 'attachment' },
+const viewAccess: Partial<Record<AssetType, string>> = {
+  rendering: 'assets-renderings.preview',
+  mask: 'assets-masks.preview',
+  drawing: 'assets-drawings.download',
+  artwork: 'assets-artworks.download',
 };
 
 function isImageAsset(asset: SchemeAsset): boolean {
@@ -531,12 +536,12 @@ function isImageAsset(asset: SchemeAsset): boolean {
 }
 
 function canViewFile(asset: SchemeAsset): boolean {
-  const access = thumbnailAccess[asset.type];
-  return !!access && hasAccessByCodes([access.code]);
+  const code = viewAccess[asset.type];
+  return !!code && hasAccessByCodes([code]);
 }
 
 /** 资产汇总中逐个展示的报馆图、平面素材，按排序 */
-const resourceGalleries = computed<Record<string, SchemeAsset[]>>(() =>
+const resourceGalleries = computed<Record<string, SchemeAssetWithImage[]>>(() =>
   Object.fromEntries(
     (['drawing', 'artwork'] as const).map((type) => [
       type,
@@ -550,52 +555,12 @@ const resourceGalleries = computed<Record<string, SchemeAsset[]>>(() =>
   ),
 );
 
-/** 资产汇总中各图片的缩略图地址（按资产 id），只获取有取图权限的图片 */
-const thumbnailUrls = ref<Record<string, string>>({});
-let thumbnailSequence = 0;
-
-async function fetchThumbnails(assets: SchemeAsset[]) {
-  const sequence = ++thumbnailSequence;
-  const entries = await Promise.all(
-    assets.map(async (asset) => {
-      const access = thumbnailAccess[asset.type];
-      if (!access || !isImageAsset(asset) || !canViewFile(asset)) return null;
-      try {
-        const { url } = await getAssetDownloadUrlApi(
-          asset.schemeCode,
-          asset.id,
-          access.disposition,
-        );
-        return [asset.id, url] as const;
-      } catch (error) {
-        console.error(error);
-        return null;
-      }
-    }),
-  );
-  if (sequence !== thumbnailSequence) return;
-  thumbnailUrls.value = Object.fromEntries(
-    entries.filter((entry) => entry !== null),
-  );
-}
-
-// 只在资产汇总页签可见时获取；地址有时效，切回页签或资产刷新时重新获取
-watch(
-  () => (activeTab.value === 'assets' ? schemeAssets.value : null),
-  (assets) => {
-    if (!assets) return;
-    fetchThumbnails([
-      ...(canCheckPairs.value
-        ? pairChecklist.value.slots.flatMap((slot) => [
-            slot.rendering,
-            slot.mask,
-          ])
-        : []
-      ).filter((asset) => asset !== null),
-      ...Object.values(resourceGalleries.value).flat(),
-    ]);
-  },
-);
+// 图片地址随资产列表下发；停留较久后切回资产汇总页签时重新拉取，避免地址过期
+watch(activeTab, (tab) => {
+  if (tab === 'assets' && Date.now() - schemeAssetsLoadedAt > 5 * 60_000) {
+    fetchDetail(true);
+  }
+});
 
 const otherResources = computed(() =>
   otherResourceChecklist(
@@ -1232,8 +1197,9 @@ onMounted(() => {
                         class="flex min-w-40 flex-1 items-center gap-3"
                       >
                         <AImage
-                          v-if="part.asset && thumbnailUrls[part.asset.id]"
-                          :src="thumbnailUrls[part.asset.id]"
+                          v-if="part.asset?.thumbnailUrl"
+                          :src="part.asset.thumbnailUrl"
+                          :preview="{ src: part.asset.previewUrl ?? undefined }"
                           :alt="part.asset.name"
                           :width="128"
                           :height="72"
@@ -1365,8 +1331,9 @@ onMounted(() => {
                             class="m-0 w-32"
                           >
                             <AImage
-                              v-if="thumbnailUrls[asset.id]"
-                              :src="thumbnailUrls[asset.id]"
+                              v-if="asset.thumbnailUrl"
+                              :src="asset.thumbnailUrl"
+                              :preview="{ src: asset.previewUrl ?? undefined }"
                               :alt="asset.name"
                               :width="128"
                               :height="72"

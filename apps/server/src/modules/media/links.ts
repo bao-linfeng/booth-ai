@@ -28,6 +28,18 @@ export async function signImageByKey(
   return signImage(storage, { objectKey, renditions: row?.renditions }, variant, expiresIn);
 }
 
+/** 按版本 id 批量读取衍生图，供只查了原图版本的列表补签缩略图与预览图。 */
+export async function loadRenditions(pool: Pick<pg.Pool, 'query'>, versionIds: string[]): Promise<Map<string, Renditions | null>> {
+  if (!versionIds.length) return new Map();
+  const rows = (
+    await pool.query<{ id: string; renditions: Renditions | null }>(
+      'SELECT id::text AS id, renditions FROM asset_versions WHERE id = ANY($1::uuid[])',
+      [versionIds],
+    )
+  ).rows;
+  return new Map(rows.map(row => [row.id, row.renditions]));
+}
+
 export async function signImageLinks(
   storage: Signer,
   image: StoredImage,

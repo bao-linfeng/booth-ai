@@ -502,13 +502,20 @@ test('mask pairing candidates list renderings with size, order and occupying mas
     versionPageCount: null,
     versionCreatedAt: version ? new Date() : null,
   });
+  const renditionQueries: unknown[][] = [];
   const pool = {
-    query: async (_sql: string, values: unknown[]) => ({
-      rows:
-        values[1] === 'rendering'
-          ? [row('r1', 'rendering', 0, null, true), row('r2', 'rendering', 1, null, false)]
-          : [row('m1', 'mask', 0, 'r1', true)],
-    }),
+    query: async (sql: string, values: unknown[]) => {
+      if (sql.includes('renditions FROM asset_versions')) {
+        renditionQueries.push(values);
+        return { rows: [{ id: 'v-r1', renditions: { thumb: { key: 'thumb/r1' }, preview: { key: 'preview/r1' } } }] };
+      }
+      return {
+        rows:
+          values[1] === 'rendering'
+            ? [row('r1', 'rendering', 0, null, true), row('r2', 'rendering', 1, null, false)]
+            : [row('m1', 'mask', 0, 'r1', true)],
+      };
+    },
   } as unknown as pg.Pool;
   const signed: string[] = [];
   const storage = {
@@ -536,17 +543,88 @@ test('mask pairing candidates list renderings with size, order and occupying mas
       name: 'rendering-r1',
       sortOrder: 0,
       file: { originalFilename: 'r1.png', widthPx: 1600, heightPx: 900 },
-      thumbnailUrl: 'https://cdn.test/key/r1',
+      thumbnailUrl: 'https://cdn.test/thumb/r1',
       pairedMask: { id: 'm1', name: 'mask-m1', revision: 4 },
     },
     { id: 'r2', name: 'rendering-r2', sortOrder: 1, file: null, thumbnailUrl: null, pairedMask: null },
   ]);
-  assert.deepEqual(signed, ['key/r1']);
+  assert.deepEqual(signed, ['thumb/r1']);
+  assert.deepEqual(renditionQueries, [[['v-r1']]]);
 
   const noPreview = await request(allPermissionCodes.filter(code => code !== 'assets-renderings.preview'));
   assert.equal(noPreview.json().data[0].thumbnailUrl, null);
   assert.equal(signed.length, 1);
+  assert.equal(renditionQueries.length, 1);
 
   const readOnly = await request(allPermissionCodes.filter(code => code !== 'assets-masks.upload' && code !== 'assets-masks.update'));
   assert.equal(readOnly.statusCode, 403);
+});
+
+test('scheme asset list signs thumbnails and previews for viewable images only', async t => {
+  const row = (id: string, type: 'rendering' | 'drawing' | 'model', mimeType: string) => ({
+    id,
+    schemeId: 'scheme-id',
+    schemeCode: 'S-1',
+    schemeName: '方案',
+    type,
+    name: `${type}-${id}`,
+    sortOrder: 0,
+    relatedAssetId: null,
+    metadata: {},
+    isActive: true,
+    revision: 1,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    versionId: `v-${id}`,
+    versionAssetId: id,
+    versionObjectKey: `key/${id}`,
+    versionOriginalFilename: `${id}.bin`,
+    versionMimeType: mimeType,
+    versionByteSize: 10,
+    versionChecksum: 'c',
+    versionWidthPx: null,
+    versionHeightPx: null,
+    versionPageCount: null,
+    versionCreatedAt: new Date(),
+  });
+  const pool = {
+    query: async (sql: string) => {
+      if (sql.includes('renditions FROM asset_versions'))
+        return { rows: [{ id: 'v-r1', renditions: { thumb: { key: 'thumb/r1' }, preview: { key: 'preview/r1' } } }] };
+      return {
+        rows: [
+          row('r1', 'rendering', 'image/png'),
+          row('d1', 'drawing', 'image/jpeg'),
+          row('d2', 'drawing', 'application/pdf'),
+          row('m1', 'model', 'model/gltf-binary'),
+        ],
+      };
+    },
+  } as unknown as pg.Pool;
+  const storage = { signDownload: async (key: string) => `https://cdn.test/${key}` };
+  async function request(permissions: string[]) {
+    const app = contractApp();
+    t.after(() => app.close());
+    app.decorateRequest('principal', null);
+    app.addHook('onRequest', async req => {
+      req.principal = { site: 'admin', localId: 'admin-id', permissions } as Principal;
+    });
+    await registerAdminAssetsRoutes(app, pool, storage as unknown as ReturnType<typeof createStorage>);
+    const response = await app.inject({ method: 'GET', url: '/schemes/S-1/assets' });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json().data as { id: string; thumbnailUrl: string | null; previewUrl: string | null }[];
+  }
+
+  // 效果图用衍生图；报馆图衍生图未生成时回退原图；PDF 与模型不签图片地址
+  const links = (data: Awaited<ReturnType<typeof request>>) => data.map(asset => [asset.id, asset.thumbnailUrl, asset.previewUrl]);
+  assert.deepEqual(links(await request(allPermissionCodes)), [
+    ['r1', 'https://cdn.test/thumb/r1', 'https://cdn.test/preview/r1'],
+    ['d1', 'https://cdn.test/key/d1', 'https://cdn.test/key/d1'],
+    ['d2', null, null],
+    ['m1', null, null],
+  ]);
+  const limited = await request(
+    allPermissionCodes.filter(code => code !== 'assets-renderings.preview' && code !== 'assets-drawings.download'),
+  );
+  assert.ok(limited.every(asset => asset.thumbnailUrl === null && asset.previewUrl === null));
 });

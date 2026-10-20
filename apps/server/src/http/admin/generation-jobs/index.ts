@@ -86,6 +86,7 @@ const jobDetailSchema = {
     'isSelected',
     'industryLabel',
     'styleLabel',
+    'sourceThumbnailUrl',
     'sourcePreviewUrl',
     'credits',
   ],
@@ -100,6 +101,7 @@ const jobDetailSchema = {
     isSelected: { type: 'boolean' },
     industryLabel: nullableString,
     styleLabel: nullableString,
+    sourceThumbnailUrl: nullableString,
     sourcePreviewUrl: nullableString,
     credits: creditLedgerSchema,
     results: {
@@ -107,7 +109,7 @@ const jobDetailSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'ordinal', 'assetId', 'width', 'height', 'previewUrl', 'createdAt'],
+        required: ['id', 'ordinal', 'assetId', 'width', 'height', 'thumbnailUrl', 'previewUrl', 'createdAt'],
         properties: {
           id: string,
           ordinal: integer,
@@ -115,6 +117,7 @@ const jobDetailSchema = {
           assetId: string,
           width: nullableInteger,
           height: nullableInteger,
+          thumbnailUrl: nullableString,
           previewUrl: nullableString,
           createdAt: dateTime,
         },

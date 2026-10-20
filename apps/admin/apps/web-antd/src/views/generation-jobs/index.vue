@@ -355,13 +355,21 @@ onMounted(() => {
           style="margin-top: 16px"
           :column="2"
           size="small"
-          :label-style="{ paddingBottom: '12px', color: '#6b7280', paddingTop: '0' }"
+          :label-style="{
+            paddingBottom: '12px',
+            color: '#6b7280',
+            paddingTop: '0',
+          }"
           :content-style="{ paddingBottom: '12px', paddingTop: '0' }"
         >
           <DescriptionsItem
             label="任务ID"
             :span="2"
-            :label-style="{ paddingBottom: '12px', color: '#6b7280', paddingTop: '0' }"
+            :label-style="{
+              paddingBottom: '12px',
+              color: '#6b7280',
+              paddingTop: '0',
+            }"
             :content-style="{ paddingBottom: '12px', paddingTop: '0' }"
           >
             {{ detail.id }}
@@ -373,9 +381,7 @@ onMounted(() => {
             <Tag :color="statusColors[detail.status]">
               {{ statusLabels[detail.status] }}
             </Tag>
-            <span v-if="detail.phase" class="text-xs text-gray-500 ml-1"
-              >/ {{ detail.phase }}</span
-            >
+            <span v-if="detail.phase" class="text-xs text-gray-500 ml-1">/ {{ detail.phase }}</span>
           </DescriptionsItem>
 
           <DescriptionsItem label="方案编号">
@@ -523,9 +529,13 @@ onMounted(() => {
           </Descriptions>
         </div>
 
-        <div v-if="detail.sourcePreviewUrl" class="mt-4">
+        <div v-if="detail.sourceThumbnailUrl" class="mt-4">
           <div class="mb-2 text-sm font-medium text-gray-500">原图</div>
-          <Image :src="detail.sourcePreviewUrl" :width="160" />
+          <Image
+            :src="detail.sourceThumbnailUrl"
+            :preview="{ src: detail.sourcePreviewUrl ?? undefined }"
+            :width="160"
+          />
         </div>
 
         <div v-if="detail.results && detail.results.length > 0" class="mt-4">
@@ -537,8 +547,9 @@ onMounted(() => {
               class="flex flex-col gap-1"
             >
               <Image
-                v-if="result.previewUrl"
-                :src="result.previewUrl"
+                v-if="result.thumbnailUrl"
+                :src="result.thumbnailUrl"
+                :preview="{ src: result.previewUrl ?? undefined }"
                 class="h-28 rounded object-contain"
               />
               <div
@@ -547,10 +558,8 @@ onMounted(() => {
               >
                 无预览
               </div>
-              <span class="text-xs text-center text-gray-500"
-                >{{ result.direction ?? `#${result.ordinal}` }} ·
-                {{ result.width }} × {{ result.height }}</span
-              >
+              <span class="text-xs text-center text-gray-500">{{ result.direction ?? `#${result.ordinal}` }} ·
+                {{ result.width }} × {{ result.height }}</span>
             </div>
           </div>
         </div>

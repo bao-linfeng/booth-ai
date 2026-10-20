@@ -3,6 +3,7 @@ import { projectError, type ProjectStatus } from './domain.js';
 import type { MaterialsSnapshot, SchemeSnapshot } from './snapshot.js';
 import { assigneeStatusSql, type AssigneeStatus } from './assignment.js';
 import { dictionaryItemLabels } from '../dictionaries/service.js';
+import type { StoredImage } from '../media/links.js';
 
 export interface RequestSnapshot {
   exhibition?: { name: string; countryCode: string; city: string; startDate: string; endDate: string };
@@ -140,6 +141,21 @@ export async function requirementOptionLabels(db: pg.Pool, request: RequestSnaps
     .flatMap(([, value]) => (Array.isArray(value) ? value : [value]))
     .filter((value): value is string => typeof value === 'string');
   return dictionaryItemLabels(db, [...new Set(ids)]);
+}
+
+/** 项目快照冻结的图片版本（含衍生图），供后台工作区显示缩略图 */
+export async function listProjectImageVersions(
+  db: Pick<pg.Pool, 'query'>,
+  projectId: string,
+): Promise<(StoredImage & { versionId: string })[]> {
+  return (
+    await db.query<StoredImage & { versionId: string }>(
+      `SELECT v.id::text AS "versionId",v.object_key AS "objectKey",v.renditions
+    FROM project_asset_versions p JOIN asset_versions v ON v.id=p.asset_version_id
+    WHERE p.project_id=$1 AND v.mime_type LIKE 'image/%' ORDER BY v.id`,
+      [projectId],
+    )
+  ).rows;
 }
 
 /** 项目快照冻结的资产版本；不属于该项目的版本视为不存在 */
