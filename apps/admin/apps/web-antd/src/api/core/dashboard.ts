@@ -41,6 +41,19 @@ export interface DashboardWorkspace {
       createdAt: string;
     }[];
   } | null;
+  /** 待分配池：仅有分配权限（projects.assign）的人返回，items 为最早受理的最多 10 条 */
+  assignmentPool: null | {
+    items: {
+      company: null | string;
+      contactName: null | string;
+      createdAt: string;
+      exhibitionName: null | string;
+      projectId: string;
+      projectNo: string;
+      sourceType: 'manual_request' | 'quote_request';
+    }[];
+    total: number;
+  };
   notifications: null | { unread: number };
 }
 

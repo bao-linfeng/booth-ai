@@ -19,14 +19,31 @@ const modal = await vi.hoisted(async () => {
   return createFakeModal();
 });
 const api = vi.hoisted(() => ({
-  assignProjectApi: vi.fn(),
   followUpApi: vi.fn(),
-  getAssigneesApi: vi.fn(),
   getProjectApi: vi.fn(),
   linkSchemeApi: vi.fn(),
+  quotationRevisionsApi: vi.fn(),
+}));
+
+const access = vi.hoisted(() => ({ codes: new Set<string>() }));
+const schemes = vi.hoisted(() => ({
+  getSchemeListApi: vi.fn(),
+  listSchemeAssetsApi: vi.fn(),
 }));
 
 vi.mock('#/adapter/form', () => ({ useVbenForm: form.useVbenForm }));
+vi.mock('@vben/access', () => ({
+  useAccess: () => ({
+    hasAccessByCodes: (codes: string[]) =>
+      codes.every((code) => access.codes.has(code)),
+  }),
+}));
+vi.mock('#/api/core/schemes', () => ({
+  getSchemeListApi: schemes.getSchemeListApi,
+}));
+vi.mock('#/api/core/assets', () => ({
+  listSchemeAssetsApi: schemes.listSchemeAssetsApi,
+}));
 vi.mock('@vben/common-ui', () => ({ useVbenModal: modal.useVbenModal }));
 vi.mock('@vben/utils', () => ({ formatDateTime: (value: string) => value }));
 vi.mock('ant-design-vue', async () => {
@@ -75,7 +92,11 @@ async function mount() {
   container = document.createElement('div');
   document.body.append(container);
   const modalRef = ref<{
-    open: (record: ProjectDetail, operation: string) => Promise<void>;
+    open: (
+      record: ProjectDetail,
+      operation: string,
+      preset?: { targetStatus?: ProjectDetail['status'] },
+    ) => Promise<void>;
   }>();
   app = createApp({
     render: () => h(OperationModal, { onReload: reloads, ref: modalRef }),
@@ -93,8 +114,37 @@ function alertText() {
   return container.querySelector('[role="alert"]')?.textContent ?? '';
 }
 
+const revision = (number: number, completeness: 'incomplete' | 'ready') => ({
+  completeness,
+  createdAt: '2026-10-01T00:00:00Z',
+  createdByName: '销售',
+  currency: 'CNY',
+  revision: number,
+  totalAmount: completeness === 'ready' ? '1000' : null,
+  validUntil: '2026-11-30',
+  validityTimeZone: 'Asia/Shanghai',
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
+  access.codes = new Set();
+  schemes.getSchemeListApi.mockResolvedValue({
+    data: [
+      { code: 'SC-6030', lengthMm: 6000, name: '六米展台', widthMm: 3000 },
+    ],
+    page: 1,
+    pageSize: 20,
+    total: 1,
+  });
+  schemes.listSchemeAssetsApi.mockResolvedValue([
+    { thumbnailUrl: null },
+    { thumbnailUrl: 'https://s3.test/rendering/thumb' },
+  ]);
+  api.quotationRevisionsApi.mockResolvedValue([
+    revision(3, 'incomplete'),
+    revision(2, 'ready'),
+    revision(1, 'ready'),
+  ]);
   let key = 0;
   vi.spyOn(crypto, 'randomUUID').mockImplementation(
     () => `00000000-0000-4000-8000-00000000000${++key}` as const,
@@ -112,11 +162,21 @@ describe('operation modal follow-up', () => {
     await modalApi.open(project(), 'follow-up');
     expect(modal.state.title).toBe('追加跟进与状态记录');
     expect(form.state.values).toMatchObject({
-      channel: '邮件',
+      channel: 'email',
       contactMethod: 'phone',
       evidenceType: 'platform',
       quotationRevision: 2,
     });
+    expect(form.state.values).not.toHaveProperty('targetStatus');
+    expect(form.options('quotationRevision')).toEqual([
+      { label: 'r2 · CNY 1000 · 有效期至 2026-11-30', value: 2 },
+      { label: 'r1 · CNY 1000 · 有效期至 2026-11-30', value: 1 },
+    ]);
+    expect(form.options('channel')).toContainEqual({
+      label: '邮件',
+      value: 'email',
+    });
+    expect(() => form.field('publicResult')).toThrow('Missing schema field');
     form.edit({
       content: '客户确认报价',
       outcome: '切换状态后残留的隐藏字段',
@@ -135,7 +195,7 @@ describe('operation modal follow-up', () => {
       content: '客户确认报价',
       expectedRevision: 5,
       quoteEvidence: {
-        channel: '邮件',
+        channel: 'email',
         quotationRevision: 2,
         type: 'platform',
       },
@@ -163,6 +223,41 @@ describe('operation modal follow-up', () => {
     expect(form.field('quotationRevision').help).toContain(
       '还没有平台报价修订',
     );
+    expect(api.quotationRevisionsApi).not.toHaveBeenCalled();
+  });
+
+  it('treats a project whose revisions are all incomplete like one without platform evidence', async () => {
+    api.quotationRevisionsApi.mockResolvedValue([revision(1, 'incomplete')]);
+    const modalApi = await mount();
+    await modalApi.open(project(), 'follow-up');
+    expect(form.state.values.evidenceType).toBe('external_manual');
+    expect(form.state.values.quotationRevision).toBeUndefined();
+    expect(form.field('quotationRevision').help).toContain(
+      '还没有填写完整的报价修订',
+    );
+  });
+
+  it('preselects following for pending projects and honours quick-action presets', async () => {
+    const pending = project({
+      status: 'pending',
+      statusTransitions: ['following', 'quoted', 'closed'],
+    });
+    const modalApi = await mount();
+    await modalApi.open(pending, 'follow-up');
+    expect(form.state.values.targetStatus).toBe('following');
+    await modalApi.open(pending, 'follow-up', { targetStatus: 'closed' });
+    expect(form.state.values.targetStatus).toBe('closed');
+    await modalApi.open(project(), 'follow-up', { targetStatus: 'won' });
+    expect(form.state.values.targetStatus).toBe('won');
+    // 不在可选状态内的预设被忽略
+    await modalApi.open(
+      project({ statusTransitions: ['following'] }),
+      'follow-up',
+      {
+        targetStatus: 'won',
+      },
+    );
+    expect(form.state.values).not.toHaveProperty('targetStatus');
   });
 
   it('offers reopening for a terminal project and requires a reason only when reopening', async () => {
@@ -238,35 +333,12 @@ describe('operation modal follow-up', () => {
   });
 });
 
-describe('operation modal assignment and scheme', () => {
-  it('reassigns with the selected admin and reason against the current revision', async () => {
-    api.getAssigneesApi.mockResolvedValue([
-      { id: 'admin-1', name: '原负责人' },
-      { id: 'admin-2', name: '新负责人' },
-    ]);
-    const modalApi = await mount();
-    await modalApi.open(project(), 'assignment');
-    expect(modal.state.title).toBe('改派承接人');
-    expect(form.state.values.assigneeAdminId).toBe('admin-1');
-    expect(form.options('assigneeAdminId')).toEqual([
-      { label: '原负责人', value: 'admin-1' },
-      { label: '新负责人', value: 'admin-2' },
-    ]);
-    form.edit({ assigneeAdminId: 'admin-2', reason: '区域调整' });
-    api.assignProjectApi.mockResolvedValue({});
-    await confirm();
-    expect(api.assignProjectApi).toHaveBeenCalledWith('project-1', {
-      assigneeAdminId: 'admin-2',
-      expectedRevision: 5,
-      reason: '区域调整',
-      requestKey: '00000000-0000-4000-8000-000000000001',
-    });
-    expect(api.followUpApi).not.toHaveBeenCalled();
-  });
-
+describe('operation modal scheme', () => {
   it('links the confirmed scheme with the customer confirmation note', async () => {
     const modalApi = await mount();
     await modalApi.open(project(), 'scheme');
+    expect(modal.state.title).toBe('确认关联方案');
+    expect(form.field('schemeCode').label).toBe('已确认方案编号');
     form.edit({ confirmationNote: '客户邮件确认', schemeCode: 'SC-6030' });
     api.linkSchemeApi.mockResolvedValue({});
     await confirm();
@@ -276,5 +348,47 @@ describe('operation modal assignment and scheme', () => {
       requestKey: '00000000-0000-4000-8000-000000000001',
       schemeCode: 'SC-6030',
     });
+    expect(schemes.getSchemeListApi).not.toHaveBeenCalled();
+  });
+
+  it('searches published schemes and previews the picked one before relinking', async () => {
+    access.codes = new Set(['assets-renderings.read', 'schemes.read']);
+    const modalApi = await mount();
+    await modalApi.open(project({ schemeCode: 'SC-OLD' }), 'scheme');
+    expect(modal.state.title).toBe('重新关联方案');
+    expect(container.textContent).toContain('当前已关联 SC-OLD');
+    expect(schemes.getSchemeListApi).toHaveBeenCalledWith({
+      keyword: undefined,
+      pageSize: 20,
+      publishStatus: 'published',
+    });
+    expect(form.options('schemeCode')).toEqual([
+      { label: 'SC-6030 · 六米展台', value: 'SC-6030' },
+    ]);
+    const props = form.field('schemeCode').componentProps as {
+      onChange: (value: string) => Promise<void>;
+      onSearch: (keyword: string) => void;
+    };
+    vi.useFakeTimers();
+    props.onSearch('六米');
+    props.onSearch('六米展');
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+    expect(schemes.getSchemeListApi).toHaveBeenCalledTimes(2);
+    expect(schemes.getSchemeListApi).toHaveBeenLastCalledWith(
+      expect.objectContaining({ keyword: '六米展' }),
+    );
+    await props.onChange('SC-6030');
+    await flush();
+    expect(schemes.listSchemeAssetsApi).toHaveBeenCalledWith(
+      'SC-6030',
+      'rendering',
+    );
+    const picked = container.querySelector('[data-test="picked-scheme"]');
+    expect(picked?.textContent).toContain('六米展台');
+    expect(picked?.textContent).toContain('SC-6030 · 6 × 3 m');
+    expect(picked?.querySelector('img')?.getAttribute('src')).toBe(
+      'https://s3.test/rendering/thumb',
+    );
   });
 });

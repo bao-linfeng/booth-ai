@@ -5,7 +5,13 @@ import { projectTestPool } from '../helpers/project-fixtures.js';
 import { contractApp } from '../helpers/http-app.js';
 import type { Redis } from 'ioredis';
 import { createManualProject } from '../../src/modules/projects/service.js';
-import { assignProject, followUpProject, saveQuotation, quotationRevision } from '../../src/modules/projects/admin-service.js';
+import {
+  assignProject,
+  followUpProject,
+  saveQuotation,
+  quotationRevision,
+  updatePublicResult,
+} from '../../src/modules/projects/admin-service.js';
 import { getProject } from '../../src/modules/projects/repository.js';
 import { claimAnonymousProjects } from '../../src/modules/projects/claims.js';
 import {
@@ -141,19 +147,37 @@ test(
       content: '确认成交',
       targetStatus: 'won',
       outcome: '接受方案与报价',
-      publicResult: '已确认项目方案',
     });
-    await assert.rejects(assignProject(pool, id, admin, { ...assignment, requestKey: randomUUID(), expectedRevision: won.revision }), {
-      reason: 'INVALID_STATUS_TRANSITION',
+    // 客户可见结果独立更新，终态项目也可以修改
+    const published = await updatePublicResult(pool, id, admin, {
+      requestKey: randomUUID(),
+      expectedRevision: won.revision,
+      publicResult: ' 已确认项目方案 ',
     });
+    assert.deepEqual(published, { projectId: id, revision: won.revision + 1, publicResult: '已确认项目方案' });
+    // 终态项目可直接改派，状态不变
+    const terminalAssigned = await assignProject(pool, id, admin, {
+      ...assignment,
+      requestKey: randomUUID(),
+      expectedRevision: published.revision,
+      assigneeAdminId: admin,
+      reason: '成交后交回原负责人',
+    });
+    assert.equal(terminalAssigned.revision, published.revision + 1);
+    assert.equal((await getProject(pool, id)).status, 'won');
     await assert.rejects(
-      saveQuotation(pool, id, admin, { ...quote, requestKey: randomUUID(), expectedRevision: won.revision, expectedQuotationRevision: 2 }),
+      saveQuotation(pool, id, admin, {
+        ...quote,
+        requestKey: randomUUID(),
+        expectedRevision: terminalAssigned.revision,
+        expectedQuotationRevision: 2,
+      }),
       { reason: 'INVALID_STATUS_TRANSITION' },
     );
     await assert.rejects(
       followUpProject(pool, id, admin, {
         requestKey: randomUUID(),
-        expectedRevision: won.revision,
+        expectedRevision: terminalAssigned.revision,
         contactMethod: 'email',
         contactedAt: new Date().toISOString(),
         content: '直接回到待跟进',
@@ -163,7 +187,7 @@ test(
     );
     const reopened = await followUpProject(pool, id, admin, {
       requestKey: randomUUID(),
-      expectedRevision: won.revision,
+      expectedRevision: terminalAssigned.revision,
       contactMethod: 'email',
       contactedAt: new Date().toISOString(),
       content: '客户补充需求',
@@ -231,7 +255,7 @@ test(
     const adminDetail = (await app.inject({ url: `/admin/projects/${id}`, headers })).json().data;
     assert.deepEqual(adminDetail.statusTransitions, ['quoted', 'won', 'lost', 'closed']);
     assert.deepEqual(adminDetail.requirementOptionLabels, {});
-    const assigned = adminDetail.events.find((event: { kind: string }) => event.kind === 'assignment');
+    const assigned = adminDetail.events.findLast((event: { kind: string }) => event.kind === 'assignment');
     assert.equal(assigned.assigneeName, secondAdmin);
     assert.equal(assigned.fromAssigneeName, admin);
     const timelineIds = Array.from({ length: 25 }, (_, n) => `00000000-0000-4000-8000-${String(n + 1).padStart(12, '0')}`);
@@ -261,7 +285,7 @@ test(
     );
     project = await getProject(pool, id);
     assert.equal(project.status, 'following');
-    assert.equal(project.revision, 8);
+    assert.equal(project.revision, 10);
   },
 );
 

@@ -11,7 +11,7 @@ import { Button, message, Tag } from 'ant-design-vue';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import {
   deliveryLabels,
-  notificationKindLabels,
+  notificationKindLabel,
   notificationSummary,
 } from '#/api/core/project-notifications';
 import { useNotificationStore } from '#/store';
@@ -59,11 +59,12 @@ const deliveryColors = {
       </template>
 
       <template #kind="{ row }">
-        <Tag color="blue">
-          {{
-            notificationKindLabels[(row as ProjectNotification).kind] ??
-            (row as ProjectNotification).kind
-          }}
+        <Tag
+          :color="
+            (row as ProjectNotification).audience === 'all' ? 'blue' : 'orange'
+          "
+        >
+          {{ notificationKindLabel(row as ProjectNotification) }}
         </Tag>
       </template>
 

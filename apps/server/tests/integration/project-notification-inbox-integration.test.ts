@@ -55,13 +55,13 @@ test(
     await pool.query('UPDATE project_notification_outbox SET delivered_at=now() WHERE id=$1', [notifications[0]]);
     const [accepted, artworks] = notifications as [string, string];
     const mine = async (adminId: string, isRead?: boolean) =>
-      (await listNotificationInbox(pool, adminId, { projectNo: undefined, isRead, pageSize: 100 })).items.filter(
+      (await listNotificationInbox(pool, adminId, false, { projectNo: undefined, isRead, pageSize: 100 })).items.filter(
         row => row.projectId === projectId,
       );
 
     assert.equal((await mine(first, false)).length, 2);
-    await markNotificationRead(pool, first, accepted);
-    await markNotificationRead(pool, first, accepted);
+    await markNotificationRead(pool, first, false, accepted);
+    await markNotificationRead(pool, first, false, accepted);
     assert.deepEqual(
       (await mine(first, true)).map(row => row.id),
       [accepted],
@@ -72,22 +72,23 @@ test(
     );
     assert.equal((await mine(second, false)).length, 2, 'read state is per admin');
 
-    const detail = await getNotificationInboxDetail(pool, first, accepted);
+    const detail = await getNotificationInboxDetail(pool, first, false, accepted);
     assert.deepEqual(
       { kind: detail.kind, company: detail.company, exhibition: detail.exhibitionName, delivery: detail.delivery, isRead: detail.isRead },
       { kind: 'accepted', company: '测试公司', exhibition: '测试展会', delivery: 'delivered', isRead: true },
     );
-    assert.equal((await getNotificationInboxDetail(pool, first, artworks)).delivery, 'pending');
+    assert.equal((await getNotificationInboxDetail(pool, first, false, artworks)).delivery, 'pending');
     assert.equal(
-      (await listNotificationInbox(pool, first, { kind: 'artworks', pageSize: 100 })).items.filter(row => row.projectId === projectId)
-        .length,
+      (await listNotificationInbox(pool, first, false, { kind: 'artworks', pageSize: 100 })).items.filter(
+        row => row.projectId === projectId,
+      ).length,
       1,
     );
 
-    assert.ok((await markAllNotificationsRead(pool, second)) >= 2);
+    assert.ok((await markAllNotificationsRead(pool, second, false)) >= 2);
     assert.equal((await mine(second, false)).length, 0);
-    assert.equal((await listNotificationInbox(pool, second, {})).unreadCount, 0);
-    await assert.rejects(getNotificationInboxDetail(pool, first, randomUUID()), { statusCode: 404 });
-    await assert.rejects(markNotificationRead(pool, first, randomUUID()), { statusCode: 404 });
+    assert.equal((await listNotificationInbox(pool, second, false, {})).unreadCount, 0);
+    await assert.rejects(getNotificationInboxDetail(pool, first, false, randomUUID()), { statusCode: 404 });
+    await assert.rejects(markNotificationRead(pool, first, false, randomUUID()), { statusCode: 404 });
   },
 );

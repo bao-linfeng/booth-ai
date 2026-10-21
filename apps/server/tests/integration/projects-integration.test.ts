@@ -7,7 +7,7 @@ import type { Redis } from 'ioredis';
 import { registerQuoteRequestRoutes } from '../../src/http/client/quote-requests/index.js';
 import { registerAuthentication } from '../../src/http/authentication.js';
 import { createManualProject, createQuoteRequest } from '../../src/modules/projects/service.js';
-import { linkProjectScheme, type SchemeLinkInput } from '../../src/modules/projects/admin-service.js';
+import { linkProjectScheme, saveQuotation, type SchemeLinkInput } from '../../src/modules/projects/admin-service.js';
 import { getProject } from '../../src/modules/projects/repository.js';
 import type { ManualInput, QuoteInput } from '../../src/modules/projects/domain.js';
 import { emptyRequirement } from '../../src/modules/selection/domain.js';
@@ -105,13 +105,27 @@ test(
     assert.equal(results.filter(result => !result.replayed).length, 1);
     assert.equal((await pool.query('SELECT id FROM project_notification_outbox WHERE project_id=$1', [receipt.projectId])).rowCount, 1);
     await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=null');
-    await assert.rejects(createQuoteRequest(pool, user, { ...input, requestKey: randomUUID() }), {
-      reason: 'ASSIGNMENT_UNAVAILABLE',
-      statusCode: 503,
-    });
+    // 未配置默认承接人时照常受理，项目进入待分配池，受理通知只对有分配权限的人可见
+    const pooled = (await createQuoteRequest(pool, other, { ...input, requestKey: randomUUID() })).receipt;
+    projects.push(pooled.projectId);
+    assert.equal(pooled.status, 'pending');
+    assert.deepEqual(
+      (
+        await pool.query(
+          `SELECT p.assignee_admin_id AS assignee,e.payload,o.audience FROM projects p
+        JOIN project_events e ON e.project_id=p.id AND e.kind='accepted' JOIN project_notification_outbox o ON o.event_id=e.id WHERE p.id=$1`,
+          [pooled.projectId],
+        )
+      ).rows,
+      [{ assignee: null, payload: { assigneeAdminId: null, poolReason: 'unconfigured', revision: 1 }, audience: 'assigners' }],
+    );
+    assert.equal(
+      (await pool.query('SELECT audience FROM project_notification_outbox WHERE project_id=$1', [receipt.projectId])).rows[0].audience,
+      'all',
+    );
     assert.deepEqual((await createQuoteRequest(pool, user, input)).receipt, receipt);
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM projects')).rows[0].count, 1);
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM project_notification_outbox')).rows[0].count, 1);
+    assert.equal((await pool.query('SELECT count(*)::int AS count FROM projects')).rows[0].count, 2);
+    assert.equal((await pool.query('SELECT count(*)::int AS count FROM project_notification_outbox')).rows[0].count, 2);
     await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=$1', [admin]);
     const redis = {
       get: async () =>
@@ -195,13 +209,17 @@ test(
     await assert.rejects(linkProjectScheme(pool, manualId, admin, { ...linkInput, confirmationNote: '客户确认内容已变更' }), {
       reason: 'IDEMPOTENCY_CONFLICT',
     });
-    await assert.rejects(linkProjectScheme(pool, manualId, admin, { ...linkInput, requestKey: randomUUID(), expectedRevision: 2 }), {
-      reason: 'SCHEME_ALREADY_LINKED',
-    });
+    // 报价申请不能重新关联方案
     await assert.rejects(linkProjectScheme(pool, receipt.projectId, admin, { ...linkInput, requestKey: randomUUID() }), {
-      reason: 'SCHEME_ALREADY_LINKED',
+      reason: 'SCHEME_RELINK_BLOCKED',
+      statusCode: 409,
     });
     assert.equal((await pool.query("SELECT id FROM project_events WHERE project_id=$1 AND kind='scheme'", [manualId])).rowCount, 1);
+    assert.equal(
+      (await pool.query("SELECT payload->>'fromSchemeCode' AS from FROM project_events WHERE project_id=$1 AND kind='scheme'", [manualId]))
+        .rows[0].from,
+      null,
+    );
     assert.equal(
       (
         await pool.query("SELECT request_key FROM project_operations WHERE actor_id=$1 AND operation='scheme' AND target=$2", [
@@ -213,6 +231,48 @@ test(
     );
     assert.equal((await getProject(pool, manualId)).revision, 2);
     assert.deepEqual(await pinnedVersions(manualId), linkedVersions);
+    // 未报价、未结束的人工需求可以重新关联方案：替换冻结的资料版本，事件记录原方案
+    const relinkId = String((await createManualProject(pool, other, { ...manualInput, requestKey: randomUUID() })).receipt.projectId);
+    projects.push(relinkId);
+    await linkProjectScheme(pool, relinkId, admin, { ...linkInput, requestKey: randomUUID() });
+    const relinked = await linkProjectScheme(pool, relinkId, admin, {
+      ...linkInput,
+      requestKey: randomUUID(),
+      expectedRevision: 2,
+      confirmationNote: '客户改选方案',
+    });
+    assert.equal(relinked.revision, 3);
+    assert.deepEqual(await pinnedVersions(relinkId), linkedVersions);
+    assert.deepEqual(
+      (
+        await pool.query(
+          "SELECT payload->>'fromSchemeCode' AS from,payload->>'schemeCode' AS to FROM project_events WHERE project_id=$1 AND kind='scheme' ORDER BY created_at",
+          [relinkId],
+        )
+      ).rows,
+      [
+        { from: null, to: code },
+        { from: code, to: code },
+      ],
+    );
+    // 有报价修订后不能再重新关联
+    await saveQuotation(pool, relinkId, admin, {
+      requestKey: randomUUID(),
+      expectedRevision: 3,
+      expectedQuotationRevision: 0,
+      currency: 'CNY',
+      priceBasis: 'included',
+      validUntil: '2099-12-31',
+      validityTimeZone: 'Asia/Shanghai',
+      items: [],
+      terms: '',
+      inclusions: '',
+      exclusions: '',
+      changeReason: '草稿',
+    });
+    await assert.rejects(linkProjectScheme(pool, relinkId, admin, { ...linkInput, requestKey: randomUUID(), expectedRevision: 4 }), {
+      reason: 'SCHEME_RELINK_BLOCKED',
+    });
     const job = randomUUID();
     const result = randomUUID();
     const themedAsset = randomUUID();

@@ -808,7 +808,6 @@
     "errorAccountChanged2": "Le compte a changé. Reconfirmez.",
     "errorFormInvalid2": "Vérifiez les dates, le budget et les coordonnées. Vos données sont conservées.",
     "errorNetworkRetry": "Résultat non confirmé. Réessayez.",
-    "errorAssignmentUnavailable": "Les demandes ne peuvent pas être acceptées pour le moment. Aucun projet n’a été créé. Votre formulaire a été conservé ; renvoyez-le plus tard ou contactez le service client.",
     "validationExhibition": "Veuillez saisir le nom du salon.",
     "validationCountry": "Veuillez choisir un pays.",
     "validationCity": "Veuillez choisir une ville.",

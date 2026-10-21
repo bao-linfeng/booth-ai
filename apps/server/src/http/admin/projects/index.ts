@@ -6,12 +6,15 @@ import { adminUserId } from '../../authentication.js';
 import { fileResponse, successResponse } from '../../schemas.js';
 import {
   assignProject,
+  claimProject,
   followUpProject,
   linkProjectScheme,
+  listQuotationRevisions,
   quotationRevision,
   saveQuotation,
   saveAssignmentConfig,
   statusTransitions,
+  updatePublicResult,
 } from '../../../modules/projects/admin-service.js';
 import { signImageLinks } from '../../../modules/media/links.js';
 import {
@@ -26,9 +29,11 @@ import { quotationWorkbook } from '../../../modules/projects/quotation-workbook.
 import { projectError } from '../../../modules/projects/domain.js';
 import {
   assignmentSchema,
+  claimSchema,
   followUpSchema,
   linkSchema,
   projectParams,
+  publicResultSchema,
   queryProperties,
   quotationSchema,
   statuses,
@@ -53,6 +58,13 @@ const listQuerySchema = {
     assigneeAdminId: uuid,
     exhibitionStartFrom: { type: 'string', format: 'date' },
     exhibitionStartTo: { type: 'string', format: 'date' },
+    assignment: {
+      type: 'string',
+      enum: ['unassigned', 'needs_assignment'],
+      description: 'unassigned：待分配；needs_assignment：待分配或承接人失效且未结束',
+    },
+    mine: { type: 'boolean', description: '只看当前登录管理员负责的项目（优先于 assigneeAdminId）' },
+    followUp: { type: 'string', enum: ['overdue', 'today'], description: '未结束项目中下次跟进已逾期 / 今天到期（上海时区）' },
   },
 } as const;
 const revisionProperty = { revision: { type: 'integer', minimum: 1 } } as const;
@@ -68,7 +80,7 @@ const nullableString = { type: ['string', 'null'] } as const;
 const nullableInteger = { type: ['integer', 'null'] } as const;
 const dateTime = { type: 'string', format: 'date-time' } as const;
 const projectStatus = { type: 'string', enum: statuses } as const;
-const assigneeStatus = { type: 'string', enum: ['active', 'disabled', 'permission_revoked'] } as const;
+const assigneeStatus = { type: 'string', enum: ['active', 'disabled', 'permission_revoked', 'unassigned'] } as const;
 // 受理时冻结的需求、方案、物料与报价快照，结构随版本演进，原样返回
 const frozen = (description: string) => ({ description }) as const;
 const materialsStatus = {
@@ -83,8 +95,8 @@ const projectProperties = {
   requestNo: string,
   sourceType: { type: 'string', enum: ['quote_request', 'manual_request'] },
   customerUserId: nullableString,
-  assigneeAdminId: string,
-  assigneeName: string,
+  assigneeAdminId: { ...nullableString, description: '待分配项目为 null' },
+  assigneeName: nullableString,
   assigneeStatus,
   status: projectStatus,
   revision: integer,
@@ -93,6 +105,7 @@ const projectProperties = {
   schemeSnapshot: frozen('关联方案的冻结快照'),
   materials: frozen('物料（清单、报馆图、平面素材）冻结快照'),
   publicResult: nullableString,
+  nextFollowUpAt: { type: ['string', 'null'], format: 'date-time', description: '最新一条跟进记录约定的下次跟进时间' },
   createdAt: dateTime,
   updatedAt: dateTime,
 } as const;
@@ -155,7 +168,27 @@ const linkReceipt = {
 const quotationReceipt = {
   type: 'object',
   additionalProperties: false,
-  properties: { projectId: string, projectRevision: integer, quotation },
+  properties: { projectId: string, projectRevision: integer, status: projectStatus, quotation },
+} as const;
+const publicResultReceipt = {
+  type: 'object',
+  additionalProperties: false,
+  properties: { projectId: string, revision: integer, publicResult: nullableString },
+} as const;
+const quotationRevisionSummary = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['revision', 'completeness', 'currency', 'totalAmount', 'validUntil', 'validityTimeZone', 'createdAt', 'createdByName'],
+  properties: {
+    revision: integer,
+    completeness: { type: 'string', enum: ['incomplete', 'ready'] },
+    currency: string,
+    totalAmount: nullableString,
+    validUntil: string,
+    validityTimeZone: string,
+    createdAt: dateTime,
+    createdByName: nullableString,
+  },
 } as const;
 
 export async function registerAdminProjectRoutes(app: FastifyInstance, pool: pg.Pool, storage: ReturnType<typeof createStorage>) {
@@ -219,7 +252,13 @@ export async function registerAdminProjectRoutes(app: FastifyInstance, pool: pg.
           },
         },
       },
-      async request => ({ code: 0, data: await listProjects(pool, request.query) }) as const,
+      async request => {
+        const { mine, ...query } = request.query;
+        return {
+          code: 0,
+          data: await listProjects(pool, mine ? { ...query, assigneeAdminId: adminUserId(request) } : query),
+        } as const;
+      },
     );
 
     routes.get(
@@ -286,6 +325,20 @@ export async function registerAdminProjectRoutes(app: FastifyInstance, pool: pg.
     );
 
     routes.post(
+      '/projects/:projectId/claim',
+      {
+        config: { permissions: ['projects.follow-up'] },
+        schema: {
+          description: '领取待分配项目（分配给自己）；已有承接人时返回 409 PROJECT_ALREADY_ASSIGNED',
+          params: projectParams,
+          body: claimSchema,
+          response: { 200: successResponse(assignmentReceipt) },
+        },
+      },
+      async request => ({ code: 0, data: await claimProject(pool, request.params.projectId, adminUserId(request), request.body) }) as const,
+    );
+
+    routes.post(
       '/projects/:projectId/follow-ups',
       {
         config: { permissions: ['projects.follow-up'] },
@@ -293,6 +346,21 @@ export async function registerAdminProjectRoutes(app: FastifyInstance, pool: pg.
       },
       async request =>
         ({ code: 0, data: await followUpProject(pool, request.params.projectId, adminUserId(request), request.body) }) as const,
+    );
+
+    routes.put(
+      '/projects/:projectId/public-result',
+      {
+        config: { permissions: ['projects.follow-up'] },
+        schema: {
+          description: '更新客户可见结果（提交后客户可见），终态项目也可修改；空字符串表示撤下',
+          params: projectParams,
+          body: publicResultSchema,
+          response: { 200: successResponse(publicResultReceipt) },
+        },
+      },
+      async request =>
+        ({ code: 0, data: await updatePublicResult(pool, request.params.projectId, adminUserId(request), request.body) }) as const,
     );
 
     routes.put(
@@ -332,6 +400,22 @@ export async function registerAdminProjectRoutes(app: FastifyInstance, pool: pg.
             quotation: await quotationRevision(pool, project.projectId, request.query.revision),
           },
         } as const;
+      },
+    );
+
+    routes.get(
+      '/projects/:projectId/quotation/revisions',
+      {
+        config: { permissions: ['projects.read'] },
+        schema: {
+          description: '报价修订列表，按修订号倒序',
+          params: projectParams,
+          response: { 200: successResponse({ type: 'array', items: quotationRevisionSummary }) },
+        },
+      },
+      async request => {
+        await getProject(pool, request.params.projectId);
+        return { code: 0, data: await listQuotationRevisions(pool, request.params.projectId) } as const;
       },
     );
 

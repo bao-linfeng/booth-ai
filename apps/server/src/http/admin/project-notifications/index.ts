@@ -1,7 +1,7 @@
 import type { TypeProvider } from '../../type-provider.js';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
-import { adminUserId } from '../../authentication.js';
+import { adminUserId, requirePrincipal } from '../../authentication.js';
 import {
   getNotificationInboxDetail,
   listNotificationInbox,
@@ -40,6 +40,11 @@ const itemProperties = {
   isRead: { type: 'boolean' },
   readAt: nullableString,
   delivery: { type: 'string', enum: ['pending', 'delivered', 'failed'] },
+  audience: {
+    type: 'string',
+    enum: ['all', 'assigners', 'recipient'],
+    description: 'all：全员可见；assigners：待分配通知，仅有分配权限的人可见；recipient：发给当前管理员本人',
+  },
 } as const;
 const itemRequired = Object.keys(itemProperties) as (keyof typeof itemProperties)[];
 const itemSchema = { type: 'object', additionalProperties: false, required: itemRequired, properties: itemProperties } as const;
@@ -72,6 +77,9 @@ const detailSchema = {
   },
 } as const;
 
+// 待分配通知只对有分配权限的人可见
+const canAssign = (request: FastifyRequest) => requirePrincipal(request, 'admin').permissions.includes('projects.assign');
+
 export async function registerAdminProjectNotificationRoutes(app: FastifyInstance, pool: pg.Pool): Promise<void> {
   await app.register(async plugin => {
     const routes = plugin.withTypeProvider<TypeProvider>();
@@ -85,7 +93,8 @@ export async function registerAdminProjectNotificationRoutes(app: FastifyInstanc
         config: { permissions: ['notifications.read'] },
         schema: { tags, querystring: listQuery, response: { 200: successResponse(listSchema) } },
       },
-      async request => ({ code: 0, data: await listNotificationInbox(pool, adminUserId(request), request.query) }) as const,
+      async request =>
+        ({ code: 0, data: await listNotificationInbox(pool, adminUserId(request), canAssign(request), request.query) }) as const,
     );
     routes.post(
       '/project-notifications/read-all',
@@ -103,7 +112,8 @@ export async function registerAdminProjectNotificationRoutes(app: FastifyInstanc
           },
         },
       },
-      async request => ({ code: 0, data: { updated: await markAllNotificationsRead(pool, adminUserId(request)) } }) as const,
+      async request =>
+        ({ code: 0, data: { updated: await markAllNotificationsRead(pool, adminUserId(request), canAssign(request)) } }) as const,
     );
     routes.get(
       '/project-notifications/:id',
@@ -111,7 +121,8 @@ export async function registerAdminProjectNotificationRoutes(app: FastifyInstanc
         config: { permissions: ['notifications.read'] },
         schema: { tags, params: idParams, response: { 200: successResponse(detailSchema) } },
       },
-      async request => ({ code: 0, data: await getNotificationInboxDetail(pool, adminUserId(request), request.params.id) }) as const,
+      async request =>
+        ({ code: 0, data: await getNotificationInboxDetail(pool, adminUserId(request), canAssign(request), request.params.id) }) as const,
     );
     routes.post(
       '/project-notifications/:id/read',
@@ -131,7 +142,7 @@ export async function registerAdminProjectNotificationRoutes(app: FastifyInstanc
         },
       },
       async request => {
-        await markNotificationRead(pool, adminUserId(request), request.params.id);
+        await markNotificationRead(pool, adminUserId(request), canAssign(request), request.params.id);
         return { code: 0, data: { id: request.params.id, isRead: true } } as const;
       },
     );

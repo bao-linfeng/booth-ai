@@ -5,6 +5,8 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import Workspace from './index.vue';
+
 const mocks = vi.hoisted(() => ({
   permissions: [] as string[],
   workspace: vi.fn(),
@@ -87,8 +89,6 @@ vi.mock('ant-design-vue', () => {
   };
 });
 
-import Workspace from './index.vue';
-
 const workspaceData = {
   generatedAt: '2026-10-07T01:00:00Z',
   timeZone: 'Asia/Shanghai',
@@ -164,6 +164,7 @@ const workspaceData = {
       },
     ],
   },
+  assignmentPool: null,
   notifications: { unread: 4 },
 };
 
@@ -230,6 +231,35 @@ describe('workspace', () => {
     expect(text).not.toMatch(/Github|今日晴|访问来源/);
     expect(hrefs()).toContain('/projects/overdue-id');
     expect(hrefs()).toContain('/notifications');
+  });
+
+  it('shows the assignment pool to admins who can assign', async () => {
+    mocks.permissions = ['projects.read', 'projects.assign'];
+    mocks.workspace.mockResolvedValue({
+      ...workspaceData,
+      assignmentPool: {
+        total: 3,
+        items: [
+          {
+            projectId: 'pool-id',
+            projectNo: 'PJ-9',
+            sourceType: 'manual_request',
+            company: null,
+            contactName: '赵六',
+            exhibitionName: '广交会',
+            createdAt: '2026-10-04T00:00:00Z',
+          },
+        ],
+      },
+    });
+    await mount();
+    const text = container.textContent ?? '';
+    expect(text).toContain('待分配3');
+    expect(text).toContain('待分配项目');
+    expect(text).toContain('待分配PJ-9赵六广交会');
+    expect(text).toContain('共 3 项，仅显示最早受理的 1 项');
+    expect(hrefs()).toContain('/projects/pool-id');
+    expect(hrefs()).toContain('/projects/list');
   });
 
   it('only links authorized registered pages and hides unauthorized personal sections', async () => {

@@ -22,6 +22,7 @@ export const projectEventLabels: Record<string, string> = {
   'follow-up': '联系跟进',
   quotation: '报价修订',
   legacy_import: '历史迁入',
+  'public-result': '更新客户进度',
   claimed: '客户登录认领',
 };
 export interface ProjectRequest {
@@ -88,14 +89,17 @@ export interface Project {
   requestNo: string;
   sourceType: 'manual_request' | 'quote_request';
   customerUserId: null | string;
-  assigneeAdminId: string;
-  assigneeName: string;
+  /** 待分配项目为 null */
+  assigneeAdminId: null | string;
+  assigneeName: null | string;
   assigneeStatus: AssigneeStatus;
   status: ProjectStatus;
   revision: number;
   schemeCode: null | string;
   request: ProjectRequest;
   publicResult: null | string;
+  /** 最新一条跟进记录约定的下次跟进时间 */
+  nextFollowUpAt: null | string;
   createdAt: string;
   updatedAt: string;
   schemeSnapshot: null | {
@@ -111,16 +115,27 @@ export interface Project {
     artworks?: { status: string; assets: Asset[] };
   };
 }
-export type AssigneeStatus = 'active' | 'disabled' | 'permission_revoked';
+export type AssigneeStatus =
+  | 'active'
+  | 'disabled'
+  | 'permission_revoked'
+  | 'unassigned';
 export const assigneeStatusLabels: Record<AssigneeStatus, string> = {
   active: '有效',
   disabled: '已停用',
   permission_revoked: '缺少项目查看或跟进权限',
+  unassigned: '待分配',
+};
+/** 受理时进入待分配池的原因（accepted 事件 payload.poolReason） */
+export const poolReasonLabels: Record<string, string> = {
+  unconfigured: '未配置默认承接人',
+  disabled: '默认承接人已停用',
+  permission_revoked: '默认承接人缺少权限',
 };
 export interface AssignmentConfig {
   defaultAssigneeAdminId: null | string;
   assigneeName: null | string;
-  status: 'unconfigured' | AssigneeStatus;
+  status: 'unconfigured' | Exclude<AssigneeStatus, 'unassigned'>;
   revision: number;
   updatedAt: string;
 }
@@ -196,30 +211,51 @@ export interface Change {
   requestKey: string;
   expectedRevision: number;
 }
+/** 联系类型，也用作报价发送渠道 */
+export type ContactMethod =
+  | 'customer_service'
+  | 'email'
+  | 'meeting'
+  | 'other'
+  | 'phone';
 export interface FollowUp extends Change {
-  contactMethod: string;
+  contactMethod: ContactMethod;
   contactedAt: string;
   content: string;
   targetStatus?: ProjectStatus;
   nextFollowUpAt?: string;
   outcome?: string;
   reopenReason?: string;
-  publicResult?: string;
   quoteEvidence?:
     | {
         type: 'external_manual';
         reference: string;
         sentAt: string;
-        channel: string;
+        channel: ContactMethod;
       }
     | {
         type: 'platform';
         quotationRevision: number;
         sentAt: string;
-        channel: string;
+        channel: ContactMethod;
       };
 }
-export type QuotationInput = Change &
+/** 报价修订摘要（修订列表接口） */
+export interface QuotationRevisionSummary {
+  revision: number;
+  completeness: 'incomplete' | 'ready';
+  currency: string;
+  totalAmount: null | string;
+  validUntil: string;
+  validityTimeZone: string;
+  createdAt: string;
+  createdByName: null | string;
+}
+export type QuotationInput = {
+  expectedQuotationRevision: number;
+  /** 同时登记已发送并转为已报价；sentAt 省略时取保存时间 */
+  markSent?: { channel: ContactMethod; sentAt?: string };
+} & Change &
   Omit<
     Quotation,
     | 'completeness'
@@ -230,7 +266,7 @@ export type QuotationInput = Change &
     | 'roundingMode'
     | 'totalAmount'
     | 'validationIssues'
-  > & { expectedQuotationRevision: number };
+  >;
 export interface ProjectQuery {
   page?: number;
   pageSize?: number;
@@ -242,6 +278,12 @@ export interface ProjectQuery {
   city?: string;
   customerName?: string;
   assigneeAdminId?: string;
+  /** 只看当前登录管理员负责的项目 */
+  mine?: boolean;
+  /** 未结束项目中下次跟进已逾期 / 今天到期 */
+  followUp?: 'overdue' | 'today';
+  /** unassigned：待分配；needs_assignment：待分配或承接人失效且未结束 */
+  assignment?: 'needs_assignment' | 'unassigned';
 }
 export const listProjectsApi = (params: ProjectQuery) =>
   requestClient.get<PageResult<Project>>('/v1/admin/projects', { params });
@@ -255,6 +297,13 @@ export const assignProjectApi = (
   id: string,
   input: Change & { assigneeAdminId: string; reason: string },
 ) => requestClient.put(`/v1/admin/projects/${id}/assignee`, input);
+/** 领取待分配项目；已被他人领取时返回 409 PROJECT_ALREADY_ASSIGNED（details.assigneeName） */
+export const claimProjectApi = (id: string, input: { requestKey: string }) =>
+  requestClient.post<{
+    assigneeAdminId: string;
+    projectId: string;
+    revision: number;
+  }>(`/v1/admin/projects/${id}/claim`, input);
 export const followUpApi = (id: string, input: FollowUp) =>
   requestClient.post(`/v1/admin/projects/${id}/follow-ups`, input);
 export const linkSchemeApi = (
@@ -272,7 +321,22 @@ export const saveQuotationApi = (id: string, input: QuotationInput) =>
     projectId: string;
     projectRevision: number;
     quotation: Quotation;
+    status: ProjectStatus;
   }>(`/v1/admin/projects/${id}/quotation`, input);
+export const quotationRevisionsApi = (id: string) =>
+  requestClient.get<QuotationRevisionSummary[]>(
+    `/v1/admin/projects/${id}/quotation/revisions`,
+  );
+/** 更新客户可见结果（提交后客户可见）；空字符串表示撤下 */
+export const updatePublicResultApi = (
+  id: string,
+  input: Change & { publicResult: string },
+) =>
+  requestClient.put<{
+    projectId: string;
+    publicResult: null | string;
+    revision: number;
+  }>(`/v1/admin/projects/${id}/public-result`, input);
 export const quotationDownloadApi = (id: string, revision: number) =>
   requestClient.get<Blob>(`/v1/admin/projects/${id}/quotation/download`, {
     params: { revision },

@@ -1,5 +1,6 @@
 import type {
   Asset,
+  ContactMethod,
   MatchingSummary,
   ProjectEvent,
   ProjectStatus,
@@ -7,7 +8,11 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
-import { projectEventLabels, statusLabels } from '#/api/core/projects';
+import {
+  poolReasonLabels,
+  projectEventLabels,
+  statusLabels,
+} from '#/api/core/projects';
 import { REASON_MESSAGES } from '#/api/reason-messages';
 
 export interface SummaryItem {
@@ -17,7 +22,38 @@ export interface SummaryItem {
 
 export const terminalStatuses: ProjectStatus[] = ['won', 'lost', 'closed'];
 
-export const contactMethodLabels: Record<string, string> = {
+/** 状态标签颜色（Ant Design Tag color） */
+export const statusColors: Record<ProjectStatus, string> = {
+  pending: 'default',
+  following: 'blue',
+  quoted: 'orange',
+  won: 'green',
+  lost: 'red',
+  closed: 'red',
+};
+
+const followUpTimeZone = 'Asia/Shanghai';
+const shanghaiDate = (value: Date) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: followUpTimeZone }).format(
+    value,
+  );
+
+/**
+ * 未结束项目的下次跟进是否逾期 / 今天到期（今天按上海时区，与工作台和列表筛选口径一致）。
+ */
+export function followUpUrgency(
+  project: { nextFollowUpAt: null | string; status: ProjectStatus },
+  now = new Date(),
+): 'overdue' | 'today' | undefined {
+  if (!project.nextFollowUpAt || terminalStatuses.includes(project.status))
+    return undefined;
+  const next = new Date(project.nextFollowUpAt);
+  if (next < now) return 'overdue';
+  return shanghaiDate(next) === shanghaiDate(now) ? 'today' : undefined;
+}
+
+/** 联系类型，也用作报价发送渠道；历史事件中的自由文本渠道按原文显示 */
+export const contactMethodLabels: Record<ContactMethod, string> = {
   phone: '电话',
   email: '邮件',
   customer_service: '客服',
@@ -144,7 +180,7 @@ function quoteEvidence(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const evidence = value as Record<string, unknown>;
   const channel = text(evidence.channel) ?? '';
-  const sent = `${formatDateTime(String(evidence.sentAt))} 通过${contactMethodLabels[channel] ?? channel}发送`;
+  const sent = `${formatDateTime(String(evidence.sentAt))} 通过${contactMethodLabels[channel as ContactMethod] ?? channel}发送`;
   return evidence.type === 'platform'
     ? `平台报价 r${String(evidence.quotationRevision)}，${sent}`
     : `外部报价「${text(evidence.reference) ?? '未填写'}」，${sent}`;
@@ -164,14 +200,29 @@ export function eventSummary(event: ProjectEvent): {
   const payload = event.payload;
   switch (event.kind) {
     case 'accepted': {
+      if (payload.assigneeAdminId === null) {
+        const reason = poolReasonLabels[String(payload.poolReason)];
+        return {
+          title: `受理项目，进入待分配${reason ? `（原因：${reason}）` : ''}`,
+          lines: [],
+        };
+      }
       return {
         title: `受理项目，分配给 ${event.assigneeName ?? '承接人'}`,
         lines: [],
       };
     }
     case 'assignment': {
+      if (payload.selfClaimed === true)
+        return {
+          title: `${event.assigneeName ?? event.actorName ?? '承接人'} 领取项目`,
+          lines: [],
+        };
       return {
-        title: `改派承接人：${event.fromAssigneeName ?? '原承接人'} → ${event.assigneeName ?? '新承接人'}`,
+        title:
+          payload.fromAdminId === null
+            ? `分配承接人：→ ${event.assigneeName ?? '新承接人'}`
+            : `改派承接人：${event.fromAssigneeName ?? '原承接人'} → ${event.assigneeName ?? '新承接人'}`,
         lines: compact([['原因', text(payload.reason)]]),
       };
     }
@@ -187,7 +238,7 @@ export function eventSummary(event: ProjectEvent): {
           ? `，状态 ${statusLabels[from]} → ${statusLabels[to]}`
           : '';
       return {
-        title: `${contactMethodLabels[method] ?? method}跟进${changed}`,
+        title: `${contactMethodLabels[method as ContactMethod] ?? method}跟进${changed}`,
         lines: compact([
           [
             '联系时间',
@@ -216,6 +267,17 @@ export function eventSummary(event: ProjectEvent): {
         ]),
       };
     }
+    case 'public-result': {
+      return {
+        title: '更新客户进度',
+        lines: [
+          {
+            label: '客户可见内容',
+            value: text(payload.publicResult) ?? '（已撤下）',
+          },
+        ],
+      };
+    }
     case 'quotation': {
       return {
         title: `保存报价修订 r${String(payload.quotationRevision)}`,
@@ -224,7 +286,9 @@ export function eventSummary(event: ProjectEvent): {
     }
     case 'scheme': {
       return {
-        title: `确认关联方案 ${String(payload.schemeCode)}`,
+        title: text(payload.fromSchemeCode)
+          ? `重新关联方案 ${String(payload.fromSchemeCode)} → ${String(payload.schemeCode)}`
+          : `确认关联方案 ${String(payload.schemeCode)}`,
         lines: compact([['客户确认依据', text(payload.confirmationNote)]]),
       };
     }
@@ -237,10 +301,43 @@ export function eventSummary(event: ProjectEvent): {
   }
 }
 
+type FailureResponse = null | {
+  response?: { data?: { error?: { details?: unknown; reason?: string } } };
+};
+
+/** 报价待补项（服务端 validationIssues）的中文说明 */
+export const validationIssueLabels: Record<string, string> = {
+  EMPTY_ITEMS: '没有报价行',
+  INCLUSIONS_REQUIRED: '未填写包含范围',
+  EXCLUSIONS_REQUIRED: '未填写不包含范围',
+  TAX_TERMS_REQUIRED: '不含税报价需填写税费说明',
+};
+
+/** 待补项转中文；缺价项定位到具体行（按当前列表的行号） */
+export function validationIssueText(
+  issue: string,
+  items: { clientLineId: string; name: string }[],
+): string {
+  const [code = '', lineId] = issue.split(':');
+  if (code === 'PRICE_MISSING') {
+    const index = items.findIndex((item) => item.clientLineId === lineId);
+    return index === -1
+      ? '有报价行缺单价'
+      : `第 ${index + 1} 行「${items[index]?.name || '未命名'}」缺单价`;
+  }
+  return validationIssueLabels[code] ?? issue;
+}
+
 export function failureReason(error: unknown): string | undefined {
-  return (
-    error as null | { response?: { data?: { error?: { reason?: string } } } }
-  )?.response?.data?.error?.reason;
+  return (error as FailureResponse)?.response?.data?.error?.reason;
+}
+
+/** 与 reason 对应的补充数据（如 PROJECT_ALREADY_ASSIGNED 的 assigneeName） */
+export function failureDetails(error: unknown): Record<string, unknown> {
+  const details = (error as FailureResponse)?.response?.data?.error?.details;
+  return details && typeof details === 'object'
+    ? (details as Record<string, unknown>)
+    : {};
 }
 
 /** 项目操作失败时在弹窗内保留的说明；草稿始终保留，便于修正后重试。 */

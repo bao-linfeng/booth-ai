@@ -37,6 +37,9 @@ export function createFakeForm() {
     reset: vi.fn(async () => {
       state.values = {};
     }),
+    resetForm: vi.fn(async () => {
+      state.values = {};
+    }),
     setFieldValue: vi.fn(async (field: string, value: unknown) => {
       state.values[field] = value;
     }),
@@ -49,6 +52,22 @@ export function createFakeForm() {
         if (next.commonConfig) state.commonConfig = next.commonConfig;
       },
     ),
+    /** 与 Vben 一样按 fieldName 合并，componentProps 浅合并 */
+    updateSchema: vi.fn((items: Partial<SchemaItem>[]) => {
+      for (const item of items) {
+        const current = state.schema.find(
+          (schema) => schema.fieldName === item.fieldName,
+        );
+        if (!current) continue;
+        Object.assign(current, {
+          ...item,
+          componentProps: {
+            ...current.componentProps,
+            ...item.componentProps,
+          },
+        });
+      }
+    }),
     setValues: vi.fn(async (values: Values) => {
       Object.assign(state.values, values);
       state.options.handleValuesChange?.(state.values, Object.keys(values));
@@ -157,6 +176,18 @@ export async function fakeAntd() {
         () =>
           render('div', [slots.default?.(), slots.extra?.()]),
     }),
+    DatePicker: define({
+      props: { value: { type: String, default: undefined } },
+      emits: ['update:value'],
+      setup:
+        (_, { emit }) =>
+        () =>
+          render('input', {
+            'data-test': 'date-picker',
+            onInput: (event: Event) =>
+              emit('update:value', (event.target as HTMLInputElement).value),
+          }),
+    }),
     Input: passthrough,
     InputNumber: define({
       props: { value: { type: Number, default: undefined } },
@@ -173,14 +204,101 @@ export async function fakeAntd() {
               ),
           }),
     }),
-    message: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
-    Select: passthrough,
+    message: {
+      error: vi.fn(),
+      info: vi.fn(),
+      success: vi.fn(),
+      warning: vi.fn(),
+    },
+    /** 打开时渲染内容与确认按钮（文本取 okText），点击确认触发 ok */
+    Modal: define({
+      props: {
+        okText: { type: String, default: '确定' },
+        open: Boolean,
+        title: { type: String, default: '' },
+      },
+      emits: ['ok', 'update:open'],
+      setup:
+        (props, { emit, slots }) =>
+        () =>
+          props.open
+            ? render('div', { role: 'dialog' }, [
+                props.title,
+                slots.default?.(),
+                render(
+                  'button',
+                  { type: 'button', onClick: () => emit('ok') },
+                  props.okText,
+                ),
+              ])
+            : null,
+    }),
+    /** 渲染原生 select，选择后与 ant-design-vue 一样触发 update:value 与 change（数字选项还原为数字） */
+    Select: define({
+      inheritAttrs: false,
+      props: {
+        disabled: Boolean,
+        options: {
+          type: Array as () => { label: string; value: number | string }[],
+          default: () => [],
+        },
+        value: { type: [String, Number], default: undefined },
+      },
+      emits: ['change', 'update:value'],
+      setup:
+        (props, { attrs, emit }) =>
+        () =>
+          render(
+            'select',
+            {
+              'data-test': attrs['data-test'],
+              disabled: props.disabled,
+              onChange: (event: Event) => {
+                const raw = (event.target as HTMLSelectElement).value;
+                const option = props.options.find(
+                  (item) => String(item.value) === raw,
+                );
+                emit('update:value', option?.value);
+                emit('change', option?.value);
+              },
+            },
+            [
+              render('option', { value: '' }),
+              ...props.options.map((option) =>
+                render('option', { value: String(option.value) }, option.label),
+              ),
+            ],
+          ),
+    }),
+    /** 按 columns 逐行渲染 bodyCell 插槽，行的 class 取 rowClassName */
     Table: define({
-      props: { dataSource: { type: Array, default: () => [] } },
-      setup: (props) => () =>
-        render('table', { 'data-rows': props.dataSource.length }),
+      props: {
+        columns: { type: Array as () => { key?: string }[], default: () => [] },
+        dataSource: { type: Array, default: () => [] },
+        rowClassName: {
+          type: Function as unknown as () => (record: unknown) => string,
+          default: undefined,
+        },
+      },
+      setup:
+        (props, { slots }) =>
+        () =>
+          render(
+            'table',
+            { 'data-rows': props.dataSource.length },
+            props.dataSource.map((record) =>
+              render(
+                'tr',
+                { class: props.rowClassName?.(record), 'data-test': 'row' },
+                props.columns.map((column) =>
+                  render('td', slots.bodyCell?.({ column, record })),
+                ),
+              ),
+            ),
+          ),
     }),
     Tag: passthrough,
+    Tooltip: passthrough,
   };
 }
 

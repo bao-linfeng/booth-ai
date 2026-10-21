@@ -18,7 +18,7 @@ import {
   deliveryLabels,
   getProjectNotificationApi,
   markProjectNotificationReadApi,
-  notificationKindLabels,
+  notificationKindLabel,
 } from '#/api/core/project-notifications';
 import { statusLabels } from '#/api/core/projects';
 
@@ -82,7 +82,7 @@ defineExpose({ open });
     <Spin :spinning="loading">
       <Descriptions v-if="detail" bordered :column="1" size="small">
         <DescriptionsItem label="类型">
-          {{ notificationKindLabels[detail.kind] ?? detail.kind }}
+          {{ notificationKindLabel(detail) }}
         </DescriptionsItem>
         <DescriptionsItem label="发生时间">
           {{ formatDateTime(detail.occurredAt) }}
@@ -94,7 +94,7 @@ defineExpose({ open });
           {{ statusLabels[detail.status as ProjectStatus] ?? detail.status }}
         </DescriptionsItem>
         <DescriptionsItem label="承接人">
-          {{ detail.assigneeName }}
+          {{ detail.assigneeName ?? '待分配' }}
         </DescriptionsItem>
         <DescriptionsItem label="来源">
           {{ detail.sourceType === 'quote_request' ? '报价申请' : '人工需求' }}

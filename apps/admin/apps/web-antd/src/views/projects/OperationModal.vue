@@ -1,23 +1,29 @@
 <script setup lang="ts">
 import type { VbenFormSchema } from '#/adapter/form';
-import type { ProjectDetail, ProjectStatus } from '#/api/core/projects';
+import type {
+  ProjectDetail,
+  ProjectStatus,
+  QuotationRevisionSummary,
+} from '#/api/core/projects';
 
 import { computed, nextTick, ref } from 'vue';
 
+import { useAccess } from '@vben/access';
 import { useVbenModal } from '@vben/common-ui';
 import { formatDateTime } from '@vben/utils';
 
 import { Alert, Button, message } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
+import { listSchemeAssetsApi } from '#/api/core/assets';
 import {
-  assignProjectApi,
   followUpApi,
-  getAssigneesApi,
   getProjectApi,
   linkSchemeApi,
+  quotationRevisionsApi,
   statusLabels,
 } from '#/api/core/projects';
+import { getSchemeListApi } from '#/api/core/schemes';
 
 import { buildFollowUp } from './follow-up';
 import {
@@ -30,13 +36,26 @@ import {
 
 const emit = defineEmits<{ reload: [] }>();
 const project = ref<ProjectDetail>();
-const mode = ref<'assignment' | 'follow-up' | 'scheme'>('follow-up');
+const mode = ref<'follow-up' | 'scheme'>('follow-up');
 const failure = ref('');
 const conflict = ref(false);
 const refreshing = ref(false);
 const terminal = computed(
   () => !!project.value && terminalStatuses.includes(project.value.status),
 );
+const { hasAccessByCodes } = useAccess();
+/** 关联方案时选中的已发布方案摘要（缩略图取第一张效果图，无查看权限时为空） */
+const pickedScheme = ref<{
+  code: string;
+  name: string;
+  size: string;
+  thumbnailUrl: null | string;
+}>();
+let schemeSearch: ReturnType<typeof setTimeout> | undefined;
+let schemeQuery = 0;
+const schemeSummaries = new Map<string, { name: string; size: string }>();
+/** 可作为发送依据的完整报价修订（倒序） */
+const readyRevisions = ref<QuotationRevisionSummary[]>([]);
 let key = '';
 let fingerprint = '';
 const [Form, formApi] = useVbenForm({
@@ -56,23 +75,13 @@ const [Form, formApi] = useVbenForm({
     modalApi.setState({ confirmLoading: true });
     try {
       const change = { requestKey: key, expectedRevision: record.revision };
-      if (mode.value === 'assignment')
-        await assignProjectApi(record.projectId, {
-          ...change,
-          assigneeAdminId: String(values.assigneeAdminId),
-          reason: String(values.reason),
-        });
-      else if (mode.value === 'scheme')
-        await linkSchemeApi(record.projectId, {
-          ...change,
-          schemeCode: String(values.schemeCode),
-          confirmationNote: String(values.confirmationNote),
-        });
-      else
-        await followUpApi(
-          record.projectId,
-          buildFollowUp(record, values, change),
-        );
+      await (mode.value === 'scheme'
+        ? linkSchemeApi(record.projectId, {
+            ...change,
+            schemeCode: String(values.schemeCode),
+            confirmationNote: String(values.confirmationNote),
+          })
+        : followUpApi(record.projectId, buildFollowUp(record, values, change)));
       message.success('项目记录已保存');
       modalApi.close();
       emit('reload');
@@ -107,12 +116,23 @@ function statusOptions(record: ProjectDetail) {
 }
 
 function quotationHelp(record: ProjectDetail) {
-  const quotation = record.quotation;
-  if (!quotation) return '项目还没有平台报价修订，只能登记外部人工报价。';
-  return quotation.completeness === 'ready'
-    ? `最新修订 r${quotation.revision}，有效期至 ${quotation.validUntil}。`
-    : `最新修订 r${quotation.revision} 未填写完整，不能作为发送依据；请选择更早的完整修订或先补全报价。`;
+  if (readyRevisions.value.length === 0)
+    return record.quotation
+      ? '还没有填写完整的报价修订，不能作为发送依据；请先补全报价或登记外部人工报价。'
+      : '项目还没有平台报价修订，只能登记外部人工报价。';
+  return '只列出填写完整的修订；发送时间需不早于修订创建时间且在有效期内。';
 }
+
+function revisionOptions() {
+  return readyRevisions.value.map((revision) => ({
+    value: revision.revision,
+    label: `r${revision.revision} · ${revision.currency} ${revision.totalAmount ?? '—'} · 有效期至 ${revision.validUntil}`,
+  }));
+}
+
+const contactOptions = Object.entries(contactMethodLabels).map(
+  ([value, label]) => ({ value, label }),
+);
 
 function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
   const target = (values: Record<string, unknown>) =>
@@ -125,12 +145,7 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
       fieldName: 'contactMethod',
       label: '联系类型',
       rules: 'selectRequired',
-      componentProps: {
-        options: Object.entries(contactMethodLabels).map(([value, label]) => ({
-          value,
-          label,
-        })),
-      },
+      componentProps: { options: contactOptions },
     },
     {
       component: 'DatePicker',
@@ -208,7 +223,7 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
           {
             value: 'platform',
             label: '平台报价修订',
-            disabled: !record.quotation,
+            disabled: readyRevisions.value.length === 0,
           },
           { value: 'external_manual', label: '外部人工报价' },
         ],
@@ -222,11 +237,11 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
       },
     },
     {
-      component: 'InputNumber',
+      component: 'Select',
       fieldName: 'quotationRevision',
       label: '已发送的报价修订',
       help: quotationHelp(record),
-      componentProps: { min: 1, precision: 0, addonBefore: 'r' },
+      componentProps: { options: revisionOptions() },
       dependencies: {
         triggerFields: ['targetStatus', 'evidenceType'],
         resolve: ({ values }) => ({
@@ -259,26 +274,134 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
       },
     },
     {
-      component: 'Input',
+      component: 'Select',
       fieldName: 'channel',
       label: '报价发送渠道',
-      componentProps: { maxlength: 100, placeholder: '如：邮件、微信' },
+      componentProps: { options: contactOptions },
       dependencies: {
         triggerFields: ['targetStatus'],
-        resolve: ({ values }) => ({ show: quoted(values), rules: 'required' }),
+        resolve: ({ values }) => ({
+          show: quoted(values),
+          rules: 'selectRequired',
+        }),
       },
-    },
-    {
-      component: 'Textarea',
-      fieldName: 'publicResult',
-      label: '客户可见结果',
-      help: '修改后提交即对客户公开；不修改则保持当前公开内容。',
-      componentProps: { rows: 2, maxlength: 5000 },
     },
   ];
 }
 
-async function open(record: ProjectDetail, operation: typeof mode.value) {
+/** 待跟进项目默认预选"跟进中"（不做隐式状态推进，提交前可改） */
+function defaultTarget(record: ProjectDetail) {
+  return record.status === 'pending' &&
+    record.statusTransitions.includes('following')
+    ? 'following'
+    : undefined;
+}
+
+async function loadRevisions(record: ProjectDetail) {
+  try {
+    const revisions = record.quotation
+      ? await quotationRevisionsApi(record.projectId)
+      : [];
+    readyRevisions.value = revisions.filter(
+      (revision) => revision.completeness === 'ready',
+    );
+  } catch {
+    readyRevisions.value = [];
+  }
+}
+
+/**
+ * 打开操作弹窗；targetStatus 用于头部快捷按钮（开始跟进 / 标记成交等）预选目标状态，
+ * 不在当前可选状态内时忽略。
+ */
+const metres = (mm: null | number) => (mm ? `${mm / 1000}` : '?');
+/** 搜索已发布方案（编号或名称），结果填入下拉选项；连续输入只保留最后一次结果 */
+async function searchSchemes(keyword: string) {
+  const query = ++schemeQuery;
+  try {
+    const result = await getSchemeListApi({
+      keyword: keyword.trim() || undefined,
+      publishStatus: 'published',
+      pageSize: 20,
+    });
+    if (query !== schemeQuery) return;
+    for (const scheme of result.data)
+      schemeSummaries.set(scheme.code, {
+        name: scheme.name,
+        size: `${metres(scheme.lengthMm)} × ${metres(scheme.widthMm)} m`,
+      });
+    formApi.updateSchema([
+      {
+        fieldName: 'schemeCode',
+        componentProps: {
+          options: result.data.map((scheme) => ({
+            value: scheme.code,
+            label: `${scheme.code} · ${scheme.name}`,
+          })),
+        },
+      },
+    ]);
+  } catch {
+    // 搜索失败保留现有选项，提示由请求拦截器统一弹出
+  }
+}
+function onSchemeSearch(keyword: string) {
+  clearTimeout(schemeSearch);
+  schemeSearch = setTimeout(() => void searchSchemes(keyword), 300);
+}
+async function onSchemePicked(code: unknown) {
+  const summary =
+    typeof code === 'string' ? schemeSummaries.get(code) : undefined;
+  if (typeof code !== 'string' || !summary) {
+    pickedScheme.value = undefined;
+    return;
+  }
+  pickedScheme.value = { code, ...summary, thumbnailUrl: null };
+  if (!hasAccessByCodes(['assets-renderings.read'])) return;
+  try {
+    const renderings = await listSchemeAssetsApi(code, 'rendering');
+    if (pickedScheme.value?.code === code)
+      pickedScheme.value = {
+        ...pickedScheme.value,
+        thumbnailUrl:
+          renderings.find((asset) => asset.thumbnailUrl)?.thumbnailUrl ?? null,
+      };
+  } catch {
+    // 缩略图只是辅助确认，取不到时只显示名称
+  }
+}
+
+/** 有方案查看权限时用已发布方案搜索下拉，否则退回手工输入方案编号 */
+function schemeField(): VbenFormSchema {
+  return hasAccessByCodes(['schemes.read'])
+    ? {
+        component: 'Select',
+        fieldName: 'schemeCode',
+        label: '已确认方案',
+        rules: 'selectRequired',
+        help: '只列出已发布的方案，可按编号或名称搜索',
+        componentProps: {
+          filterOption: false,
+          options: [],
+          placeholder: '输入方案编号或名称搜索',
+          showSearch: true,
+          onChange: onSchemePicked,
+          onSearch: onSchemeSearch,
+        },
+      }
+    : {
+        component: 'Input',
+        fieldName: 'schemeCode',
+        label: '已确认方案编号',
+        rules: 'required',
+      };
+}
+
+async function open(
+  record: ProjectDetail,
+  operation: typeof mode.value,
+  preset: { targetStatus?: ProjectStatus } = {},
+) {
   project.value = record;
   mode.value = operation;
   key = '';
@@ -287,49 +410,18 @@ async function open(record: ProjectDetail, operation: typeof mode.value) {
   conflict.value = false;
   modalApi.setState({
     title: {
-      assignment: '改派承接人',
       'follow-up': '追加跟进与状态记录',
-      scheme: '确认关联方案',
+      scheme: record.schemeCode ? '重新关联方案' : '确认关联方案',
     }[operation],
   });
   modalApi.open();
   await nextTick();
   await formApi.reset();
-  if (operation === 'assignment') {
-    const admins = await getAssigneesApi();
+  pickedScheme.value = undefined;
+  if (operation === 'scheme') {
     formApi.setState({
       schema: [
-        {
-          component: 'Select',
-          fieldName: 'assigneeAdminId',
-          label: '承接管理员',
-          rules: 'selectRequired',
-          componentProps: {
-            options: admins.map((admin) => ({
-              value: admin.id,
-              label: admin.name,
-            })),
-          },
-        },
-        {
-          component: 'Textarea',
-          fieldName: 'reason',
-          label: '分配原因',
-          rules: 'required',
-          componentProps: { maxlength: 2000, rows: 3 },
-        },
-      ],
-    });
-    await formApi.setValues({ assigneeAdminId: record.assigneeAdminId });
-  } else if (operation === 'scheme') {
-    formApi.setState({
-      schema: [
-        {
-          component: 'Input',
-          fieldName: 'schemeCode',
-          label: '已确认方案编号',
-          rules: 'required',
-        },
+        schemeField(),
         {
           component: 'Textarea',
           fieldName: 'confirmationNote',
@@ -339,19 +431,24 @@ async function open(record: ProjectDetail, operation: typeof mode.value) {
         },
       ],
     });
+    if (hasAccessByCodes(['schemes.read'])) await searchSchemes('');
   } else {
+    await loadRevisions(record);
     formApi.setState({ schema: followUpSchema(record) });
+    const target =
+      preset.targetStatus &&
+      record.statusTransitions.includes(preset.targetStatus)
+        ? preset.targetStatus
+        : defaultTarget(record);
     await formApi.setValues({
       contactMethod: 'phone',
       contactedAt: new Date().toISOString(),
-      publicResult: record.publicResult ?? '',
+      ...(target ? { targetStatus: target } : {}),
       evidenceType:
-        record.quotation?.completeness === 'ready'
-          ? 'platform'
-          : 'external_manual',
-      quotationRevision: record.quotation?.revision,
+        readyRevisions.value.length > 0 ? 'platform' : 'external_manual',
+      quotationRevision: readyRevisions.value[0]?.revision,
       sentAt: new Date().toISOString(),
-      channel: '邮件',
+      channel: 'email',
     });
   }
 }
@@ -369,6 +466,7 @@ async function loadLatest() {
     conflict.value = false;
     if (mode.value === 'follow-up') {
       const values = await formApi.getValues();
+      await loadRevisions(latest);
       formApi.setState({ schema: followUpSchema(latest) });
       if (
         values.targetStatus &&
@@ -407,6 +505,33 @@ defineExpose({ open });
         </Button>
       </template>
     </Alert>
+    <p
+      v-if="mode === 'scheme' && project?.schemeCode"
+      class="mb-4 text-sm text-muted-foreground"
+    >
+      当前已关联
+      {{
+        project.schemeCode
+      }}；重新关联会替换方案与资料快照，原方案记录保留在时间线中。
+    </p>
     <Form />
+    <figure
+      v-if="mode === 'scheme' && pickedScheme"
+      class="mt-2 flex items-center gap-3"
+      data-test="picked-scheme"
+    >
+      <img
+        v-if="pickedScheme.thumbnailUrl"
+        :src="pickedScheme.thumbnailUrl"
+        :alt="pickedScheme.name"
+        class="h-16 w-28 rounded object-cover"
+      />
+      <figcaption>
+        <div class="font-medium">{{ pickedScheme.name }}</div>
+        <div class="text-sm text-muted-foreground">
+          {{ pickedScheme.code }} · {{ pickedScheme.size }}
+        </div>
+      </figcaption>
+    </figure>
   </Modal>
 </template>

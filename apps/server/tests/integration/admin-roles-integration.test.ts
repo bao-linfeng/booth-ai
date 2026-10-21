@@ -174,7 +174,7 @@ test(
     await assert.rejects(assertProjectAdmin(pool, actor), { statusCode: 403 });
     const client = await pool.connect();
     try {
-      await assert.rejects(configuredAssignee(client), { statusCode: 503 });
+      assert.deepEqual(await configuredAssignee(client), { assigneeAdminId: null, poolReason: 'permission_revoked' });
       const adminConcurrent = await Promise.allSettled([
         updateRolePermissions(pool, 5, ['roles.read', 'roles.write', 'projects.read', 'projects.follow-up'], initialRevision + 1, actor),
         updateRolePermissions(pool, 5, ['roles.read'], initialRevision + 1, actor),
@@ -193,13 +193,13 @@ test(
       await assertProjectAdmin(pool, actor);
       await assert.rejects(assertProjectAdmin(pool, actor, 'projects.assign'), { statusCode: 403 });
       await assert.rejects(assertProjectAdmin(pool, actor, 'projects.quotation'), { statusCode: 403 });
-      assert.equal(await configuredAssignee(client), actor);
+      assert.deepEqual(await configuredAssignee(client), { assigneeAdminId: actor, poolReason: null });
       await updateRolePermissions(pool, 5, [], initialRevision + 3, actor);
       await syncAdminRoles(config, pool, 'jwt');
       assert.deepEqual(await resolveAdminPermissions(pool, ['ROLE_ADMIN']), []);
       assert.deepEqual((await getAdminRole(pool, 5)).permissionCodes, []);
       await assert.rejects(assertProjectAdmin(pool, actor), { statusCode: 403 });
-      await assert.rejects(configuredAssignee(client), { statusCode: 503 });
+      assert.deepEqual(await configuredAssignee(client), { assigneeAdminId: null, poolReason: 'permission_revoked' });
     } finally {
       client.release();
     }

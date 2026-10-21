@@ -1,5 +1,6 @@
 import type {
   Change,
+  ContactMethod,
   FollowUp,
   ProjectDetail,
   ProjectStatus,
@@ -11,7 +12,7 @@ const iso = (value: unknown) => new Date(String(value)).toISOString();
 
 /** 按目标状态只提交相关字段，切换状态后残留的隐藏字段不会进入请求。 */
 export function buildFollowUp(
-  record: Pick<ProjectDetail, 'publicResult' | 'status'>,
+  record: Pick<ProjectDetail, 'status'>,
   values: Record<string, unknown>,
   change: Change,
 ): FollowUp {
@@ -20,7 +21,7 @@ export function buildFollowUp(
     | undefined;
   const input: FollowUp = {
     ...change,
-    contactMethod: String(values.contactMethod),
+    contactMethod: values.contactMethod as ContactMethod,
     contactedAt: iso(values.contactedAt),
     content: String(values.content),
   };
@@ -31,7 +32,7 @@ export function buildFollowUp(
     input.reopenReason = String(values.reopenReason);
   if (target === 'quoted') {
     const sentAt = iso(values.sentAt);
-    const channel = String(values.channel);
+    const channel = values.channel as ContactMethod;
     input.quoteEvidence =
       values.evidenceType === 'platform'
         ? {
@@ -47,8 +48,5 @@ export function buildFollowUp(
             channel,
           };
   }
-  const publicResult = String(values.publicResult ?? '').trim();
-  if (publicResult !== (record.publicResult ?? '').trim())
-    input.publicResult = publicResult;
   return input;
 }

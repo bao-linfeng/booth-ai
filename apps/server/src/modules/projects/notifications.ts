@@ -15,6 +15,9 @@ export interface ProjectNotification {
   payload: unknown;
   occurredAt: string;
   attempts: number;
+  /** 可见范围：all 全员；assigners 有分配权限的人；recipient 仅 recipientAdminId。外部渠道可据此路由 */
+  audience: 'all' | 'assigners' | 'recipient';
+  recipientAdminId: string | null;
 }
 
 export function projectNotificationBackoffSeconds(attempts: number): number {
@@ -30,7 +33,7 @@ export async function claimProjectNotifications(database: Pick<pg.Pool, 'query'>
            ORDER BY next_attempt_at, created_at LIMIT $1 FOR UPDATE SKIP LOCKED) c, project_events e, projects p
      WHERE o.id = c.id AND e.id = o.event_id AND p.id = o.project_id
      RETURNING o.id, o.event_id AS "eventId", o.project_id AS "projectId", p.project_no AS "projectNo", p.source_type AS "sourceType",
-       e.kind, e.payload, e.created_at AS "occurredAt", o.attempts`,
+       e.kind, e.payload, e.created_at AS "occurredAt", o.attempts, o.audience, o.recipient_admin_id AS "recipientAdminId"`,
     [limit, PROJECT_NOTIFICATION_LEASE_SECONDS],
   );
   return rows.map(row => ({ ...row, occurredAt: new Date(row.occurredAt).toISOString() }));

@@ -19,6 +19,13 @@ import {
   statusLabels,
 } from '#/api/core/projects';
 
+import AssignModal from '../AssignModal.vue';
+import { claimProject } from '../claim';
+import {
+  followUpUrgency,
+  statusColors,
+  terminalStatuses,
+} from '../presentation';
 import { createFormOptions, createGridOptions } from './options';
 
 const router = useRouter();
@@ -31,6 +38,8 @@ const [Grid, gridApi] = useVbenVxeGrid({
   gridOptions,
 });
 
+const assign = ref<InstanceType<typeof AssignModal>>();
+const claiming = ref<string>();
 const config = ref<AssignmentConfig>();
 const saving = ref(false);
 
@@ -44,7 +53,7 @@ const [Form, formApi] = useVbenForm({
       label: '默认承接人',
       componentProps: {
         allowClear: true,
-        placeholder: '留空并保存将暂停新需求受理',
+        placeholder: '留空时新需求进入待分配池',
         options: [],
       },
     },
@@ -100,7 +109,7 @@ async function openAssignmentConfig() {
           allowClear: true,
           showSearch: true,
           optionFilterProp: 'label',
-          placeholder: '留空并保存将暂停新需求受理',
+          placeholder: '留空时新需求进入待分配池',
           options: admins.map((admin) => ({
             value: admin.id,
             label: admin.name,
@@ -134,6 +143,16 @@ onMounted(async () => {
 function handleProcess(row: Project) {
   router.push(`/projects/${row.projectId}`);
 }
+
+async function handleClaim(row: Project) {
+  if (claiming.value) return;
+  claiming.value = row.projectId;
+  try {
+    if (await claimProject(row.projectId)) await gridApi.reload();
+  } finally {
+    claiming.value = undefined;
+  }
+}
 </script>
 
 <template>
@@ -150,14 +169,22 @@ function handleProcess(row: Project) {
       </template>
 
       <template #assignee="{ row }">
-        <span>{{ (row as Project).assigneeName }}</span>
         <Tag
-          v-if="(row as Project).assigneeStatus !== 'active'"
+          v-if="(row as Project).assigneeStatus === 'unassigned'"
+          color="orange"
+        >
+          待分配
+        </Tag>
+        <span v-else>{{ (row as Project).assigneeName }}</span>
+        <Tag
+          v-if="
+            !['active', 'unassigned'].includes((row as Project).assigneeStatus)
+          "
           color="warning"
         >
           {{ assigneeStatusLabels[(row as Project).assigneeStatus]
           }}{{
-            ['closed', 'lost', 'won'].includes((row as Project).status)
+            terminalStatuses.includes((row as Project).status)
               ? ' · 历史负责人'
               : ' · 待人工改派'
           }}
@@ -180,27 +207,22 @@ function handleProcess(row: Project) {
       </template>
 
       <template #status="{ row }">
-        <Tag v-if="(row as Project).status === 'won'" color="green">
+        <Tag :color="statusColors[(row as Project).status]">
           {{ statusLabels[(row as Project).status] }}
         </Tag>
-        <Tag
-          v-else-if="
-            (row as Project).status === 'lost' ||
-            (row as Project).status === 'closed'
-          "
-          color="red"
+      </template>
+
+      <template #nextFollowUp="{ row }">
+        <span
+          v-if="(row as Project).nextFollowUpAt"
+          :class="{
+            'text-red-500': followUpUrgency(row as Project) === 'overdue',
+            'text-orange-500': followUpUrgency(row as Project) === 'today',
+          }"
         >
-          {{ statusLabels[(row as Project).status] }}
-        </Tag>
-        <Tag v-else-if="(row as Project).status === 'following'" color="blue">
-          {{ statusLabels[(row as Project).status] }}
-        </Tag>
-        <Tag v-else-if="(row as Project).status === 'quoted'" color="orange">
-          {{ statusLabels[(row as Project).status] }}
-        </Tag>
-        <Tag v-else color="default">
-          {{ statusLabels[(row as Project).status] }}
-        </Tag>
+          {{ formatDateTime((row as Project).nextFollowUpAt!) }}
+        </span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
 
       <template #updated="{ row }">
@@ -208,8 +230,27 @@ function handleProcess(row: Project) {
       </template>
 
       <template #action="{ row }">
-        <Button type="link" @click="handleProcess(row as Project)">
-          处理项目
+        <template v-if="!(row as Project).assigneeAdminId">
+          <Button
+            type="link"
+            size="small"
+            :loading="claiming === (row as Project).projectId"
+            v-access:code="['projects.follow-up']"
+            @click="handleClaim(row as Project)"
+          >
+            分配给我
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            v-access:code="['projects.assign']"
+            @click="assign?.open(row as Project)"
+          >
+            分配
+          </Button>
+        </template>
+        <Button type="link" size="small" @click="handleProcess(row as Project)">
+          进入项目
         </Button>
       </template>
     </Grid>
@@ -217,8 +258,9 @@ function handleProcess(row: Project) {
     <Modal class="w-[480px]">
       <Form />
       <p class="text-sm text-muted-foreground mt-2">
-        仅可选择已启用且具备项目查看和跟进权限的人员。清空选择并保存将暂停受理；配置只影响新的申请。
+        仅可选择已启用且具备项目查看和跟进权限的人员。留空时新需求进入待分配池，由有分配权限的人分配或由承接人员领取；配置只影响新的申请。
       </p>
     </Modal>
+    <AssignModal ref="assign" @reload="gridApi.reload()" />
   </Page>
 </template>

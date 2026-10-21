@@ -808,7 +808,6 @@
     "errorAccountChanged2": "登录账户已变化，请重新确认。",
     "errorFormInvalid2": "请核对日期、预算、联系方式及登录状态，填写内容已保留。",
     "errorNetworkRetry": "暂未确认受理结果，请重试确认本次申请。",
-    "errorAssignmentUnavailable": "当前暂不可受理需求，本次申请未创建项目。填写内容已保留，您可稍后重新提交或咨询客服。",
     "validationExhibition": "请填写展会名称。",
     "validationCountry": "请选择国家。",
     "validationCity": "请选择城市。",
