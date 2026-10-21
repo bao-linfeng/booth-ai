@@ -18,6 +18,7 @@ const access = vi.hoisted(() => ({ codes: new Set<string>() }));
 const api = vi.hoisted(() => ({
   quotationApi: vi.fn(),
   quotationDownloadApi: vi.fn(),
+  quotationRevisionsApi: vi.fn(),
   saveQuotationApi: vi.fn(),
 }));
 
@@ -82,6 +83,11 @@ const savedQuotation: Quotation = {
   validityTimeZone: 'Asia/Shanghai',
   validUntil: '2026-11-30',
 };
+function savedLine(index: number) {
+  const line = savedQuotation.items[index];
+  if (!line) throw new Error(`Missing saved line ${index}`);
+  return line;
+}
 function project(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
     assigneeAdminId: 'admin-1',
@@ -133,8 +139,28 @@ async function save() {
 }
 const saved = () => api.saveQuotationApi.mock.calls.map(([, input]) => input);
 
+function chooseHistory(revision: number) {
+  const select = container.querySelector<HTMLSelectElement>(
+    '[data-test="history"]',
+  );
+  if (!select) throw new Error('Missing history select');
+  select.value = String(revision);
+  select.dispatchEvent(new Event('change'));
+}
+const summary = (revision: number) => ({
+  completeness: 'ready',
+  createdAt: '2026-10-01T00:00:00Z',
+  createdByName: '销售',
+  currency: 'CNY',
+  revision,
+  totalAmount: '1200.00',
+  validUntil: '2026-11-30',
+  validityTimeZone: 'Asia/Shanghai',
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
+  api.quotationRevisionsApi.mockResolvedValue([summary(2), summary(1)]);
   access.codes = new Set(['projects.quotation']);
   let key = 0;
   vi.spyOn(crypto, 'randomUUID').mockImplementation(
@@ -248,31 +274,35 @@ describe('quotation editor', () => {
     await flush();
     expect(form.state.values.changeReason).toBe('未保存的修改');
 
-    button(container, '放弃草稿 / 回到当前').click();
+    button(container, '放弃草稿').click();
     await flush();
     expect(form.state.values.changeReason).toBe('他人保存');
+    expect(() => button(container, '放弃草稿')).toThrow('Button not found');
   });
 
   it('blocks switching to history while dirty, and history is read-only', async () => {
     await mount(project({ quotation: savedQuotation }));
-    const history = container.querySelector<HTMLInputElement>(
-      '[data-test="history"]',
+    expect(api.quotationRevisionsApi).toHaveBeenCalledWith('project-1');
+    const options = [
+      ...container.querySelectorAll('[data-test="history"] option'),
+    ].map((option) => option.textContent);
+    expect(options).toContain(
+      'r1 · 完整 · CNY 1200.00 · 销售 2026-10-01T00:00:00Z',
     );
-    if (!history) throw new Error('Missing history input');
-    history.value = '1';
-    history.dispatchEvent(new Event('input'));
     form.edit({ changeReason: '未保存' });
-    button(container, '读取历史').click();
+    chooseHistory(1);
     await flush();
-    expect(message.info).toHaveBeenCalled();
+    expect(message.info).toHaveBeenCalledWith(
+      expect.stringContaining('放弃草稿'),
+    );
     expect(api.quotationApi).not.toHaveBeenCalled();
 
-    button(container, '放弃草稿 / 回到当前').click();
+    button(container, '放弃草稿').click();
     await flush();
     api.quotationApi.mockResolvedValue({
       quotation: { ...savedQuotation, revision: 1 },
     });
-    button(container, '读取历史').click();
+    chooseHistory(1);
     await flush();
     expect(api.quotationApi).toHaveBeenCalledWith('project-1', 1);
     expect(container.textContent).toContain('历史报价');
@@ -280,6 +310,109 @@ describe('quotation editor', () => {
     expect(button(container, '保存新报价修订').disabled).toBe(true);
     await form.api.validateAndSubmitForm();
     expect(api.saveQuotationApi).not.toHaveBeenCalled();
+
+    button(container, '回到当前').click();
+    await flush();
+    expect(container.textContent).toContain('当前编辑');
+    expect(form.state.commonConfig.disabled).toBe(false);
+  });
+
+  it('keeps the draft on a revision conflict and saves onto the latest revisions after loading them', async () => {
+    const current = await mount(project({ quotation: savedQuotation }));
+    form.edit({ changeReason: '我的修改' });
+    api.saveQuotationApi.mockRejectedValueOnce({
+      response: { data: { error: { reason: 'QUOTATION_REVISION_CHANGED' } } },
+    });
+    await save();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      '报价已有更新的修订',
+    );
+    expect(message.error).not.toHaveBeenCalled();
+    button(container, '载入最新').click();
+    expect(reloads).toHaveBeenCalledTimes(1);
+    current.value = project({
+      quotation: { ...savedQuotation, changeReason: '他人保存', revision: 3 },
+      revision: 9,
+    });
+    await flush();
+    expect(form.state.values.changeReason).toBe('我的修改');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    api.saveQuotationApi.mockResolvedValue({
+      projectRevision: 10,
+      quotation: { ...savedQuotation, revision: 4 },
+      status: 'following',
+    });
+    await save();
+    expect(saved().at(-1)).toMatchObject({
+      changeReason: '我的修改',
+      expectedQuotationRevision: 3,
+      expectedRevision: 9,
+    });
+  });
+
+  it('computes line amounts live, translates pending issues and blocks malformed numbers', async () => {
+    await mount(
+      project({
+        quotation: {
+          ...savedQuotation,
+          validationIssues: ['PRICE_MISSING:line-2', 'INCLUSIONS_REQUIRED'],
+        },
+      }),
+    );
+    expect(
+      container.querySelector('[data-test="issues"]')?.textContent,
+    ).toContain('第 2 行「运输待补」缺单价、未填写包含范围');
+    expect(
+      container.querySelector('[data-test="live-total"]')?.textContent,
+    ).toBe('待补完整价格');
+    const rows = container.querySelectorAll('[data-test="row"]');
+    expect(rows[1]?.className).toContain('quotation-row-missing');
+    expect(
+      [...container.querySelectorAll('[data-test="line-amount"]')].map(
+        (cell) => cell.textContent,
+      ),
+    ).toEqual(['1200.00', '缺价']);
+    app?.unmount();
+    container.remove();
+
+    const priced = {
+      ...savedQuotation,
+      items: [
+        { ...savedLine(0), quantity: '3', unitPrice: '0.335' },
+        { ...savedLine(1), unitPrice: '0.335' },
+      ],
+    };
+    await mount(project({ quotation: priced }));
+    expect(
+      container.querySelector('[data-test="live-total"]')?.textContent,
+    ).toBe('CNY 1.35');
+    app?.unmount();
+    container.remove();
+
+    await mount(
+      project({
+        quotation: {
+          ...savedQuotation,
+          items: [{ ...savedLine(0), quantity: '1.0000001' }],
+        },
+      }),
+    );
+    form.edit({ changeReason: '格式错误' });
+    await save();
+    expect(api.saveQuotationApi).not.toHaveBeenCalled();
+    expect(message.error).toHaveBeenCalledWith(
+      expect.stringContaining('第 1 行数量或单价格式不正确'),
+    );
+  });
+
+  it('offers common time zones first in a searchable list', async () => {
+    await mount(project());
+    const options = form.options('validityTimeZone') as { value: string }[];
+    expect(options[0]?.value).toBe('Asia/Shanghai');
+    expect(options.filter((option) => option.value === 'UTC')).toHaveLength(1);
+    expect(form.field('validityTimeZone').componentProps?.showSearch).toBe(
+      true,
+    );
   });
 
   it('refuses to save for terminal projects or without the quotation permission', async () => {

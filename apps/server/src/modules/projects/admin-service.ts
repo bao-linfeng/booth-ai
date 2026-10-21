@@ -259,8 +259,12 @@ export async function linkProjectScheme(pool: pg.Pool, id: string, adminId: stri
     'scheme',
     input,
     async (client, project) => {
-      editable(project);
-      if (project.sourceType !== 'manual_request' || project.schemeCode) throw projectError('SCHEME_ALREADY_LINKED');
+      if (project.schemeCode || project.sourceType !== 'manual_request') {
+        // 重新关联：只允许未结束、还没有任何报价修订的人工需求，旧方案冻结的资料版本一并替换
+        const quoted = (await client.query('SELECT 1 FROM project_quotation_revisions WHERE project_id=$1 LIMIT 1', [id])).rowCount;
+        if (project.sourceType !== 'manual_request' || terminalStatuses.includes(project.status) || quoted)
+          throw projectError('SCHEME_RELINK_BLOCKED');
+      } else editable(project);
       if (!input.confirmationNote.trim()) throw projectError('INVALID_INPUT', 400);
       const captured = await captureScheme(
         client,
@@ -271,10 +275,12 @@ export async function linkProjectScheme(pool: pg.Pool, id: string, adminId: stri
         'UPDATE projects SET scheme_code=$2,scheme_snapshot=$3,materials_snapshot=$4,revision=revision+1,updated_at=now() WHERE id=$1',
         [id, input.schemeCode, JSON.stringify(captured.snapshot), JSON.stringify(captured.materials)],
       );
+      if (project.schemeCode) await client.query('DELETE FROM project_asset_versions WHERE project_id=$1', [id]);
       for (const version of new Set(captured.versions))
         await client.query('INSERT INTO project_asset_versions(project_id,asset_version_id) VALUES($1,$2)', [id, version]);
       await event(client, id, adminId, 'scheme', {
         schemeCode: input.schemeCode,
+        fromSchemeCode: project.schemeCode,
         confirmationNote: input.confirmationNote,
         revision: project.revision + 1,
       });

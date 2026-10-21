@@ -233,11 +233,69 @@ export async function fakeAntd() {
               ])
             : null,
     }),
-    Select: passthrough,
+    /** 渲染原生 select，选择后与 ant-design-vue 一样触发 update:value 与 change（数字选项还原为数字） */
+    Select: define({
+      inheritAttrs: false,
+      props: {
+        disabled: Boolean,
+        options: {
+          type: Array as () => { label: string; value: number | string }[],
+          default: () => [],
+        },
+        value: { type: [String, Number], default: undefined },
+      },
+      emits: ['change', 'update:value'],
+      setup:
+        (props, { attrs, emit }) =>
+        () =>
+          render(
+            'select',
+            {
+              'data-test': attrs['data-test'],
+              disabled: props.disabled,
+              onChange: (event: Event) => {
+                const raw = (event.target as HTMLSelectElement).value;
+                const option = props.options.find(
+                  (item) => String(item.value) === raw,
+                );
+                emit('update:value', option?.value);
+                emit('change', option?.value);
+              },
+            },
+            [
+              render('option', { value: '' }),
+              ...props.options.map((option) =>
+                render('option', { value: String(option.value) }, option.label),
+              ),
+            ],
+          ),
+    }),
+    /** 按 columns 逐行渲染 bodyCell 插槽，行的 class 取 rowClassName */
     Table: define({
-      props: { dataSource: { type: Array, default: () => [] } },
-      setup: (props) => () =>
-        render('table', { 'data-rows': props.dataSource.length }),
+      props: {
+        columns: { type: Array as () => { key?: string }[], default: () => [] },
+        dataSource: { type: Array, default: () => [] },
+        rowClassName: {
+          type: Function as unknown as () => (record: unknown) => string,
+          default: undefined,
+        },
+      },
+      setup:
+        (props, { slots }) =>
+        () =>
+          render(
+            'table',
+            { 'data-rows': props.dataSource.length },
+            props.dataSource.map((record) =>
+              render(
+                'tr',
+                { class: props.rowClassName?.(record), 'data-test': 'row' },
+                props.columns.map((column) =>
+                  render('td', slots.bodyCell?.({ column, record })),
+                ),
+              ),
+            ),
+          ),
     }),
     Tag: passthrough,
     Tooltip: passthrough,

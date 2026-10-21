@@ -8,12 +8,14 @@ import type {
 
 import { computed, nextTick, ref } from 'vue';
 
+import { useAccess } from '@vben/access';
 import { useVbenModal } from '@vben/common-ui';
 import { formatDateTime } from '@vben/utils';
 
 import { Alert, Button, message } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
+import { listSchemeAssetsApi } from '#/api/core/assets';
 import {
   followUpApi,
   getProjectApi,
@@ -21,6 +23,7 @@ import {
   quotationRevisionsApi,
   statusLabels,
 } from '#/api/core/projects';
+import { getSchemeListApi } from '#/api/core/schemes';
 
 import { buildFollowUp } from './follow-up';
 import {
@@ -40,6 +43,17 @@ const refreshing = ref(false);
 const terminal = computed(
   () => !!project.value && terminalStatuses.includes(project.value.status),
 );
+const { hasAccessByCodes } = useAccess();
+/** 关联方案时选中的已发布方案摘要（缩略图取第一张效果图，无查看权限时为空） */
+const pickedScheme = ref<{
+  code: string;
+  name: string;
+  size: string;
+  thumbnailUrl: null | string;
+}>();
+let schemeSearch: ReturnType<typeof setTimeout> | undefined;
+let schemeQuery = 0;
+const schemeSummaries = new Map<string, { name: string; size: string }>();
 /** 可作为发送依据的完整报价修订（倒序） */
 const readyRevisions = ref<QuotationRevisionSummary[]>([]);
 let key = '';
@@ -300,6 +314,89 @@ async function loadRevisions(record: ProjectDetail) {
  * 打开操作弹窗；targetStatus 用于头部快捷按钮（开始跟进 / 标记成交等）预选目标状态，
  * 不在当前可选状态内时忽略。
  */
+const metres = (mm: null | number) => (mm ? `${mm / 1000}` : '?');
+/** 搜索已发布方案（编号或名称），结果填入下拉选项；连续输入只保留最后一次结果 */
+async function searchSchemes(keyword: string) {
+  const query = ++schemeQuery;
+  try {
+    const result = await getSchemeListApi({
+      keyword: keyword.trim() || undefined,
+      publishStatus: 'published',
+      pageSize: 20,
+    });
+    if (query !== schemeQuery) return;
+    for (const scheme of result.data)
+      schemeSummaries.set(scheme.code, {
+        name: scheme.name,
+        size: `${metres(scheme.lengthMm)} × ${metres(scheme.widthMm)} m`,
+      });
+    formApi.updateSchema([
+      {
+        fieldName: 'schemeCode',
+        componentProps: {
+          options: result.data.map((scheme) => ({
+            value: scheme.code,
+            label: `${scheme.code} · ${scheme.name}`,
+          })),
+        },
+      },
+    ]);
+  } catch {
+    // 搜索失败保留现有选项，提示由请求拦截器统一弹出
+  }
+}
+function onSchemeSearch(keyword: string) {
+  clearTimeout(schemeSearch);
+  schemeSearch = setTimeout(() => void searchSchemes(keyword), 300);
+}
+async function onSchemePicked(code: unknown) {
+  const summary =
+    typeof code === 'string' ? schemeSummaries.get(code) : undefined;
+  if (typeof code !== 'string' || !summary) {
+    pickedScheme.value = undefined;
+    return;
+  }
+  pickedScheme.value = { code, ...summary, thumbnailUrl: null };
+  if (!hasAccessByCodes(['assets-renderings.read'])) return;
+  try {
+    const renderings = await listSchemeAssetsApi(code, 'rendering');
+    if (pickedScheme.value?.code === code)
+      pickedScheme.value = {
+        ...pickedScheme.value,
+        thumbnailUrl:
+          renderings.find((asset) => asset.thumbnailUrl)?.thumbnailUrl ?? null,
+      };
+  } catch {
+    // 缩略图只是辅助确认，取不到时只显示名称
+  }
+}
+
+/** 有方案查看权限时用已发布方案搜索下拉，否则退回手工输入方案编号 */
+function schemeField(): VbenFormSchema {
+  return hasAccessByCodes(['schemes.read'])
+    ? {
+        component: 'Select',
+        fieldName: 'schemeCode',
+        label: '已确认方案',
+        rules: 'selectRequired',
+        help: '只列出已发布的方案，可按编号或名称搜索',
+        componentProps: {
+          filterOption: false,
+          options: [],
+          placeholder: '输入方案编号或名称搜索',
+          showSearch: true,
+          onChange: onSchemePicked,
+          onSearch: onSchemeSearch,
+        },
+      }
+    : {
+        component: 'Input',
+        fieldName: 'schemeCode',
+        label: '已确认方案编号',
+        rules: 'required',
+      };
+}
+
 async function open(
   record: ProjectDetail,
   operation: typeof mode.value,
@@ -314,21 +411,17 @@ async function open(
   modalApi.setState({
     title: {
       'follow-up': '追加跟进与状态记录',
-      scheme: '确认关联方案',
+      scheme: record.schemeCode ? '重新关联方案' : '确认关联方案',
     }[operation],
   });
   modalApi.open();
   await nextTick();
   await formApi.reset();
+  pickedScheme.value = undefined;
   if (operation === 'scheme') {
     formApi.setState({
       schema: [
-        {
-          component: 'Input',
-          fieldName: 'schemeCode',
-          label: '已确认方案编号',
-          rules: 'required',
-        },
+        schemeField(),
         {
           component: 'Textarea',
           fieldName: 'confirmationNote',
@@ -338,6 +431,7 @@ async function open(
         },
       ],
     });
+    if (hasAccessByCodes(['schemes.read'])) await searchSchemes('');
   } else {
     await loadRevisions(record);
     formApi.setState({ schema: followUpSchema(record) });
@@ -411,6 +505,33 @@ defineExpose({ open });
         </Button>
       </template>
     </Alert>
+    <p
+      v-if="mode === 'scheme' && project?.schemeCode"
+      class="mb-4 text-sm text-muted-foreground"
+    >
+      当前已关联
+      {{
+        project.schemeCode
+      }}；重新关联会替换方案与资料快照，原方案记录保留在时间线中。
+    </p>
     <Form />
+    <figure
+      v-if="mode === 'scheme' && pickedScheme"
+      class="mt-2 flex items-center gap-3"
+      data-test="picked-scheme"
+    >
+      <img
+        v-if="pickedScheme.thumbnailUrl"
+        :src="pickedScheme.thumbnailUrl"
+        :alt="pickedScheme.name"
+        class="h-16 w-28 rounded object-cover"
+      />
+      <figcaption>
+        <div class="font-medium">{{ pickedScheme.name }}</div>
+        <div class="text-sm text-muted-foreground">
+          {{ pickedScheme.code }} · {{ pickedScheme.size }}
+        </div>
+      </figcaption>
+    </figure>
   </Modal>
 </template>

@@ -125,6 +125,19 @@ describe('eventSummary', () => {
     ).toBe('受理项目，分配给 新负责人');
   });
 
+  it('distinguishes linking a scheme from relinking it', () => {
+    expect(
+      eventSummary(
+        event('scheme', { schemeCode: 'SC-1', fromSchemeCode: null }),
+      ).title,
+    ).toBe('确认关联方案 SC-1');
+    expect(
+      eventSummary(
+        event('scheme', { schemeCode: 'SC-2', fromSchemeCode: 'SC-1' }),
+      ).title,
+    ).toBe('重新关联方案 SC-1 → SC-2');
+  });
+
   it('names assignees and falls back to raw payload for unknown kinds', () => {
     expect(eventSummary(event('assignment', { reason: '区域调整' }))).toEqual({
       title: '改派承接人：原负责人 → 新负责人',

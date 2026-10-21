@@ -286,7 +286,9 @@ export function eventSummary(event: ProjectEvent): {
     }
     case 'scheme': {
       return {
-        title: `确认关联方案 ${String(payload.schemeCode)}`,
+        title: text(payload.fromSchemeCode)
+          ? `重新关联方案 ${String(payload.fromSchemeCode)} → ${String(payload.schemeCode)}`
+          : `确认关联方案 ${String(payload.schemeCode)}`,
         lines: compact([['客户确认依据', text(payload.confirmationNote)]]),
       };
     }
@@ -302,6 +304,29 @@ export function eventSummary(event: ProjectEvent): {
 type FailureResponse = null | {
   response?: { data?: { error?: { details?: unknown; reason?: string } } };
 };
+
+/** 报价待补项（服务端 validationIssues）的中文说明 */
+export const validationIssueLabels: Record<string, string> = {
+  EMPTY_ITEMS: '没有报价行',
+  INCLUSIONS_REQUIRED: '未填写包含范围',
+  EXCLUSIONS_REQUIRED: '未填写不包含范围',
+  TAX_TERMS_REQUIRED: '不含税报价需填写税费说明',
+};
+
+/** 待补项转中文；缺价项定位到具体行（按当前列表的行号） */
+export function validationIssueText(
+  issue: string,
+  items: { clientLineId: string; name: string }[],
+): string {
+  const [code = '', lineId] = issue.split(':');
+  if (code === 'PRICE_MISSING') {
+    const index = items.findIndex((item) => item.clientLineId === lineId);
+    return index === -1
+      ? '有报价行缺单价'
+      : `第 ${index + 1} 行「${items[index]?.name || '未命名'}」缺单价`;
+  }
+  return validationIssueLabels[code] ?? issue;
+}
 
 export function failureReason(error: unknown): string | undefined {
   return (error as FailureResponse)?.response?.data?.error?.reason;

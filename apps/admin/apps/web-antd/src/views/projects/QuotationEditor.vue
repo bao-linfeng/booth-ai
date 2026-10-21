@@ -5,6 +5,7 @@ import type {
   Quotation,
   QuotationInput,
   QuotationItem,
+  QuotationRevisionSummary,
 } from '#/api/core/projects';
 
 import { computed, nextTick, ref, watch } from 'vue';
@@ -13,11 +14,11 @@ import { useAccess } from '@vben/access';
 import { cloneDeep, downloadFileFromBlob, formatDateTime } from '@vben/utils';
 
 import {
+  Alert,
   Button,
   Card,
   DatePicker,
   Input,
-  InputNumber,
   message,
   Modal,
   Select,
@@ -29,13 +30,55 @@ import { useVbenForm } from '#/adapter/form';
 import {
   quotationApi,
   quotationDownloadApi,
+  quotationRevisionsApi,
   saveQuotationApi,
 } from '#/api/core/projects';
 
-import { contactMethodLabels, terminalStatuses } from './presentation';
+import {
+  contactMethodLabels,
+  failureReason,
+  operationFailureMessage,
+  terminalStatuses,
+  validationIssueText,
+} from './presentation';
+import {
+  currencyScales,
+  isDecimal,
+  isQuantity,
+  lineAmount,
+  quotationTotal,
+} from './quotation-math';
 
 const props = defineProps<{ project: ProjectDetail }>();
 const emit = defineEmits<{ reload: [] }>();
+const commonTimeZones = [
+  'Asia/Shanghai',
+  'Asia/Hong_Kong',
+  'Asia/Tokyo',
+  'Asia/Seoul',
+  'Asia/Singapore',
+  'Asia/Dubai',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'America/New_York',
+  'America/Los_Angeles',
+  'UTC',
+];
+/** 有效期时区：常用时区置顶，其余按 IANA 名称排序 */
+function timeZoneOptions() {
+  let all: string[] = [];
+  try {
+    all = Intl.supportedValuesOf('timeZone');
+  } catch {
+    // 不支持枚举时只提供常用时区
+  }
+  return [
+    ...commonTimeZones,
+    ...all.filter((zone) => !commonTimeZones.includes(zone)),
+  ].map((zone) => ({ value: zone, label: zone }));
+}
+
 const channelOptions = Object.entries(contactMethodLabels).map(
   ([value, label]) => ({ value, label }),
 );
@@ -49,6 +92,12 @@ const saving = ref(false);
 const dirty = ref(false);
 const viewingHistory = ref(false);
 const history = ref<number>();
+/** 全部修订（倒序），用于历史修订下拉 */
+const revisions = ref<QuotationRevisionSummary[]>([]);
+const currency = ref('CNY');
+/** 保存时遇到修订冲突：草稿保留，可载入最新修订号后再保存 */
+const conflict = ref('');
+let adoptLatest = false;
 let requestKey = '';
 let fingerprint = '';
 let initializing = false;
@@ -69,12 +118,19 @@ const locked = computed(() => terminal.value || unassigned.value);
 const [Form, formApi] = useVbenForm({
   showDefaultActions: false,
   wrapperClass: 'grid-cols-2',
-  handleValuesChange: () => {
+  handleValuesChange: (values) => {
+    if (typeof values.currency === 'string') currency.value = values.currency;
     if (!initializing) dirty.value = true;
   },
   handleSubmit: async (values: Record<string, unknown>) => {
     if (!canEdit.value || saving.value || locked.value || viewingHistory.value)
       return;
+    if (invalidRows.value.length > 0) {
+      message.error(
+        `第 ${invalidRows.value.join('、')} 行数量或单价格式不正确：数量需大于 0，最多 12 位整数、6 位小数；单价可留空表示待补。`,
+      );
+      return;
+    }
     const payload: QuotationInput = {
       expectedRevision: baseProjectRevision.value,
       expectedQuotationRevision: baseRevision.value,
@@ -100,6 +156,7 @@ const [Form, formApi] = useVbenForm({
     }
     payload.requestKey = requestKey;
     saving.value = true;
+    conflict.value = '';
     try {
       const result = await saveQuotationApi(props.project.projectId, payload);
       displayed.value = result.quotation;
@@ -112,10 +169,19 @@ const [Form, formApi] = useVbenForm({
           : '报价修订已保存，项目状态未自动变更',
       );
       emit('reload');
-    } catch {
-      message.error(
-        '报价保存未确认，草稿已保留。请先检查项目最新修订再比较，避免覆盖其他人的修改。',
-      );
+      void loadRevisions();
+    } catch (error) {
+      const reason = failureReason(error);
+      if (
+        reason === 'PROJECT_REVISION_CHANGED' ||
+        reason === 'QUOTATION_REVISION_CHANGED'
+      )
+        conflict.value = operationFailureMessage(error);
+      // 其他业务原因由请求拦截器统一提示；没有原因时结果未确认
+      else if (!reason)
+        message.error(
+          '报价保存未确认，草稿已保留。请先检查项目最新修订再比较，避免覆盖其他人的修改。',
+        );
     } finally {
       saving.value = false;
     }
@@ -153,10 +219,15 @@ const [Form, formApi] = useVbenForm({
       componentProps: { valueFormat: 'YYYY-MM-DD' },
     },
     {
-      component: 'Input',
+      component: 'Select',
       fieldName: 'validityTimeZone',
       label: '有效期时区',
-      rules: 'required',
+      rules: 'selectRequired',
+      componentProps: {
+        options: timeZoneOptions(),
+        optionFilterProp: 'label',
+        showSearch: true,
+      },
     },
     {
       component: 'Textarea',
@@ -199,6 +270,61 @@ watch(
     }),
   { immediate: true },
 );
+const scale = computed(() => currencyScales[currency.value] ?? 2);
+/** 编辑中的行金额（与服务端相同的 HALF_UP 算法），保存后以服务端结果为准 */
+const liveAmounts = computed(() =>
+  items.value.map((item) =>
+    lineAmount(item.quantity, item.unitPrice, scale.value),
+  ),
+);
+const liveTotal = computed(() =>
+  quotationTotal(liveAmounts.value, scale.value),
+);
+const blankPrice = (item: QuotationItem) =>
+  item.unitPrice === null || item.unitPrice === '';
+const quantityInvalid = (item: QuotationItem) => !isQuantity(item.quantity);
+const priceInvalid = (item: QuotationItem) =>
+  !blankPrice(item) && !isDecimal(item.unitPrice);
+/** 数量或单价格式不合法的行号（从 1 开始） */
+const invalidRows = computed(() =>
+  items.value.flatMap((item, index) =>
+    quantityInvalid(item) || priceInvalid(item) ? [index + 1] : [],
+  ),
+);
+const issueTexts = computed(() =>
+  (displayed.value?.validationIssues ?? []).map((issue) =>
+    validationIssueText(issue, displayed.value?.items ?? []),
+  ),
+);
+function rowClass(record: QuotationItem) {
+  return blankPrice(record) ? 'quotation-row-missing' : '';
+}
+const revisionOptions = computed(() =>
+  revisions.value.map((revision) => ({
+    value: revision.revision,
+    label: `r${revision.revision} · ${revision.completeness === 'ready' ? '完整' : '待补'} · ${
+      revision.totalAmount === null
+        ? '待补价格'
+        : `${revision.currency} ${revision.totalAmount}`
+    } · ${revision.createdByName ?? '—'} ${formatDateTime(revision.createdAt)}`,
+  })),
+);
+async function loadRevisions() {
+  if (!props.project.quotation) {
+    revisions.value = [];
+    return;
+  }
+  try {
+    revisions.value = await quotationRevisionsApi(props.project.projectId);
+  } catch {
+    revisions.value = [];
+  }
+}
+/** 修订冲突后载入最新：刷新项目并改用最新修订号，草稿保留 */
+function loadLatest() {
+  adoptLatest = true;
+  emit('reload');
+}
 function openSendDialog() {
   sendChannel.value = 'email';
   sendAt.value = undefined;
@@ -246,6 +372,17 @@ async function initialize(quotation: null | Quotation, historyMode = false) {
 watch(
   () => props.project,
   () => {
+    void loadRevisions();
+    if (adoptLatest) {
+      adoptLatest = false;
+      conflict.value = '';
+      baseRevision.value = props.project.quotation?.revision ?? 0;
+      baseProjectRevision.value = props.project.revision;
+      message.info(
+        '已载入最新修订号，草稿已保留；可在历史修订中核对他人的修改后再保存。',
+      );
+      return;
+    }
     if (!dirty.value && !viewingHistory.value)
       void initialize(props.project.quotation);
   },
@@ -278,18 +415,27 @@ function add() {
   });
   dirty.value = true;
 }
-async function loadHistory() {
-  if (!history.value) return;
+async function loadHistory(revision: unknown) {
+  if (typeof revision !== 'number') return;
   if (dirty.value) {
-    message.info('请先保存草稿，或明确放弃草稿后再切换历史。');
+    history.value = undefined;
+    message.info('请先保存草稿，或点「放弃草稿」后再查看历史修订。');
     return;
   }
-  const result = await quotationApi(props.project.projectId, history.value);
+  history.value = revision;
+  const result = await quotationApi(props.project.projectId, revision);
   await initialize(result.quotation, true);
 }
-async function reset() {
+/** 放弃草稿：丢弃未保存的修改，回到当前修订 */
+async function discardDraft() {
   requestKey = '';
   fingerprint = '';
+  conflict.value = '';
+  await initialize(props.project.quotation);
+}
+/** 回到当前：退出历史查看 */
+async function backToCurrent() {
+  history.value = undefined;
   await initialize(props.project.quotation);
 }
 async function download() {
@@ -322,7 +468,7 @@ const columns = [
   },
   { title: '单价', dataIndex: 'unitPrice', key: 'unitPrice', width: 140 },
   {
-    title: '已存行金额',
+    title: '行金额',
     dataIndex: 'lineAmount',
     key: 'lineAmount',
     width: 140,
@@ -346,14 +492,17 @@ const columns = [
         {{ displayed.quotationNo }} · 修订 {{ displayed.revision }} ·
         {{ formatDateTime(displayed.createdAt) }}
       </span>
-      <InputNumber
-        v-model:value="history"
-        :min="1"
-        :precision="0"
-        placeholder="历史修订"
+      <Select
+        :value="history"
+        class="w-[420px] max-w-full"
+        data-test="history"
+        placeholder="查看历史修订"
+        :options="revisionOptions"
+        :disabled="revisions.length === 0"
+        @change="loadHistory"
       />
-      <Button @click="loadHistory">读取历史</Button>
-      <Button @click="reset">放弃草稿 / 回到当前</Button>
+      <Button v-if="viewingHistory" @click="backToCurrent">回到当前</Button>
+      <Button v-else-if="dirty" @click="discardDraft">放弃草稿</Button>
       <Button
         v-access:code="['projects.quotation-download']"
         :disabled="!displayed || displayed.completeness !== 'ready'"
@@ -386,6 +535,7 @@ const columns = [
       <Table
         :data-source="items"
         :columns="columns"
+        :row-class-name="rowClass"
         row-key="clientLineId"
         :scroll="{ x: 1800 }"
         :pagination="{ pageSize: 20 }"
@@ -406,9 +556,32 @@ const columns = [
             ]"
             @change="dirty = true"
           />
-          <span v-else-if="column.key === 'lineAmount'">{{
-            record.lineAmount ?? '未保存 / 缺价'
-          }}</span>
+          <span
+            v-else-if="column.key === 'lineAmount'"
+            data-test="line-amount"
+            >{{
+              liveAmounts[items.indexOf(record as QuotationItem)] ??
+              (blankPrice(record as QuotationItem) ? '缺价' : '格式不正确')
+            }}</span>
+          <Input
+            v-else-if="column.key === 'quantity' || column.key === 'unitPrice'"
+            v-model:value="record[column.key]"
+            :status="
+              (
+                column.key === 'quantity'
+                  ? quantityInvalid(record as QuotationItem)
+                  : priceInvalid(record as QuotationItem)
+              )
+                ? 'error'
+                : undefined
+            "
+            :placeholder="
+              column.key === 'unitPrice' ? '留空表示待补' : undefined
+            "
+            :disabled="!canEdit || locked || viewingHistory || saving"
+            :maxlength="20"
+            @change="dirty = true"
+          />
           <Button
             v-else-if="column.key === 'action'"
             v-access:code="['projects.quotation']"
@@ -435,19 +608,29 @@ const columns = [
       </Table>
     </fieldset>
     <div class="mt-5 space-y-3">
+      <Alert v-if="conflict" type="warning" show-icon :message="conflict">
+        <template #action>
+          <Button size="small" @click="loadLatest">载入最新</Button>
+        </template>
+      </Alert>
       <p>
-        已存报价总额：<strong>{{
-          displayed?.totalAmount === null || !displayed
-            ? '待补完整价格'
-            : `${displayed.currency} ${displayed.totalAmount}`
+        当前合计：<strong data-test="live-total">{{
+          liveTotal === null ? '待补完整价格' : `${currency} ${liveTotal}`
         }}</strong>
+        <span class="ml-4 text-sm text-muted-foreground">
+          已存报价总额：{{
+            displayed?.totalAmount === null || !displayed
+              ? '待补完整价格'
+              : `${displayed.currency} ${displayed.totalAmount}`
+          }}
+        </span>
       </p>
       <p class="text-sm text-muted-foreground">
-        单价留空表示待补，0 是有效零价；金额由服务端逐行 HALF_UP
-        舍入。保存、导出不表示发送。数量/规格/单位改变或新增材料须填写差异原因。
+        单价留空表示待补，0 是有效零价；行金额按币种小数位逐行 HALF_UP
+        舍入，编辑时实时计算，保存后以服务端结果为准。保存、导出不表示发送。数量/规格/单位改变或新增材料须填写差异原因。
       </p>
-      <p v-if="displayed?.validationIssues.length" class="text-sm">
-        待补项：{{ displayed.validationIssues.join('、') }}
+      <p v-if="issueTexts.length" class="text-sm" data-test="issues">
+        已存修订待补项：{{ issueTexts.join('、') }}
       </p>
       <p v-if="terminal" class="text-sm">终态项目需先通过跟进记录明确重开。</p>
       <p v-else-if="unassigned" class="text-sm">待分配项目需先分配承接人。</p>
@@ -501,3 +684,8 @@ const columns = [
     </Modal>
   </Card>
 </template>
+<style scoped>
+:deep(.quotation-row-missing) > td {
+  background: hsl(var(--warning) / 10%);
+}
+</style>

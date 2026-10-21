@@ -54,7 +54,8 @@ vi.mock('@vben/common-ui', async () => {
   };
 });
 vi.mock('ant-design-vue', async () => {
-  const { defineComponent, h: render } = await import('vue');
+  const vue = await import('vue');
+  const { defineComponent, h: render } = vue;
   const { fakeAntd } = await import('./fake-vben');
   const passthrough = defineComponent(
     (_, { slots }) =>
@@ -80,6 +81,39 @@ vi.mock('ant-design-vue', async () => {
         }),
     }),
     ImagePreviewGroup: passthrough,
+    TabPane: passthrough,
+    // 只渲染当前标签页，标签按钮切换 activeKey
+    Tabs: defineComponent({
+      props: { activeKey: { type: String, default: undefined } },
+      emits: ['update:activeKey'],
+      setup:
+        (props, { emit, slots }) =>
+        () => {
+          const { Fragment } = vue;
+          const panes = (slots.default?.() ?? []).flatMap((node) =>
+            node.type === Fragment
+              ? (node.children as (typeof node)[])
+              : [node],
+          );
+          return render('section', [
+            render(
+              'div',
+              { role: 'tablist' },
+              panes.map((pane) =>
+                render(
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: () => emit('update:activeKey', pane.key),
+                  },
+                  String(pane.props?.tab ?? ''),
+                ),
+              ),
+            ),
+            ...panes.filter((pane) => pane.key === props.activeKey),
+          ]);
+        },
+    }),
     Pagination: defineComponent(() => () => render('nav')),
     Timeline: defineComponent(
       (_, { slots }) =>
@@ -202,6 +236,15 @@ it('shows every timeline event in API order without pagination and refreshes the
   expect(titles().at(-1)).toBe('保存报价修订 r1');
 });
 
+async function openTab(name: string) {
+  const tab = [...container.querySelectorAll('[role="tablist"] button')].find(
+    (item) => item.textContent === name,
+  );
+  if (!tab) throw new Error(`Tab not found: ${name}`);
+  (tab as HTMLButtonElement).click();
+  await flush();
+}
+
 function asset(versionId: string, name: string, mimeType?: string) {
   return { filename: `${name}.bin`, mimeType, name, type: 'x', versionId };
 }
@@ -238,6 +281,9 @@ it('labels request codes in Chinese and previews image assets while other files 
   app.directive('access', {});
   app.mount(container);
   await flush();
+  // 默认打开时间线，概览的图片地址在首次进入概览时才请求
+  expect(api.assetImagesApi).not.toHaveBeenCalled();
+  await openTab('概览');
 
   const text = (container.textContent ?? '').replaceAll(/\s+/g, ' ');
   expect(text).toContain('人工需求 / AI 换主题结果');
@@ -258,6 +304,13 @@ it('labels request codes in Chinese and previews image assets while other files 
   ]);
   expect(button(container, '下载：侧面方向底图')).toBeTruthy();
   expect(button(container, '下载：施工图')).toBeTruthy();
+
+  await openTab('时间线');
+  await openTab('概览');
+  expect(api.assetImagesApi).toHaveBeenCalledTimes(1);
+  button(container, '刷新项目').click();
+  await flush();
+  expect(api.assetImagesApi).toHaveBeenCalledTimes(2);
 });
 
 it('does not request image urls without asset download permission', async () => {
@@ -274,6 +327,7 @@ it('does not request image urls without asset download permission', async () => 
   app.directive('access', {});
   app.mount(container);
   await flush();
+  await openTab('概览');
 
   expect(api.assetImagesApi).not.toHaveBeenCalled();
   expect(container.querySelector('img')).toBeNull();
@@ -352,6 +406,7 @@ it('offers quick status actions for open projects and direct reassignment for te
     'follow-up',
     { targetStatus: 'closed' },
   );
+  await openTab('概览');
   button(container, '更新客户进度').click();
   expect(modals.publicResult).toHaveBeenCalledWith(
     expect.objectContaining({ projectId: 'project-1' }),
@@ -374,4 +429,46 @@ it('offers quick status actions for open projects and direct reassignment for te
   expect(modals.assign).toHaveBeenCalledWith(
     expect.objectContaining({ status: 'won' }),
   );
+});
+
+it('summarises the project in a header card and splits details into tabs', async () => {
+  api.getProjectApi.mockResolvedValue({
+    ...project([]),
+    nextFollowUpAt: '2020-01-01T00:00:00Z',
+    request: {
+      company: '演示公司',
+      contact: { name: '客户' },
+      exhibition: {
+        city: '上海',
+        countryCode: 'CN',
+        endDate: '2026-11-22',
+        name: '上海车展',
+        startDate: '2026-11-20',
+      },
+      materialBudget: { amount: '30000', currency: 'CNY' },
+    },
+  });
+  app = createApp({ render: () => h(ProjectWorkspace) });
+  app.directive('access', {});
+  app.mount(container);
+  await flush();
+  const summary = container.querySelector('[data-test="summary"]');
+  const text = (summary?.textContent ?? '').replaceAll(/\s+/g, ' ');
+  expect(text).toContain('负责人');
+  expect(text).toContain('演示公司');
+  expect(text).toContain('上海车展');
+  expect(text).toContain('CNY 30000');
+  expect(summary?.querySelector('.text-red-500')?.textContent?.trim()).toBe(
+    '2020-01-01T00:00:00Z',
+  );
+  expect(
+    [...container.querySelectorAll('[role="tablist"] button')].map(
+      (tab) => tab.textContent,
+    ),
+  ).toEqual(['概览', '报价', '时间线', '客服会话']);
+  expect(container.querySelector('ol')).not.toBeNull();
+  expect(container.textContent).not.toContain('清单缺失');
+  await openTab('概览');
+  expect(container.textContent).toContain('清单缺失 / 图纸缺失 / 素材缺失');
+  expect(container.querySelector('ol')).toBeNull();
 });

@@ -25,7 +25,25 @@ const api = vi.hoisted(() => ({
   quotationRevisionsApi: vi.fn(),
 }));
 
+const access = vi.hoisted(() => ({ codes: new Set<string>() }));
+const schemes = vi.hoisted(() => ({
+  getSchemeListApi: vi.fn(),
+  listSchemeAssetsApi: vi.fn(),
+}));
+
 vi.mock('#/adapter/form', () => ({ useVbenForm: form.useVbenForm }));
+vi.mock('@vben/access', () => ({
+  useAccess: () => ({
+    hasAccessByCodes: (codes: string[]) =>
+      codes.every((code) => access.codes.has(code)),
+  }),
+}));
+vi.mock('#/api/core/schemes', () => ({
+  getSchemeListApi: schemes.getSchemeListApi,
+}));
+vi.mock('#/api/core/assets', () => ({
+  listSchemeAssetsApi: schemes.listSchemeAssetsApi,
+}));
 vi.mock('@vben/common-ui', () => ({ useVbenModal: modal.useVbenModal }));
 vi.mock('@vben/utils', () => ({ formatDateTime: (value: string) => value }));
 vi.mock('ant-design-vue', async () => {
@@ -109,6 +127,19 @@ const revision = (number: number, completeness: 'incomplete' | 'ready') => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  access.codes = new Set();
+  schemes.getSchemeListApi.mockResolvedValue({
+    data: [
+      { code: 'SC-6030', lengthMm: 6000, name: '六米展台', widthMm: 3000 },
+    ],
+    page: 1,
+    pageSize: 20,
+    total: 1,
+  });
+  schemes.listSchemeAssetsApi.mockResolvedValue([
+    { thumbnailUrl: null },
+    { thumbnailUrl: 'https://s3.test/rendering/thumb' },
+  ]);
   api.quotationRevisionsApi.mockResolvedValue([
     revision(3, 'incomplete'),
     revision(2, 'ready'),
@@ -306,6 +337,8 @@ describe('operation modal scheme', () => {
   it('links the confirmed scheme with the customer confirmation note', async () => {
     const modalApi = await mount();
     await modalApi.open(project(), 'scheme');
+    expect(modal.state.title).toBe('确认关联方案');
+    expect(form.field('schemeCode').label).toBe('已确认方案编号');
     form.edit({ confirmationNote: '客户邮件确认', schemeCode: 'SC-6030' });
     api.linkSchemeApi.mockResolvedValue({});
     await confirm();
@@ -315,5 +348,47 @@ describe('operation modal scheme', () => {
       requestKey: '00000000-0000-4000-8000-000000000001',
       schemeCode: 'SC-6030',
     });
+    expect(schemes.getSchemeListApi).not.toHaveBeenCalled();
+  });
+
+  it('searches published schemes and previews the picked one before relinking', async () => {
+    access.codes = new Set(['assets-renderings.read', 'schemes.read']);
+    const modalApi = await mount();
+    await modalApi.open(project({ schemeCode: 'SC-OLD' }), 'scheme');
+    expect(modal.state.title).toBe('重新关联方案');
+    expect(container.textContent).toContain('当前已关联 SC-OLD');
+    expect(schemes.getSchemeListApi).toHaveBeenCalledWith({
+      keyword: undefined,
+      pageSize: 20,
+      publishStatus: 'published',
+    });
+    expect(form.options('schemeCode')).toEqual([
+      { label: 'SC-6030 · 六米展台', value: 'SC-6030' },
+    ]);
+    const props = form.field('schemeCode').componentProps as {
+      onChange: (value: string) => Promise<void>;
+      onSearch: (keyword: string) => void;
+    };
+    vi.useFakeTimers();
+    props.onSearch('六米');
+    props.onSearch('六米展');
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+    expect(schemes.getSchemeListApi).toHaveBeenCalledTimes(2);
+    expect(schemes.getSchemeListApi).toHaveBeenLastCalledWith(
+      expect.objectContaining({ keyword: '六米展' }),
+    );
+    await props.onChange('SC-6030');
+    await flush();
+    expect(schemes.listSchemeAssetsApi).toHaveBeenCalledWith(
+      'SC-6030',
+      'rendering',
+    );
+    const picked = container.querySelector('[data-test="picked-scheme"]');
+    expect(picked?.textContent).toContain('六米展台');
+    expect(picked?.textContent).toContain('SC-6030 · 6 × 3 m');
+    expect(picked?.querySelector('img')?.getAttribute('src')).toBe(
+      'https://s3.test/rendering/thumb',
+    );
   });
 });

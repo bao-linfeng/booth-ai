@@ -37,7 +37,8 @@ export const REASON_MESSAGES: Record<string, string> = {
     '该平台报价修订不能作为发送依据：需为完整修订，发送时间不早于修订创建时间且在报价有效期内',
   QUOTE_EVIDENCE_REQUIRED:
     '变更为已报价需填写发送依据：发送时间、发送渠道，外部报价还需填写编号或说明',
-  SCHEME_ALREADY_LINKED: '项目已关联方案，无需重复确认',
+  SCHEME_RELINK_BLOCKED:
+    '只有未结束、还没有报价修订的人工需求可以重新关联方案，请刷新后查看',
   SCHEME_UNAVAILABLE: '方案不存在或尚未就绪（需已发布、清单已核验且资产齐全）',
   // 文件上传
   FILE_REQUIRED: '请选择要上传的文件',
