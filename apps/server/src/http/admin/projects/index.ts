@@ -6,6 +6,7 @@ import { adminUserId } from '../../authentication.js';
 import { fileResponse, successResponse } from '../../schemas.js';
 import {
   assignProject,
+  claimProject,
   followUpProject,
   linkProjectScheme,
   quotationRevision,
@@ -26,6 +27,7 @@ import { quotationWorkbook } from '../../../modules/projects/quotation-workbook.
 import { projectError } from '../../../modules/projects/domain.js';
 import {
   assignmentSchema,
+  claimSchema,
   followUpSchema,
   linkSchema,
   projectParams,
@@ -53,6 +55,11 @@ const listQuerySchema = {
     assigneeAdminId: uuid,
     exhibitionStartFrom: { type: 'string', format: 'date' },
     exhibitionStartTo: { type: 'string', format: 'date' },
+    assignment: {
+      type: 'string',
+      enum: ['unassigned', 'needs_assignment'],
+      description: 'unassigned：待分配；needs_assignment：待分配或承接人失效且未结束',
+    },
   },
 } as const;
 const revisionProperty = { revision: { type: 'integer', minimum: 1 } } as const;
@@ -68,7 +75,7 @@ const nullableString = { type: ['string', 'null'] } as const;
 const nullableInteger = { type: ['integer', 'null'] } as const;
 const dateTime = { type: 'string', format: 'date-time' } as const;
 const projectStatus = { type: 'string', enum: statuses } as const;
-const assigneeStatus = { type: 'string', enum: ['active', 'disabled', 'permission_revoked'] } as const;
+const assigneeStatus = { type: 'string', enum: ['active', 'disabled', 'permission_revoked', 'unassigned'] } as const;
 // 受理时冻结的需求、方案、物料与报价快照，结构随版本演进，原样返回
 const frozen = (description: string) => ({ description }) as const;
 const materialsStatus = {
@@ -83,8 +90,8 @@ const projectProperties = {
   requestNo: string,
   sourceType: { type: 'string', enum: ['quote_request', 'manual_request'] },
   customerUserId: nullableString,
-  assigneeAdminId: string,
-  assigneeName: string,
+  assigneeAdminId: { ...nullableString, description: '待分配项目为 null' },
+  assigneeName: nullableString,
   assigneeStatus,
   status: projectStatus,
   revision: integer,
@@ -283,6 +290,20 @@ export async function registerAdminProjectRoutes(app: FastifyInstance, pool: pg.
       },
       async request =>
         ({ code: 0, data: await assignProject(pool, request.params.projectId, adminUserId(request), request.body) }) as const,
+    );
+
+    routes.post(
+      '/projects/:projectId/claim',
+      {
+        config: { permissions: ['projects.follow-up'] },
+        schema: {
+          description: '领取待分配项目（分配给自己）；已有承接人时返回 409 PROJECT_ALREADY_ASSIGNED',
+          params: projectParams,
+          body: claimSchema,
+          response: { 200: successResponse(assignmentReceipt) },
+        },
+      },
+      async request => ({ code: 0, data: await claimProject(pool, request.params.projectId, adminUserId(request), request.body) }) as const,
     );
 
     routes.post(

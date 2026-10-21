@@ -88,8 +88,9 @@ export interface Project {
   requestNo: string;
   sourceType: 'manual_request' | 'quote_request';
   customerUserId: null | string;
-  assigneeAdminId: string;
-  assigneeName: string;
+  /** 待分配项目为 null */
+  assigneeAdminId: null | string;
+  assigneeName: null | string;
   assigneeStatus: AssigneeStatus;
   status: ProjectStatus;
   revision: number;
@@ -111,16 +112,27 @@ export interface Project {
     artworks?: { status: string; assets: Asset[] };
   };
 }
-export type AssigneeStatus = 'active' | 'disabled' | 'permission_revoked';
+export type AssigneeStatus =
+  | 'active'
+  | 'disabled'
+  | 'permission_revoked'
+  | 'unassigned';
 export const assigneeStatusLabels: Record<AssigneeStatus, string> = {
   active: '有效',
   disabled: '已停用',
   permission_revoked: '缺少项目查看或跟进权限',
+  unassigned: '待分配',
+};
+/** 受理时进入待分配池的原因（accepted 事件 payload.poolReason） */
+export const poolReasonLabels: Record<string, string> = {
+  unconfigured: '未配置默认承接人',
+  disabled: '默认承接人已停用',
+  permission_revoked: '默认承接人缺少权限',
 };
 export interface AssignmentConfig {
   defaultAssigneeAdminId: null | string;
   assigneeName: null | string;
-  status: 'unconfigured' | AssigneeStatus;
+  status: 'unconfigured' | Exclude<AssigneeStatus, 'unassigned'>;
   revision: number;
   updatedAt: string;
 }
@@ -242,6 +254,8 @@ export interface ProjectQuery {
   city?: string;
   customerName?: string;
   assigneeAdminId?: string;
+  /** unassigned：待分配；needs_assignment：待分配或承接人失效且未结束 */
+  assignment?: 'needs_assignment' | 'unassigned';
 }
 export const listProjectsApi = (params: ProjectQuery) =>
   requestClient.get<PageResult<Project>>('/v1/admin/projects', { params });
@@ -255,6 +269,13 @@ export const assignProjectApi = (
   id: string,
   input: Change & { assigneeAdminId: string; reason: string },
 ) => requestClient.put(`/v1/admin/projects/${id}/assignee`, input);
+/** 领取待分配项目；已被他人领取时返回 409 PROJECT_ALREADY_ASSIGNED（details.assigneeName） */
+export const claimProjectApi = (id: string, input: { requestKey: string }) =>
+  requestClient.post<{
+    assigneeAdminId: string;
+    projectId: string;
+    revision: number;
+  }>(`/v1/admin/projects/${id}/claim`, input);
 export const followUpApi = (id: string, input: FollowUp) =>
   requestClient.post(`/v1/admin/projects/${id}/follow-ups`, input);
 export const linkSchemeApi = (

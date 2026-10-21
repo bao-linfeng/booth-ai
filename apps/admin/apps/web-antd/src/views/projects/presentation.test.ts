@@ -5,11 +5,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildFollowUp } from './follow-up';
 import {
   eventSummary,
+  failureDetails,
   operationFailureMessage,
   requirementSummary,
 } from './presentation';
 
 vi.mock('#/api/core/projects', () => ({
+  poolReasonLabels: { disabled: '默认承接人已停用' },
   projectEventLabels: { custom: '自定义事件' },
   statusLabels: {
     closed: '已关闭',
@@ -112,11 +114,31 @@ describe('eventSummary', () => {
     });
   });
 
+  it('marks acceptance into the assignment pool with its reason', () => {
+    expect(
+      eventSummary(
+        event('accepted', { assigneeAdminId: null, poolReason: 'disabled' }),
+      ).title,
+    ).toBe('受理项目，进入待分配（原因：默认承接人已停用）');
+    expect(
+      eventSummary(event('accepted', { assigneeAdminId: 'a' })).title,
+    ).toBe('受理项目，分配给 新负责人');
+  });
+
   it('names assignees and falls back to raw payload for unknown kinds', () => {
     expect(eventSummary(event('assignment', { reason: '区域调整' }))).toEqual({
       title: '改派承接人：原负责人 → 新负责人',
       lines: [{ label: '原因', value: '区域调整' }],
     });
+    expect(
+      eventSummary(event('assignment', { fromAdminId: null, reason: '分配' }))
+        .title,
+    ).toBe('分配承接人：→ 新负责人');
+    expect(
+      eventSummary(
+        event('assignment', { fromAdminId: null, selfClaimed: true }),
+      ),
+    ).toEqual({ title: '新负责人 领取项目', lines: [] });
     expect(eventSummary(event('custom', { a: 1 }))).toEqual({
       title: '自定义事件',
       lines: [{ label: '记录', value: '{"a":1}' }],
@@ -206,5 +228,17 @@ describe('operationFailureMessage', () => {
       operationFailureMessage(failure('INVALID_STATUS_TRANSITION')),
     ).toContain('目标状态');
     expect(operationFailureMessage(new Error('network'))).toContain('已保留');
+    expect(operationFailureMessage(failure('ASSIGNEE_REQUIRED'))).toContain(
+      '尚未分配承接人',
+    );
+  });
+
+  it('reads details attached to a business reason', () => {
+    expect(
+      failureDetails({
+        response: { data: { error: { details: { assigneeName: '张三' } } } },
+      }),
+    ).toEqual({ assigneeName: '张三' });
+    expect(failureDetails(new Error('network'))).toEqual({});
   });
 });

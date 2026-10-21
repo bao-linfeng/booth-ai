@@ -38,6 +38,12 @@ export const assignmentSchema = {
   required: ['requestKey', 'expectedRevision', 'assigneeAdminId', 'reason'],
   properties: { ...change, assigneeAdminId: uuid, reason: text(2000, 1) },
 } as const;
+export const claimSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['requestKey'],
+  properties: { requestKey: keySchema },
+} as const;
 export const linkSchema = {
   type: 'object',
   additionalProperties: false,

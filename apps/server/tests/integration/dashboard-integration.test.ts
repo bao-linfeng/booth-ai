@@ -161,13 +161,14 @@ test(
       activities: [],
     });
     assert.deepEqual(empty.notifications, { unread: 0 });
+    assert.equal(empty.assignmentPool, null, '没有分配权限时不返回待分配池');
 
     const bounds = (
       await pool.query<{ todayLater: Date; past: Date; future: Date }>(`SELECT
     ((date_trunc('day',now() AT TIME ZONE 'Asia/Shanghai') + interval '1 day' - interval '1 minute') AT TIME ZONE 'Asia/Shanghai') AS "todayLater",
     (now() - interval '2 days') AS past,(now() + interval '3 days') AS future`)
     ).rows[0]!;
-    async function project(status: string, assignee = me, createdAt = '2026-01-01T00:00:00Z') {
+    async function project(status: string, assignee: string | null = me, createdAt = '2026-01-01T00:00:00Z') {
       const id = randomUUID();
       await pool.query(
         `INSERT INTO projects(id,request_no,source_type,assignee_admin_id,status,request_snapshot,created_at)
@@ -274,6 +275,35 @@ test(
     );
     assert.equal(projects.activities[5]?.byMe, true);
     assert.deepEqual(result.notifications, { unread: 1 });
+    assert.equal(result.assignmentPool, null);
+
+    // 待分配池：有分配权限的人看到总数与最早受理的项目，以及只对他们可见的待分配通知
+    const poolNew = await project('pending', null, '2026-01-12T00:00:00Z');
+    const poolOld = await project('pending', null, '2026-01-11T00:00:00Z');
+    await project('closed', null, '2026-01-10T00:00:00Z');
+    const pooledEvent = await event(
+      poolOld,
+      'accepted',
+      { assigneeAdminId: null, poolReason: 'unconfigured' },
+      null,
+      '2026-01-11T00:00:00Z',
+    );
+    await pool.query("INSERT INTO project_notification_outbox(project_id,event_id,audience) VALUES($1,$2,'assigners')", [
+      poolOld,
+      pooledEvent,
+    ]);
+    assert.deepEqual((await getDashboardWorkspace(pool, me, permissions)).notifications, { unread: 1 });
+    const assigner = await getDashboardWorkspace(pool, me, [...permissions, 'projects.assign']);
+    assert.deepEqual(assigner.notifications, { unread: 2 });
+    assert.equal(assigner.assignmentPool?.total, 2);
+    assert.deepEqual(
+      assigner.assignmentPool?.items.map(item => [item.projectId, item.exhibitionName, item.createdAt]),
+      [
+        [poolOld, '上海展', '2026-01-11T00:00:00.000Z'],
+        [poolNew, '上海展', '2026-01-12T00:00:00.000Z'],
+      ],
+    );
+    assert.deepEqual(assigner.projects?.tasks.length, projects.tasks.length, '待分配项目不计入本人待办');
     assert.deepEqual(
       await getDashboardWorkspace(pool, colleague, ['projects.read']).then(data => data.projects?.tasks.map(task => task.projectId)),
       [others],

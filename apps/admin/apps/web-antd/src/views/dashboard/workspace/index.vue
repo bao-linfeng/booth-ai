@@ -141,6 +141,9 @@ const headerStats = computed(() => {
           { label: '我负责的进行中项目', value: data.projects.active },
         ]
       : []),
+    ...(data.assignmentPool
+      ? [{ label: '待分配', value: data.assignmentPool.total }]
+      : []),
     ...(data.notifications
       ? [{ label: '未读消息', value: data.notifications.unread }]
       : []),
@@ -191,7 +194,10 @@ function activityText(activity: Activity) {
     }
   }
 }
-function taskCustomer(task: Workspace['tasks'][number]) {
+function taskCustomer(task: {
+  company: null | string;
+  contactName: null | string;
+}) {
   return task.company || task.contactName || '未填写客户';
 }
 
@@ -323,6 +329,62 @@ onMounted(load);
               按逾期、今日跟进、待受理排序；跟进时间取项目最新跟进记录的约定时间。
             </p>
           </template>
+        </Card>
+
+        <Card v-if="workspace?.assignmentPool" title="待分配项目">
+          <template #extra>
+            <RouterLink
+              v-if="router.hasRoute('ProjectList')"
+              :to="{ name: 'ProjectList' }"
+              class="text-primary text-sm underline underline-offset-4"
+            >
+              前往项目列表分配
+            </RouterLink>
+          </template>
+          <ul
+            v-if="workspace.assignmentPool.items.length"
+            class="mb-0 divide-y divide-border pl-0"
+          >
+            <li
+              v-for="item in workspace.assignmentPool.items"
+              :key="item.projectId"
+              class="flex flex-wrap items-center gap-x-3 gap-y-1 py-3"
+            >
+              <Tag color="orange" class="mr-0">待分配</Tag>
+              <RouterLink
+                v-if="canViewProjectDetail"
+                :to="{
+                  name: 'ProjectDetail',
+                  params: { projectId: item.projectId },
+                }"
+                class="text-primary font-medium underline underline-offset-4"
+              >
+                {{ item.projectNo }}
+              </RouterLink>
+              <span v-else class="font-medium">{{ item.projectNo }}</span>
+              <span>{{ taskCustomer(item) }}</span>
+              <span
+                v-if="item.exhibitionName"
+                class="text-muted-foreground text-sm"
+              >
+                {{ item.exhibitionName }}
+              </span>
+              <span class="text-muted-foreground ml-auto text-sm">
+                受理于 {{ formatDateTime(item.createdAt) }}
+              </span>
+            </li>
+          </ul>
+          <Empty v-else description="暂无待分配项目" class="my-6" />
+          <p
+            v-if="
+              workspace.assignmentPool.total >
+              workspace.assignmentPool.items.length
+            "
+            class="text-muted-foreground mb-0 mt-3 text-sm"
+          >
+            共 {{ workspace.assignmentPool.total }} 项，仅显示最早受理的
+            {{ workspace.assignmentPool.items.length }} 项。
+          </p>
         </Card>
 
         <Card v-if="workspace?.projects" title="我负责项目的最新动态">

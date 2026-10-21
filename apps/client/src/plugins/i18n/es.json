@@ -808,7 +808,6 @@
     "errorAccountChanged2": "Cuenta cambiada. Reconfirma.",
     "errorFormInvalid2": "Verifica fechas, presupuesto, contactos y estado de sesión. Datos guardados.",
     "errorNetworkRetry": "Resultado no confirmado. Reintenta.",
-    "errorAssignmentUnavailable": "No se pueden aceptar solicitudes en este momento. No se ha creado ningún proyecto. Tus datos se han conservado; vuelve a enviarlos más tarde o contacta con atención al cliente.",
     "validationExhibition": "Introduce el nombre de la feria.",
     "validationCountry": "Elige un país.",
     "validationCity": "Elige una ciudad.",

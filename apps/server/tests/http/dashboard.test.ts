@@ -121,7 +121,7 @@ test('workspace route requires the workspace grant and scopes personal data to t
   const empty = await app.inject({ url, headers });
   assert.equal(empty.statusCode, 200);
   assert.equal(empty.headers['cache-control'], 'private, no-store');
-  assert.deepEqual([empty.json().data.projects, empty.json().data.notifications], [null, null]);
+  assert.deepEqual([empty.json().data.projects, empty.json().data.assignmentPool, empty.json().data.notifications], [null, null, null]);
   assert.equal(businessQueries.length, 0);
   permissions = ['workspace.read', 'notifications.read'];
   const data = (await app.inject({ url, headers })).json().data;
@@ -129,6 +129,6 @@ test('workspace route requires the workspace grant and scopes personal data to t
   assert.equal(data.projects, null);
   assert.deepEqual(
     businessQueries.map(query => query.values),
-    [['admin-id']],
+    [['admin-id', false]],
   );
 });

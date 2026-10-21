@@ -26,7 +26,7 @@ const metricKey = { type: 'string', enum: ['users', 'searches', 'generations', '
 const workspaceSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['projects', 'notifications', 'generatedAt', 'timeZone'],
+  required: ['projects', 'assignmentPool', 'notifications', 'generatedAt', 'timeZone'],
   properties: {
     projects: nullable({
       type: 'object',
@@ -96,6 +96,32 @@ const workspaceSchema = {
               toStatus: nullableProjectStatus,
               schemeCode: nullableString,
               quotationRevision: { type: ['integer', 'null'] },
+              createdAt: string,
+            },
+          },
+        },
+      },
+    }),
+    assignmentPool: nullable({
+      type: 'object',
+      additionalProperties: false,
+      description: '待分配池（仅有分配权限的人可见）：总数与最早受理的若干条',
+      required: ['total', 'items'],
+      properties: {
+        total: integer,
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['projectId', 'projectNo', 'sourceType', 'company', 'contactName', 'exhibitionName', 'createdAt'],
+            properties: {
+              projectId: string,
+              projectNo: string,
+              sourceType: { type: 'string', enum: ['quote_request', 'manual_request'] },
+              company: nullableString,
+              contactName: nullableString,
+              exhibitionName: nullableString,
               createdAt: string,
             },
           },

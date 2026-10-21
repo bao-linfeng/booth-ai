@@ -37,6 +37,9 @@ export function createFakeForm() {
     reset: vi.fn(async () => {
       state.values = {};
     }),
+    resetForm: vi.fn(async () => {
+      state.values = {};
+    }),
     setFieldValue: vi.fn(async (field: string, value: unknown) => {
       state.values[field] = value;
     }),
@@ -49,6 +52,22 @@ export function createFakeForm() {
         if (next.commonConfig) state.commonConfig = next.commonConfig;
       },
     ),
+    /** 与 Vben 一样按 fieldName 合并，componentProps 浅合并 */
+    updateSchema: vi.fn((items: Partial<SchemaItem>[]) => {
+      for (const item of items) {
+        const current = state.schema.find(
+          (schema) => schema.fieldName === item.fieldName,
+        );
+        if (!current) continue;
+        Object.assign(current, {
+          ...item,
+          componentProps: {
+            ...current.componentProps,
+            ...item.componentProps,
+          },
+        });
+      }
+    }),
     setValues: vi.fn(async (values: Values) => {
       Object.assign(state.values, values);
       state.options.handleValuesChange?.(state.values, Object.keys(values));
@@ -173,7 +192,12 @@ export async function fakeAntd() {
               ),
           }),
     }),
-    message: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
+    message: {
+      error: vi.fn(),
+      info: vi.fn(),
+      success: vi.fn(),
+      warning: vi.fn(),
+    },
     Select: passthrough,
     Table: define({
       props: { dataSource: { type: Array, default: () => [] } },
@@ -181,6 +205,7 @@ export async function fakeAntd() {
         render('table', { 'data-rows': props.dataSource.length }),
     }),
     Tag: passthrough,
+    Tooltip: passthrough,
   };
 }
 

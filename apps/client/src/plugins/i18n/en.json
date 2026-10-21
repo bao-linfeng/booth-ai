@@ -808,7 +808,6 @@
     "errorAccountChanged2": "The logged-in account has changed. Please confirm again.",
     "errorFormInvalid2": "Check the dates, budget, contact details and login status. Your input has been saved.",
     "errorNetworkRetry": "Receipt has not yet been confirmed. Please retry confirmation of this request.",
-    "errorAssignmentUnavailable": "Requests cannot be accepted right now. No project was created. Your form has been kept; please submit it again later or contact customer service.",
     "validationExhibition": "Please enter the exhibition name.",
     "validationCountry": "Please choose a country.",
     "validationCity": "Please choose a city.",

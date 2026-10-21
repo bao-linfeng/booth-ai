@@ -88,11 +88,10 @@ test('quote route requires a claim email and own theme results from visitors, an
     assert.equal((await app.inject({ method: 'POST', url: '/quote-requests', payload })).statusCode, 400);
   }
 });
-test('missing default assignee blocks acceptance rather than returning a phantom project', async () => {
-  await assert.rejects(configuredAssignee({ query: async () => ({ rows: [] }) } as unknown as pg.PoolClient), {
-    statusCode: 503,
-    reason: 'ASSIGNMENT_UNAVAILABLE',
-  });
+test('unconfigured default assignee sends new projects to the pool; a missing config row is an invariant failure', async () => {
+  const client = (rows: unknown[]) => ({ query: async () => ({ rows }) }) as unknown as pg.PoolClient;
+  assert.deepEqual(await configuredAssignee(client([{ id: null }])), { assigneeAdminId: null, poolReason: 'unconfigured' });
+  await assert.rejects(configuredAssignee(client([])), (error: Error & { reason?: string }) => !error.reason);
 });
 test('status transitions follow the follow-up rules and only allow reopening from terminal states', () => {
   assert.deepEqual(statusTransitions('pending'), ['following', 'closed']);

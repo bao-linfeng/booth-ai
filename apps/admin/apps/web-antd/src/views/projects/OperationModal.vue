@@ -11,9 +11,7 @@ import { Alert, Button, message } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
 import {
-  assignProjectApi,
   followUpApi,
-  getAssigneesApi,
   getProjectApi,
   linkSchemeApi,
   statusLabels,
@@ -30,7 +28,7 @@ import {
 
 const emit = defineEmits<{ reload: [] }>();
 const project = ref<ProjectDetail>();
-const mode = ref<'assignment' | 'follow-up' | 'scheme'>('follow-up');
+const mode = ref<'follow-up' | 'scheme'>('follow-up');
 const failure = ref('');
 const conflict = ref(false);
 const refreshing = ref(false);
@@ -56,23 +54,13 @@ const [Form, formApi] = useVbenForm({
     modalApi.setState({ confirmLoading: true });
     try {
       const change = { requestKey: key, expectedRevision: record.revision };
-      if (mode.value === 'assignment')
-        await assignProjectApi(record.projectId, {
-          ...change,
-          assigneeAdminId: String(values.assigneeAdminId),
-          reason: String(values.reason),
-        });
-      else if (mode.value === 'scheme')
-        await linkSchemeApi(record.projectId, {
-          ...change,
-          schemeCode: String(values.schemeCode),
-          confirmationNote: String(values.confirmationNote),
-        });
-      else
-        await followUpApi(
-          record.projectId,
-          buildFollowUp(record, values, change),
-        );
+      await (mode.value === 'scheme'
+        ? linkSchemeApi(record.projectId, {
+            ...change,
+            schemeCode: String(values.schemeCode),
+            confirmationNote: String(values.confirmationNote),
+          })
+        : followUpApi(record.projectId, buildFollowUp(record, values, change)));
       message.success('项目记录已保存');
       modalApi.close();
       emit('reload');
@@ -287,7 +275,6 @@ async function open(record: ProjectDetail, operation: typeof mode.value) {
   conflict.value = false;
   modalApi.setState({
     title: {
-      assignment: '改派承接人',
       'follow-up': '追加跟进与状态记录',
       scheme: '确认关联方案',
     }[operation],
@@ -295,33 +282,7 @@ async function open(record: ProjectDetail, operation: typeof mode.value) {
   modalApi.open();
   await nextTick();
   await formApi.reset();
-  if (operation === 'assignment') {
-    const admins = await getAssigneesApi();
-    formApi.setState({
-      schema: [
-        {
-          component: 'Select',
-          fieldName: 'assigneeAdminId',
-          label: '承接管理员',
-          rules: 'selectRequired',
-          componentProps: {
-            options: admins.map((admin) => ({
-              value: admin.id,
-              label: admin.name,
-            })),
-          },
-        },
-        {
-          component: 'Textarea',
-          fieldName: 'reason',
-          label: '分配原因',
-          rules: 'required',
-          componentProps: { maxlength: 2000, rows: 3 },
-        },
-      ],
-    });
-    await formApi.setValues({ assigneeAdminId: record.assigneeAdminId });
-  } else if (operation === 'scheme') {
+  if (operation === 'scheme') {
     formApi.setState({
       schema: [
         {

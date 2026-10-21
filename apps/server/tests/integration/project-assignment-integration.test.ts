@@ -6,22 +6,31 @@ import { buildApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config.js';
 import { projectTestPool } from '../helpers/project-fixtures.js';
 import { getAssignmentConfig } from '../../src/modules/projects/assignment.js';
-import { assignProject, followUpProject, saveAssignmentConfig } from '../../src/modules/projects/admin-service.js';
+import {
+  assignProject,
+  claimProject,
+  followUpProject,
+  linkProjectScheme,
+  saveAssignmentConfig,
+  saveQuotation,
+} from '../../src/modules/projects/admin-service.js';
 import { createManualProject } from '../../src/modules/projects/service.js';
-import { getProject } from '../../src/modules/projects/repository.js';
+import { getProject, listProjects } from '../../src/modules/projects/repository.js';
+import { listNotificationInbox, markAllNotificationsRead, markNotificationRead } from '../../src/modules/projects/notification-inbox.js';
 import { emptyRequirement } from '../../src/modules/selection/domain.js';
 import type { ManualInput } from '../../src/modules/projects/domain.js';
 import { routePermissions } from '../helpers/admin-route-policies.js';
 import type { createStorage } from '../../src/infra/storage.js';
 
-test('assignment configuration route permissions are explicit', async () => {
+test('assignment configuration and claim route permissions are explicit', async () => {
   const adminRoutePermissions = await routePermissions();
   assert.deepEqual(adminRoutePermissions('GET', '/api/v1/admin/project-assignment-config'), ['projects.read']);
   assert.deepEqual(adminRoutePermissions('PUT', '/api/v1/admin/project-assignment-config'), ['projects.assign']);
+  assert.deepEqual(adminRoutePermissions('POST', '/api/v1/admin/projects/:projectId/claim'), ['projects.follow-up']);
 });
 
 test(
-  'explicit assignment: pause, restore, immutable owners, conflicts, permissions and audit',
+  'assignment pool: acceptance never pauses, claim and assignment, ASSIGNEE_REQUIRED, notification audience and audit',
   {
     skip: !process.env.PROJECT_TEST_DATABASE_URL,
   },
@@ -29,6 +38,7 @@ test(
     const pool = await projectTestPool(t);
     const actor = randomUUID();
     const target = randomUUID();
+    const peer = randomUUID();
     const user = randomUUID();
     const reader = randomUUID();
     await pool.query(`INSERT INTO admin_roles(id,name,permission_codes) VALUES
@@ -37,6 +47,7 @@ test(
       [actor, 'ROLE_ADMIN'],
       [target, 'FOLLOWER'],
       [reader, 'READER'],
+      [peer, 'FOLLOWER'],
     ].entries()) {
       await pool.query('INSERT INTO admins(id,external_user_id,username,roles) VALUES($1,$2,$1::uuid::text,$3)', [id, index + 1, [role]]);
     }
@@ -52,11 +63,29 @@ test(
       customerType: 'individual',
       contact: { name: '客户', email: 'test@example.com' },
     };
+    const accepted = async (projectId: string) =>
+      (
+        await pool.query(
+          `SELECT e.payload,o.audience FROM project_events e JOIN project_notification_outbox o ON o.event_id=e.id
+        WHERE e.project_id=$1 AND e.kind='accepted'`,
+          [projectId],
+        )
+      ).rows[0];
+    const pooled = async (poolReason: string) => {
+      const created = await createManualProject(pool, user, { ...input, requestKey: randomUUID() });
+      const id = String(created.receipt.projectId);
+      const project = await getProject(pool, id);
+      assert.deepEqual([project.assigneeAdminId, project.assigneeName, project.assigneeStatus], [null, null, 'unassigned']);
+      assert.deepEqual(await accepted(id), {
+        payload: { assigneeAdminId: null, poolReason, revision: 1 },
+        audience: 'assigners',
+      });
+      return id;
+    };
+
+    // 未配置、已停用、缺少权限三种情况都照常受理，项目进入待分配池
     assert.equal((await getAssignmentConfig(pool)).status, 'unconfigured');
-    await assert.rejects(createManualProject(pool, user, input), { reason: 'ASSIGNMENT_UNAVAILABLE', statusCode: 503 });
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM projects')).rows[0].count, 0);
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM project_operations')).rows[0].count, 0);
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM project_notification_outbox')).rows[0].count, 0);
+    const unconfigured = await pooled('unconfigured');
     await assert.rejects(saveAssignmentConfig(pool, reader, { defaultAssigneeAdminId: target, expectedRevision: 0 }), { statusCode: 403 });
     await assert.rejects(saveAssignmentConfig(pool, actor, { defaultAssigneeAdminId: reader, expectedRevision: 0 }), {
       reason: 'INVALID_ASSIGNEE',
@@ -64,17 +93,19 @@ test(
     const config = await saveAssignmentConfig(pool, actor, { defaultAssigneeAdminId: target, expectedRevision: 0 });
     assert.equal(config.status, 'active');
     assert.equal(config.revision, 1);
-    const accepted = await createManualProject(pool, user, input);
-    const id = String(accepted.receipt.projectId);
+    const assigned = await createManualProject(pool, user, input);
+    const id = String(assigned.receipt.projectId);
     assert.equal((await getProject(pool, id)).assigneeAdminId, target);
+    assert.deepEqual(await accepted(id), { payload: { assigneeAdminId: target, revision: 1 }, audience: 'all' });
     await pool.query('UPDATE admins SET enabled=false WHERE id=$1', [target]);
     assert.equal((await getAssignmentConfig(pool)).status, 'disabled');
+    // 已受理项目保留历史负责人，不自动转入待分配池
     const retained = await getProject(pool, id);
     assert.equal(retained.assigneeAdminId, target);
     assert.equal(retained.assigneeStatus, 'disabled');
     assert.equal(retained.revision, 1);
-    assert.deepEqual((await createManualProject(pool, user, input)).receipt, accepted.receipt);
-    await assert.rejects(createManualProject(pool, user, { ...input, requestKey: randomUUID() }), { reason: 'ASSIGNMENT_UNAVAILABLE' });
+    assert.deepEqual((await createManualProject(pool, user, input)).receipt, assigned.receipt);
+    const disabled = await pooled('disabled');
     await assert.rejects(
       followUpProject(pool, id, target, {
         requestKey: randomUUID(),
@@ -86,46 +117,134 @@ test(
       { statusCode: 403 },
     );
     const assignment = { requestKey: randomUUID(), expectedRevision: 1, assigneeAdminId: actor, reason: '承接人停用，人工改派' };
-    const assigned = await assignProject(pool, id, actor, assignment);
-    assert.deepEqual(assigned, { projectId: id, revision: 2, assigneeAdminId: actor });
-    assert.deepEqual(await assignProject(pool, id, actor, assignment), assigned);
+    const reassigned = await assignProject(pool, id, actor, assignment);
+    assert.deepEqual(reassigned, { projectId: id, revision: 2, assigneeAdminId: actor });
+    assert.deepEqual(await assignProject(pool, id, actor, assignment), reassigned);
     assert.equal(Object.hasOwn(await getProject(pool, id), 'attribution'), false);
     assert.equal((await getProject(pool, id)).assigneeStatus, 'active');
     assert.equal((await getAssignmentConfig(pool)).defaultAssigneeAdminId, target);
     await pool.query('UPDATE admins SET enabled=true WHERE id=$1', [target]);
     await pool.query("UPDATE admin_roles SET permission_codes=ARRAY['projects.read'] WHERE name='FOLLOWER'");
     assert.equal((await getAssignmentConfig(pool)).status, 'permission_revoked');
-    await assert.rejects(createManualProject(pool, user, { ...input, requestKey: randomUUID() }), { reason: 'ASSIGNMENT_UNAVAILABLE' });
+    const revoked = await pooled('permission_revoked');
     await assert.rejects(saveAssignmentConfig(pool, actor, { defaultAssigneeAdminId: target, expectedRevision: 1 }), {
       reason: 'INVALID_ASSIGNEE',
     });
-    await pool.query("UPDATE admin_roles SET permission_codes=ARRAY['projects.follow-up'] WHERE name='FOLLOWER'");
-    assert.equal((await getAssignmentConfig(pool)).status, 'permission_revoked');
-    await assert.rejects(
-      followUpProject(pool, id, target, {
-        requestKey: randomUUID(),
-        expectedRevision: 2,
-        contactMethod: 'email',
-        contactedAt: new Date().toISOString(),
-        content: '失去项目查看权限后跟进',
-      }),
-      { statusCode: 403 },
-    );
     await pool.query("UPDATE admin_roles SET permission_codes=ARRAY['projects.read','projects.follow-up'] WHERE name='FOLLOWER'");
-    const resumed = await createManualProject(pool, user, { ...input, requestKey: randomUUID() });
-    const resumedId = String(resumed.receipt.projectId);
-    await pool.query("UPDATE admin_roles SET active=false WHERE name='FOLLOWER'");
-    assert.equal((await getProject(pool, resumedId)).assigneeStatus, 'permission_revoked');
+
+    // 待分配项目必须先确定负责人
+    const change = { requestKey: randomUUID(), expectedRevision: 1 };
     await assert.rejects(
-      followUpProject(pool, resumedId, target, {
-        requestKey: randomUUID(),
-        expectedRevision: 1,
+      followUpProject(pool, unconfigured, actor, {
+        ...change,
         contactMethod: 'email',
         contactedAt: new Date().toISOString(),
-        content: '撤权后跟进',
+        content: '未分配时跟进',
       }),
-      { statusCode: 403 },
+      { reason: 'ASSIGNEE_REQUIRED', statusCode: 409 },
     );
+    await assert.rejects(
+      saveQuotation(pool, unconfigured, actor, {
+        ...change,
+        expectedQuotationRevision: 0,
+        currency: 'CNY',
+        priceBasis: 'included',
+        validUntil: '2026-12-31',
+        validityTimeZone: 'Asia/Shanghai',
+        items: [],
+        terms: '',
+        inclusions: '',
+        exclusions: '',
+        changeReason: '首次报价',
+      }),
+      { reason: 'ASSIGNEE_REQUIRED', statusCode: 409 },
+    );
+    await assert.rejects(linkProjectScheme(pool, unconfigured, actor, { ...change, schemeCode: 'ANY', confirmationNote: '客户确认' }), {
+      reason: 'ASSIGNEE_REQUIRED',
+      statusCode: 409,
+    });
+
+    // 领取：无承接资格的人 403；两人并发领取只有一人成功
+    await assert.rejects(claimProject(pool, unconfigured, reader, { requestKey: randomUUID() }), { statusCode: 403 });
+    const claimKeys = { [target]: randomUUID(), [peer]: randomUUID() };
+    const claims = await Promise.allSettled(
+      [target, peer].map(admin => claimProject(pool, unconfigured, admin, { requestKey: claimKeys[admin]! })),
+    );
+    const won = claims.find(result => result.status === 'fulfilled');
+    const lost = claims.find(result => result.status === 'rejected');
+    assert.ok(won?.status === 'fulfilled' && lost?.status === 'rejected');
+    const claimer = won.value.assigneeAdminId;
+    assert.deepEqual(won.value, { projectId: unconfigured, revision: 2, assigneeAdminId: claimer });
+    assert.equal(lost.reason.reason, 'PROJECT_ALREADY_ASSIGNED');
+    assert.equal(lost.reason.statusCode, 409);
+    assert.deepEqual(lost.reason.details, { assigneeAdminId: claimer, assigneeName: claimer });
+    assert.deepEqual(await claimProject(pool, unconfigured, claimer, { requestKey: claimKeys[claimer]! }), won.value);
+    assert.deepEqual(
+      (
+        await pool.query("SELECT actor_admin_id AS actor,payload FROM project_events WHERE project_id=$1 AND kind='assignment'", [
+          unconfigured,
+        ])
+      ).rows,
+      [{ actor: claimer, payload: { fromAdminId: null, assigneeAdminId: claimer, selfClaimed: true, revision: 2 } }],
+    );
+    // 领取后可以正常跟进
+    await followUpProject(pool, unconfigured, claimer, {
+      requestKey: randomUUID(),
+      expectedRevision: 2,
+      contactMethod: 'phone',
+      contactedAt: new Date().toISOString(),
+      content: '领取后跟进',
+      targetStatus: 'following',
+    });
+
+    // 分配：从待分配分配给他人时，新承接人收到只有本人可见的通知
+    await assignProject(pool, disabled, actor, { requestKey: randomUUID(), expectedRevision: 1, assigneeAdminId: target, reason: '分配' });
+    assert.deepEqual(
+      (
+        await pool.query(
+          `SELECT e.payload->>'fromAdminId' AS "from",o.audience,o.recipient_admin_id AS recipient FROM project_notification_outbox o
+        JOIN project_events e ON e.id=o.event_id WHERE o.project_id=$1 AND e.kind='assignment'`,
+          [disabled],
+        )
+      ).rows,
+      [{ from: null, audience: 'recipient', recipient: target }],
+    );
+    assert.equal(
+      (await pool.query("SELECT count(*)::int AS count FROM project_notification_outbox WHERE audience='recipient'")).rows[0].count,
+      1,
+      '分配给自己和领取都不发通知',
+    );
+
+    // 通知可见性：待分配通知只对有分配权限的人可见，分配通知只对新承接人可见
+    const visible = async (adminId: string, canAssign: boolean) =>
+      (await listNotificationInbox(pool, adminId, canAssign, { pageSize: 100 })).items.map(item => `${item.projectId}:${item.kind}`).sort();
+    const everyone = [`${id}:accepted`];
+    const assignerOnly = [unconfigured, disabled, revoked].map(projectId => `${projectId}:accepted`);
+    assert.deepEqual(await visible(actor, true), [...everyone, ...assignerOnly].sort());
+    assert.deepEqual(await visible(reader, false), everyone);
+    assert.deepEqual(await visible(target, false), [...everyone, `${disabled}:assignment`].sort());
+    assert.equal((await listNotificationInbox(pool, reader, false, {})).unreadCount, 1);
+    assert.deepEqual(
+      (await listNotificationInbox(pool, target, false, { kind: 'assignment' })).items.map(item => [item.projectId, item.audience]),
+      [[disabled, 'recipient']],
+    );
+    assert.equal(
+      (await listNotificationInbox(pool, actor, true, { pageSize: 100 })).items.find(item => item.projectId === unconfigured)?.audience,
+      'assigners',
+    );
+    const hidden = (await pool.query("SELECT id FROM project_notification_outbox WHERE audience='recipient'")).rows[0].id;
+    await assert.rejects(markNotificationRead(pool, reader, false, hidden), { statusCode: 404 });
+    assert.equal(await markAllNotificationsRead(pool, reader, false), 1);
+    assert.equal(await markAllNotificationsRead(pool, target, false), 2);
+
+    // 列表筛选：待分配 / 需处理分配（含承接人失效且未结束）
+    const listed = async (assignmentFilter: 'needs_assignment' | 'unassigned') =>
+      (await listProjects(pool, { assignment: assignmentFilter })).items.map(item => item.projectId).sort();
+    assert.deepEqual(await listed('unassigned'), [revoked]);
+    await pool.query('UPDATE admins SET enabled=false WHERE id=$1', [target]);
+    assert.deepEqual(await listed('needs_assignment'), [disabled, revoked, ...(claimer === target ? [unconfigured] : [])].sort());
+    await pool.query('UPDATE admins SET enabled=true WHERE id=$1', [target]);
+
     const concurrent = await Promise.allSettled([
       saveAssignmentConfig(pool, actor, { defaultAssigneeAdminId: actor, expectedRevision: 1 }),
       saveAssignmentConfig(pool, actor, { defaultAssigneeAdminId: null, expectedRevision: 1 }),
@@ -138,12 +257,7 @@ test(
         .count,
       2,
     );
-
     await saveAssignmentConfig(pool, actor, { defaultAssigneeAdminId: null, expectedRevision: 2 });
-    assert.equal((await getProject(pool, resumedId)).assigneeAdminId, target);
-    await assert.rejects(createManualProject(pool, user, { ...input, requestKey: randomUUID() }), { reason: 'ASSIGNMENT_UNAVAILABLE' });
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM projects')).rows[0].count, 2);
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM project_notification_outbox')).rows[0].count, 2);
 
     let site: 'admin' | 'client' = 'admin';
     const redis = {
@@ -190,29 +304,39 @@ test(
       ).statusCode,
       403,
     );
-    const detail = await app.inject({ url: `/api/v1/admin/projects/${id}`, headers });
+    assert.equal(
+      (await app.inject({ method: 'POST', url: `/api/v1/admin/projects/${revoked}/claim`, headers, payload: { requestKey: randomUUID() } }))
+        .statusCode,
+      403,
+    );
+    const detail = await app.inject({ url: `/api/v1/admin/projects/${revoked}`, headers });
     assert.equal(detail.statusCode, 200);
-    assert.equal(Object.hasOwn(detail.json().data, 'attribution'), false);
-    const list = await app.inject({ url: '/api/v1/admin/projects', headers });
+    assert.deepEqual(
+      [detail.json().data.assigneeAdminId, detail.json().data.assigneeName, detail.json().data.assigneeStatus],
+      [null, null, 'unassigned'],
+    );
+    const list = await app.inject({ url: '/api/v1/admin/projects?assignment=unassigned', headers });
     assert.equal(list.statusCode, 200);
-    assert.equal(list.json().data.items.length, 2);
+    assert.deepEqual(
+      list.json().data.items.map((item: { projectId: string }) => item.projectId),
+      [revoked],
+    );
     assert.ok(list.json().data.items.every((item: Record<string, unknown>) => !Object.hasOwn(item, 'attribution')));
     site = 'client';
-    const unavailable = await app.inject({
+    // 清空默认承接人后客户端照常提交，不再出现"暂停受理"
+    const submitted = await app.inject({
       method: 'POST',
       url: '/api/v1/client/manual-requests',
       headers,
       payload: { ...input, requestKey: randomUUID() },
     });
-    assert.equal(unavailable.statusCode, 503);
-    assert.equal(unavailable.json().error.reason, 'ASSIGNMENT_UNAVAILABLE');
-    assert.equal(unavailable.json().data, undefined);
+    assert.equal(submitted.statusCode, 201);
+    assert.equal((await getProject(pool, submitted.json().data.projectId)).assigneeAdminId, null);
     const replay = await app.inject({ method: 'POST', url: '/api/v1/client/manual-requests', headers, payload: input });
     assert.equal(replay.statusCode, 200);
     assert.equal(replay.json().data.projectId, id);
-    const publicProject = await app.inject({ url: `/api/v1/client/me/projects/${resumedId}`, headers });
+    const publicProject = await app.inject({ url: `/api/v1/client/me/projects/${revoked}`, headers });
     assert.equal(publicProject.statusCode, 200);
-    assert.ok(!publicProject.body.includes('assigneeStatus'));
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM projects')).rows[0].count, 2);
+    assert.ok(!publicProject.body.includes('assignee'));
   },
 );

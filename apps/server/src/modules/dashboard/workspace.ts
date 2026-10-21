@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { ProjectStatus } from '../projects/domain.js';
+import { unreadNotificationCount } from '../projects/notification-inbox.js';
 
 export type WorkspaceTaskReason = 'overdue' | 'today' | 'pending';
 
@@ -26,6 +27,17 @@ export interface WorkspaceActivity {
   toStatus: ProjectStatus | null;
   schemeCode: string | null;
   quotationRevision: number | null;
+  createdAt: string;
+}
+
+/** 待分配池中的项目（按受理时间从早到晚） */
+export interface UnassignedProject {
+  projectId: string;
+  projectNo: string;
+  sourceType: 'manual_request' | 'quote_request';
+  company: string | null;
+  contactName: string | null;
+  exhibitionName: string | null;
   createdAt: string;
 }
 
@@ -103,23 +115,32 @@ async function projectsSection(pool: pg.Pool, adminId: string) {
   };
 }
 
+async function assignmentPoolSection(pool: pg.Pool) {
+  const pending = "assignee_admin_id IS NULL AND status IN ('pending','following','quoted')";
+  const [count, rows] = await Promise.all([
+    pool.query<{ total: number }>(`SELECT count(*)::int AS total FROM projects WHERE ${pending}`).then(result => result.rows[0]!.total),
+    pool
+      .query<Omit<UnassignedProject, 'createdAt'> & { createdAt: Date }>(
+        `SELECT id AS "projectId",project_no AS "projectNo",source_type AS "sourceType",nullif(request_snapshot->>'company','') AS company,
+        request_snapshot->'contact'->>'name' AS "contactName",request_snapshot->'exhibition'->>'name' AS "exhibitionName",created_at AS "createdAt"
+      FROM projects WHERE ${pending} ORDER BY created_at ASC,id ASC LIMIT ${taskLimit}`,
+      )
+      .then(result => result.rows),
+  ]);
+  return { total: count, items: rows.map(row => ({ ...row, createdAt: row.createdAt.toISOString() })) };
+}
+
 /**
  * 工作台只展示当前管理员本人的待办：负责的未结束项目、需处理的跟进、负责项目的最新动态与本人未读消息。
- * 每个分组在拥有对应模块查看权限时才查询，未授权分组返回 null。
+ * 有分配权限的人另外看到待分配池。每个分组在拥有对应模块权限时才查询，未授权分组返回 null。
  */
 export async function getDashboardWorkspace(pool: pg.Pool, adminId: string, permissions: string[]) {
   const granted = new Set(permissions);
-  const [projects, notifications] = await Promise.all([
+  const canAssign = granted.has('projects.assign');
+  const [projects, assignmentPool, notifications] = await Promise.all([
     granted.has('projects.read') ? projectsSection(pool, adminId) : null,
-    granted.has('notifications.read')
-      ? pool
-          .query<{ unread: number }>(
-            `SELECT count(*)::int AS unread FROM project_notification_outbox o
-      WHERE NOT EXISTS (SELECT 1 FROM project_notification_reads r WHERE r.notification_id=o.id AND r.admin_id=$1)`,
-            [adminId],
-          )
-          .then(result => result.rows[0]!)
-      : null,
+    granted.has('projects.read') && canAssign ? assignmentPoolSection(pool) : null,
+    granted.has('notifications.read') ? unreadNotificationCount(pool, adminId, canAssign).then(unread => ({ unread })) : null,
   ]);
-  return { projects, notifications, generatedAt: new Date().toISOString(), timeZone };
+  return { projects, assignmentPool, notifications, generatedAt: new Date().toISOString(), timeZone };
 }

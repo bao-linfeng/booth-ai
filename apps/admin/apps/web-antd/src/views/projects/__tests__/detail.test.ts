@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   assetImagesApi: vi.fn(),
   getProjectApi: vi.fn(),
 }));
+const claim = vi.hoisted(() => ({ claimProject: vi.fn() }));
 const access = vi.hoisted(() => ({ codes: new Set<string>() }));
 
 vi.mock('vue-router', () => ({
@@ -23,6 +24,7 @@ vi.mock('vue-router', () => ({
 vi.mock('#/api/core/projects', () => ({
   ...api,
   assigneeStatusLabels: { active: '有效' },
+  poolReasonLabels: { unconfigured: '未配置默认承接人' },
   projectEventLabels: {},
   statusLabels: { following: '跟进中' },
 }));
@@ -87,6 +89,8 @@ vi.mock('ant-design-vue', async () => {
   };
 });
 vi.mock('../OperationModal.vue', () => ({ default: { render: () => null } }));
+vi.mock('../AssignModal.vue', () => ({ default: { render: () => null } }));
+vi.mock('../claim', () => claim);
 vi.mock('../QuotationEditor.vue', () => ({ default: { render: () => null } }));
 vi.mock('../CustomerServiceCard.vue', () => ({
   default: { render: () => null },
@@ -256,4 +260,52 @@ it('does not request image urls without asset download permission', async () => 
 
   expect(api.assetImagesApi).not.toHaveBeenCalled();
   expect(container.querySelector('img')).toBeNull();
+});
+
+it('shows pooled projects as unassigned, offers claiming and blocks follow-up until assigned', async () => {
+  const pooled = {
+    ...project([
+      {
+        actorName: null,
+        assigneeName: null,
+        createdAt: '2026-10-01T00:00:00Z',
+        fromAssigneeName: null,
+        id: 'accepted',
+        kind: 'accepted',
+        payload: { assigneeAdminId: null, poolReason: 'unconfigured' },
+      },
+    ]),
+    assigneeAdminId: null,
+    assigneeName: null,
+    assigneeStatus: 'unassigned' as const,
+    status: 'pending' as const,
+  };
+  api.getProjectApi.mockResolvedValue(pooled);
+  claim.claimProject.mockResolvedValue(true);
+  app = createApp({ render: () => h(ProjectWorkspace) });
+  app.directive('access', {});
+  app.mount(container);
+  await flush();
+
+  const text = container.textContent ?? '';
+  expect(text).toContain('项目待分配');
+  expect(text).toContain('受理项目，进入待分配（原因：未配置默认承接人）');
+  expect(button(container, '追加跟进').disabled).toBe(true);
+  expect(button(container, '确认关联方案').disabled).toBe(true);
+  expect(button(container, '分配').disabled).toBe(false);
+  expect(button(container, '分配给我').disabled).toBe(false);
+
+  api.getProjectApi.mockResolvedValue({
+    ...pooled,
+    assigneeAdminId: 'admin-1',
+    assigneeName: '我',
+    assigneeStatus: 'active',
+  });
+  button(container, '分配给我').click();
+  await flush();
+  expect(claim.claimProject).toHaveBeenCalledWith('project-1');
+  expect(api.getProjectApi).toHaveBeenCalledTimes(2);
+  expect(button(container, '追加跟进').disabled).toBe(false);
+  expect(button(container, '改派')).toBeTruthy();
+  expect(() => button(container, '分配给我')).toThrow('Button not found');
 });

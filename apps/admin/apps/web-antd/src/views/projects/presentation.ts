@@ -7,7 +7,11 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
-import { projectEventLabels, statusLabels } from '#/api/core/projects';
+import {
+  poolReasonLabels,
+  projectEventLabels,
+  statusLabels,
+} from '#/api/core/projects';
 import { REASON_MESSAGES } from '#/api/reason-messages';
 
 export interface SummaryItem {
@@ -164,14 +168,29 @@ export function eventSummary(event: ProjectEvent): {
   const payload = event.payload;
   switch (event.kind) {
     case 'accepted': {
+      if (payload.assigneeAdminId === null) {
+        const reason = poolReasonLabels[String(payload.poolReason)];
+        return {
+          title: `受理项目，进入待分配${reason ? `（原因：${reason}）` : ''}`,
+          lines: [],
+        };
+      }
       return {
         title: `受理项目，分配给 ${event.assigneeName ?? '承接人'}`,
         lines: [],
       };
     }
     case 'assignment': {
+      if (payload.selfClaimed === true)
+        return {
+          title: `${event.assigneeName ?? event.actorName ?? '承接人'} 领取项目`,
+          lines: [],
+        };
       return {
-        title: `改派承接人：${event.fromAssigneeName ?? '原承接人'} → ${event.assigneeName ?? '新承接人'}`,
+        title:
+          payload.fromAdminId === null
+            ? `分配承接人：→ ${event.assigneeName ?? '新承接人'}`
+            : `改派承接人：${event.fromAssigneeName ?? '原承接人'} → ${event.assigneeName ?? '新承接人'}`,
         lines: compact([['原因', text(payload.reason)]]),
       };
     }
@@ -237,10 +256,20 @@ export function eventSummary(event: ProjectEvent): {
   }
 }
 
+type FailureResponse = null | {
+  response?: { data?: { error?: { details?: unknown; reason?: string } } };
+};
+
 export function failureReason(error: unknown): string | undefined {
-  return (
-    error as null | { response?: { data?: { error?: { reason?: string } } } }
-  )?.response?.data?.error?.reason;
+  return (error as FailureResponse)?.response?.data?.error?.reason;
+}
+
+/** 与 reason 对应的补充数据（如 PROJECT_ALREADY_ASSIGNED 的 assigneeName） */
+export function failureDetails(error: unknown): Record<string, unknown> {
+  const details = (error as FailureResponse)?.response?.data?.error?.details;
+  return details && typeof details === 'object'
+    ? (details as Record<string, unknown>)
+    : {};
 }
 
 /** 项目操作失败时在弹窗内保留的说明；草稿始终保留，便于修正后重试。 */

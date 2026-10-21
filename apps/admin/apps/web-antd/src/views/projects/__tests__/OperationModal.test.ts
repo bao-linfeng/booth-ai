@@ -19,9 +19,7 @@ const modal = await vi.hoisted(async () => {
   return createFakeModal();
 });
 const api = vi.hoisted(() => ({
-  assignProjectApi: vi.fn(),
   followUpApi: vi.fn(),
-  getAssigneesApi: vi.fn(),
   getProjectApi: vi.fn(),
   linkSchemeApi: vi.fn(),
 }));
@@ -238,32 +236,7 @@ describe('operation modal follow-up', () => {
   });
 });
 
-describe('operation modal assignment and scheme', () => {
-  it('reassigns with the selected admin and reason against the current revision', async () => {
-    api.getAssigneesApi.mockResolvedValue([
-      { id: 'admin-1', name: '原负责人' },
-      { id: 'admin-2', name: '新负责人' },
-    ]);
-    const modalApi = await mount();
-    await modalApi.open(project(), 'assignment');
-    expect(modal.state.title).toBe('改派承接人');
-    expect(form.state.values.assigneeAdminId).toBe('admin-1');
-    expect(form.options('assigneeAdminId')).toEqual([
-      { label: '原负责人', value: 'admin-1' },
-      { label: '新负责人', value: 'admin-2' },
-    ]);
-    form.edit({ assigneeAdminId: 'admin-2', reason: '区域调整' });
-    api.assignProjectApi.mockResolvedValue({});
-    await confirm();
-    expect(api.assignProjectApi).toHaveBeenCalledWith('project-1', {
-      assigneeAdminId: 'admin-2',
-      expectedRevision: 5,
-      reason: '区域调整',
-      requestKey: '00000000-0000-4000-8000-000000000001',
-    });
-    expect(api.followUpApi).not.toHaveBeenCalled();
-  });
-
+describe('operation modal scheme', () => {
   it('links the confirmed scheme with the customer confirmation note', async () => {
     const modalApi = await mount();
     await modalApi.open(project(), 'scheme');

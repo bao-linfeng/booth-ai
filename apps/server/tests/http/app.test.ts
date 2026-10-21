@@ -96,26 +96,19 @@ test('OpenAPI documents real health routes; docs assets load', async t => {
   assert.equal((await app.inject('/docs/static/swagger-ui-bundle.js')).statusCode, 200);
 });
 
-test('acceptance unavailable exposes only the stable business reason at 503', async t => {
+test('5xx responses never expose the business reason', async t => {
   const app = await buildApp(config, healthy);
   t.after(() => app.close());
-  app.post('/test-acceptance', async () => {
-    throw domainError('ASSIGNMENT_UNAVAILABLE', 503);
-  });
   app.post('/test-private-failure', async () => {
     throw domainError('private-connection-secret', 503);
   });
-  const response = await app.inject({ method: 'POST', url: '/test-acceptance' });
-  assert.equal(response.statusCode, 503);
-  assert.deepEqual(response.json().error, {
-    code: 'REQUEST_ERROR',
-    reason: 'ASSIGNMENT_UNAVAILABLE',
-    message: 'Request acceptance is temporarily unavailable',
-    requestId: response.headers['x-request-id'],
-  });
   const privateFailure = await app.inject({ method: 'POST', url: '/test-private-failure' });
   assert.equal(privateFailure.statusCode, 503);
-  assert.equal(privateFailure.json().error.reason, undefined);
+  assert.deepEqual(privateFailure.json().error, {
+    code: 'INTERNAL_ERROR',
+    message: 'Internal server error',
+    requestId: privateFailure.headers['x-request-id'],
+  });
   assert.ok(!privateFailure.body.includes('private-connection-secret'));
 });
 

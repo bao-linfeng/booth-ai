@@ -46,6 +46,9 @@ let initializing = false;
 const terminal = computed(() =>
   ['closed', 'lost', 'won'].includes(props.project.status),
 );
+const unassigned = computed(() => !props.project.assigneeAdminId);
+/** 终态或待分配项目不能保存报价 */
+const locked = computed(() => terminal.value || unassigned.value);
 const [Form, formApi] = useVbenForm({
   showDefaultActions: false,
   wrapperClass: 'grid-cols-2',
@@ -53,12 +56,7 @@ const [Form, formApi] = useVbenForm({
     if (!initializing) dirty.value = true;
   },
   handleSubmit: async (values: Record<string, unknown>) => {
-    if (
-      !canEdit.value ||
-      saving.value ||
-      terminal.value ||
-      viewingHistory.value
-    )
+    if (!canEdit.value || saving.value || locked.value || viewingHistory.value)
       return;
     const payload: QuotationInput = {
       expectedRevision: baseProjectRevision.value,
@@ -166,13 +164,13 @@ const [Form, formApi] = useVbenForm({
   ],
 });
 watch(
-  [canEdit, terminal, viewingHistory, saving],
+  [canEdit, locked, viewingHistory, saving],
   () =>
     formApi.setState({
       commonConfig: {
         disabled:
           !canEdit.value ||
-          terminal.value ||
+          locked.value ||
           viewingHistory.value ||
           saving.value,
       },
@@ -214,7 +212,7 @@ watch(
   { immediate: true },
 );
 function copyBom() {
-  if (terminal.value || viewingHistory.value) return;
+  if (locked.value || viewingHistory.value) return;
   items.value = (props.project.materials.bom?.items ?? []).map((item) => ({
     clientLineId: crypto.randomUUID(),
     kind: 'material',
@@ -326,20 +324,20 @@ const columns = [
     </div>
     <fieldset
       class="min-w-0"
-      :disabled="!canEdit || saving || terminal || viewingHistory"
+      :disabled="!canEdit || saving || locked || viewingHistory"
     >
       <Form />
       <div class="my-4 flex gap-3">
         <Button
           v-access:code="['projects.quotation']"
-          :disabled="terminal || viewingHistory"
+          :disabled="locked || viewingHistory"
           @click="copyBom"
         >
           从项目清单快照复制材料
         </Button>
         <Button
           v-access:code="['projects.quotation']"
-          :disabled="terminal || viewingHistory"
+          :disabled="locked || viewingHistory"
           @click="add"
         >
           新增服务 / 材料行
@@ -358,7 +356,7 @@ const columns = [
             v-if="column.key === 'kind'"
             v-model:value="record.kind"
             class="w-full"
-            :disabled="!canEdit || terminal || viewingHistory || saving"
+            :disabled="!canEdit || locked || viewingHistory || saving"
             :options="[
               { value: 'material', label: '材料' },
               { value: 'graphic', label: '画面' },
@@ -376,7 +374,7 @@ const columns = [
             v-access:code="['projects.quotation']"
             danger
             size="small"
-            :disabled="!canEdit || terminal || viewingHistory || saving"
+            :disabled="!canEdit || locked || viewingHistory || saving"
             @click="
               items = items.filter(
                 (item) => item.clientLineId !== record.clientLineId,
@@ -389,7 +387,7 @@ const columns = [
           <Input
             v-else-if="column.key !== undefined"
             v-model:value="record[column.key]"
-            :disabled="!canEdit || terminal || viewingHistory || saving"
+            :disabled="!canEdit || locked || viewingHistory || saving"
             :maxlength="column.key === 'notes' ? 2000 : 500"
             @change="dirty = true"
           />
@@ -412,10 +410,11 @@ const columns = [
         待补项：{{ displayed.validationIssues.join('、') }}
       </p>
       <p v-if="terminal" class="text-sm">终态项目需先通过跟进记录明确重开。</p>
+      <p v-else-if="unassigned" class="text-sm">待分配项目需先分配承接人。</p>
       <Button
         type="primary"
         :loading="saving"
-        :disabled="terminal || viewingHistory"
+        :disabled="locked || viewingHistory"
         @click="formApi.validateAndSubmitForm()"
         v-access:code="['projects.quotation']"
       >

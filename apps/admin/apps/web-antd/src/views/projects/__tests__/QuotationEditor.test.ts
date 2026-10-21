@@ -79,6 +79,7 @@ const savedQuotation: Quotation = {
 };
 function project(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
+    assigneeAdminId: 'admin-1',
     materials: {
       bom: {
         items: [
@@ -288,6 +289,15 @@ describe('quotation editor', () => {
     access.codes = new Set();
     await mount(project({ quotation: savedQuotation }));
     expect(form.state.commonConfig.disabled).toBe(true);
+    await form.api.validateAndSubmitForm();
+    expect(api.saveQuotationApi).not.toHaveBeenCalled();
+  });
+
+  it('refuses to save while the project is waiting in the assignment pool', async () => {
+    await mount(project({ assigneeAdminId: null, status: 'pending' }));
+    expect(container.textContent).toContain('待分配项目需先分配承接人');
+    expect(form.state.commonConfig.disabled).toBe(true);
+    expect(button(container, '保存新报价修订').disabled).toBe(true);
     await form.api.validateAndSubmitForm();
     expect(api.saveQuotationApi).not.toHaveBeenCalled();
   });

@@ -30,23 +30,12 @@ export function sendError(error: DomainError, request: FastifyRequest, reply: Fa
   // Error messages can include upstream credentials; only emit stable diagnostic codes and details built by domain code.
   request.log[status >= 500 ? 'error' : 'warn']({ code: error.code ?? 'REQUEST_ERROR', statusCode: status }, 'request failed');
   const { reason, details } = error;
-  const assignmentUnavailable = status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE';
-  const code = error.validation
-    ? 'VALIDATION_ERROR'
-    : assignmentUnavailable
-      ? 'REQUEST_ERROR'
-      : status >= 500
-        ? 'INTERNAL_ERROR'
-        : 'REQUEST_ERROR';
-  const message = assignmentUnavailable
-    ? 'Request acceptance is temporarily unavailable'
-    : status >= 500
-      ? 'Internal server error'
-      : 'Invalid request';
+  const code = error.validation ? 'VALIDATION_ERROR' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR';
+  const message = status >= 500 ? 'Internal server error' : 'Invalid request';
   return reply.code(status).send({
     error: {
       code,
-      ...(reason && (status < 500 || assignmentUnavailable) ? { reason } : {}),
+      ...(reason && status < 500 ? { reason } : {}),
       ...(reason && details !== undefined && status < 500 ? { details } : {}),
       message,
       requestId: request.id,

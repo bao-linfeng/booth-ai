@@ -1,11 +1,12 @@
 import type pg from 'pg';
-import { projectError } from './domain.js';
 
-export type AssigneeStatus = 'active' | 'disabled' | 'permission_revoked';
+export type AssigneeStatus = 'active' | 'disabled' | 'permission_revoked' | 'unassigned';
+/** 新需求进入待分配池的原因 */
+export type PoolReason = 'unconfigured' | 'disabled' | 'permission_revoked';
 export interface AssignmentConfig {
   defaultAssigneeAdminId: string | null;
   assigneeName: string | null;
-  status: AssigneeStatus | 'unconfigured';
+  status: Exclude<AssigneeStatus, 'unassigned'> | 'unconfigured';
   revision: number;
   updatedAt: string;
 }
@@ -21,7 +22,7 @@ export function assigneePermissionSql(alias: string): string {
 }
 
 export function assigneeStatusSql(alias: string): string {
-  return `CASE WHEN NOT ${alias}.enabled THEN 'disabled'
+  return `CASE WHEN ${alias}.id IS NULL THEN 'unassigned' WHEN NOT ${alias}.enabled THEN 'disabled'
     WHEN ${assigneePermissionSql(alias)} THEN 'active' ELSE 'permission_revoked' END`;
 }
 
@@ -32,14 +33,16 @@ export async function getAssignmentConfig(db: pg.Pool | pg.PoolClient): Promise<
     CASE WHEN c.default_assignee_admin_id IS NULL THEN 'unconfigured' ELSE ${assigneeStatusSql('a')} END AS status
     FROM project_assignment_config c LEFT JOIN admins a ON a.id=c.default_assignee_admin_id WHERE c.id=true`)
   ).rows[0];
-  if (!row) throw projectError('ASSIGNMENT_UNAVAILABLE', 503);
+  // 配置行由迁移 066 写入，缺失说明数据库被破坏
+  if (!row) throw new Error('project_assignment_config row is missing');
   return row;
 }
 
-export async function eligibleAssignee(client: pg.PoolClient, id: string): Promise<boolean> {
+/** 管理员当前能否承接项目；对管理员与其角色加共享锁，保证判断到事务结束前有效 */
+async function assigneeState(client: pg.PoolClient, id: string): Promise<'active' | PoolReason> {
   const admin = (await client.query<{ enabled: boolean; roles: string[] }>('SELECT enabled,roles FROM admins WHERE id=$1 FOR SHARE', [id]))
     .rows[0];
-  if (!admin?.enabled) return false;
+  if (!admin?.enabled) return 'disabled';
   const roles = (
     await client.query<{ permissionCodes: string[] }>(
       'SELECT permission_codes AS "permissionCodes" FROM admin_roles WHERE active AND name=ANY($1::text[]) FOR SHARE',
@@ -47,17 +50,26 @@ export async function eligibleAssignee(client: pg.PoolClient, id: string): Promi
     )
   ).rows;
   const permissions = new Set(roles.flatMap(role => role.permissionCodes));
-  return permissions.has('projects.read') && permissions.has('projects.follow-up');
+  return permissions.has('projects.read') && permissions.has('projects.follow-up') ? 'active' : 'permission_revoked';
 }
 
-export async function configuredAssignee(client: pg.PoolClient): Promise<string> {
+export async function eligibleAssignee(client: pg.PoolClient, id: string): Promise<boolean> {
+  return (await assigneeState(client, id)) === 'active';
+}
+
+/** 新需求的承接人：默认承接人可承接时直接分配，否则进入待分配池并给出原因 */
+export async function configuredAssignee(
+  client: pg.PoolClient,
+): Promise<{ assigneeAdminId: string; poolReason: null } | { assigneeAdminId: null; poolReason: PoolReason }> {
   const config = (
     await client.query<{ id: string | null }>(
       'SELECT default_assignee_admin_id AS id FROM project_assignment_config WHERE id=true FOR SHARE',
     )
   ).rows[0];
-  if (!config?.id || !(await eligibleAssignee(client, config.id))) throw projectError('ASSIGNMENT_UNAVAILABLE', 503);
-  return config.id;
+  if (!config) throw new Error('project_assignment_config row is missing');
+  if (!config.id) return { assigneeAdminId: null, poolReason: 'unconfigured' };
+  const state = await assigneeState(client, config.id);
+  return state === 'active' ? { assigneeAdminId: config.id, poolReason: null } : { assigneeAdminId: null, poolReason: state };
 }
 
 /** 可被指派为承接人的管理员（启用且具备承接所需权限） */

@@ -21,7 +21,7 @@ export async function saveAssignmentConfig(pool: pg.Pool, adminId: string, input
         'SELECT default_assignee_admin_id AS id,revision FROM project_assignment_config WHERE id=true FOR UPDATE',
       )
     ).rows[0];
-    if (!current) throw projectError('ASSIGNMENT_UNAVAILABLE', 503);
+    if (!current) throw new Error('project_assignment_config row is missing');
     if (current.revision !== input.expectedRevision) throw projectError('ASSIGNMENT_CONFIG_CHANGED');
     if (input.defaultAssigneeAdminId !== null && !(await eligibleAssignee(client, input.defaultAssigneeAdminId))) {
       throw projectError('INVALID_ASSIGNEE', 422);
@@ -76,17 +76,23 @@ export async function assertProjectAdmin(db: pg.Pool | pg.PoolClient, adminId: s
 function editable(project: ProjectRecord) {
   if (terminalStatuses.includes(project.status)) throw projectError('INVALID_STATUS_TRANSITION');
 }
+interface ChangeOptions {
+  /** 待分配项目不能执行该操作（跟进、报价、关联方案） */
+  requireAssignee?: boolean;
+}
 async function change<T>(
   pool: pg.Pool,
   id: string,
   adminId: string,
   operation: string,
-  input: Change,
+  input: Change | Omit<Change, 'expectedRevision'>,
   work: (client: pg.PoolClient, project: ProjectRecord) => Promise<T>,
+  options: ChangeOptions = {},
 ): Promise<T> {
   return transaction(pool, async client => {
     const permissions: Record<string, string> = {
       assignee: 'projects.assign',
+      claim: 'projects.follow-up',
       'follow-up': 'projects.follow-up',
       scheme: 'projects.link-scheme',
       quotation: 'projects.quotation',
@@ -98,7 +104,9 @@ async function change<T>(
     const existing = await operationReceipt<T>(client, 'admin', adminId, operation, id, input.requestKey, hash);
     if (existing) return existing;
     const project = await getProject(client, id, undefined, true);
-    if (project.revision !== input.expectedRevision) throw projectError('PROJECT_REVISION_CHANGED');
+    // 不带 expectedRevision 的操作（领取）以行锁内的实时状态为准
+    if ('expectedRevision' in input && project.revision !== input.expectedRevision) throw projectError('PROJECT_REVISION_CHANGED');
+    if (options.requireAssignee && !project.assigneeAdminId) throw projectError('ASSIGNEE_REQUIRED');
     const result = await work(client, project);
     await saveOperation(client, 'admin', adminId, operation, id, input.requestKey, hash, result);
     return result;
@@ -123,13 +131,36 @@ export async function assignProject(pool: pg.Pool, id: string, adminId: string, 
       id,
       input.assigneeAdminId,
     ]);
-    await event(client, id, adminId, 'assignment', {
+    const record = await event(client, id, adminId, 'assignment', {
       fromAdminId: project.assigneeAdminId,
       assigneeAdminId: input.assigneeAdminId,
       reason: input.reason,
       revision: project.revision + 1,
     });
+    // 新承接人收到只有本人可见的通知；分配给自己时不通知
+    if (input.assigneeAdminId !== adminId)
+      await client.query(
+        "INSERT INTO project_notification_outbox(project_id,event_id,audience,recipient_admin_id) VALUES($1,$2,'recipient',$3)",
+        [id, record.id, input.assigneeAdminId],
+      );
     return { projectId: id, revision: project.revision + 1, assigneeAdminId: input.assigneeAdminId };
+  });
+}
+/** 符合承接条件的人领取待分配项目；并发领取先到先得，不校验列表里可能已过期的修订号 */
+export async function claimProject(pool: pg.Pool, id: string, adminId: string, input: { requestKey: string }) {
+  return change(pool, id, adminId, 'claim', input, async (client, project) => {
+    if (project.assigneeAdminId)
+      throw Object.assign(projectError('PROJECT_ALREADY_ASSIGNED'), {
+        details: { assigneeAdminId: project.assigneeAdminId, assigneeName: project.assigneeName },
+      });
+    await client.query('UPDATE projects SET assignee_admin_id=$2,revision=revision+1,updated_at=now() WHERE id=$1', [id, adminId]);
+    await event(client, id, adminId, 'assignment', {
+      fromAdminId: null,
+      assigneeAdminId: adminId,
+      selfClaimed: true,
+      revision: project.revision + 1,
+    });
+    return { projectId: id, revision: project.revision + 1, assigneeAdminId: adminId };
   });
 }
 const transitions: Record<ProjectStatus, ProjectStatus[]> = {
@@ -145,92 +176,108 @@ export function statusTransitions(status: ProjectStatus): ProjectStatus[] {
   return terminalStatuses.includes(status) ? ['following'] : transitions[status];
 }
 export async function followUpProject(pool: pg.Pool, id: string, adminId: string, input: FollowUpInput) {
-  return change(pool, id, adminId, 'follow-up', input, async (client, project) => {
-    const now = Date.now();
-    const contacted = Date.parse(input.contactedAt);
-    if (
-      !input.content.trim() ||
-      !Number.isFinite(contacted) ||
-      contacted > now + 300000 ||
-      (input.nextFollowUpAt && (!Number.isFinite(Date.parse(input.nextFollowUpAt)) || Date.parse(input.nextFollowUpAt) <= contacted))
-    )
-      throw projectError('INVALID_INPUT', 400);
-    const target = input.targetStatus ?? project.status;
-    if (target !== project.status) {
-      const reopening = terminalStatuses.includes(project.status) && target === 'following' && !!input.reopenReason?.trim();
-      if (!reopening && !transitions[project.status].includes(target)) throw projectError('INVALID_STATUS_TRANSITION');
-      if (['won', 'lost', 'closed'].includes(target) && !input.outcome?.trim()) throw projectError('OUTCOME_REQUIRED', 422);
-      if (target === 'quoted') {
-        const evidence = input.quoteEvidence;
-        if (
-          !evidence ||
-          !evidence.channel.trim() ||
-          !Number.isFinite(Date.parse(evidence.sentAt)) ||
-          Date.parse(evidence.sentAt) > now + 300000
-        )
-          throw projectError('QUOTE_EVIDENCE_REQUIRED', 422);
-        if (evidence.type === 'platform') {
-          const quotation = await quotationRevision(client, id, evidence.quotationRevision);
+  return change(
+    pool,
+    id,
+    adminId,
+    'follow-up',
+    input,
+    async (client, project) => {
+      const now = Date.now();
+      const contacted = Date.parse(input.contactedAt);
+      if (
+        !input.content.trim() ||
+        !Number.isFinite(contacted) ||
+        contacted > now + 300000 ||
+        (input.nextFollowUpAt && (!Number.isFinite(Date.parse(input.nextFollowUpAt)) || Date.parse(input.nextFollowUpAt) <= contacted))
+      )
+        throw projectError('INVALID_INPUT', 400);
+      const target = input.targetStatus ?? project.status;
+      if (target !== project.status) {
+        const reopening = terminalStatuses.includes(project.status) && target === 'following' && !!input.reopenReason?.trim();
+        if (!reopening && !transitions[project.status].includes(target)) throw projectError('INVALID_STATUS_TRANSITION');
+        if (['won', 'lost', 'closed'].includes(target) && !input.outcome?.trim()) throw projectError('OUTCOME_REQUIRED', 422);
+        if (target === 'quoted') {
+          const evidence = input.quoteEvidence;
           if (
-            !quotation ||
-            quotation.completeness !== 'ready' ||
-            Date.parse(evidence.sentAt) < Date.parse(quotation.createdAt) ||
-            localCalendarDate(evidence.sentAt, quotation.validityTimeZone) > quotation.validUntil
+            !evidence ||
+            !evidence.channel.trim() ||
+            !Number.isFinite(Date.parse(evidence.sentAt)) ||
+            Date.parse(evidence.sentAt) > now + 300000
           )
-            throw projectError('QUOTE_EVIDENCE_INVALID', 422);
-        } else if (!evidence.reference.trim()) throw projectError('QUOTE_EVIDENCE_REQUIRED', 422);
+            throw projectError('QUOTE_EVIDENCE_REQUIRED', 422);
+          if (evidence.type === 'platform') {
+            const quotation = await quotationRevision(client, id, evidence.quotationRevision);
+            if (
+              !quotation ||
+              quotation.completeness !== 'ready' ||
+              Date.parse(evidence.sentAt) < Date.parse(quotation.createdAt) ||
+              localCalendarDate(evidence.sentAt, quotation.validityTimeZone) > quotation.validUntil
+            )
+              throw projectError('QUOTE_EVIDENCE_INVALID', 422);
+          } else if (!evidence.reference.trim()) throw projectError('QUOTE_EVIDENCE_REQUIRED', 422);
+        }
       }
-    }
-    const revision = project.revision + 1;
-    const record = await event(client, id, adminId, 'follow-up', {
-      ...input,
-      requestKey: undefined,
-      expectedRevision: undefined,
-      fromStatus: project.status,
-      status: target,
-      revision,
-    });
-    await client.query(
-      'UPDATE projects SET status=$2,public_result=CASE WHEN $3::text IS NULL THEN public_result ELSE $3 END,revision=revision+1,updated_at=now() WHERE id=$1',
-      [id, target, input.publicResult === undefined ? null : input.publicResult.trim()],
-    );
-    return { followUpId: record.id, projectId: id, revision, status: target, createdAt: record.createdAt.toISOString() };
-  });
+      const revision = project.revision + 1;
+      const record = await event(client, id, adminId, 'follow-up', {
+        ...input,
+        requestKey: undefined,
+        expectedRevision: undefined,
+        fromStatus: project.status,
+        status: target,
+        revision,
+      });
+      await client.query(
+        'UPDATE projects SET status=$2,public_result=CASE WHEN $3::text IS NULL THEN public_result ELSE $3 END,revision=revision+1,updated_at=now() WHERE id=$1',
+        [id, target, input.publicResult === undefined ? null : input.publicResult.trim()],
+      );
+      return { followUpId: record.id, projectId: id, revision, status: target, createdAt: record.createdAt.toISOString() };
+    },
+    { requireAssignee: true },
+  );
 }
 export async function linkProjectScheme(pool: pg.Pool, id: string, adminId: string, input: SchemeLinkInput) {
-  return change(pool, id, adminId, 'scheme', input, async (client, project) => {
-    editable(project);
-    if (project.sourceType !== 'manual_request' || project.schemeCode) throw projectError('SCHEME_ALREADY_LINKED');
-    if (!input.confirmationNote.trim()) throw projectError('INVALID_INPUT', 400);
-    const captured = await captureScheme(
-      client,
-      input as Pick<QuoteInput, 'schemeCode' | 'bomRevision' | 'drawingRevision'>,
-      project.customerUserId,
-    );
-    await client.query(
-      'UPDATE projects SET scheme_code=$2,scheme_snapshot=$3,materials_snapshot=$4,revision=revision+1,updated_at=now() WHERE id=$1',
-      [id, input.schemeCode, JSON.stringify(captured.snapshot), JSON.stringify(captured.materials)],
-    );
-    for (const version of new Set(captured.versions))
-      await client.query('INSERT INTO project_asset_versions(project_id,asset_version_id) VALUES($1,$2)', [id, version]);
-    await event(client, id, adminId, 'scheme', {
-      schemeCode: input.schemeCode,
-      confirmationNote: input.confirmationNote,
-      revision: project.revision + 1,
-    });
-    return {
-      projectId: id,
-      revision: project.revision + 1,
-      schemeCode: input.schemeCode,
-      bomRevision: captured.materials.bom.revision,
-      drawingRevision: captured.materials.drawings.revision,
-      materialsStatus: {
-        bom: captured.materials.bom.status,
-        drawings: captured.materials.drawings.status,
-        artworks: captured.materials.artworks.status,
-      },
-    };
-  });
+  return change(
+    pool,
+    id,
+    adminId,
+    'scheme',
+    input,
+    async (client, project) => {
+      editable(project);
+      if (project.sourceType !== 'manual_request' || project.schemeCode) throw projectError('SCHEME_ALREADY_LINKED');
+      if (!input.confirmationNote.trim()) throw projectError('INVALID_INPUT', 400);
+      const captured = await captureScheme(
+        client,
+        input as Pick<QuoteInput, 'schemeCode' | 'bomRevision' | 'drawingRevision'>,
+        project.customerUserId,
+      );
+      await client.query(
+        'UPDATE projects SET scheme_code=$2,scheme_snapshot=$3,materials_snapshot=$4,revision=revision+1,updated_at=now() WHERE id=$1',
+        [id, input.schemeCode, JSON.stringify(captured.snapshot), JSON.stringify(captured.materials)],
+      );
+      for (const version of new Set(captured.versions))
+        await client.query('INSERT INTO project_asset_versions(project_id,asset_version_id) VALUES($1,$2)', [id, version]);
+      await event(client, id, adminId, 'scheme', {
+        schemeCode: input.schemeCode,
+        confirmationNote: input.confirmationNote,
+        revision: project.revision + 1,
+      });
+      return {
+        projectId: id,
+        revision: project.revision + 1,
+        schemeCode: input.schemeCode,
+        bomRevision: captured.materials.bom.revision,
+        drawingRevision: captured.materials.drawings.revision,
+        materialsStatus: {
+          bom: captured.materials.bom.status,
+          drawings: captured.materials.drawings.status,
+          artworks: captured.materials.artworks.status,
+        },
+      };
+    },
+    { requireAssignee: true },
+  );
 }
 export async function quotationRevision(db: pg.Pool | pg.PoolClient, id: string, revision?: number): Promise<SavedQuotation | null> {
   const row = (
@@ -243,28 +290,36 @@ export async function quotationRevision(db: pg.Pool | pg.PoolClient, id: string,
   return row?.snapshot ?? null;
 }
 export async function saveQuotation(pool: pg.Pool, id: string, adminId: string, input: QuotationInput) {
-  return change(pool, id, adminId, 'quotation', input, async (client, project) => {
-    editable(project);
-    const previous = await quotationRevision(client, id);
-    if ((previous?.revision ?? 0) !== input.expectedQuotationRevision) throw projectError('QUOTATION_REVISION_CHANGED');
-    const calculated = calculateQuotation(input, project.materials.bom?.items ?? []);
-    const quotation: SavedQuotation = {
-      ...calculated,
-      quotationNo: `QT-${project.projectNo}`,
-      revision: (previous?.revision ?? 0) + 1,
-      createdAt: new Date().toISOString(),
-      createdBy: adminId,
-    };
-    await client.query(
-      'INSERT INTO project_quotation_revisions(project_id,revision,quotation_no,snapshot,created_by) VALUES($1,$2,$3,$4,$5)',
-      [id, quotation.revision, quotation.quotationNo, JSON.stringify(quotation), adminId],
-    );
-    await client.query('UPDATE projects SET revision=revision+1,updated_at=now() WHERE id=$1', [id]);
-    await event(client, id, adminId, 'quotation', {
-      quotationRevision: quotation.revision,
-      changeReason: input.changeReason,
-      revision: project.revision + 1,
-    });
-    return { projectId: id, projectRevision: project.revision + 1, quotation };
-  });
+  return change(
+    pool,
+    id,
+    adminId,
+    'quotation',
+    input,
+    async (client, project) => {
+      editable(project);
+      const previous = await quotationRevision(client, id);
+      if ((previous?.revision ?? 0) !== input.expectedQuotationRevision) throw projectError('QUOTATION_REVISION_CHANGED');
+      const calculated = calculateQuotation(input, project.materials.bom?.items ?? []);
+      const quotation: SavedQuotation = {
+        ...calculated,
+        quotationNo: `QT-${project.projectNo}`,
+        revision: (previous?.revision ?? 0) + 1,
+        createdAt: new Date().toISOString(),
+        createdBy: adminId,
+      };
+      await client.query(
+        'INSERT INTO project_quotation_revisions(project_id,revision,quotation_no,snapshot,created_by) VALUES($1,$2,$3,$4,$5)',
+        [id, quotation.revision, quotation.quotationNo, JSON.stringify(quotation), adminId],
+      );
+      await client.query('UPDATE projects SET revision=revision+1,updated_at=now() WHERE id=$1', [id]);
+      await event(client, id, adminId, 'quotation', {
+        quotationRevision: quotation.revision,
+        changeReason: input.changeReason,
+        revision: project.revision + 1,
+      });
+      return { projectId: id, projectRevision: project.revision + 1, quotation };
+    },
+    { requireAssignee: true },
+  );
 }

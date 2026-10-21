@@ -105,13 +105,27 @@ test(
     assert.equal(results.filter(result => !result.replayed).length, 1);
     assert.equal((await pool.query('SELECT id FROM project_notification_outbox WHERE project_id=$1', [receipt.projectId])).rowCount, 1);
     await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=null');
-    await assert.rejects(createQuoteRequest(pool, user, { ...input, requestKey: randomUUID() }), {
-      reason: 'ASSIGNMENT_UNAVAILABLE',
-      statusCode: 503,
-    });
+    // 未配置默认承接人时照常受理，项目进入待分配池，受理通知只对有分配权限的人可见
+    const pooled = (await createQuoteRequest(pool, other, { ...input, requestKey: randomUUID() })).receipt;
+    projects.push(pooled.projectId);
+    assert.equal(pooled.status, 'pending');
+    assert.deepEqual(
+      (
+        await pool.query(
+          `SELECT p.assignee_admin_id AS assignee,e.payload,o.audience FROM projects p
+        JOIN project_events e ON e.project_id=p.id AND e.kind='accepted' JOIN project_notification_outbox o ON o.event_id=e.id WHERE p.id=$1`,
+          [pooled.projectId],
+        )
+      ).rows,
+      [{ assignee: null, payload: { assigneeAdminId: null, poolReason: 'unconfigured', revision: 1 }, audience: 'assigners' }],
+    );
+    assert.equal(
+      (await pool.query('SELECT audience FROM project_notification_outbox WHERE project_id=$1', [receipt.projectId])).rows[0].audience,
+      'all',
+    );
     assert.deepEqual((await createQuoteRequest(pool, user, input)).receipt, receipt);
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM projects')).rows[0].count, 1);
-    assert.equal((await pool.query('SELECT count(*)::int AS count FROM project_notification_outbox')).rows[0].count, 1);
+    assert.equal((await pool.query('SELECT count(*)::int AS count FROM projects')).rows[0].count, 2);
+    assert.equal((await pool.query('SELECT count(*)::int AS count FROM project_notification_outbox')).rows[0].count, 2);
     await pool.query('UPDATE project_assignment_config SET default_assignee_admin_id=$1', [admin]);
     const redis = {
       get: async () =>

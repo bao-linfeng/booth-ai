@@ -23,6 +23,7 @@ import {
   Tag,
   Timeline,
   TimelineItem,
+  Tooltip,
 } from 'ant-design-vue';
 
 import {
@@ -30,9 +31,12 @@ import {
   assetImagesApi,
   assigneeStatusLabels,
   getProjectApi,
+  poolReasonLabels,
   statusLabels,
 } from '#/api/core/projects';
 
+import AssignModal from './AssignModal.vue';
+import { claimProject } from './claim';
 import CustomerServiceCard from './CustomerServiceCard.vue';
 import OperationModal from './OperationModal.vue';
 import {
@@ -52,6 +56,19 @@ const project = ref<ProjectDetail>();
 const loading = ref(false);
 const error = ref('');
 const operation = ref<InstanceType<typeof OperationModal>>();
+const assign = ref<InstanceType<typeof AssignModal>>();
+const claiming = ref(false);
+const unassigned = computed(
+  () => !!project.value && !project.value.assigneeAdminId,
+);
+const unassignedHint = '待分配项目需先分配承接人';
+/** 受理时进入待分配池的原因（取自受理事件） */
+const poolReason = computed(() => {
+  const accepted = project.value?.events.find(
+    (event) => event.kind === 'accepted',
+  );
+  return poolReasonLabels[String(accepted?.payload.poolReason)];
+});
 const terminal = computed(
   () =>
     project.value && ['closed', 'lost', 'won'].includes(project.value.status),
@@ -150,6 +167,15 @@ async function loadImageUrls(projectId: string) {
     images.map((image) => [image.versionId, image]),
   );
 }
+async function claim() {
+  if (!project.value || claiming.value) return;
+  claiming.value = true;
+  try {
+    if (await claimProject(project.value.projectId)) await load();
+  } finally {
+    claiming.value = false;
+  }
+}
 async function download(version: string) {
   if (!project.value) return;
   const result = await assetDownloadApi(project.value.projectId, version);
@@ -169,7 +195,14 @@ onMounted(load);
     </div>
     <template v-if="project">
       <Alert
-        v-if="project.assigneeStatus !== 'active'"
+        v-if="unassigned"
+        type="warning"
+        show-icon
+        message="项目待分配"
+        :description="`${poolReason ? `受理时${poolReason}，` : ''}项目进入待分配池。分配承接人或领取后才能跟进、报价和关联方案。`"
+      />
+      <Alert
+        v-else-if="project.assigneeStatus !== 'active'"
         type="warning"
         show-icon
         :message="`承接人${assigneeStatusLabels[project.assigneeStatus]} · ${project.assigneeName}`"
@@ -183,28 +216,44 @@ onMounted(load);
         <template #extra>
           <div class="flex flex-wrap gap-2">
             <Button
+              v-if="unassigned"
+              type="primary"
+              :loading="claiming"
+              @click="claim"
+              v-access:code="['projects.follow-up']"
+            >
+              分配给我
+            </Button>
+            <Button
               :disabled="terminal"
-              @click="operation?.open(project, 'assignment')"
+              @click="assign?.open(project)"
               v-access:code="['projects.assign']"
             >
-              改派
+              {{ unassigned ? '分配' : '改派' }}
             </Button>
-            <Button
-              v-access:code="['projects.follow-up']"
-              @click="operation?.open(project, 'follow-up')"
-            >
-              追加跟进
-            </Button>
-            <Button
+            <Tooltip :title="unassigned ? unassignedHint : undefined">
+              <Button
+                :disabled="unassigned"
+                v-access:code="['projects.follow-up']"
+                @click="operation?.open(project, 'follow-up')"
+              >
+                追加跟进
+              </Button>
+            </Tooltip>
+            <Tooltip
               v-if="
                 project.sourceType === 'manual_request' && !project.schemeCode
               "
-              :disabled="terminal"
-              @click="operation?.open(project, 'scheme')"
-              v-access:code="['projects.link-scheme']"
+              :title="unassigned ? unassignedHint : undefined"
             >
-              确认关联方案
-            </Button>
+              <Button
+                :disabled="terminal || unassigned"
+                @click="operation?.open(project, 'scheme')"
+                v-access:code="['projects.link-scheme']"
+              >
+                确认关联方案
+              </Button>
+            </Tooltip>
             <Button @click="load">刷新项目</Button>
           </div>
         </template>
@@ -225,7 +274,8 @@ onMounted(load);
             {{ project.revision }}
           </DescriptionsItem>
           <DescriptionsItem label="承接人" :span="2">
-            {{ project.assigneeName }}
+            <Tag v-if="unassigned" color="orange">待分配</Tag>
+            <template v-else>{{ project.assigneeName }}</template>
           </DescriptionsItem>
           <DescriptionsItem label="客户 / 联系人">
             {{ project.request.company }} /
@@ -413,6 +463,7 @@ onMounted(load);
       </Card>
     </template>
     <OperationModal ref="operation" @reload="load" />
+    <AssignModal ref="assign" @reload="load" />
   </Page>
 </template>
 <style scoped>

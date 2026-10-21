@@ -62,6 +62,20 @@ export const createFormOptions = () => ({
     },
     {
       component: 'Select' as const,
+      fieldName: 'assignment',
+      label: '分配情况',
+      componentProps: {
+        allowClear: true,
+        placeholder: '全部',
+        options: [
+          { value: 'unassigned', label: '待分配' },
+          { value: 'needs_assignment', label: '需处理分配' },
+        ],
+      },
+      help: '需处理分配：待分配，或承接人已停用/缺少权限且项目未结束',
+    },
+    {
+      component: 'Select' as const,
       fieldName: 'assigneeAdminId',
       label: '承接人',
       componentProps: {
@@ -124,7 +138,7 @@ export const createGridOptions = () => ({
     {
       field: 'action',
       title: '操作',
-      width: 100,
+      width: 220,
       fixed: 'right' as const,
       slots: { default: 'action' },
     },

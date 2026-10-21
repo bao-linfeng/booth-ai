@@ -24,10 +24,13 @@ export const REASON_MESSAGES: Record<string, string> = {
     '重复提交且内容与上次不一致：上次提交可能已生效，请刷新后确认',
   // 项目跟进与报价
   ASSIGNMENT_CONFIG_CHANGED: '默认承接人配置已被他人修改，请刷新后重试',
+  ASSIGNEE_REQUIRED:
+    '项目尚未分配承接人，请先分配或领取后再跟进、报价或关联方案',
   INVALID_ASSIGNEE: '所选人员不能承接项目：账号已停用或缺少项目查看/跟进权限',
   INVALID_STATUS_TRANSITION:
     '当前项目状态不允许该操作或目标状态，项目可能已被他人更新，请刷新后重新选择',
   OUTCOME_REQUIRED: '变更为已成交、未成交或已关闭时需填写结果或原因',
+  PROJECT_ALREADY_ASSIGNED: '项目已被他人领取，请刷新后查看',
   PROJECT_REVISION_CHANGED: '项目已被他人更新，请刷新项目后重新提交',
   QUOTATION_REVISION_CHANGED: '报价已有更新的修订，请刷新比较后再保存',
   QUOTE_EVIDENCE_INVALID:
@@ -143,6 +146,10 @@ export const REASON_DETAIL_MESSAGES: Record<
         return `${label}格式不正确`;
       }
     }
+  },
+  PROJECT_ALREADY_ASSIGNED: (details) => {
+    const name = (details as null | { assigneeName?: unknown })?.assigneeName;
+    return typeof name === 'string' && name ? `已被 ${name} 领取` : undefined;
   },
   INVALID_PROMPT_TEMPLATE: (details) => {
     const issues = (details as null | { issues?: { message?: string }[] })

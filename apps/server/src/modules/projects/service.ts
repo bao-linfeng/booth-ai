@@ -9,6 +9,24 @@ import { configuredAssignee } from './assignment.js';
 import { enqueueReceiptEmail } from './receipt-emails.js';
 import { DEFAULT_MESSAGE_LOCALE, type MessageLocale } from '../selection/messages/index.js';
 
+/** 受理事件与通知：进入待分配池的项目只通知有分配权限的人 */
+async function recordAcceptance(client: pg.PoolClient, projectId: string, assignment: Awaited<ReturnType<typeof configuredAssignee>>) {
+  const payload = assignment.assigneeAdminId
+    ? { assigneeAdminId: assignment.assigneeAdminId, revision: 1 }
+    : { assigneeAdminId: null, poolReason: assignment.poolReason, revision: 1 };
+  const event = (
+    await client.query<{ id: string }>("INSERT INTO project_events(project_id,kind,payload) VALUES($1,'accepted',$2) RETURNING id", [
+      projectId,
+      JSON.stringify(payload),
+    ])
+  ).rows[0]!;
+  await client.query('INSERT INTO project_notification_outbox(project_id,event_id,audience) VALUES($1,$2,$3)', [
+    projectId,
+    event.id,
+    assignment.assigneeAdminId ? 'all' : 'assigners',
+  ]);
+}
+
 const ANONYMOUS_ACTOR = '00000000-0000-0000-0000-000000000000';
 // 未登录提交以联系邮箱作为认领凭据（灵通注册会验证邮箱），因此匿名提交必须提供邮箱
 function submitter(userId: string | null, contact: QuoteInput['contact']) {
@@ -41,23 +59,25 @@ export async function createManualProject(
     const catalog = await loadCatalog(client);
     validateRequirement(input.confirmedRequirements, catalog);
     if (input.parsedRequirements) validateRequirement(input.parsedRequirements, catalog);
-    const assignee = await configuredAssignee(client);
+    const assignment = await configuredAssignee(client);
     const id = randomUUID();
     const requestNo = `MR-${id.toUpperCase()}`;
     const row = (
       await client.query<{ projectNo: string; createdAt: Date }>(
         `INSERT INTO projects(id,request_no,source_type,customer_user_id,assignee_admin_id,request_snapshot,claim_email,visitor_id)
       VALUES($1,$2,'manual_request',$3,$4,$5,$6,$7) RETURNING project_no AS "projectNo",created_at AS "createdAt"`,
-        [id, requestNo, userId, assignee, JSON.stringify({ ...input, requestKey: undefined }), claimEmail, userId ? null : visitorId],
+        [
+          id,
+          requestNo,
+          userId,
+          assignment.assigneeAdminId,
+          JSON.stringify({ ...input, requestKey: undefined }),
+          claimEmail,
+          userId ? null : visitorId,
+        ],
       )
     ).rows[0]!;
-    const event = (
-      await client.query<{ id: string }>("INSERT INTO project_events(project_id,kind,payload) VALUES($1,'accepted',$2) RETURNING id", [
-        id,
-        JSON.stringify({ assigneeAdminId: assignee, revision: 1 }),
-      ])
-    ).rows[0]!;
-    await client.query('INSERT INTO project_notification_outbox(project_id,event_id) VALUES($1,$2)', [id, event.id]);
+    await recordAcceptance(client, id, assignment);
     if (input.contact.email)
       await enqueueReceiptEmail(client, { projectId: id, recipient: input.contact.email, locale, accountBound: userId !== null });
     const receipt = {
@@ -128,7 +148,7 @@ export async function createQuoteRequest(
     const existing = await operationReceipt<Receipt>(client, actorType, actorId, 'quote.create', 'collection', input.requestKey, hash);
     if (existing) return { replayed: true, receipt: existing };
     const { snapshot, materials, versions, matchingSummary } = await captureScheme(client, input, userId);
-    const assignee = await configuredAssignee(client);
+    const assignment = await configuredAssignee(client);
     const id = randomUUID();
     const requestNo = `QR-${id.toUpperCase()}`;
     const row = (
@@ -139,7 +159,7 @@ export async function createQuoteRequest(
           id,
           requestNo,
           userId,
-          assignee,
+          assignment.assigneeAdminId,
           input.schemeCode,
           JSON.stringify({ ...input, requestKey: undefined, matchingSummary }),
           JSON.stringify(snapshot),
@@ -151,13 +171,7 @@ export async function createQuoteRequest(
     ).rows[0]!;
     for (const version of new Set(versions))
       await client.query('INSERT INTO project_asset_versions(project_id,asset_version_id) VALUES($1,$2)', [id, version]);
-    const event = (
-      await client.query<{ id: string }>(`INSERT INTO project_events(project_id,kind,payload) VALUES($1,'accepted',$2) RETURNING id`, [
-        id,
-        JSON.stringify({ assigneeAdminId: assignee, revision: 1 }),
-      ])
-    ).rows[0]!;
-    await client.query('INSERT INTO project_notification_outbox(project_id,event_id) VALUES($1,$2)', [id, event.id]);
+    await recordAcceptance(client, id, assignment);
     if (input.contact.email)
       await enqueueReceiptEmail(client, { projectId: id, recipient: input.contact.email, locale, accountBound: userId !== null });
     const receipt: Receipt = {

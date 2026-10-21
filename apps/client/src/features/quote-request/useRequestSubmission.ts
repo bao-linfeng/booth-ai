@@ -58,10 +58,7 @@ export function useRequestSubmission<T extends { requestKey: string }>(options: 
     catch (failure: unknown) {
       const status = (failure as { response?: { status?: number } }).response?.status
       const reason = (failure as { data?: { error?: { reason?: string } } }).data?.error?.reason
-      if (status === 503 && reason === 'ASSIGNMENT_UNAVAILABLE') {
-        pending.value = null
-        error.value = t('quoteRequest.errorAssignmentUnavailable')
-      } else if (status && status < 500 && status !== 408 && status !== 429) {
+      if (status && status < 500 && status !== 408 && status !== 429) {
         pending.value = null
         if (conflict) conflict.value = status === 409
         error.value = rejectionMessage(status, reason)

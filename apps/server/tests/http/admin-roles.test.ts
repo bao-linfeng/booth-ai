@@ -127,6 +127,7 @@ test('page grants and business actions are independent and enforce their real de
     ['DELETE', '/schemes/:code/bill-of-materials/items/:itemId', 'bom.delete-item'],
     ['DELETE', '/schemes/:code/bill-of-materials', 'bom.delete'],
     ['PUT', '/projects/:projectId/assignee', 'projects.assign'],
+    ['POST', '/projects/:projectId/claim', 'projects.follow-up'],
     ['POST', '/projects/:projectId/follow-ups', 'projects.follow-up'],
     ['PUT', '/projects/:projectId/scheme', 'projects.link-scheme'],
     ['PUT', '/projects/:projectId/quotation', 'projects.quotation'],
