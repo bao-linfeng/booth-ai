@@ -70,7 +70,18 @@ const catalog = {
   features: [{ id: 'feat-1', label: '大屏' }],
 }
 function summary(overrides = {}) {
-  return { projectId, projectNo: 'PJ-2026-0001', schemeCode: 'SC-1', sourceType: 'quote_request', status: 'following', exhibition, createdAt: '2026-10-01T08:00:00.000Z', updatedAt: '2026-10-02T08:00:00.000Z', ...overrides }
+  return { projectId, projectNo: 'PJ-2026-0001', schemeCode: 'SC-1', sourceType: 'quote_request', status: 'following', exhibition, createdAt: '2026-10-01T08:00:00.000Z', progressUpdatedAt: '2026-10-02T08:00:00.000Z', ...overrides }
+}
+function progress(overrides = {}) {
+  return {
+    updatedAt: '2026-10-03T08:00:00.000Z',
+    note: { content: '报价单已发送至您的邮箱，请查收。', publishedAt: '2026-10-03T08:00:00.000Z' },
+    timeline: [{ step: 'submitted', at: '2026-10-01T08:00:00.000Z' }, { step: 'advisor_assigned', at: '2026-10-01T09:00:00.000Z' }, { step: 'following', at: '2026-10-02T08:00:00.000Z' }],
+    ...overrides,
+  }
+}
+function timelineSteps(container) {
+  return [...container.querySelectorAll('[data-test="progress-timeline"] li')].map(item => item.querySelector('span:not([aria-hidden])').textContent.trim())
 }
 function detail(overrides = {}) {
   return {
@@ -85,7 +96,7 @@ function detail(overrides = {}) {
     schemeSnapshot: { code: 'SC-1', name: '6×3 标准展台', revision: 2, lengthMm: 6000, widthMm: 3000, heightMm: 3500, openingCount: 2 },
     materialsStatus: { bom: 'available', drawings: 'available', artworks: 'pending' },
     selectedThemeSummary: { themeJobId: 'theme-1', resultId: 'result-1', selectionRevision: 1, previewUrl: '/theme.jpg' },
-    publicResult: '报价单已发送至您的邮箱，请查收。',
+    progress: progress(),
     ...overrides,
   }
 }
@@ -153,8 +164,21 @@ test('detail shows latest progress first, readable scope and requirement tags, a
   assert.ok(!request.includes('missing-style'))
   assertNoNode(mounted.container.querySelector('pre'), "mounted.container.querySelector('pre')")
   assertNoNode(mounted.container.querySelector('details'), "mounted.container.querySelector('details')")
-  assertNoNode(mounted.container.querySelector('ol, [class*="timeline"]'), "mounted.container.querySelector('ol, [class*=\"timeline\"]')")
+  // 时间线最新节点在前，只有客户可见的节点名称与时间
+  assert.deepEqual(timelineSteps(mounted.container), ['顾问开始跟进', '顾问已接手', '已提交申请'])
+  assert.ok(card(mounted.container, '最新进展').textContent.includes('顾问说明'))
   assert.ok(!text.includes('固定修订') && card(mounted.container, '方案与资料').textContent.includes('方案修订 2'))
+  await mounted.close()
+})
+
+test('won project without an advisor note shows the deal in the timeline instead of a pending placeholder', async () => {
+  const timeline = [...progress().timeline, { step: 'quote_sent', at: '2026-10-04T08:00:00.000Z' }, { step: 'won', at: '2026-10-05T08:00:00.000Z' }]
+  const mounted = await mount({ path: detailPath, get: () => detail({ status: 'won', progress: progress({ note: null, updatedAt: '2026-10-05T08:00:00.000Z', timeline }) }) })
+  const section = card(mounted.container, '最新进展')
+  assert.deepEqual(timelineSteps(mounted.container).slice(0, 2), ['项目已成交', '报价已发送'])
+  assertNoNode(section.querySelector('[data-test="progress-note"]'), "section.querySelector('[data-test=\"progress-note\"]')")
+  assert.ok(!section.textContent.includes('顾问正在处理') && mounted.container.textContent.includes('下一步：项目已成交'))
+  assert.ok(section.textContent.includes(`最近更新：${new Date('2026-10-05T08:00:00.000Z').toLocaleString('zh-CN')}`))
   await mounted.close()
 })
 
@@ -169,10 +193,10 @@ test('catalog failure still renders numeric specs and never exposes raw option I
 
 test('detail without confirmed requirements does not fetch the catalog and legacy requests show placeholders', async () => {
   const base = detail()
-  const mounted = await mount({ path: detailPath, get: () => detail({ sourceType: 'manual_request', schemeCode: null, schemeSnapshot: null, selectedThemeSummary: null, publicResult: null, request: { ...base.request, exhibition: null, company: undefined, contact: { name: '李四', legacyDetail: '微信 lisi' }, scopeCodes: [], scopeNotes: undefined, materialBudget: null, originalDescription: undefined, confirmedRequirements: undefined } }) })
+  const mounted = await mount({ path: detailPath, get: () => detail({ sourceType: 'manual_request', schemeCode: null, schemeSnapshot: null, selectedThemeSummary: null, progress: progress({ note: null, timeline: [{ step: 'submitted', at: '2026-10-01T08:00:00.000Z' }] }), request: { ...base.request, exhibition: null, company: undefined, contact: { name: '李四', legacyDetail: '微信 lisi' }, scopeCodes: [], scopeNotes: undefined, materialBudget: null, originalDescription: undefined, confirmedRequirements: undefined } }) })
   assert.ok(!mounted.calls.some(call => call.url.includes('catalog')))
   const text = mounted.container.textContent
-  assert.ok(text.includes('历史人工需求') && text.includes('顾问正在处理，暂未发布进展。') && text.includes('尚未关联方案，顾问将与您沟通确认。') && text.includes('微信 lisi'))
+  assert.ok(text.includes('历史人工需求') && text.includes('已提交申请') && !text.includes('顾问说明') && text.includes('尚未关联方案，顾问将与您沟通确认。') && text.includes('微信 lisi'))
   assert.ok(!text.includes('undefined') && !text.includes('null'))
   assert.equal((text.match(/待补充/g) ?? []).length >= 4, true)
   await mounted.close()
@@ -196,7 +220,7 @@ test('artwork actions keep their conditions and material statuses use user-facin
 
 test('refresh progress reloads the project and failures keep a retry action', async () => {
   let result = '处理中'
-  const mounted = await mount({ path: detailPath, get: () => detail({ publicResult: result }) })
+  const mounted = await mount({ path: detailPath, get: () => detail({ progress: progress({ note: { content: result, publishedAt: '2026-10-03T08:00:00.000Z' } }) }) })
   result = '已完成报价'
   button(mounted.container, '刷新进展').click()
   await settle()

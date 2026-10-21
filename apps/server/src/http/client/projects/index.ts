@@ -8,8 +8,9 @@ import { successResponse } from '../../schemas.js';
 import { getProject, listProjects, type ProjectRecord } from '../../../modules/projects/repository.js';
 import { projectParams, queryProperties } from '../../../modules/projects/schema.js';
 import { bindProjectArtworks } from '../../../modules/projects/artwork-delivery.js';
+import { loadCustomerProgress, progressSteps, type CustomerProgress } from '../../../modules/projects/progress.js';
 
-export function publicProject(project: ProjectRecord) {
+export function publicProject(project: ProjectRecord, progress: CustomerProgress) {
   const request = project.request;
   const snapshot = project.schemeSnapshot;
   return {
@@ -63,15 +64,43 @@ export function publicProject(project: ProjectRecord) {
           selectionRevision: snapshot.selectedTheme.selectionRevision,
         }
       : null,
-    publicResult: project.publicResult,
+    progress,
     createdAt: project.createdAt,
-    updatedAt: project.updatedAt,
   };
 }
 const nullableString = { type: ['string', 'null'] } as const;
 const dateTime = { type: 'string', format: 'date-time' } as const;
 // 历史快照里的展会、预算与需求结构随版本变化，按原样透传，不在响应 schema 中裁剪
 const snapshotValue = { description: '提交时冻结的快照，结构随提交版本变化，原样返回' } as const;
+// 客户可见进度：updatedAt 只随客户能看到的变化更新，内部跟进与报价编辑不计入
+const progressSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['updatedAt', 'note', 'timeline'],
+  properties: {
+    updatedAt: dateTime,
+    note: {
+      anyOf: [
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['content', 'publishedAt'],
+          properties: { content: { type: 'string' }, publishedAt: dateTime },
+        },
+        { type: 'null' },
+      ],
+    },
+    timeline: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['step', 'at'],
+        properties: { step: { type: 'string', enum: progressSteps }, at: dateTime },
+      },
+    },
+  },
+} as const;
 const materialsStatus = {
   type: 'object',
   additionalProperties: false,
@@ -106,9 +135,8 @@ const projectDetailSchema = {
     'materialsStatus',
     'artworkJobId',
     'selectedThemeSummary',
-    'publicResult',
+    'progress',
     'createdAt',
-    'updatedAt',
   ],
   properties: {
     projectId: { type: 'string' },
@@ -164,9 +192,8 @@ const projectDetailSchema = {
     materialsStatus,
     artworkJobId: nullableString,
     selectedThemeSummary: { anyOf: [themeSummary, { type: 'null' }] },
-    publicResult: nullableString,
+    progress: progressSchema,
     createdAt: dateTime,
-    updatedAt: dateTime,
   },
 } as const;
 
@@ -180,7 +207,7 @@ const projectListSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['projectId', 'projectNo', 'schemeCode', 'sourceType', 'exhibition', 'status', 'createdAt', 'updatedAt'],
+        required: ['projectId', 'projectNo', 'schemeCode', 'sourceType', 'exhibition', 'status', 'createdAt', 'progressUpdatedAt'],
         properties: {
           projectId: { type: 'string' },
           projectNo: { type: 'string' },
@@ -189,7 +216,7 @@ const projectListSchema = {
           exhibition: snapshotValue,
           status: { type: 'string' },
           createdAt: dateTime,
-          updatedAt: dateTime,
+          progressUpdatedAt: dateTime,
         },
       },
     },
@@ -248,6 +275,7 @@ export async function registerClientProjectRoutes(app: FastifyInstance, pool: pg
       reply.header('Cache-Control', 'private, no-store');
       const userId = clientUserId(request);
       const result = await listProjects(pool, request.query, userId);
+      const progress = await loadCustomerProgress(pool, result.items);
       return {
         code: 0,
         data: {
@@ -260,7 +288,7 @@ export async function registerClientProjectRoutes(app: FastifyInstance, pool: pg
             exhibition: project.request.exhibition ?? null,
             status: project.status,
             createdAt: project.createdAt,
-            updatedAt: project.updatedAt,
+            progressUpdatedAt: progress.get(project.projectId)!.updatedAt,
           })),
         },
       } as const;
@@ -273,7 +301,8 @@ export async function registerClientProjectRoutes(app: FastifyInstance, pool: pg
       reply.header('Cache-Control', 'private, no-store');
       const userId = clientUserId(request);
       const project = await getProject(pool, request.params.projectId, userId);
-      const data = publicProject(project);
+      const progress = await loadCustomerProgress(pool, [project]);
+      const data = publicProject(project, progress.get(project.projectId)!);
       const theme = project.schemeSnapshot?.selectedTheme;
       return {
         code: 0,

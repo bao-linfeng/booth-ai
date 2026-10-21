@@ -2,6 +2,7 @@
 import type {
   ContactMethod,
   ProjectDetail,
+  ProjectStatus,
   Quotation,
   QuotationInput,
   QuotationItem,
@@ -50,7 +51,8 @@ import {
 } from './quotation-math';
 
 const props = defineProps<{ project: ProjectDetail }>();
-const emit = defineEmits<{ reload: [] }>();
+/** 报价随保存登记发送时带上 quoted，详情页据此提示更新客户说明 */
+const emit = defineEmits<{ reload: [changedStatus?: ProjectStatus] }>();
 const commonTimeZones = [
   'Asia/Shanghai',
   'Asia/Hong_Kong',
@@ -168,7 +170,7 @@ const [Form, formApi] = useVbenForm({
           ? '报价修订已保存并标记已发送，项目已转为已报价'
           : '报价修订已保存，项目状态未自动变更',
       );
-      emit('reload');
+      emit('reload', payload.markSent ? 'quoted' : undefined);
       void loadRevisions();
     } catch (error) {
       const reason = failureReason(error);

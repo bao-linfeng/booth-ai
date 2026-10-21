@@ -463,6 +463,8 @@ describe('quotation editor', () => {
       expect.stringContaining('已转为已报价'),
     );
     expect(container.querySelector('[role="dialog"]')).toBeNull();
+    // 登记发送带上已报价，详情页据此提示更新客户说明
+    expect(reloads).toHaveBeenLastCalledWith('quoted');
 
     // 普通保存不再携带发送信息
     form.edit({ changeReason: '再次调整' });
@@ -473,6 +475,7 @@ describe('quotation editor', () => {
     });
     await save();
     expect(saved()[1]).not.toHaveProperty('markSent');
+    expect(reloads).toHaveBeenLastCalledWith(undefined);
   });
 
   it('refuses to save while the project is waiting in the assignment pool', async () => {

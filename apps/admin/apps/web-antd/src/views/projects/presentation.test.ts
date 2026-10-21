@@ -164,7 +164,7 @@ describe('public result and follow-up urgency', () => {
     expect(
       eventSummary(event('public-result', { publicResult: '报价已发送' })),
     ).toEqual({
-      title: '更新客户进度',
+      title: '更新客户说明',
       lines: [{ label: '客户可见内容', value: '报价已发送' }],
     });
     expect(

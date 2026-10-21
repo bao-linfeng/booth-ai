@@ -18,7 +18,7 @@ import { closedStatuses, dateRange, getNextSteps, joinParts, regionName, summari
 import type { Catalog } from '@/features/selection/types'
 import { useAuthStore } from '@/stores/auth'
 import { getCatalogOptions } from '@/services/api/catalog'
-import { getMyProject, getMyProjects, type MyProjectDetail, type ProjectPage } from '@/services/api/projects'
+import { getMyProject, getMyProjects, type MyProjectDetail, type ProgressStep, type ProjectPage } from '@/services/api/projects'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -36,6 +36,19 @@ const filters = reactive({ projectNo: '', status: '', sourceType: '', exhibition
 const date = (value: string) => new Date(value).toLocaleString(appLocale.value === 'zh' ? 'zh-CN' : appLocale.value)
 const statusLabels = computed(() => getProjectStatusLabels(t))
 const nextSteps = computed(() => getNextSteps(t))
+const progressStepLabels = computed<Record<ProgressStep, string>>(() => ({
+  submitted: t('projects.progressStepSubmitted'),
+  advisor_assigned: t('projects.progressStepAdvisorAssigned'),
+  advisor_changed: t('projects.progressStepAdvisorChanged'),
+  following: t('projects.progressStepFollowing'),
+  quote_sent: t('projects.progressStepQuoteSent'),
+  won: t('projects.progressStepWon'),
+  lost: t('projects.progressStepLost'),
+  closed: t('projects.progressStepClosed'),
+  reopened: t('projects.progressStepReopened'),
+}))
+// 最新节点在前
+const progressTimeline = computed(() => [...(detail.value?.progress.timeline ?? [])].reverse())
 const materialLabels = computed<Record<string, string>>(() => ({
   available: t('projects.materialAvailable'),
   pending: t('projects.materialPending'),
@@ -191,7 +204,7 @@ onBeforeUnmount(() => { loadSeq++ })
             </div>
             <p class="rounded-md bg-muted/50 px-3 py-2 text-sm"><span class="font-medium">{{ t('projects.itemNextStep') }}</span>{{ nextSteps[project.status] }}</p>
             <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>{{ t('projects.itemUpdatedAt', { date: date(project.updatedAt) }) }} <span class="font-mono">{{ project.projectNo }}</span></span>
+              <span>{{ t('projects.itemUpdatedAt', { date: date(project.progressUpdatedAt) }) }} <span class="font-mono">{{ project.projectNo }}</span></span>
               <span class="flex items-center gap-1 text-primary">{{ t('projects.viewDetail') }}<ArrowRight class="size-3" aria-hidden="true" /></span>
             </div>
           </RouterLink>
@@ -220,11 +233,21 @@ onBeforeUnmount(() => { loadSeq++ })
           </Card>
 
           <Card>
-            <CardContent class="space-y-3 p-6">
+            <CardContent class="space-y-4 p-6">
               <h2 class="text-lg font-medium">{{ t('projects.progressTitle') }}</h2>
-              <p class="whitespace-pre-wrap break-words text-sm">{{ detail.publicResult ?? t('projects.progressEmpty') }}</p>
+              <div v-if="detail.progress.note" class="space-y-1 rounded-md border bg-muted/30 px-4 py-3" data-test="progress-note">
+                <p class="text-xs text-muted-foreground">{{ t('projects.progressNote') }} · {{ date(detail.progress.note.publishedAt) }}</p>
+                <p class="whitespace-pre-wrap break-words text-sm">{{ detail.progress.note.content }}</p>
+              </div>
+              <ol class="relative ml-1 space-y-4 border-l pl-5" data-test="progress-timeline">
+                <li v-for="(item, index) in progressTimeline" :key="`${item.step}-${item.at}`" class="relative flex flex-wrap items-baseline justify-between gap-x-4 text-sm">
+                  <span class="absolute -left-[24.5px] top-1.5 size-2 rounded-full ring-4 ring-card" :class="index === 0 ? 'bg-primary' : 'bg-muted-foreground/40'" aria-hidden="true" />
+                  <span :class="index === 0 ? 'font-medium' : 'text-muted-foreground'">{{ progressStepLabels[item.step] }}</span>
+                  <time class="text-xs text-muted-foreground" :datetime="item.at">{{ date(item.at) }}</time>
+                </li>
+              </ol>
               <div class="flex flex-wrap items-center justify-between gap-3">
-                <p class="text-xs text-muted-foreground">{{ t('projects.progressUpdatedAt') }}{{ date(detail.updatedAt) }}</p>
+                <p class="text-xs text-muted-foreground">{{ t('projects.progressUpdatedAt') }}{{ date(detail.progress.updatedAt) }}</p>
                 <Button variant="outline" :disabled="loading" @click="load()">{{ t('projects.progressRefresh') }}</Button>
               </div>
             </CardContent>

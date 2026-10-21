@@ -21,6 +21,11 @@ const modals = vi.hoisted(() => ({
   publicResult: vi.fn(),
 }));
 const access = vi.hoisted(() => ({ codes: new Set<string>() }));
+const confirm = vi.hoisted(() => vi.fn());
+/** 子弹窗替身的 emit，用于模拟弹窗保存后通知详情页 */
+const emitters = vi.hoisted(
+  () => ({}) as Record<string, (event: string, ...args: unknown[]) => void>,
+);
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { projectId: 'project-1' } }),
@@ -31,7 +36,7 @@ vi.mock('#/api/core/projects', () => ({
   assigneeStatusLabels: { active: '有效' },
   poolReasonLabels: { unconfigured: '未配置默认承接人' },
   projectEventLabels: {},
-  statusLabels: { following: '跟进中' },
+  statusLabels: { following: '跟进中', won: '已成交' },
 }));
 vi.mock('@vben/access', () => ({
   useAccess: () => ({
@@ -71,6 +76,7 @@ vi.mock('ant-design-vue', async () => {
     ),
     Descriptions: passthrough,
     DescriptionsItem: passthrough,
+    Modal: { confirm },
     Image: defineComponent({
       props: { alt: String, preview: Object, src: String },
       setup: (props) => () =>
@@ -128,16 +134,22 @@ vi.mock('ant-design-vue', async () => {
   };
 });
 // 子弹窗只暴露 open，记录详情页传入的参数
-async function exposedModal(open: (...args: unknown[]) => unknown) {
+async function exposedModal(
+  open: (...args: unknown[]) => unknown,
+  name?: string,
+) {
   const { defineComponent } = await import('vue');
   return {
-    default: defineComponent((_, { expose }) => {
+    default: defineComponent((_, { emit, expose }) => {
       expose({ open });
+      if (name) emitters[name] = emit;
       return () => null;
     }),
   };
 }
-vi.mock('../OperationModal.vue', () => exposedModal(modals.operation));
+vi.mock('../OperationModal.vue', () =>
+  exposedModal(modals.operation, 'operation'),
+);
 vi.mock('../AssignModal.vue', () => exposedModal(modals.assign));
 vi.mock('../PublicResultModal.vue', () => exposedModal(modals.publicResult));
 vi.mock('../claim', () => claim);
@@ -407,7 +419,7 @@ it('offers quick status actions for open projects and direct reassignment for te
     { targetStatus: 'closed' },
   );
   await openTab('概览');
-  button(container, '更新客户进度').click();
+  button(container, '更新客户说明').click();
   expect(modals.publicResult).toHaveBeenCalledWith(
     expect.objectContaining({ projectId: 'project-1' }),
   );
@@ -429,6 +441,39 @@ it('offers quick status actions for open projects and direct reassignment for te
   expect(modals.assign).toHaveBeenCalledWith(
     expect.objectContaining({ status: 'won' }),
   );
+});
+
+it('asks whether to update the customer note after a status change and opens it on confirmation', async () => {
+  access.codes = new Set(['projects.follow-up']);
+  api.getProjectApi.mockResolvedValue(project([]));
+  app = createApp({ render: () => h(ProjectWorkspace) });
+  app.directive('access', {});
+  app.mount(container);
+  await flush();
+
+  // 只追加跟进、未改状态：只刷新
+  emitters.operation?.('reload');
+  await flush();
+  expect(api.getProjectApi).toHaveBeenCalledTimes(2);
+  expect(confirm).not.toHaveBeenCalled();
+
+  api.getProjectApi.mockResolvedValue({ ...project([]), status: 'won' });
+  emitters.operation?.('reload', 'won');
+  await flush();
+  expect(confirm).toHaveBeenCalledTimes(1);
+  const options = confirm.mock.calls[0]?.[0];
+  expect(options.content).toContain('「已成交」');
+  expect(modals.publicResult).not.toHaveBeenCalled();
+  options.onOk();
+  expect(modals.publicResult).toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'won' }),
+  );
+
+  // 没有更新客户说明的权限时不提示
+  access.codes = new Set();
+  emitters.operation?.('reload', 'won');
+  await flush();
+  expect(confirm).toHaveBeenCalledTimes(1);
 });
 
 it('summarises the project in a header card and splits details into tabs', async () => {

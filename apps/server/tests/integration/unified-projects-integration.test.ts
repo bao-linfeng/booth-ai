@@ -236,12 +236,23 @@ test(
     );
     const detail = await app.inject({ url: `/me/projects/${id}`, headers });
     assert.equal(detail.statusCode, 200);
-    assert.equal(detail.json().data.publicResult, '已确认项目方案');
-    for (const field of ['assigneeAdminId', 'assigneeName', 'quotation', 'createdBy', 'objectKey', 'events', '内部备注'])
+    const progress = detail.json().data.progress;
+    // 时间线由事件推导：保存报价草稿不可见，改派显示为更换顾问，终态后重开单独成节点
+    assert.deepEqual(
+      progress.timeline.map((item: { step: string }) => item.step),
+      ['submitted', 'advisor_assigned', 'advisor_changed', 'following', 'quote_sent', 'won', 'advisor_changed', 'reopened'],
+    );
+    const publishedAt = (
+      await pool.query<{ at: Date }>("SELECT created_at AS at FROM project_events WHERE project_id=$1 AND kind='public-result'", [id])
+    ).rows[0]!.at;
+    assert.deepEqual(progress.note, { content: '已确认项目方案', publishedAt: publishedAt.toISOString() });
+    assert.equal(progress.updatedAt, progress.timeline.at(-1).at);
+    for (const field of ['assigneeAdminId', 'assigneeName', 'quotation', 'createdBy', 'objectKey', 'events', '内部备注', '接受方案与报价'])
       assert.ok(!detail.body.includes(field), `Public response leaked ${field}`);
     const list = await app.inject({ url: '/me/projects', headers });
     assert.equal(list.json().data.total, 1);
     assert.equal(list.json().data.items[0].projectId, id);
+    assert.equal(list.json().data.items[0].progressUpdatedAt, progress.updatedAt);
     assert.equal((await app.inject({ url: `/me/projects?customerUserId=${other}`, headers })).statusCode, 400);
     active = 'other';
     assert.equal((await app.inject({ url: `/me/projects/${id}`, headers })).statusCode, 404);
