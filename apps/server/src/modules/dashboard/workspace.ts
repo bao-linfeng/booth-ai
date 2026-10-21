@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { ProjectStatus } from '../projects/domain.js';
 import { unreadNotificationCount } from '../projects/notification-inbox.js';
+import { activeStatusesSql, followUpTimeZone, nextFollowUpSql, todayStartSql } from '../projects/follow-up-schedule.js';
 
 export type WorkspaceTaskReason = 'overdue' | 'today' | 'pending';
 
@@ -44,19 +45,16 @@ export interface UnassignedProject {
 type TaskRow = Omit<WorkspaceTask, 'nextFollowUpAt' | 'createdAt'> & { nextFollowUpAt: Date | null; createdAt: Date };
 type ActivityRow = Omit<WorkspaceActivity, 'createdAt'> & { createdAt: Date };
 
-const timeZone = 'Asia/Shanghai';
+const timeZone = followUpTimeZone;
 const taskLimit = 10;
 const activityLimit = 10;
 
 // 当前管理员负责的未结束项目，附带最新一条跟进记录约定的下次跟进时间；口径与业务总览一致。
 const mine = `WITH mine AS (
-    SELECT p.id,p.project_no,p.status,p.created_at,p.request_snapshot,(f.payload->>'nextFollowUpAt')::timestamptz AS next_follow_up_at
-    FROM projects p LEFT JOIN LATERAL (
-      SELECT payload FROM project_events WHERE project_id=p.id AND kind='follow-up'
-      ORDER BY created_at DESC,id DESC LIMIT 1
-    ) f ON true WHERE p.assignee_admin_id=$1 AND p.status IN ('pending','following','quoted')
+    SELECT p.id,p.project_no,p.status,p.created_at,p.request_snapshot,${nextFollowUpSql('p')} AS next_follow_up_at
+    FROM projects p WHERE p.assignee_admin_id=$1 AND p.status IN ${activeStatusesSql}
   ), bounds AS (
-    SELECT (date_trunc('day',now() AT TIME ZONE '${timeZone}') AT TIME ZONE '${timeZone}') AS start_at
+    SELECT ${todayStartSql} AS start_at
   ), classified AS (
     SELECT mine.*,CASE WHEN next_follow_up_at < now() THEN 'overdue'
       WHEN next_follow_up_at >= start_at AND next_follow_up_at < start_at + interval '1 day' THEN 'today'

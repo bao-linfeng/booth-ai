@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type {
+  ContactMethod,
   ProjectDetail,
   Quotation,
   QuotationInput,
@@ -14,9 +15,11 @@ import { cloneDeep, downloadFileFromBlob, formatDateTime } from '@vben/utils';
 import {
   Button,
   Card,
+  DatePicker,
   Input,
   InputNumber,
   message,
+  Modal,
   Select,
   Table,
   Tag,
@@ -28,8 +31,14 @@ import {
   quotationDownloadApi,
   saveQuotationApi,
 } from '#/api/core/projects';
+
+import { contactMethodLabels, terminalStatuses } from './presentation';
+
 const props = defineProps<{ project: ProjectDetail }>();
 const emit = defineEmits<{ reload: [] }>();
+const channelOptions = Object.entries(contactMethodLabels).map(
+  ([value, label]) => ({ value, label }),
+);
 const { hasAccessByCodes } = useAccess();
 const canEdit = computed(() => hasAccessByCodes(['projects.quotation']));
 const items = ref<QuotationItem[]>([]);
@@ -44,8 +53,16 @@ let requestKey = '';
 let fingerprint = '';
 let initializing = false;
 const terminal = computed(() =>
-  ['closed', 'lost', 'won'].includes(props.project.status),
+  terminalStatuses.includes(props.project.status),
 );
+/** 保存并标记已发送：需同时有报价与跟进权限 */
+const canMarkSent = computed(() =>
+  hasAccessByCodes(['projects.quotation', 'projects.follow-up']),
+);
+const sendDialog = ref(false);
+const sendChannel = ref<ContactMethod>('email');
+const sendAt = ref<string>();
+let markSent: QuotationInput['markSent'];
 const unassigned = computed(() => !props.project.assigneeAdminId);
 /** 终态或待分配项目不能保存报价 */
 const locked = computed(() => terminal.value || unassigned.value);
@@ -74,6 +91,7 @@ const [Form, formApi] = useVbenForm({
         ...item,
         unitPrice: item.unitPrice === '' ? null : item.unitPrice,
       })),
+      ...(markSent ? { markSent } : {}),
     };
     const next = JSON.stringify(payload);
     if (next !== fingerprint) {
@@ -88,7 +106,11 @@ const [Form, formApi] = useVbenForm({
       baseRevision.value = result.quotation.revision;
       baseProjectRevision.value = result.projectRevision;
       dirty.value = false;
-      message.success('报价修订已保存，项目状态未自动变更');
+      message.success(
+        payload.markSent
+          ? '报价修订已保存并标记已发送，项目已转为已报价'
+          : '报价修订已保存，项目状态未自动变更',
+      );
       emit('reload');
     } catch {
       message.error(
@@ -177,6 +199,24 @@ watch(
     }),
   { immediate: true },
 );
+function openSendDialog() {
+  sendChannel.value = 'email';
+  sendAt.value = undefined;
+  sendDialog.value = true;
+}
+/** 在同一次保存中登记已发送：修订不完整或发送时间不合规时整体失败，修订不保存 */
+async function confirmSend() {
+  sendDialog.value = false;
+  markSent = {
+    channel: sendChannel.value,
+    ...(sendAt.value ? { sentAt: new Date(sendAt.value).toISOString() } : {}),
+  };
+  try {
+    await formApi.validateAndSubmitForm();
+  } finally {
+    markSent = undefined;
+  }
+}
 async function initialize(quotation: null | Quotation, historyMode = false) {
   initializing = true;
   displayed.value = quotation;
@@ -420,6 +460,44 @@ const columns = [
       >
         保存新报价修订
       </Button>
+      <Button
+        v-if="canMarkSent"
+        class="ml-2"
+        :loading="saving"
+        :disabled="locked || viewingHistory"
+        @click="openSendDialog"
+      >
+        保存并标记已发送
+      </Button>
     </div>
+    <Modal
+      v-model:open="sendDialog"
+      title="保存并标记已发送"
+      ok-text="保存并标记"
+      @ok="confirmSend"
+    >
+      <p class="text-sm text-muted-foreground">
+        保存新修订后登记为已发送给客户，项目转为「已报价」。修订需填写完整，否则整体不保存；发送时间不能早于本次保存。
+      </p>
+      <label class="mt-3 block text-sm">
+        发送渠道
+        <Select
+          v-model:value="sendChannel"
+          class="mt-1 w-full"
+          :options="channelOptions"
+        />
+      </label>
+      <label class="mt-3 block text-sm">
+        发送时间
+        <DatePicker
+          v-model:value="sendAt"
+          class="mt-1 w-full"
+          show-time
+          allow-clear
+          value-format="YYYY-MM-DDTHH:mm:ssZ"
+          placeholder="默认为保存时间"
+        />
+      </label>
+    </Modal>
   </Card>
 </template>

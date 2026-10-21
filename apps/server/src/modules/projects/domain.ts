@@ -55,6 +55,9 @@ export interface ManualInput extends Omit<
   confirmedRequirements: Requirement;
   unresolvedQuestions?: string[];
 }
+/** 联系类型，也用作报价发送渠道 */
+export const contactMethods = ['phone', 'email', 'customer_service', 'meeting', 'other'] as const;
+export type ContactMethod = (typeof contactMethods)[number];
 export type ProjectStatus = 'pending' | 'following' | 'quoted' | 'won' | 'lost' | 'closed';
 export const terminalStatuses: ProjectStatus[] = ['won', 'lost', 'closed'];
 export function normalizeManual(input: ManualInput): ManualInput {

@@ -15,6 +15,11 @@ const api = vi.hoisted(() => ({
   getProjectApi: vi.fn(),
 }));
 const claim = vi.hoisted(() => ({ claimProject: vi.fn() }));
+const modals = vi.hoisted(() => ({
+  assign: vi.fn(),
+  operation: vi.fn(),
+  publicResult: vi.fn(),
+}));
 const access = vi.hoisted(() => ({ codes: new Set<string>() }));
 
 vi.mock('vue-router', () => ({
@@ -88,8 +93,19 @@ vi.mock('ant-design-vue', async () => {
     ),
   };
 });
-vi.mock('../OperationModal.vue', () => ({ default: { render: () => null } }));
-vi.mock('../AssignModal.vue', () => ({ default: { render: () => null } }));
+// 子弹窗只暴露 open，记录详情页传入的参数
+async function exposedModal(open: (...args: unknown[]) => unknown) {
+  const { defineComponent } = await import('vue');
+  return {
+    default: defineComponent((_, { expose }) => {
+      expose({ open });
+      return () => null;
+    }),
+  };
+}
+vi.mock('../OperationModal.vue', () => exposedModal(modals.operation));
+vi.mock('../AssignModal.vue', () => exposedModal(modals.assign));
+vi.mock('../PublicResultModal.vue', () => exposedModal(modals.publicResult));
 vi.mock('../claim', () => claim);
 vi.mock('../QuotationEditor.vue', () => ({ default: { render: () => null } }));
 vi.mock('../CustomerServiceCard.vue', () => ({
@@ -105,6 +121,7 @@ function project(events: ProjectEvent[]): ProjectDetail {
     customerUserId: null,
     events,
     materials: {},
+    nextFollowUpAt: null,
     projectId: 'project-1',
     projectNo: 'PJ-001',
     publicResult: null,
@@ -308,4 +325,53 @@ it('shows pooled projects as unassigned, offers claiming and blocks follow-up un
   expect(button(container, '追加跟进').disabled).toBe(false);
   expect(button(container, '改派')).toBeTruthy();
   expect(() => button(container, '分配给我')).toThrow('Button not found');
+});
+
+it('offers quick status actions for open projects and direct reassignment for terminal ones', async () => {
+  const open = {
+    ...project([]),
+    statusTransitions: ['quoted', 'won', 'lost', 'closed'] as const,
+  } as unknown as ProjectDetail;
+  api.getProjectApi.mockResolvedValue(open);
+  app = createApp({ render: () => h(ProjectWorkspace) });
+  app.directive('access', {});
+  app.mount(container);
+  await flush();
+
+  expect(() => button(container, '开始跟进')).toThrow('Button not found');
+  button(container, '标记成交').click();
+  expect(modals.operation).toHaveBeenLastCalledWith(
+    expect.objectContaining({ projectId: 'project-1' }),
+    'follow-up',
+    { targetStatus: 'won' },
+  );
+  expect(button(container, '标记未成交')).toBeTruthy();
+  button(container, '关闭项目').click();
+  expect(modals.operation).toHaveBeenLastCalledWith(
+    expect.anything(),
+    'follow-up',
+    { targetStatus: 'closed' },
+  );
+  button(container, '更新客户进度').click();
+  expect(modals.publicResult).toHaveBeenCalledWith(
+    expect.objectContaining({ projectId: 'project-1' }),
+  );
+  app.unmount();
+
+  api.getProjectApi.mockResolvedValue({
+    ...project([]),
+    status: 'won',
+    statusTransitions: ['following'],
+  });
+  app = createApp({ render: () => h(ProjectWorkspace) });
+  app.directive('access', {});
+  app.mount(container);
+  await flush();
+  expect(button(container, '改派').disabled).toBe(false);
+  expect(() => button(container, '标记成交')).toThrow('Button not found');
+  expect(button(container, '追加跟进').disabled).toBe(false);
+  button(container, '改派').click();
+  expect(modals.assign).toHaveBeenCalledWith(
+    expect.objectContaining({ status: 'won' }),
+  );
 });

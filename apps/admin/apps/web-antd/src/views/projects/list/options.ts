@@ -2,8 +2,61 @@ import type { ProjectQuery } from '#/api/core/projects';
 
 import { listProjectsApi, statusLabels } from '#/api/core/projects';
 
+/** 「只看我负责的」开关状态记在本地，默认开启 */
+export const MINE_STORAGE_KEY = 'booth-admin:projects:only-mine';
+export function storedOnlyMine(): boolean {
+  try {
+    return localStorage.getItem(MINE_STORAGE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+export function storeOnlyMine(value: boolean) {
+  try {
+    localStorage.setItem(MINE_STORAGE_KEY, String(value));
+  } catch {
+    // 存储不可用时只影响下次打开的默认值
+  }
+}
+
+type ListFormValues = Omit<ProjectQuery, 'mine'> & { mine?: boolean };
+
+/**
+ * 组装列表查询：选了「分配情况」时忽略「只看我负责的」，否则待分配项目（没有承接人）永远查不到，无法领取。
+ */
+export function listQuery(values: ListFormValues): ProjectQuery {
+  const { mine, ...query } = values;
+  return {
+    ...query,
+    ...(mine && !query.assignment ? { mine: true } : {}),
+  };
+}
+
 export const createFormOptions = () => ({
   schema: [
+    {
+      component: 'Switch' as const,
+      fieldName: 'mine',
+      label: '只看我负责的',
+      defaultValue: storedOnlyMine(),
+      help: '选择「分配情况」筛选时不生效，便于查看和领取待分配项目',
+      componentProps: {
+        onChange: (value: boolean) => storeOnlyMine(value),
+      },
+    },
+    {
+      component: 'Select' as const,
+      fieldName: 'followUp',
+      label: '跟进提醒',
+      componentProps: {
+        allowClear: true,
+        placeholder: '全部',
+        options: [
+          { value: 'overdue', label: '已逾期' },
+          { value: 'today', label: '今天到期' },
+        ],
+      },
+    },
     {
       component: 'Input' as const,
       fieldName: 'projectNo',
@@ -129,6 +182,12 @@ export const createGridOptions = () => ({
       slots: { default: 'status' },
     },
     {
+      field: 'nextFollowUpAt',
+      title: '下次跟进',
+      minWidth: 170,
+      slots: { default: 'nextFollowUp' },
+    },
+    {
       field: 'updatedAt',
       title: '更新时间',
       minWidth: 180,
@@ -148,9 +207,9 @@ export const createGridOptions = () => ({
     enabled: true,
     autoLoad: true,
     ajax: {
-      query: async ({ page }: any, formValues: ProjectQuery = {}) => {
+      query: async ({ page }: any, formValues: ListFormValues = {}) => {
         const res = await listProjectsApi({
-          ...formValues,
+          ...listQuery(formValues),
           page: page.currentPage,
           pageSize: page.pageSize,
         });

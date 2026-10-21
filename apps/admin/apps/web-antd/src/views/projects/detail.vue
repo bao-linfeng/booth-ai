@@ -3,6 +3,7 @@ import type {
   MatchingSummary,
   ProjectAssetImage,
   ProjectDetail,
+  ProjectStatus,
 } from '#/api/core/projects';
 
 import { computed, onMounted, ref } from 'vue';
@@ -47,7 +48,10 @@ import {
   materialStatusLabels,
   requirementSummary,
   scopeLabels,
+  statusColors,
+  terminalStatuses,
 } from './presentation';
+import PublicResultModal from './PublicResultModal.vue';
 import QuotationEditor from './QuotationEditor.vue';
 const route = useRoute();
 const { hasAccessByCodes } = useAccess();
@@ -70,9 +74,22 @@ const poolReason = computed(() => {
   return poolReasonLabels[String(accepted?.payload.poolReason)];
 });
 const terminal = computed(
-  () =>
-    project.value && ['closed', 'lost', 'won'].includes(project.value.status),
+  () => !!project.value && terminalStatuses.includes(project.value.status),
 );
+const publicResult = ref<InstanceType<typeof PublicResultModal>>();
+/** 头部快捷操作：打开跟进弹窗并预选目标状态，按当前可选状态显示；终态的重开仍走「追加跟进」 */
+const quickActions: { label: string; status: ProjectStatus }[] = [
+  { label: '开始跟进', status: 'following' },
+  { label: '标记成交', status: 'won' },
+  { label: '标记未成交', status: 'lost' },
+  { label: '关闭项目', status: 'closed' },
+];
+const availableQuickActions = computed(() => {
+  const transitions = project.value?.statusTransitions;
+  return transitions && !terminal.value
+    ? quickActions.filter((action) => transitions.includes(action.status))
+    : [];
+});
 const assetGroups = computed(() => {
   const theme = project.value?.schemeSnapshot?.selectedTheme;
   return [
@@ -208,11 +225,17 @@ onMounted(load);
         :message="`承接人${assigneeStatusLabels[project.assigneeStatus]} · ${project.assigneeName}`"
         :description="
           terminal
-            ? '已结束项目保留历史负责人；如需继续处理，请先重开项目，再由有分配权限的人员改派。'
+            ? '已结束项目保留历史负责人；可直接改派，无需重开。'
             : '项目已受理，原负责人及历史记录保留。该人员不能继续跟进，请由有分配权限的人员改派。'
         "
       />
-      <Card :title="`${project.projectNo} · ${statusLabels[project.status]}`">
+      <Card>
+        <template #title>
+          {{ project.projectNo }}
+          <Tag :color="statusColors[project.status]" class="ml-2">
+            {{ statusLabels[project.status] }}
+          </Tag>
+        </template>
         <template #extra>
           <div class="flex flex-wrap gap-2">
             <Button
@@ -225,12 +248,25 @@ onMounted(load);
               分配给我
             </Button>
             <Button
-              :disabled="terminal"
               @click="assign?.open(project)"
               v-access:code="['projects.assign']"
             >
               {{ unassigned ? '分配' : '改派' }}
             </Button>
+            <template v-if="!unassigned">
+              <Button
+                v-for="action in availableQuickActions"
+                :key="action.status"
+                v-access:code="['projects.follow-up']"
+                @click="
+                  operation?.open(project, 'follow-up', {
+                    targetStatus: action.status,
+                  })
+                "
+              >
+                {{ action.label }}
+              </Button>
+            </template>
             <Tooltip :title="unassigned ? unassignedHint : undefined">
               <Button
                 :disabled="unassigned"
@@ -383,7 +419,17 @@ onMounted(load);
             / 素材{{ materialStatus(project.materials.artworks?.status) }}
           </DescriptionsItem>
           <DescriptionsItem label="客户公开结果">
-            {{ project.publicResult ?? '尚未发布' }}
+            <span class="whitespace-pre-wrap">{{
+              project.publicResult ?? '尚未发布'
+            }}</span>
+            <Button
+              size="small"
+              class="ml-2"
+              v-access:code="['projects.follow-up']"
+              @click="publicResult?.open(project)"
+            >
+              更新客户进度
+            </Button>
           </DescriptionsItem>
         </Descriptions>
         <section
@@ -464,6 +510,7 @@ onMounted(load);
     </template>
     <OperationModal ref="operation" @reload="load" />
     <AssignModal ref="assign" @reload="load" />
+    <PublicResultModal ref="publicResult" @reload="load" />
   </Page>
 </template>
 <style scoped>

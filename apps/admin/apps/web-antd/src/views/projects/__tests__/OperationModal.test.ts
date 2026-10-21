@@ -22,6 +22,7 @@ const api = vi.hoisted(() => ({
   followUpApi: vi.fn(),
   getProjectApi: vi.fn(),
   linkSchemeApi: vi.fn(),
+  quotationRevisionsApi: vi.fn(),
 }));
 
 vi.mock('#/adapter/form', () => ({ useVbenForm: form.useVbenForm }));
@@ -73,7 +74,11 @@ async function mount() {
   container = document.createElement('div');
   document.body.append(container);
   const modalRef = ref<{
-    open: (record: ProjectDetail, operation: string) => Promise<void>;
+    open: (
+      record: ProjectDetail,
+      operation: string,
+      preset?: { targetStatus?: ProjectDetail['status'] },
+    ) => Promise<void>;
   }>();
   app = createApp({
     render: () => h(OperationModal, { onReload: reloads, ref: modalRef }),
@@ -91,8 +96,24 @@ function alertText() {
   return container.querySelector('[role="alert"]')?.textContent ?? '';
 }
 
+const revision = (number: number, completeness: 'incomplete' | 'ready') => ({
+  completeness,
+  createdAt: '2026-10-01T00:00:00Z',
+  createdByName: '销售',
+  currency: 'CNY',
+  revision: number,
+  totalAmount: completeness === 'ready' ? '1000' : null,
+  validUntil: '2026-11-30',
+  validityTimeZone: 'Asia/Shanghai',
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
+  api.quotationRevisionsApi.mockResolvedValue([
+    revision(3, 'incomplete'),
+    revision(2, 'ready'),
+    revision(1, 'ready'),
+  ]);
   let key = 0;
   vi.spyOn(crypto, 'randomUUID').mockImplementation(
     () => `00000000-0000-4000-8000-00000000000${++key}` as const,
@@ -110,11 +131,21 @@ describe('operation modal follow-up', () => {
     await modalApi.open(project(), 'follow-up');
     expect(modal.state.title).toBe('追加跟进与状态记录');
     expect(form.state.values).toMatchObject({
-      channel: '邮件',
+      channel: 'email',
       contactMethod: 'phone',
       evidenceType: 'platform',
       quotationRevision: 2,
     });
+    expect(form.state.values).not.toHaveProperty('targetStatus');
+    expect(form.options('quotationRevision')).toEqual([
+      { label: 'r2 · CNY 1000 · 有效期至 2026-11-30', value: 2 },
+      { label: 'r1 · CNY 1000 · 有效期至 2026-11-30', value: 1 },
+    ]);
+    expect(form.options('channel')).toContainEqual({
+      label: '邮件',
+      value: 'email',
+    });
+    expect(() => form.field('publicResult')).toThrow('Missing schema field');
     form.edit({
       content: '客户确认报价',
       outcome: '切换状态后残留的隐藏字段',
@@ -133,7 +164,7 @@ describe('operation modal follow-up', () => {
       content: '客户确认报价',
       expectedRevision: 5,
       quoteEvidence: {
-        channel: '邮件',
+        channel: 'email',
         quotationRevision: 2,
         type: 'platform',
       },
@@ -161,6 +192,41 @@ describe('operation modal follow-up', () => {
     expect(form.field('quotationRevision').help).toContain(
       '还没有平台报价修订',
     );
+    expect(api.quotationRevisionsApi).not.toHaveBeenCalled();
+  });
+
+  it('treats a project whose revisions are all incomplete like one without platform evidence', async () => {
+    api.quotationRevisionsApi.mockResolvedValue([revision(1, 'incomplete')]);
+    const modalApi = await mount();
+    await modalApi.open(project(), 'follow-up');
+    expect(form.state.values.evidenceType).toBe('external_manual');
+    expect(form.state.values.quotationRevision).toBeUndefined();
+    expect(form.field('quotationRevision').help).toContain(
+      '还没有填写完整的报价修订',
+    );
+  });
+
+  it('preselects following for pending projects and honours quick-action presets', async () => {
+    const pending = project({
+      status: 'pending',
+      statusTransitions: ['following', 'quoted', 'closed'],
+    });
+    const modalApi = await mount();
+    await modalApi.open(pending, 'follow-up');
+    expect(form.state.values.targetStatus).toBe('following');
+    await modalApi.open(pending, 'follow-up', { targetStatus: 'closed' });
+    expect(form.state.values.targetStatus).toBe('closed');
+    await modalApi.open(project(), 'follow-up', { targetStatus: 'won' });
+    expect(form.state.values.targetStatus).toBe('won');
+    // 不在可选状态内的预设被忽略
+    await modalApi.open(
+      project({ statusTransitions: ['following'] }),
+      'follow-up',
+      {
+        targetStatus: 'won',
+      },
+    );
+    expect(form.state.values).not.toHaveProperty('targetStatus');
   });
 
   it('offers reopening for a terminal project and requires a reason only when reopening', async () => {

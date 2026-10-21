@@ -21,6 +21,11 @@ import {
 
 import AssignModal from '../AssignModal.vue';
 import { claimProject } from '../claim';
+import {
+  followUpUrgency,
+  statusColors,
+  terminalStatuses,
+} from '../presentation';
 import { createFormOptions, createGridOptions } from './options';
 
 const router = useRouter();
@@ -179,7 +184,7 @@ async function handleClaim(row: Project) {
         >
           {{ assigneeStatusLabels[(row as Project).assigneeStatus]
           }}{{
-            ['closed', 'lost', 'won'].includes((row as Project).status)
+            terminalStatuses.includes((row as Project).status)
               ? ' · 历史负责人'
               : ' · 待人工改派'
           }}
@@ -202,27 +207,22 @@ async function handleClaim(row: Project) {
       </template>
 
       <template #status="{ row }">
-        <Tag v-if="(row as Project).status === 'won'" color="green">
+        <Tag :color="statusColors[(row as Project).status]">
           {{ statusLabels[(row as Project).status] }}
         </Tag>
-        <Tag
-          v-else-if="
-            (row as Project).status === 'lost' ||
-            (row as Project).status === 'closed'
-          "
-          color="red"
+      </template>
+
+      <template #nextFollowUp="{ row }">
+        <span
+          v-if="(row as Project).nextFollowUpAt"
+          :class="{
+            'text-red-500': followUpUrgency(row as Project) === 'overdue',
+            'text-orange-500': followUpUrgency(row as Project) === 'today',
+          }"
         >
-          {{ statusLabels[(row as Project).status] }}
-        </Tag>
-        <Tag v-else-if="(row as Project).status === 'following'" color="blue">
-          {{ statusLabels[(row as Project).status] }}
-        </Tag>
-        <Tag v-else-if="(row as Project).status === 'quoted'" color="orange">
-          {{ statusLabels[(row as Project).status] }}
-        </Tag>
-        <Tag v-else color="default">
-          {{ statusLabels[(row as Project).status] }}
-        </Tag>
+          {{ formatDateTime((row as Project).nextFollowUpAt!) }}
+        </span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
 
       <template #updated="{ row }">

@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { transaction } from '../../infra/database.js';
-import { digest, projectError, terminalStatuses, type ProjectStatus, type QuoteInput } from './domain.js';
+import { digest, projectError, terminalStatuses, type ContactMethod, type ProjectStatus, type QuoteInput } from './domain.js';
 import { getProject, type ProjectRecord } from './repository.js';
 import { operationReceipt, saveOperation } from './service.js';
 import { captureScheme } from './snapshot.js';
@@ -55,18 +55,27 @@ export interface SchemeLinkInput extends Change {
   confirmationNote: string;
 }
 export interface FollowUpInput extends Change {
-  contactMethod: 'phone' | 'email' | 'customer_service' | 'meeting' | 'other';
+  contactMethod: ContactMethod;
   contactedAt: string;
   content: string;
   nextFollowUpAt?: string;
   targetStatus?: ProjectStatus;
   outcome?: string;
   reopenReason?: string;
-  publicResult?: string;
   quoteEvidence?:
-    | { type: 'platform'; quotationRevision: number; sentAt: string; channel: string }
-    | { type: 'external_manual'; reference: string; sentAt: string; channel: string };
+    | { type: 'platform'; quotationRevision: number; sentAt: string; channel: ContactMethod }
+    | { type: 'external_manual'; reference: string; sentAt: string; channel: ContactMethod };
 }
+export interface PublicResultInput extends Change {
+  publicResult: string;
+}
+/** 保存报价时一并登记已发送；sentAt 省略时取保存时间 */
+export interface MarkSentInput {
+  sentAt?: string;
+  channel: ContactMethod;
+}
+// 联系与发送时间允许比服务器时钟快 5 分钟，避免客户端时钟偏差误判
+const CLOCK_SKEW_MS = 300000;
 export async function assertProjectAdmin(db: pg.Pool | pg.PoolClient, adminId: string, permission = 'projects.follow-up') {
   const admin = (await db.query<{ enabled: boolean; roles: string[] }>('SELECT enabled,roles FROM admins WHERE id=$1', [adminId])).rows[0];
   if (!admin?.enabled) throw projectError('ACCESS_DENIED', 403);
@@ -94,6 +103,7 @@ async function change<T>(
       assignee: 'projects.assign',
       claim: 'projects.follow-up',
       'follow-up': 'projects.follow-up',
+      'public-result': 'projects.follow-up',
       scheme: 'projects.link-scheme',
       quotation: 'projects.quotation',
     };
@@ -112,11 +122,12 @@ async function change<T>(
     return result;
   });
 }
+// clock_timestamp 让同一事务内先后写入的事件（如报价修订后紧跟发送记录）在时间线上保持顺序
 async function event(client: pg.PoolClient, id: string, adminId: string, kind: string, payload: unknown) {
   const row = (
     await client.query<{ id: string; createdAt: Date }>(
-      `INSERT INTO project_events(project_id,actor_admin_id,kind,payload)
-    VALUES($1,$2,$3,$4) RETURNING id,created_at AS "createdAt"`,
+      `INSERT INTO project_events(project_id,actor_admin_id,kind,payload,created_at)
+    VALUES($1,$2,$3,$4,clock_timestamp()) RETURNING id,created_at AS "createdAt"`,
       [id, adminId, kind, JSON.stringify(payload)],
     )
   ).rows[0]!;
@@ -124,7 +135,7 @@ async function event(client: pg.PoolClient, id: string, adminId: string, kind: s
 }
 export async function assignProject(pool: pg.Pool, id: string, adminId: string, input: AssignmentInput) {
   return change(pool, id, adminId, 'assignee', input, async (client, project) => {
-    editable(project);
+    // 终态项目也可直接改派，状态不变
     if (!(await eligibleAssignee(client, input.assigneeAdminId))) throw projectError('INVALID_ASSIGNEE', 422);
     if (!input.reason.trim()) throw projectError('INVALID_INPUT', 400);
     await client.query('UPDATE projects SET assignee_admin_id=$2,revision=revision+1,updated_at=now() WHERE id=$1', [
@@ -164,13 +175,32 @@ export async function claimProject(pool: pg.Pool, id: string, adminId: string, i
   });
 }
 const transitions: Record<ProjectStatus, ProjectStatus[]> = {
-  pending: ['following', 'closed'],
+  pending: ['following', 'quoted', 'closed'],
   following: ['quoted', 'won', 'lost', 'closed'],
   quoted: ['following', 'won', 'lost', 'closed'],
   won: [],
   lost: [],
   closed: [],
 };
+/** 平台报价修订能否作为发送依据：完整、发送时间不早于修订创建且在有效期内 */
+export function assertPlatformEvidence(quotation: SavedQuotation | null, sentAt: string) {
+  if (
+    !quotation ||
+    quotation.completeness !== 'ready' ||
+    Date.parse(sentAt) < Date.parse(quotation.createdAt) ||
+    localCalendarDate(sentAt, quotation.validityTimeZone) > quotation.validUntil
+  )
+    throw projectError('QUOTE_EVIDENCE_INVALID', 422);
+}
+/** 客户可见结果独立于跟进，终态项目也可更新；空字符串表示撤下 */
+export async function updatePublicResult(pool: pg.Pool, id: string, adminId: string, input: PublicResultInput) {
+  return change(pool, id, adminId, 'public-result', input, async (client, project) => {
+    const publicResult = input.publicResult.trim() || null;
+    await client.query('UPDATE projects SET public_result=$2,revision=revision+1,updated_at=now() WHERE id=$1', [id, publicResult]);
+    await event(client, id, adminId, 'public-result', { publicResult, revision: project.revision + 1 });
+    return { projectId: id, revision: project.revision + 1, publicResult };
+  });
+}
 /** 当前状态可追加跟进到的目标状态；终态只能填写重开原因回到跟进中。 */
 export function statusTransitions(status: ProjectStatus): ProjectStatus[] {
   return terminalStatuses.includes(status) ? ['following'] : transitions[status];
@@ -188,7 +218,7 @@ export async function followUpProject(pool: pg.Pool, id: string, adminId: string
       if (
         !input.content.trim() ||
         !Number.isFinite(contacted) ||
-        contacted > now + 300000 ||
+        contacted > now + CLOCK_SKEW_MS ||
         (input.nextFollowUpAt && (!Number.isFinite(Date.parse(input.nextFollowUpAt)) || Date.parse(input.nextFollowUpAt) <= contacted))
       )
         throw projectError('INVALID_INPUT', 400);
@@ -199,23 +229,11 @@ export async function followUpProject(pool: pg.Pool, id: string, adminId: string
         if (['won', 'lost', 'closed'].includes(target) && !input.outcome?.trim()) throw projectError('OUTCOME_REQUIRED', 422);
         if (target === 'quoted') {
           const evidence = input.quoteEvidence;
-          if (
-            !evidence ||
-            !evidence.channel.trim() ||
-            !Number.isFinite(Date.parse(evidence.sentAt)) ||
-            Date.parse(evidence.sentAt) > now + 300000
-          )
+          if (!evidence || !Number.isFinite(Date.parse(evidence.sentAt)) || Date.parse(evidence.sentAt) > now + CLOCK_SKEW_MS)
             throw projectError('QUOTE_EVIDENCE_REQUIRED', 422);
-          if (evidence.type === 'platform') {
-            const quotation = await quotationRevision(client, id, evidence.quotationRevision);
-            if (
-              !quotation ||
-              quotation.completeness !== 'ready' ||
-              Date.parse(evidence.sentAt) < Date.parse(quotation.createdAt) ||
-              localCalendarDate(evidence.sentAt, quotation.validityTimeZone) > quotation.validUntil
-            )
-              throw projectError('QUOTE_EVIDENCE_INVALID', 422);
-          } else if (!evidence.reference.trim()) throw projectError('QUOTE_EVIDENCE_REQUIRED', 422);
+          if (evidence.type === 'platform')
+            assertPlatformEvidence(await quotationRevision(client, id, evidence.quotationRevision), evidence.sentAt);
+          else if (!evidence.reference.trim()) throw projectError('QUOTE_EVIDENCE_REQUIRED', 422);
         }
       }
       const revision = project.revision + 1;
@@ -227,10 +245,7 @@ export async function followUpProject(pool: pg.Pool, id: string, adminId: string
         status: target,
         revision,
       });
-      await client.query(
-        'UPDATE projects SET status=$2,public_result=CASE WHEN $3::text IS NULL THEN public_result ELSE $3 END,revision=revision+1,updated_at=now() WHERE id=$1',
-        [id, target, input.publicResult === undefined ? null : input.publicResult.trim()],
-      );
+      await client.query('UPDATE projects SET status=$2,revision=revision+1,updated_at=now() WHERE id=$1', [id, target]);
       return { followUpId: record.id, projectId: id, revision, status: target, createdAt: record.createdAt.toISOString() };
     },
     { requireAssignee: true },
@@ -289,7 +304,11 @@ export async function quotationRevision(db: pg.Pool | pg.PoolClient, id: string,
   if (revision && !row) throw projectError('RESOURCE_NOT_FOUND', 404);
   return row?.snapshot ?? null;
 }
-export async function saveQuotation(pool: pg.Pool, id: string, adminId: string, input: QuotationInput) {
+/**
+ * 保存报价修订；带 markSent 时在同一事务内登记已发送并转为已报价（已是已报价则只记录一次发送）。
+ * 发送依据校验不通过时整体回滚，修订也不保存。
+ */
+export async function saveQuotation(pool: pg.Pool, id: string, adminId: string, input: QuotationInput & { markSent?: MarkSentInput }) {
   return change(
     pool,
     id,
@@ -298,9 +317,11 @@ export async function saveQuotation(pool: pg.Pool, id: string, adminId: string, 
     input,
     async (client, project) => {
       editable(project);
+      if (input.markSent) await assertProjectAdmin(client, adminId, 'projects.follow-up');
       const previous = await quotationRevision(client, id);
       if ((previous?.revision ?? 0) !== input.expectedQuotationRevision) throw projectError('QUOTATION_REVISION_CHANGED');
-      const calculated = calculateQuotation(input, project.materials.bom?.items ?? []);
+      const { markSent, ...quotationInput } = input;
+      const calculated = calculateQuotation(quotationInput, project.materials.bom?.items ?? []);
       const quotation: SavedQuotation = {
         ...calculated,
         quotationNo: `QT-${project.projectNo}`,
@@ -312,14 +333,54 @@ export async function saveQuotation(pool: pg.Pool, id: string, adminId: string, 
         'INSERT INTO project_quotation_revisions(project_id,revision,quotation_no,snapshot,created_by) VALUES($1,$2,$3,$4,$5)',
         [id, quotation.revision, quotation.quotationNo, JSON.stringify(quotation), adminId],
       );
-      await client.query('UPDATE projects SET revision=revision+1,updated_at=now() WHERE id=$1', [id]);
+      const revision = project.revision + 1;
       await event(client, id, adminId, 'quotation', {
         quotationRevision: quotation.revision,
         changeReason: input.changeReason,
-        revision: project.revision + 1,
+        revision,
       });
-      return { projectId: id, projectRevision: project.revision + 1, quotation };
+      let status = project.status;
+      if (markSent) {
+        const sentAt = markSent.sentAt ?? quotation.createdAt;
+        if (!Number.isFinite(Date.parse(sentAt)) || Date.parse(sentAt) > Date.now() + CLOCK_SKEW_MS)
+          throw projectError('QUOTE_EVIDENCE_REQUIRED', 422);
+        assertPlatformEvidence(quotation, sentAt);
+        status = 'quoted';
+        await event(client, id, adminId, 'follow-up', {
+          contactMethod: markSent.channel,
+          contactedAt: sentAt,
+          content: `发送报价 ${quotation.quotationNo} r${quotation.revision}`,
+          targetStatus: status,
+          quoteEvidence: { type: 'platform', quotationRevision: quotation.revision, sentAt, channel: markSent.channel },
+          fromStatus: project.status,
+          status,
+          revision,
+        });
+      }
+      await client.query('UPDATE projects SET status=$2,revision=revision+1,updated_at=now() WHERE id=$1', [id, status]);
+      return { projectId: id, projectRevision: revision, status, quotation };
     },
     { requireAssignee: true },
   );
+}
+/** 报价修订列表（倒序），供跟进弹窗与报价编辑器选择历史修订 */
+export async function listQuotationRevisions(db: pg.Pool | pg.PoolClient, id: string) {
+  return (
+    await db.query<{
+      revision: number;
+      completeness: 'incomplete' | 'ready';
+      currency: string;
+      totalAmount: string | null;
+      validUntil: string;
+      validityTimeZone: string;
+      createdAt: Date;
+      createdByName: string | null;
+    }>(
+      `SELECT r.revision,r.snapshot->>'completeness' AS completeness,r.snapshot->>'currency' AS currency,
+      r.snapshot->>'totalAmount' AS "totalAmount",r.snapshot->>'validUntil' AS "validUntil",
+      r.snapshot->>'validityTimeZone' AS "validityTimeZone",r.created_at AS "createdAt",coalesce(a.nickname,a.username) AS "createdByName"
+    FROM project_quotation_revisions r LEFT JOIN admins a ON a.id=r.created_by WHERE r.project_id=$1 ORDER BY r.revision DESC`,
+      [id],
+    )
+  ).rows;
 }

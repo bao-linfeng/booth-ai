@@ -92,7 +92,7 @@ const moduleRules: Record<string, { dependsOn: string[]; exposes: string[] }> = 
   media: { dependsOn: [], exposes: ['links.ts', 'renditions.ts'] },
   projects: {
     dependsOn: ['dictionaries', 'generation', 'identity', 'media', 'schemes', 'selection'],
-    exposes: ['claims.ts', 'domain.ts', 'notification-inbox.ts'],
+    exposes: ['claims.ts', 'domain.ts', 'follow-up-schedule.ts', 'notification-inbox.ts'],
   },
   'prompt-preview': { dependsOn: ['generation', 'prompts', 'selection'], exposes: [] },
   prompts: { dependsOn: [], exposes: ['service.ts', 'template.ts'] },

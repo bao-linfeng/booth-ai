@@ -1,4 +1,4 @@
-import { currencyScales } from './domain.js';
+import { contactMethods, currencyScales } from './domain.js';
 
 // 请求 schema 都以字面量类型声明（as const），路由经 json-schema-to-ts 推导请求类型，并与领域输入类型互相校验。
 type TextSchema = { readonly type: 'string'; readonly minLength: number; readonly maxLength: number; readonly pattern?: string };
@@ -44,6 +44,12 @@ export const claimSchema = {
   required: ['requestKey'],
   properties: { requestKey: keySchema },
 } as const;
+export const publicResultSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['requestKey', 'expectedRevision', 'publicResult'],
+  properties: { ...change, publicResult: text(5000) },
+} as const;
 export const linkSchema = {
   type: 'object',
   additionalProperties: false,
@@ -56,21 +62,21 @@ export const linkSchema = {
     confirmationNote: text(2000, 1),
   },
 } as const;
-const sent = { sentAt: { type: 'string', format: 'date-time' }, channel: text(100, 1) } as const;
+const contactMethod = { type: 'string', enum: contactMethods } as const;
+const sent = { sentAt: { type: 'string', format: 'date-time' }, channel: contactMethod } as const;
 export const followUpSchema = {
   type: 'object',
   additionalProperties: false,
   required: ['requestKey', 'expectedRevision', 'contactMethod', 'contactedAt', 'content'],
   properties: {
     ...change,
-    contactMethod: { type: 'string', enum: ['phone', 'email', 'customer_service', 'meeting', 'other'] },
+    contactMethod,
     contactedAt: { type: 'string', format: 'date-time' },
     content: text(5000, 1),
     nextFollowUpAt: { type: 'string', format: 'date-time' },
     targetStatus: { type: 'string', enum: statuses },
     outcome: text(5000),
     reopenReason: text(2000),
-    publicResult: text(5000),
     quoteEvidence: {
       oneOf: [
         {
@@ -118,6 +124,13 @@ export const quotationSchema = {
     inclusions: text(5000),
     exclusions: text(5000),
     changeReason: text(2000, 1),
+    markSent: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['channel'],
+      description: '同时登记已发送并转为已报价（需 projects.follow-up）；sentAt 省略时取保存时间',
+      properties: { sentAt: { type: 'string', format: 'date-time' }, channel: contactMethod },
+    },
     items: {
       type: 'array',
       maxItems: 10000,

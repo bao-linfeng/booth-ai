@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { VbenFormSchema } from '#/adapter/form';
-import type { ProjectDetail, ProjectStatus } from '#/api/core/projects';
+import type {
+  ProjectDetail,
+  ProjectStatus,
+  QuotationRevisionSummary,
+} from '#/api/core/projects';
 
 import { computed, nextTick, ref } from 'vue';
 
@@ -14,6 +18,7 @@ import {
   followUpApi,
   getProjectApi,
   linkSchemeApi,
+  quotationRevisionsApi,
   statusLabels,
 } from '#/api/core/projects';
 
@@ -35,6 +40,8 @@ const refreshing = ref(false);
 const terminal = computed(
   () => !!project.value && terminalStatuses.includes(project.value.status),
 );
+/** 可作为发送依据的完整报价修订（倒序） */
+const readyRevisions = ref<QuotationRevisionSummary[]>([]);
 let key = '';
 let fingerprint = '';
 const [Form, formApi] = useVbenForm({
@@ -95,12 +102,23 @@ function statusOptions(record: ProjectDetail) {
 }
 
 function quotationHelp(record: ProjectDetail) {
-  const quotation = record.quotation;
-  if (!quotation) return '项目还没有平台报价修订，只能登记外部人工报价。';
-  return quotation.completeness === 'ready'
-    ? `最新修订 r${quotation.revision}，有效期至 ${quotation.validUntil}。`
-    : `最新修订 r${quotation.revision} 未填写完整，不能作为发送依据；请选择更早的完整修订或先补全报价。`;
+  if (readyRevisions.value.length === 0)
+    return record.quotation
+      ? '还没有填写完整的报价修订，不能作为发送依据；请先补全报价或登记外部人工报价。'
+      : '项目还没有平台报价修订，只能登记外部人工报价。';
+  return '只列出填写完整的修订；发送时间需不早于修订创建时间且在有效期内。';
 }
+
+function revisionOptions() {
+  return readyRevisions.value.map((revision) => ({
+    value: revision.revision,
+    label: `r${revision.revision} · ${revision.currency} ${revision.totalAmount ?? '—'} · 有效期至 ${revision.validUntil}`,
+  }));
+}
+
+const contactOptions = Object.entries(contactMethodLabels).map(
+  ([value, label]) => ({ value, label }),
+);
 
 function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
   const target = (values: Record<string, unknown>) =>
@@ -113,12 +131,7 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
       fieldName: 'contactMethod',
       label: '联系类型',
       rules: 'selectRequired',
-      componentProps: {
-        options: Object.entries(contactMethodLabels).map(([value, label]) => ({
-          value,
-          label,
-        })),
-      },
+      componentProps: { options: contactOptions },
     },
     {
       component: 'DatePicker',
@@ -196,7 +209,7 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
           {
             value: 'platform',
             label: '平台报价修订',
-            disabled: !record.quotation,
+            disabled: readyRevisions.value.length === 0,
           },
           { value: 'external_manual', label: '外部人工报价' },
         ],
@@ -210,11 +223,11 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
       },
     },
     {
-      component: 'InputNumber',
+      component: 'Select',
       fieldName: 'quotationRevision',
       label: '已发送的报价修订',
       help: quotationHelp(record),
-      componentProps: { min: 1, precision: 0, addonBefore: 'r' },
+      componentProps: { options: revisionOptions() },
       dependencies: {
         triggerFields: ['targetStatus', 'evidenceType'],
         resolve: ({ values }) => ({
@@ -247,26 +260,51 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
       },
     },
     {
-      component: 'Input',
+      component: 'Select',
       fieldName: 'channel',
       label: '报价发送渠道',
-      componentProps: { maxlength: 100, placeholder: '如：邮件、微信' },
+      componentProps: { options: contactOptions },
       dependencies: {
         triggerFields: ['targetStatus'],
-        resolve: ({ values }) => ({ show: quoted(values), rules: 'required' }),
+        resolve: ({ values }) => ({
+          show: quoted(values),
+          rules: 'selectRequired',
+        }),
       },
-    },
-    {
-      component: 'Textarea',
-      fieldName: 'publicResult',
-      label: '客户可见结果',
-      help: '修改后提交即对客户公开；不修改则保持当前公开内容。',
-      componentProps: { rows: 2, maxlength: 5000 },
     },
   ];
 }
 
-async function open(record: ProjectDetail, operation: typeof mode.value) {
+/** 待跟进项目默认预选"跟进中"（不做隐式状态推进，提交前可改） */
+function defaultTarget(record: ProjectDetail) {
+  return record.status === 'pending' &&
+    record.statusTransitions.includes('following')
+    ? 'following'
+    : undefined;
+}
+
+async function loadRevisions(record: ProjectDetail) {
+  try {
+    const revisions = record.quotation
+      ? await quotationRevisionsApi(record.projectId)
+      : [];
+    readyRevisions.value = revisions.filter(
+      (revision) => revision.completeness === 'ready',
+    );
+  } catch {
+    readyRevisions.value = [];
+  }
+}
+
+/**
+ * 打开操作弹窗；targetStatus 用于头部快捷按钮（开始跟进 / 标记成交等）预选目标状态，
+ * 不在当前可选状态内时忽略。
+ */
+async function open(
+  record: ProjectDetail,
+  operation: typeof mode.value,
+  preset: { targetStatus?: ProjectStatus } = {},
+) {
   project.value = record;
   mode.value = operation;
   key = '';
@@ -301,18 +339,22 @@ async function open(record: ProjectDetail, operation: typeof mode.value) {
       ],
     });
   } else {
+    await loadRevisions(record);
     formApi.setState({ schema: followUpSchema(record) });
+    const target =
+      preset.targetStatus &&
+      record.statusTransitions.includes(preset.targetStatus)
+        ? preset.targetStatus
+        : defaultTarget(record);
     await formApi.setValues({
       contactMethod: 'phone',
       contactedAt: new Date().toISOString(),
-      publicResult: record.publicResult ?? '',
+      ...(target ? { targetStatus: target } : {}),
       evidenceType:
-        record.quotation?.completeness === 'ready'
-          ? 'platform'
-          : 'external_manual',
-      quotationRevision: record.quotation?.revision,
+        readyRevisions.value.length > 0 ? 'platform' : 'external_manual',
+      quotationRevision: readyRevisions.value[0]?.revision,
       sentAt: new Date().toISOString(),
-      channel: '邮件',
+      channel: 'email',
     });
   }
 }
@@ -330,6 +372,7 @@ async function loadLatest() {
     conflict.value = false;
     if (mode.value === 'follow-up') {
       const values = await formApi.getValues();
+      await loadRevisions(latest);
       formApi.setState({ schema: followUpSchema(latest) });
       if (
         values.targetStatus &&

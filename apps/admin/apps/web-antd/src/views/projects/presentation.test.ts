@@ -6,6 +6,7 @@ import { buildFollowUp } from './follow-up';
 import {
   eventSummary,
   failureDetails,
+  followUpUrgency,
   operationFailureMessage,
   requirementSummary,
 } from './presentation';
@@ -41,7 +42,6 @@ const base = {
   contactMethod: 'email',
   contactedAt: '2026-10-01T08:00:00Z',
   content: '已沟通',
-  publicResult: '',
 };
 
 describe('requirementSummary', () => {
@@ -146,10 +146,35 @@ describe('eventSummary', () => {
   });
 });
 
+describe('public result and follow-up urgency', () => {
+  it('describes public result updates, including withdrawals', () => {
+    expect(
+      eventSummary(event('public-result', { publicResult: '报价已发送' })),
+    ).toEqual({
+      title: '更新客户进度',
+      lines: [{ label: '客户可见内容', value: '报价已发送' }],
+    });
+    expect(
+      eventSummary(event('public-result', { publicResult: null })).lines,
+    ).toEqual([{ label: '客户可见内容', value: '（已撤下）' }]);
+  });
+
+  it('flags overdue and due-today follow-ups of open projects in Shanghai time', () => {
+    const now = new Date('2026-10-21T02:00:00Z'); // 上海 10:00
+    const at = (nextFollowUpAt: null | string, status = 'following') =>
+      followUpUrgency({ nextFollowUpAt, status: status as 'following' }, now);
+    expect(at('2026-10-21T01:00:00Z')).toBe('overdue');
+    expect(at('2026-10-21T15:00:00Z')).toBe('today'); // 上海 23:00
+    expect(at('2026-10-21T16:30:00Z')).toBeUndefined(); // 上海次日 00:30
+    expect(at('2026-10-20T01:00:00Z', 'won')).toBeUndefined();
+    expect(at(null)).toBeUndefined();
+  });
+});
+
 describe('buildFollowUp', () => {
   it('only submits fields relevant to the target status', () => {
     const input = buildFollowUp(
-      { status: 'following', publicResult: null },
+      { status: 'following' },
       {
         ...base,
         targetStatus: 'quoted',
@@ -159,7 +184,7 @@ describe('buildFollowUp', () => {
         quotationRevision: 1,
         reference: 'EXT-1',
         sentAt: '2026-10-01T09:00:00Z',
-        channel: '邮件',
+        channel: 'email',
       },
       change,
     );
@@ -173,39 +198,33 @@ describe('buildFollowUp', () => {
         type: 'external_manual',
         reference: 'EXT-1',
         sentAt: '2026-10-01T09:00:00.000Z',
-        channel: '邮件',
+        channel: 'email',
       },
     });
   });
 
-  it('requires reopening reason only from terminal states and sends changed public result', () => {
+  it('requires reopening reason only from terminal states and never sends the public result', () => {
     const reopen = buildFollowUp(
-      { status: 'won', publicResult: '已成交' },
+      { status: 'won' },
       {
         ...base,
         targetStatus: 'following',
         reopenReason: '追加服务',
-        publicResult: '重新沟通中',
+        publicResult: '残留的旧字段',
       },
       change,
     );
     expect(reopen.reopenReason).toBe('追加服务');
-    expect(reopen.publicResult).toBe('重新沟通中');
+    expect(reopen).not.toHaveProperty('publicResult');
     const plain = buildFollowUp(
-      { status: 'quoted', publicResult: '已发送报价' },
-      {
-        ...base,
-        targetStatus: 'following',
-        reopenReason: '残留',
-        publicResult: '已发送报价',
-      },
+      { status: 'quoted' },
+      { ...base, targetStatus: 'following', reopenReason: '残留' },
       change,
     );
     expect(plain).not.toHaveProperty('reopenReason');
-    expect(plain).not.toHaveProperty('publicResult');
     expect(
       buildFollowUp(
-        { status: 'quoted', publicResult: null },
+        { status: 'quoted' },
         { ...base, targetStatus: 'lost', outcome: '预算不足' },
         change,
       ).outcome,

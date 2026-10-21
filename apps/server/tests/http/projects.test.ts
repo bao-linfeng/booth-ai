@@ -94,7 +94,7 @@ test('unconfigured default assignee sends new projects to the pool; a missing co
   await assert.rejects(configuredAssignee(client([])), (error: Error & { reason?: string }) => !error.reason);
 });
 test('status transitions follow the follow-up rules and only allow reopening from terminal states', () => {
-  assert.deepEqual(statusTransitions('pending'), ['following', 'closed']);
+  assert.deepEqual(statusTransitions('pending'), ['following', 'quoted', 'closed']);
   assert.deepEqual(statusTransitions('quoted'), ['following', 'won', 'lost', 'closed']);
   for (const status of ['won', 'lost', 'closed'] as const) assert.deepEqual(statusTransitions(status), ['following']);
 });

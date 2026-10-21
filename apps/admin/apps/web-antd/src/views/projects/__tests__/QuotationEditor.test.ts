@@ -22,7 +22,12 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock('#/adapter/form', () => ({ useVbenForm: form.useVbenForm }));
-vi.mock('#/api/core/projects', () => api);
+vi.mock('#/api/core/projects', () => ({
+  ...api,
+  poolReasonLabels: {},
+  projectEventLabels: {},
+  statusLabels: {},
+}));
 vi.mock('ant-design-vue', async () => {
   const { fakeAntd } = await import('./fake-vben');
   return fakeAntd();
@@ -291,6 +296,50 @@ describe('quotation editor', () => {
     expect(form.state.commonConfig.disabled).toBe(true);
     await form.api.validateAndSubmitForm();
     expect(api.saveQuotationApi).not.toHaveBeenCalled();
+  });
+
+  it('saves and marks the revision as sent in one request when allowed to follow up', async () => {
+    await mount(project({ quotation: savedQuotation }));
+    expect(() => button(container, '保存并标记已发送')).toThrow(
+      'Button not found',
+    );
+    app?.unmount();
+    container.remove();
+
+    access.codes = new Set(['projects.follow-up', 'projects.quotation']);
+    await mount(project({ quotation: savedQuotation }));
+    form.edit({ changeReason: '发送前调价' });
+    button(container, '保存并标记已发送').click();
+    await flush();
+    const dialog = container.querySelector('[role="dialog"]');
+    if (!dialog) throw new Error('send dialog did not open');
+    expect(dialog.textContent).toContain('项目转为「已报价」');
+    api.saveQuotationApi.mockResolvedValue({
+      projectRevision: 6,
+      quotation: { ...savedQuotation, revision: 3 },
+      status: 'quoted',
+    });
+    button(dialog, '保存并标记').click();
+    await flush();
+    expect(saved()[0]).toMatchObject({
+      changeReason: '发送前调价',
+      markSent: { channel: 'email' },
+    });
+    expect(saved()[0].markSent).not.toHaveProperty('sentAt');
+    expect(message.success).toHaveBeenCalledWith(
+      expect.stringContaining('已转为已报价'),
+    );
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+    // 普通保存不再携带发送信息
+    form.edit({ changeReason: '再次调整' });
+    api.saveQuotationApi.mockResolvedValue({
+      projectRevision: 7,
+      quotation: { ...savedQuotation, revision: 4 },
+      status: 'quoted',
+    });
+    await save();
+    expect(saved()[1]).not.toHaveProperty('markSent');
   });
 
   it('refuses to save while the project is waiting in the assignment pool', async () => {

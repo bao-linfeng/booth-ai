@@ -2,6 +2,7 @@ import type pg from 'pg';
 import { projectError, type ProjectStatus } from './domain.js';
 import type { MaterialsSnapshot, SchemeSnapshot } from './snapshot.js';
 import { assigneeStatusSql, type AssigneeStatus } from './assignment.js';
+import { activeStatusesSql, nextFollowUpSql, todayStartSql } from './follow-up-schedule.js';
 import { dictionaryItemLabels } from '../dictionaries/service.js';
 import type { StoredImage } from '../media/links.js';
 
@@ -41,6 +42,8 @@ export interface ProjectRecord {
   schemeSnapshot: SchemeSnapshot | null;
   materials: Partial<MaterialsSnapshot>;
   publicResult: string | null;
+  /** 最新一条跟进记录约定的下次跟进时间 */
+  nextFollowUpAt: Date | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -62,12 +65,14 @@ export interface ProjectQuery {
   exhibitionStartTo?: string;
   /** unassigned：待分配；needs_assignment：待分配，或承接人已失效且项目未结束 */
   assignment?: 'needs_assignment' | 'unassigned';
+  /** 未结束项目中下次跟进已逾期 / 今天到期的，口径与工作台一致 */
+  followUp?: 'overdue' | 'today';
 }
 export const projectColumns = `p.id AS "projectId",p.project_no AS "projectNo",p.request_no AS "requestNo",p.source_type AS "sourceType",
   p.customer_user_id AS "customerUserId",p.assignee_admin_id AS "assigneeAdminId",coalesce(a.nickname,a.username) AS "assigneeName",
   ${assigneeStatusSql('a')} AS "assigneeStatus",
   p.status,p.revision,p.scheme_code AS "schemeCode",p.request_snapshot AS request,p.scheme_snapshot AS "schemeSnapshot",
-  p.materials_snapshot AS materials,p.public_result AS "publicResult",p.created_at AS "createdAt",p.updated_at AS "updatedAt"`;
+  p.materials_snapshot AS materials,p.public_result AS "publicResult",${nextFollowUpSql('p')} AS "nextFollowUpAt",p.created_at AS "createdAt",p.updated_at AS "updatedAt"`;
 export async function getProject(db: pg.Pool | pg.PoolClient, id: string, userId?: string, lock = false): Promise<ProjectRecord> {
   const row = (
     await db.query<ProjectRecord>(
@@ -115,6 +120,11 @@ export async function listProjects(db: pg.Pool, query: ProjectQuery, userId?: st
   if (query.createdTo) add("p.created_at<(?::date+interval '1 day')", query.createdTo);
   if (query.exhibitionStartFrom) add("p.request_snapshot->'exhibition'->>'startDate'>=?", query.exhibitionStartFrom);
   if (query.exhibitionStartTo) add("p.request_snapshot->'exhibition'->>'startDate'<=?", query.exhibitionStartTo);
+  if (query.followUp === 'overdue') conditions.push(`p.status IN ${activeStatusesSql} AND ${nextFollowUpSql('p')}<now()`);
+  if (query.followUp === 'today')
+    conditions.push(
+      `p.status IN ${activeStatusesSql} AND ${nextFollowUpSql('p')}>=${todayStartSql} AND ${nextFollowUpSql('p')}<${todayStartSql}+interval '1 day'`,
+    );
   if (query.assignment === 'unassigned') conditions.push('p.assignee_admin_id IS NULL');
   if (query.assignment === 'needs_assignment')
     conditions.push(

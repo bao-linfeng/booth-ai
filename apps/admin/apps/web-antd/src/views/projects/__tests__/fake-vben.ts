@@ -176,6 +176,18 @@ export async function fakeAntd() {
         () =>
           render('div', [slots.default?.(), slots.extra?.()]),
     }),
+    DatePicker: define({
+      props: { value: { type: String, default: undefined } },
+      emits: ['update:value'],
+      setup:
+        (_, { emit }) =>
+        () =>
+          render('input', {
+            'data-test': 'date-picker',
+            onInput: (event: Event) =>
+              emit('update:value', (event.target as HTMLInputElement).value),
+          }),
+    }),
     Input: passthrough,
     InputNumber: define({
       props: { value: { type: Number, default: undefined } },
@@ -198,6 +210,29 @@ export async function fakeAntd() {
       success: vi.fn(),
       warning: vi.fn(),
     },
+    /** 打开时渲染内容与确认按钮（文本取 okText），点击确认触发 ok */
+    Modal: define({
+      props: {
+        okText: { type: String, default: '确定' },
+        open: Boolean,
+        title: { type: String, default: '' },
+      },
+      emits: ['ok', 'update:open'],
+      setup:
+        (props, { emit, slots }) =>
+        () =>
+          props.open
+            ? render('div', { role: 'dialog' }, [
+                props.title,
+                slots.default?.(),
+                render(
+                  'button',
+                  { type: 'button', onClick: () => emit('ok') },
+                  props.okText,
+                ),
+              ])
+            : null,
+    }),
     Select: passthrough,
     Table: define({
       props: { dataSource: { type: Array, default: () => [] } },
