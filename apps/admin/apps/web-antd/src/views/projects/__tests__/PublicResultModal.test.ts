@@ -76,7 +76,7 @@ describe('public result modal', () => {
       publicResult: '报价已发送',
       revision: 4,
     });
-    expect(modal.state.title).toBe('更新客户进度');
+    expect(modal.state.title).toBe('更新客户说明');
     expect(container.textContent).toContain('提交后客户可见');
     expect(form.state.values.publicResult).toBe('报价已发送');
     form.edit({ publicResult: '已确认方案，安排搭建' });

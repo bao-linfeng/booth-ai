@@ -12,7 +12,10 @@ import { updatePublicResultApi } from '#/api/core/projects';
 
 import { operationFailureMessage } from './presentation';
 
-/** 更新客户可见结果：独立于跟进，终态项目也可修改，提交后客户在「我的项目」中可见。 */
+/**
+ * 更新客户说明：独立于跟进，终态项目也可修改，提交后客户在「我的项目」中可见。
+ * 状态变化已由客户端进度时间线自动展示，这里只承载需要额外告知客户的内容。
+ */
 type Target = Pick<Project, 'projectId' | 'publicResult' | 'revision'>;
 
 const emit = defineEmits<{ reload: [] }>();
@@ -28,8 +31,8 @@ const [Form, formApi] = useVbenForm({
     {
       component: 'Textarea',
       fieldName: 'publicResult',
-      label: '客户可见进度',
-      help: '清空后提交表示撤下当前公开内容。',
+      label: '客户说明',
+      help: '状态变化会自动显示在客户的进度时间线中，这里填写需要额外告知客户的内容（如后续安排）。清空后提交表示撤下。',
       componentProps: { maxlength: 5000, rows: 4 },
     },
   ],
@@ -48,7 +51,7 @@ const [Form, formApi] = useVbenForm({
         expectedRevision: project.value.revision,
         publicResult,
       });
-      message.success('客户进度已更新');
+      message.success('客户说明已更新');
       modalApi.close();
       emit('reload');
     } catch (error) {
@@ -73,7 +76,7 @@ async function open(record: Target) {
   key = '';
   fingerprint = '';
   failure.value = '';
-  modalApi.setState({ title: '更新客户进度', confirmText: '提交' });
+  modalApi.setState({ title: '更新客户说明', confirmText: '提交' });
   modalApi.open();
   await nextTick();
   await formApi.resetForm();

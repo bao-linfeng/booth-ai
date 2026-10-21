@@ -207,6 +207,7 @@ describe('operation modal follow-up', () => {
     expect(message.success).toHaveBeenCalledWith('项目记录已保存');
     expect(modal.api.close).toHaveBeenCalled();
     expect(reloads).toHaveBeenCalledTimes(1);
+    expect(reloads).toHaveBeenCalledWith('quoted');
   });
 
   it('defaults to external evidence and disables platform evidence when there is no complete quotation', async () => {

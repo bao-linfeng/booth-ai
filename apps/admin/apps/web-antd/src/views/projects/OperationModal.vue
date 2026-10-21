@@ -34,7 +34,8 @@ import {
   terminalStatuses,
 } from './presentation';
 
-const emit = defineEmits<{ reload: [] }>();
+/** 跟进变更了状态时带上目标状态，详情页据此提示更新客户说明 */
+const emit = defineEmits<{ reload: [changedStatus?: ProjectStatus] }>();
 const project = ref<ProjectDetail>();
 const mode = ref<'follow-up' | 'scheme'>('follow-up');
 const failure = ref('');
@@ -75,16 +76,20 @@ const [Form, formApi] = useVbenForm({
     modalApi.setState({ confirmLoading: true });
     try {
       const change = { requestKey: key, expectedRevision: record.revision };
-      await (mode.value === 'scheme'
-        ? linkSchemeApi(record.projectId, {
+      const followUp =
+        mode.value === 'follow-up'
+          ? buildFollowUp(record, values, change)
+          : undefined;
+      await (followUp
+        ? followUpApi(record.projectId, followUp)
+        : linkSchemeApi(record.projectId, {
             ...change,
             schemeCode: String(values.schemeCode),
             confirmationNote: String(values.confirmationNote),
-          })
-        : followUpApi(record.projectId, buildFollowUp(record, values, change)));
+          }));
       message.success('项目记录已保存');
       modalApi.close();
-      emit('reload');
+      emit('reload', followUp?.targetStatus);
     } catch (error) {
       const reason = failureReason(error);
       failure.value = operationFailureMessage(error);

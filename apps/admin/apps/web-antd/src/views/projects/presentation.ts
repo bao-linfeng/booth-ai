@@ -269,7 +269,7 @@ export function eventSummary(event: ProjectEvent): {
     }
     case 'public-result': {
       return {
-        title: '更新客户进度',
+        title: '更新客户说明',
         lines: [
           {
             label: '客户可见内容',

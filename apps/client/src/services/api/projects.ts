@@ -6,9 +6,18 @@ export type { ProjectReceipt } from './quote-requests'
 export type ProjectStatus = 'pending' | 'following' | 'quoted' | 'won' | 'lost' | 'closed'
 export interface MyProject {
   projectId: string; projectNo: string; schemeCode: string | null; sourceType: 'quote_request' | 'manual_request'; status: ProjectStatus;
-  exhibition: QuoteRequest['exhibition'] | null; createdAt: string; updatedAt: string
+  exhibition: QuoteRequest['exhibition'] | null; createdAt: string; progressUpdatedAt: string
 }
-export interface MyProjectDetail extends Omit<MyProject,'exhibition'> {
+/** 客户可见进度节点，由服务端按项目事件推导 */
+export type ProgressStep = 'submitted' | 'advisor_assigned' | 'advisor_changed' | 'following' | 'quote_sent' | 'won' | 'lost' | 'closed' | 'reopened'
+export interface ProjectProgress {
+  /** 客户可见内容最近一次变化的时间，内部操作不计入 */
+  updatedAt: string
+  note: { content: string; publishedAt: string } | null
+  /** 按时间正序 */
+  timeline: { step: ProgressStep; at: string }[]
+}
+export interface MyProjectDetail extends Omit<MyProject,'exhibition'|'progressUpdatedAt'> {
   revision: number; artworkJobId: string | null;
   requestNo: string;
   request: { exhibition: QuoteRequest['exhibition'] | null; contact: { name: string; email?: string; phone?: string; legacyDetail?: string }; company?: string;
@@ -16,7 +25,7 @@ export interface MyProjectDetail extends Omit<MyProject,'exhibition'> {
     confirmedRequirements?: Record<string,unknown>; unresolvedQuestions: string[]; legacyIncomplete: boolean };
   schemeSnapshot: { code: string; name: string; revision: number; lengthMm: number; widthMm: number; heightMm: number; openingCount: number } | null;
   materialsStatus: { bom: string; drawings: string; artworks: string }; selectedThemeSummary: { themeJobId: string; resultId: string; selectionRevision: number; previewUrl: string } | null;
-  publicResult: string | null
+  progress: ProjectProgress
 }
 export interface ProjectPage { items: MyProject[]; total: number; page: number; pageSize: number }
 export async function getMyProjects(query: { page: number; pageSize: number; projectNo?: string; status?: string; sourceType?: string; exhibitionName?: string }) {

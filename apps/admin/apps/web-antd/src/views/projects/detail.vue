@@ -21,6 +21,7 @@ import {
   DescriptionsItem,
   Image,
   ImagePreviewGroup,
+  Modal,
   TabPane,
   Tabs,
   Tag,
@@ -181,6 +182,20 @@ async function load() {
   }
   if (project.value && overviewVisited.value)
     await loadImageUrls(project.value.projectId);
+}
+/** 状态变化会自动出现在客户的进度时间线中；保存后提示顾问按需补充给客户的说明 */
+async function onSaved(changedStatus?: ProjectStatus) {
+  await load();
+  const record = project.value;
+  if (!changedStatus || !record || !hasAccessByCodes(['projects.follow-up']))
+    return;
+  Modal.confirm({
+    title: '是否同时更新客户说明？',
+    content: `项目已变为「${statusLabels[changedStatus]}」，客户在「我的项目」中会自动看到这一进度节点。如需告知后续安排，可补充一段客户说明。`,
+    okText: '更新客户说明',
+    cancelText: '暂不',
+    onOk: () => publicResult.value?.open(record),
+  });
 }
 watch(activeTab, async (tab) => {
   if (tab !== 'overview' || overviewVisited.value) return;
@@ -477,7 +492,7 @@ onMounted(load);
                 }}
                 / 素材{{ materialStatus(project.materials.artworks?.status) }}
               </DescriptionsItem>
-              <DescriptionsItem label="客户公开结果">
+              <DescriptionsItem label="客户说明">
                 <span class="whitespace-pre-wrap">{{
                   project.publicResult ?? '尚未发布'
                 }}</span>
@@ -487,7 +502,7 @@ onMounted(load);
                   v-access:code="['projects.follow-up']"
                   @click="publicResult?.open(project)"
                 >
-                  更新客户进度
+                  更新客户说明
                 </Button>
               </DescriptionsItem>
             </Descriptions>
@@ -543,7 +558,7 @@ onMounted(load);
           </Card>
         </TabPane>
         <TabPane key="quotation" tab="报价">
-          <QuotationEditor :project="project" @reload="load" />
+          <QuotationEditor :project="project" @reload="onSaved" />
         </TabPane>
         <TabPane key="timeline" tab="时间线">
           <Card>
@@ -580,7 +595,7 @@ onMounted(load);
         </TabPane>
       </Tabs>
     </template>
-    <OperationModal ref="operation" @reload="load" />
+    <OperationModal ref="operation" @reload="onSaved" />
     <AssignModal ref="assign" @reload="load" />
     <PublicResultModal ref="publicResult" @reload="load" />
   </Page>
