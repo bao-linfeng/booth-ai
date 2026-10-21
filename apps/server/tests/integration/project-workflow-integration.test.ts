@@ -7,6 +7,7 @@ import { contractApp } from '../helpers/http-app.js';
 import { createManualProject } from '../../src/modules/projects/service.js';
 import { followUpProject, listQuotationRevisions, saveQuotation } from '../../src/modules/projects/admin-service.js';
 import { getProject, listProjects } from '../../src/modules/projects/repository.js';
+import { claimQuotationEmails, completeQuotationEmail, failQuotationEmail } from '../../src/modules/projects/quotation-emails.js';
 import { emptyRequirement } from '../../src/modules/selection/domain.js';
 import { registerAuthentication } from '../../src/http/authentication.js';
 import { registerAdminProjectRoutes } from '../../src/http/admin/projects/index.js';
@@ -62,27 +63,40 @@ test(
     };
     const revisions = async () => (await pool.query('SELECT count(*)::int AS count FROM project_quotation_revisions')).rows[0].count;
 
-    // 修订不完整、发送时间早于修订或缺少跟进权限时整体失败，修订不落库
+    const emails = async () =>
+      (
+        await pool.query(
+          'SELECT project_id AS "projectId",quotation_revision AS revision,recipient,locale,requested_by AS "requestedBy" FROM project_quotation_emails ORDER BY created_at',
+        )
+      ).rows;
+    // 修订不完整、已过有效期、客户没有邮箱或缺少跟进权限时整体失败，修订和邮件都不落库
+    await assert.rejects(saveQuotation(pool, id, admin, { ...quote, items: [{ ...quote.items[0]!, unitPrice: null }], sendEmail: true }), {
+      reason: 'QUOTATION_INCOMPLETE',
+      statusCode: 422,
+    });
     await assert.rejects(
-      saveQuotation(pool, id, admin, { ...quote, items: [{ ...quote.items[0]!, unitPrice: null }], markSent: { channel: 'email' } }),
-      { reason: 'QUOTE_EVIDENCE_INVALID', statusCode: 422 },
+      saveQuotation(pool, id, admin, { ...quote, requestKey: randomUUID(), validUntil: '2020-01-01', sendEmail: true }),
+      { reason: 'QUOTATION_EXPIRED', statusCode: 422 },
     );
-    await assert.rejects(
-      saveQuotation(pool, id, admin, {
-        ...quote,
-        requestKey: randomUUID(),
-        markSent: { channel: 'email', sentAt: '2020-01-01T00:00:00Z' },
-      }),
-      { reason: 'QUOTE_EVIDENCE_INVALID' },
-    );
-    await assert.rejects(saveQuotation(pool, id, quoter, { ...quote, requestKey: randomUUID(), markSent: { channel: 'email' } }), {
+    await assert.rejects(saveQuotation(pool, id, quoter, { ...quote, requestKey: randomUUID(), sendEmail: true }), {
       statusCode: 403,
     });
+    const phoneOnly = String(
+      (await createManualProject(pool, user, { ...input, requestKey: randomUUID(), contact: { name: '客户', phone: '13800000000' } }))
+        .receipt.projectId,
+    );
+    await assert.rejects(saveQuotation(pool, phoneOnly, admin, { ...quote, requestKey: randomUUID(), sendEmail: true }), {
+      reason: 'CUSTOMER_EMAIL_MISSING',
+      statusCode: 422,
+    });
+    // 只用于上面的校验，退回待分配以免影响后面“我的项目”断言
+    await pool.query('UPDATE projects SET assignee_admin_id=NULL WHERE id=$1', [phoneOnly]);
     assert.equal(await revisions(), 0);
+    assert.deepEqual(await emails(), []);
     assert.deepEqual([(await getProject(pool, id)).status, (await getProject(pool, id)).revision], ['pending', 1]);
 
-    // 待跟进项目一步保存完整报价并转为已报价，项目修订只加一次
-    const sendKey = { ...quote, requestKey: randomUUID(), markSent: { channel: 'email' as const } };
+    // 待跟进项目一步保存完整报价、放入邮件队列并转为已报价，项目修订只加一次；范围与条款为选填
+    const sendKey = { ...quote, requestKey: randomUUID(), inclusions: '', exclusions: '', terms: '', sendEmail: true };
     const sent = await saveQuotation(pool, id, admin, sendKey);
     assert.deepEqual([sent.status, sent.projectRevision, sent.quotation.revision], ['quoted', 2, 1]);
     assert.deepEqual(await saveQuotation(pool, id, admin, sendKey), JSON.parse(JSON.stringify(sent)));
@@ -98,7 +112,7 @@ test(
       ['follow-up', 'quotation', 'accepted'],
     );
     const followUp = events[0]!.payload;
-    assert.equal(followUp.content, `发送报价 QT-${projectNo} r1`);
+    assert.equal(followUp.content, `系统邮件发送报价 QT-${projectNo} r1`);
     assert.deepEqual([followUp.contactMethod, followUp.fromStatus, followUp.status, followUp.revision], ['email', 'pending', 'quoted', 2]);
     assert.deepEqual(followUp.quoteEvidence, {
       type: 'platform',
@@ -113,9 +127,45 @@ test(
       expectedRevision: 2,
       expectedQuotationRevision: 1,
       changeReason: '调价',
-      markSent: { channel: 'phone' },
+      sendEmail: true,
     });
     assert.deepEqual([resent.status, resent.projectRevision], ['quoted', 3]);
+    // 重放不重复入队；语言沿用受理回执
+    assert.deepEqual(await emails(), [
+      { projectId: id, revision: 1, recipient: 'workflow@example.com', locale: 'zh', requestedBy: admin },
+      { projectId: id, revision: 2, recipient: 'workflow@example.com', locale: 'zh', requestedBy: admin },
+    ]);
+    // Worker 领取带上修订快照；送达与终态失败写入时间线，临时失败不写
+    const claimed = await claimQuotationEmails(pool);
+    assert.deepEqual(
+      claimed.map(email => [email.quotation.revision, email.projectNo, email.contact.email, email.attempts]),
+      [
+        [1, projectNo, 'workflow@example.com', 1],
+        [2, projectNo, 'workflow@example.com', 1],
+      ],
+    );
+    assert.deepEqual(await claimQuotationEmails(pool), [], 'leased emails are not claimed twice');
+    await completeQuotationEmail(pool, claimed[0]!.id);
+    assert.equal(await failQuotationEmail(pool, claimed[1]!, 'SMTP_ECONNECTION', false), false);
+    assert.equal(await failQuotationEmail(pool, claimed[1]!, 'SMTP_EENVELOPE', true), true);
+    assert.deepEqual(
+      (
+        await pool.query(
+          `SELECT actor_admin_id AS actor,payload FROM project_events WHERE project_id=$1 AND kind='quotation-email' ORDER BY created_at`,
+          [id],
+        )
+      ).rows,
+      [
+        {
+          actor: null,
+          payload: { status: 'delivered', quotationRevision: 1, recipient: 'workflow@example.com', errorCode: null },
+        },
+        {
+          actor: null,
+          payload: { status: 'failed', quotationRevision: 2, recipient: 'workflow@example.com', errorCode: 'SMTP_EENVELOPE' },
+        },
+      ],
+    );
     assert.deepEqual(
       (await listQuotationRevisions(pool, id)).map(row => [row.revision, row.completeness, row.totalAmount, row.createdByName]),
       [

@@ -6,6 +6,7 @@ export interface MailMessage {
   subject: string;
   text: string;
   html: string;
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
 }
 export type MailSender = (message: MailMessage) => Promise<void>;
 
@@ -42,6 +43,7 @@ export function createSmtpSender(smtp: SmtpConfig): MailSender {
         subject: message.subject,
         text: message.text,
         html: message.html,
+        ...(message.attachments ? { attachments: message.attachments } : {}),
       });
     } catch (error) {
       const responseCode = (error as { responseCode?: unknown }).responseCode;

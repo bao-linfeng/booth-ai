@@ -24,6 +24,7 @@ export const projectEventLabels: Record<string, string> = {
   legacy_import: '历史迁入',
   'public-result': '更新客户进度',
   claimed: '客户登录认领',
+  'quotation-email': '报价邮件',
 };
 export interface ProjectRequest {
   exhibition?: {
@@ -253,8 +254,8 @@ export interface QuotationRevisionSummary {
 }
 export type QuotationInput = {
   expectedQuotationRevision: number;
-  /** 同时登记已发送并转为已报价；sentAt 省略时取保存时间 */
-  markSent?: { channel: ContactMethod; sentAt?: string };
+  /** 保存后由系统邮件把报价单发给客户联系邮箱并转为已报价；邮件进入发送队列 */
+  sendEmail?: boolean;
 } & Change &
   Omit<
     Quotation,

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type {
-  ContactMethod,
   ProjectDetail,
   ProjectStatus,
   Quotation,
@@ -18,13 +17,13 @@ import {
   Alert,
   Button,
   Card,
-  DatePicker,
   Input,
   message,
   Modal,
   Select,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 
 import { useVbenForm } from '#/adapter/form';
@@ -36,7 +35,6 @@ import {
 } from '#/api/core/projects';
 
 import {
-  contactMethodLabels,
   failureReason,
   operationFailureMessage,
   terminalStatuses,
@@ -81,9 +79,6 @@ function timeZoneOptions() {
   ].map((zone) => ({ value: zone, label: zone }));
 }
 
-const channelOptions = Object.entries(contactMethodLabels).map(
-  ([value, label]) => ({ value, label }),
-);
 const { hasAccessByCodes } = useAccess();
 const canEdit = computed(() => hasAccessByCodes(['projects.quotation']));
 const items = ref<QuotationItem[]>([]);
@@ -106,14 +101,14 @@ let initializing = false;
 const terminal = computed(() =>
   terminalStatuses.includes(props.project.status),
 );
-/** 保存并标记已发送：需同时有报价与跟进权限 */
-const canMarkSent = computed(() =>
+/** 保存并发送报价：需同时有报价与跟进权限 */
+const canSend = computed(() =>
   hasAccessByCodes(['projects.quotation', 'projects.follow-up']),
 );
+/** 报价邮件发到客户联系邮箱 */
+const recipient = computed(() => props.project.request.contact.email?.trim());
 const sendDialog = ref(false);
-const sendChannel = ref<ContactMethod>('email');
-const sendAt = ref<string>();
-let markSent: QuotationInput['markSent'];
+let sendEmail = false;
 const unassigned = computed(() => !props.project.assigneeAdminId);
 /** 终态或待分配项目不能保存报价 */
 const locked = computed(() => terminal.value || unassigned.value);
@@ -149,7 +144,7 @@ const [Form, formApi] = useVbenForm({
         ...item,
         unitPrice: item.unitPrice === '' ? null : item.unitPrice,
       })),
-      ...(markSent ? { markSent } : {}),
+      ...(sendEmail ? { sendEmail } : {}),
     };
     const next = JSON.stringify(payload);
     if (next !== fingerprint) {
@@ -166,11 +161,11 @@ const [Form, formApi] = useVbenForm({
       baseProjectRevision.value = result.projectRevision;
       dirty.value = false;
       message.success(
-        payload.markSent
-          ? '报价修订已保存并标记已发送，项目已转为已报价'
+        payload.sendEmail
+          ? '报价修订已保存，报价邮件已进入发送队列，项目已转为已报价'
           : '报价修订已保存，项目状态未自动变更',
       );
-      emit('reload', payload.markSent ? 'quoted' : undefined);
+      emit('reload', payload.sendEmail ? 'quoted' : undefined);
       void loadRevisions();
     } catch (error) {
       const reason = failureReason(error);
@@ -327,22 +322,29 @@ function loadLatest() {
   adoptLatest = true;
   emit('reload');
 }
+/** 发送前先在前端拦下不完整的草稿：至少一行且每行都已填价 */
 function openSendDialog() {
-  sendChannel.value = 'email';
-  sendAt.value = undefined;
+  const unpriced = items.value.flatMap((item, index) =>
+    blankPrice(item) ? [index + 1] : [],
+  );
+  if (items.value.length === 0) {
+    message.error('还没有报价行，补全后才能发送');
+    return;
+  }
+  if (unpriced.length > 0) {
+    message.error(`第 ${unpriced.join('、')} 行未填单价，补全价格后才能发送`);
+    return;
+  }
   sendDialog.value = true;
 }
-/** 在同一次保存中登记已发送：修订不完整或发送时间不合规时整体失败，修订不保存 */
+/** 在同一次保存中放入邮件发送队列：修订不完整或已过有效期时整体失败，修订不保存 */
 async function confirmSend() {
   sendDialog.value = false;
-  markSent = {
-    channel: sendChannel.value,
-    ...(sendAt.value ? { sentAt: new Date(sendAt.value).toISOString() } : {}),
-  };
+  sendEmail = true;
   try {
     await formApi.validateAndSubmitForm();
   } finally {
-    markSent = undefined;
+    sendEmail = false;
   }
 }
 async function initialize(quotation: null | Quotation, historyMode = false) {
@@ -645,44 +647,33 @@ const columns = [
       >
         保存新报价修订
       </Button>
-      <Button
-        v-if="canMarkSent"
-        class="ml-2"
-        :loading="saving"
-        :disabled="locked || viewingHistory"
-        @click="openSendDialog"
+      <Tooltip
+        v-if="canSend"
+        :title="recipient ? undefined : '客户未留联系邮箱，无法发送报价邮件'"
       >
-        保存并标记已发送
-      </Button>
+        <Button
+          class="ml-2"
+          :loading="saving"
+          :disabled="locked || viewingHistory || !recipient"
+          @click="openSendDialog"
+        >
+          保存并发送报价
+        </Button>
+      </Tooltip>
     </div>
     <Modal
       v-model:open="sendDialog"
-      title="保存并标记已发送"
-      ok-text="保存并标记"
+      title="保存并发送报价"
+      ok-text="保存并发送"
       @ok="confirmSend"
     >
-      <p class="text-sm text-muted-foreground">
-        保存新修订后登记为已发送给客户，项目转为「已报价」。修订需填写完整，否则整体不保存；发送时间不能早于本次保存。
+      <p class="text-sm">
+        保存新修订后，系统会把报价单（Excel 附件）通过邮件发送到客户联系邮箱
+        <strong data-test="send-recipient">{{ recipient }}</strong>，项目转为「已报价」。
       </p>
-      <label class="mt-3 block text-sm">
-        发送渠道
-        <Select
-          v-model:value="sendChannel"
-          class="mt-1 w-full"
-          :options="channelOptions"
-        />
-      </label>
-      <label class="mt-3 block text-sm">
-        发送时间
-        <DatePicker
-          v-model:value="sendAt"
-          class="mt-1 w-full"
-          show-time
-          allow-clear
-          value-format="YYYY-MM-DDTHH:mm:ssZ"
-          placeholder="默认为保存时间"
-        />
-      </label>
+      <p class="mt-2 text-sm text-muted-foreground">
+        邮件进入发送队列，送达或失败都会记录在时间线中；修订已过有效期时整体不保存。
+      </p>
     </Modal>
   </Card>
 </template>

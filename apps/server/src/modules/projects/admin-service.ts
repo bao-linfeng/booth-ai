@@ -7,6 +7,7 @@ import { captureScheme } from './snapshot.js';
 import { calculateQuotation, localCalendarDate, type QuotationInput, type SavedQuotation } from './quotation.js';
 import { resolveAdminPermissions } from '../identity/roles.js';
 import { eligibleAssignee, getAssignmentConfig } from './assignment.js';
+import { enqueueQuotationEmail } from './quotation-emails.js';
 
 export interface AssignmentConfigInput {
   defaultAssigneeAdminId: string | null;
@@ -68,11 +69,6 @@ export interface FollowUpInput extends Change {
 }
 export interface PublicResultInput extends Change {
   publicResult: string;
-}
-/** 保存报价时一并登记已发送；sentAt 省略时取保存时间 */
-export interface MarkSentInput {
-  sentAt?: string;
-  channel: ContactMethod;
 }
 // 联系与发送时间允许比服务器时钟快 5 分钟，避免客户端时钟偏差误判
 const CLOCK_SKEW_MS = 300000;
@@ -311,10 +307,10 @@ export async function quotationRevision(db: pg.Pool | pg.PoolClient, id: string,
   return row?.snapshot ?? null;
 }
 /**
- * 保存报价修订；带 markSent 时在同一事务内登记已发送并转为已报价（已是已报价则只记录一次发送）。
- * 发送依据校验不通过时整体回滚，修订也不保存。
+ * 保存报价修订；sendEmail 时在同一事务内把报价邮件放入发送队列、登记发送并转为已报价（已是已报价则只记录一次发送）。
+ * 客户没有邮箱、修订不完整或已过有效期时整体回滚，修订也不保存。
  */
-export async function saveQuotation(pool: pg.Pool, id: string, adminId: string, input: QuotationInput & { markSent?: MarkSentInput }) {
+export async function saveQuotation(pool: pg.Pool, id: string, adminId: string, input: QuotationInput & { sendEmail?: boolean }) {
   return change(
     pool,
     id,
@@ -323,10 +319,10 @@ export async function saveQuotation(pool: pg.Pool, id: string, adminId: string, 
     input,
     async (client, project) => {
       editable(project);
-      if (input.markSent) await assertProjectAdmin(client, adminId, 'projects.follow-up');
+      if (input.sendEmail) await assertProjectAdmin(client, adminId, 'projects.follow-up');
       const previous = await quotationRevision(client, id);
       if ((previous?.revision ?? 0) !== input.expectedQuotationRevision) throw projectError('QUOTATION_REVISION_CHANGED');
-      const { markSent, ...quotationInput } = input;
+      const { sendEmail, ...quotationInput } = input;
       const calculated = calculateQuotation(quotationInput, project.materials.bom?.items ?? []);
       const quotation: SavedQuotation = {
         ...calculated,
@@ -346,18 +342,20 @@ export async function saveQuotation(pool: pg.Pool, id: string, adminId: string, 
         revision,
       });
       let status = project.status;
-      if (markSent) {
-        const sentAt = markSent.sentAt ?? quotation.createdAt;
-        if (!Number.isFinite(Date.parse(sentAt)) || Date.parse(sentAt) > Date.now() + CLOCK_SKEW_MS)
-          throw projectError('QUOTE_EVIDENCE_REQUIRED', 422);
-        assertPlatformEvidence(quotation, sentAt);
+      if (sendEmail) {
+        const recipient = project.request.contact.email?.trim();
+        if (!recipient) throw projectError('CUSTOMER_EMAIL_MISSING', 422);
+        if (quotation.completeness !== 'ready') throw projectError('QUOTATION_INCOMPLETE', 422);
+        const sentAt = quotation.createdAt;
+        if (localCalendarDate(sentAt, quotation.validityTimeZone) > quotation.validUntil) throw projectError('QUOTATION_EXPIRED', 422);
+        await enqueueQuotationEmail(client, { projectId: id, quotationRevision: quotation.revision, recipient, requestedBy: adminId });
         status = 'quoted';
         await event(client, id, adminId, 'follow-up', {
-          contactMethod: markSent.channel,
+          contactMethod: 'email',
           contactedAt: sentAt,
-          content: `发送报价 ${quotation.quotationNo} r${quotation.revision}`,
+          content: `系统邮件发送报价 ${quotation.quotationNo} r${quotation.revision}`,
           targetStatus: status,
-          quoteEvidence: { type: 'platform', quotationRevision: quotation.revision, sentAt, channel: markSent.channel },
+          quoteEvidence: { type: 'platform', quotationRevision: quotation.revision, sentAt, channel: 'email' },
           fromStatus: project.status,
           status,
           revision,

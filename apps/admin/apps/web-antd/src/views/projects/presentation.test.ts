@@ -114,6 +114,35 @@ describe('eventSummary', () => {
     });
   });
 
+  it('reports quotation email delivery and failures with the recipient', () => {
+    expect(
+      eventSummary(
+        event('quotation-email', {
+          status: 'delivered',
+          quotationRevision: 3,
+          recipient: 'buyer@example.com',
+          errorCode: null,
+        }),
+      ),
+    ).toEqual({
+      title: '报价邮件 r3 已发出',
+      lines: [{ label: '收件邮箱', value: 'buyer@example.com' }],
+    });
+    expect(
+      eventSummary(
+        event('quotation-email', {
+          status: 'failed',
+          quotationRevision: 3,
+          recipient: 'buyer@example.com',
+          errorCode: 'SMTP_EENVELOPE',
+        }),
+      ).lines,
+    ).toContainEqual({
+      label: '失败原因',
+      value: 'SMTP_EENVELOPE，请核对客户邮箱后重新发送',
+    });
+  });
+
   it('marks acceptance into the assignment pool with its reason', () => {
     expect(
       eventSummary(

@@ -11,6 +11,7 @@ import {
   type SavedQuotation,
 } from '../../src/modules/projects/quotation.js';
 import { quotationWorkbook } from '../../src/modules/projects/quotation-workbook.js';
+import { quotationWorkbookMessages } from '../../src/modules/projects/quotation-workbook-messages.js';
 import type { BomSnapshotItem } from '../../src/modules/projects/snapshot.js';
 
 const bom: BomSnapshotItem[] = [
@@ -186,12 +187,14 @@ test('quotation validates identity, currency, dates, time zone and change reason
     assert.throws(() => calculateQuotation(input(overrides), bom), { reason: 'QUOTATION_RULE_INVALID', statusCode: 422 });
 });
 
-test('incomplete scope and tax terms are actionable while untaxed or not-applicable quotations can be ready', () => {
-  const result = calculateQuotation(input({ items: [], inclusions: ' ', exclusions: '', priceBasis: 'excluded', terms: ' ' }), bom);
-  assert.equal(result.completeness, 'incomplete');
-  assert.deepEqual(result.validationIssues, ['EMPTY_ITEMS', 'INCLUSIONS_REQUIRED', 'EXCLUSIONS_REQUIRED', 'TAX_TERMS_REQUIRED']);
-  assert.equal(calculateQuotation(input({ priceBasis: 'excluded', terms: '税费由客户承担' }), bom).completeness, 'ready');
-  assert.equal(calculateQuotation(input({ priceBasis: 'not_applicable', terms: '' }), bom).completeness, 'ready');
+test('completeness only requires priced items; scope and customer terms are optional', () => {
+  const empty = calculateQuotation(input({ items: [] }), bom);
+  assert.equal(empty.completeness, 'incomplete');
+  assert.deepEqual(empty.validationIssues, ['EMPTY_ITEMS']);
+  assert.equal(
+    calculateQuotation(input({ inclusions: ' ', exclusions: '', priceBasis: 'excluded', terms: ' ' }), bom).completeness,
+    'ready',
+  );
 });
 
 test('quotation expiry follows the validity time zone calendar rather than UTC', () => {
@@ -237,6 +240,42 @@ test('real XLSX round trip preserves CNY, JPY and KWD amounts and quotation meta
     assert.equal(sheet.getCell('G16').numFmt, '@');
     assert.equal(sheet.getCell('B18').numFmt, '@');
     sheet.eachRow(row => row.eachCell(cell => assert.notEqual(cell.type, ExcelJS.ValueType.Formula)));
+  }
+});
+
+test('XLSX labels, categories and tax basis follow the requested locale while customer text stays as entered', async () => {
+  const project = { projectNo: 'PJ-TEST', schemeCode: null, contact: { name: '联系人' } };
+  const quotation = saved(
+    input({ priceBasis: 'excluded', items: [item({ kind: 'installation', name: '展台搭建', bomItemId: undefined })] }),
+  );
+  const load = async (bytes: Buffer) => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+    return workbook;
+  };
+  const zh = (await load(await quotationWorkbook(project, quotation))).getWorksheet('报价单');
+  assert.ok(zh);
+  assert.deepEqual([zh.getCell('A1').value, zh.getCell('B10').value, zh.getCell('A16').value], ['报价编号', '不含税', '搭建']);
+  const en = (await load(await quotationWorkbook(project, quotation, 'en'))).getWorksheet('Quotation');
+  assert.ok(en);
+  assert.deepEqual(
+    [en.getCell('A1').value, en.getCell('B10').value, en.getCell('B13').value, en.getCell('A15').value, en.getCell('A16').value],
+    ['Quotation no.', 'Tax excluded', 'HALF_UP / 2 decimals', 'Category', 'Installation'],
+  );
+  assert.equal(en.getCell('B16').value, '展台搭建');
+  const ar = (await load(await quotationWorkbook(project, quotation, 'ar'))).worksheets[0];
+  assert.equal(ar?.name, 'عرض السعر');
+  assert.equal(ar?.views[0]?.rightToLeft, true);
+});
+
+test('every quotation workbook locale is complete', () => {
+  for (const [locale, messages] of Object.entries(quotationWorkbookMessages)) {
+    const values = [messages, messages.priceBases, messages.columns, messages.kinds].flatMap(group =>
+      Object.values(group).filter(value => typeof value === 'string'),
+    );
+    for (const value of values) assert.ok(value.trim(), locale);
+    assert.ok(messages.roundingValue.includes('{scale}'), `${locale}.roundingValue`);
+    assert.ok(messages.sheet.length <= 31, `${locale}.sheet exceeds the Excel sheet name limit`);
   }
 });
 
@@ -287,7 +326,7 @@ test('real XLSX treats formula-like customer and item strings as literal text', 
 
 test('XLSX export rejects missing price or other incomplete quotations', async () => {
   const project = { projectNo: 'PJ-TEST', schemeCode: null, contact: { name: '联系人' } };
-  for (const quotation of [saved(input({ items: [item({ unitPrice: null })] })), saved(input({ exclusions: '' }))]) {
+  for (const quotation of [saved(input({ items: [item({ unitPrice: null })] })), saved(input({ items: [] }))]) {
     await assert.rejects(quotationWorkbook(project, quotation), { reason: 'QUOTATION_INCOMPLETE', statusCode: 409 });
   }
 });

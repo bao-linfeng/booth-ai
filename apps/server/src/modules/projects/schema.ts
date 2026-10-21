@@ -124,12 +124,9 @@ export const quotationSchema = {
     inclusions: text(5000),
     exclusions: text(5000),
     changeReason: text(2000, 1),
-    markSent: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['channel'],
-      description: '同时登记已发送并转为已报价（需 projects.follow-up）；sentAt 省略时取保存时间',
-      properties: { sentAt: { type: 'string', format: 'date-time' }, channel: contactMethod },
+    sendEmail: {
+      type: 'boolean',
+      description: '保存后由系统邮件把报价单发给客户联系邮箱并转为已报价（需 projects.follow-up）；邮件进入发送队列，投递结果记入时间线',
     },
     items: {
       type: 'array',

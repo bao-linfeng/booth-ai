@@ -33,6 +33,9 @@ export const REASON_MESSAGES: Record<string, string> = {
   PROJECT_ALREADY_ASSIGNED: '项目已被他人领取，请刷新后查看',
   PROJECT_REVISION_CHANGED: '项目已被他人更新，请刷新项目后重新提交',
   QUOTATION_REVISION_CHANGED: '报价已有更新的修订，请刷新比较后再保存',
+  QUOTATION_INCOMPLETE: '报价不完整：至少需要一行报价且每行都已填写单价',
+  QUOTATION_EXPIRED: '报价已过有效期，请调整有效期后再发送',
+  CUSTOMER_EMAIL_MISSING: '客户未留联系邮箱，无法发送报价邮件',
   QUOTE_EVIDENCE_INVALID:
     '该平台报价修订不能作为发送依据：需为完整修订，发送时间不早于修订创建时间且在报价有效期内',
   QUOTE_EVIDENCE_REQUIRED:

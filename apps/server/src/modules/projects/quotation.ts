@@ -78,9 +78,6 @@ export function calculateQuotation(input: QuotationInput, bom: BomSnapshotItem[]
   let total = 0n;
   const issues: string[] = [];
   if (!input.items.length) issues.push('EMPTY_ITEMS');
-  if (!input.inclusions.trim()) issues.push('INCLUSIONS_REQUIRED');
-  if (!input.exclusions.trim()) issues.push('EXCLUSIONS_REQUIRED');
-  if (input.priceBasis === 'excluded' && !input.terms.trim()) issues.push('TAX_TERMS_REQUIRED');
   const items = input.items.map(item => {
     if (
       !item.clientLineId ||

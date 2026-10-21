@@ -1,35 +1,41 @@
 import ExcelJS from 'exceljs';
+import { DEFAULT_MESSAGE_LOCALE, type MessageLocale } from '../selection/messages/index.js';
 import { projectError } from './domain.js';
 import type { SavedQuotation } from './quotation.js';
+import { quotationWorkbookMessages } from './quotation-workbook-messages.js';
 
+/** 后台导出用默认语言；报价邮件附件传客户语言 */
 export async function quotationWorkbook(
   project: { projectNo: string; schemeCode: string | null; contact: { name: string; email?: string; phone?: string }; company?: string },
   quotation: SavedQuotation,
+  locale: MessageLocale = DEFAULT_MESSAGE_LOCALE,
 ): Promise<Buffer> {
   if (quotation.completeness !== 'ready') throw projectError('QUOTATION_INCOMPLETE');
+  const m = quotationWorkbookMessages[locale] ?? quotationWorkbookMessages[DEFAULT_MESSAGE_LOCALE];
+  const c = m.columns;
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('报价单');
+  const sheet = workbook.addWorksheet(m.sheet, { views: [{ rightToLeft: locale === 'ar' }] });
   for (const row of [
-    ['报价编号', quotation.quotationNo],
-    ['修订', String(quotation.revision)],
-    ['项目编号', project.projectNo],
-    ['方案编号', project.schemeCode ?? ''],
-    ['客户', project.company ?? ''],
-    ['联系人', project.contact.name],
-    ['邮箱', project.contact.email ?? ''],
-    ['电话', project.contact.phone ?? ''],
-    ['币种', quotation.currency],
-    ['税费口径', { included: '含税', excluded: '不含税', not_applicable: '不适用' }[quotation.priceBasis]],
-    ['有效期', quotation.validUntil],
-    ['有效期时区', quotation.validityTimeZone],
-    ['舍入', `HALF_UP / ${quotation.currencyScale} 位`],
+    [m.quotationNo, quotation.quotationNo],
+    [m.revision, String(quotation.revision)],
+    [m.projectNo, project.projectNo],
+    [m.schemeCode, project.schemeCode ?? ''],
+    [m.company, project.company ?? ''],
+    [m.contact, project.contact.name],
+    [m.email, project.contact.email ?? ''],
+    [m.phone, project.contact.phone ?? ''],
+    [m.currency, quotation.currency],
+    [m.priceBasis, m.priceBases[quotation.priceBasis]],
+    [m.validUntil, quotation.validUntil],
+    [m.validityTimeZone, quotation.validityTimeZone],
+    [m.rounding, m.roundingValue.replace('{scale}', String(quotation.currencyScale))],
     [],
-    ['类别', '名称', '型号', '规格/mm', '数量', '计价单位', '单价', '行金额', 'ERP编码', '备注'],
+    [c.kind, c.name, c.model, c.specification, c.quantity, c.pricingUnit, c.unitPrice, c.lineAmount, c.erpCode, c.notes],
   ])
     sheet.addRow(row);
   for (const item of quotation.items)
     sheet.addRow([
-      item.kind,
+      m.kinds[item.kind] ?? item.kind,
       item.name,
       item.model ?? '',
       item.specificationMm ?? '',
@@ -40,10 +46,10 @@ export async function quotationWorkbook(
       item.erpCode ?? '',
       item.notes ?? '',
     ]);
-  sheet.addRow(['合计', quotation.totalAmount]);
-  sheet.addRow(['包含范围', quotation.inclusions]);
-  sheet.addRow(['不包含范围', quotation.exclusions]);
-  sheet.addRow(['客户条款', quotation.terms]);
+  sheet.addRow([m.total, quotation.totalAmount]);
+  sheet.addRow([m.inclusions, quotation.inclusions]);
+  sheet.addRow([m.exclusions, quotation.exclusions]);
+  sheet.addRow([m.terms, quotation.terms]);
   sheet.eachRow(row =>
     row.eachCell(cell => {
       cell.numFmt = '@';
