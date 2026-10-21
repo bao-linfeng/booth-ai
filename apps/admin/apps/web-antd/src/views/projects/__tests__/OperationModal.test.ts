@@ -95,7 +95,7 @@ async function mount() {
     open: (
       record: ProjectDetail,
       operation: string,
-      preset?: { targetStatus?: ProjectDetail['status'] },
+      preset?: { ending?: boolean; targetStatus?: ProjectDetail['status'] },
     ) => Promise<void>;
   }>();
   app = createApp({
@@ -259,6 +259,53 @@ describe('operation modal follow-up', () => {
       },
     );
     expect(form.state.values).not.toHaveProperty('targetStatus');
+  });
+
+  it('limits the end-project entry to one required terminal status', async () => {
+    const modalApi = await mount();
+    await modalApi.open(
+      project({ statusTransitions: ['quoted', 'won', 'lost'] }),
+      'follow-up',
+      { ending: true },
+    );
+    expect(modal.api.setState).toHaveBeenCalledWith({ title: '结束项目' });
+    const target = form.field('targetStatus');
+    expect(target).toMatchObject({
+      component: 'RadioGroup',
+      label: '结束方式',
+      rules: 'selectRequired',
+    });
+    expect(form.options('targetStatus')).toEqual([
+      { label: '已成交', value: 'won' },
+      { label: '未成交', value: 'lost' },
+    ]);
+    expect(form.state.values).not.toHaveProperty('targetStatus');
+    form.edit({ targetStatus: 'lost' });
+    expect(form.resolved('outcome')).toMatchObject({
+      rules: 'required',
+      show: true,
+    });
+
+    await modalApi.open(project(), 'follow-up');
+    expect(form.field('targetStatus')).toMatchObject({
+      component: 'Select',
+      label: '变更状态',
+    });
+
+    // 待跟进只能关闭：以「关闭项目」为标题并直接选中
+    await modalApi.open(
+      project({
+        status: 'pending',
+        statusTransitions: ['following', 'quoted', 'closed'],
+      }),
+      'follow-up',
+      { ending: true },
+    );
+    expect(modal.api.setState).toHaveBeenLastCalledWith({ title: '关闭项目' });
+    expect(form.options('targetStatus')).toEqual([
+      { label: '已关闭', value: 'closed' },
+    ]);
+    expect(form.state.values.targetStatus).toBe('closed');
   });
 
   it('offers reopening for a terminal project and requires a reason only when reopening', async () => {

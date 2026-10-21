@@ -97,9 +97,9 @@ export async function failReceiptEmail(
   return exhausted;
 }
 
-const escapeHtml = (value: string) =>
+export const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
-const fill = (template: string, params: Record<string, string>) =>
+export const fill = (template: string, params: Record<string, string>) =>
   Object.entries(params).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), template);
 
 export function renderReceiptEmail(email: ReceiptEmail, clientPublicUrl: string) {

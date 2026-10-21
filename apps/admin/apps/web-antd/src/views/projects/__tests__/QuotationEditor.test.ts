@@ -431,50 +431,81 @@ describe('quotation editor', () => {
     expect(api.saveQuotationApi).not.toHaveBeenCalled();
   });
 
-  it('saves and marks the revision as sent in one request when allowed to follow up', async () => {
-    await mount(project({ quotation: savedQuotation }));
-    expect(() => button(container, '保存并标记已发送')).toThrow(
+  it('saves and queues the quotation email in one request when allowed to follow up', async () => {
+    const contact = { contact: { email: 'buyer@example.com', name: '客户' } };
+    const priced = { ...savedQuotation, items: [savedLine(0)] };
+    const withEmail = (quotation: Quotation) =>
+      project({
+        quotation,
+        request: { ...project().request, ...contact },
+      } as Partial<ProjectDetail>);
+    await mount(withEmail(priced));
+    expect(() => button(container, '保存并发送报价')).toThrow(
       'Button not found',
     );
     app?.unmount();
     container.remove();
 
     access.codes = new Set(['projects.follow-up', 'projects.quotation']);
-    await mount(project({ quotation: savedQuotation }));
+    // 客户没有邮箱时不能发送
+    await mount(
+      project({
+        quotation: priced,
+        request: { ...project().request, contact: { name: '客户' } },
+      } as Partial<ProjectDetail>),
+    );
+    expect(button(container, '保存并发送报价').disabled).toBe(true);
+    app?.unmount();
+    container.remove();
+
+    // 有未填价的行时前端直接提示，不打开确认框
+    await mount(withEmail(savedQuotation));
+    button(container, '保存并发送报价').click();
+    await flush();
+    expect(message.error).toHaveBeenCalledWith(
+      '第 2 行未填单价，补全价格后才能发送',
+    );
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    app?.unmount();
+    container.remove();
+
+    await mount(withEmail(priced));
     form.edit({ changeReason: '发送前调价' });
-    button(container, '保存并标记已发送').click();
+    button(container, '保存并发送报价').click();
     await flush();
     const dialog = container.querySelector('[role="dialog"]');
     if (!dialog) throw new Error('send dialog did not open');
+    expect(
+      dialog.querySelector('[data-test="send-recipient"]')?.textContent,
+    ).toBe('buyer@example.com');
     expect(dialog.textContent).toContain('项目转为「已报价」');
     api.saveQuotationApi.mockResolvedValue({
       projectRevision: 6,
-      quotation: { ...savedQuotation, revision: 3 },
+      quotation: { ...priced, revision: 3 },
       status: 'quoted',
     });
-    button(dialog, '保存并标记').click();
+    button(dialog, '保存并发送').click();
     await flush();
     expect(saved()[0]).toMatchObject({
       changeReason: '发送前调价',
-      markSent: { channel: 'email' },
+      sendEmail: true,
     });
-    expect(saved()[0].markSent).not.toHaveProperty('sentAt');
     expect(message.success).toHaveBeenCalledWith(
-      expect.stringContaining('已转为已报价'),
+      expect.stringContaining('报价邮件已进入发送队列'),
     );
     expect(container.querySelector('[role="dialog"]')).toBeNull();
-    // 登记发送带上已报价，详情页据此提示更新客户说明
+    // 发送带上已报价，详情页据此提示更新客户说明
     expect(reloads).toHaveBeenLastCalledWith('quoted');
 
-    // 普通保存不再携带发送信息
+    // 普通保存不携带发送标记
     form.edit({ changeReason: '再次调整' });
     api.saveQuotationApi.mockResolvedValue({
       projectRevision: 7,
-      quotation: { ...savedQuotation, revision: 4 },
+      quotation: { ...priced, revision: 4 },
       status: 'quoted',
     });
     await save();
-    expect(saved()[1]).not.toHaveProperty('markSent');
+    expect(saved()[1]).not.toHaveProperty('sendEmail');
     expect(reloads).toHaveBeenLastCalledWith(undefined);
   });
 

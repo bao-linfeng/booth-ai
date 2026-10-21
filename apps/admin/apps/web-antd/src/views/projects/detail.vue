@@ -44,6 +44,8 @@ import { claimProject } from './claim';
 import CustomerServiceCard from './CustomerServiceCard.vue';
 import OperationModal from './OperationModal.vue';
 import {
+  endActionLabel,
+  endStatuses,
   entryPointLabels,
   eventSummary,
   followUpUrgency,
@@ -91,19 +93,20 @@ const canLinkScheme = computed(
     (!project.value.schemeCode ||
       (!terminal.value && project.value.quotation === null)),
 );
-/** 头部快捷操作：打开跟进弹窗并预选目标状态，按当前可选状态显示；终态的重开仍走「追加跟进」 */
-const quickActions: { label: string; status: ProjectStatus }[] = [
-  { label: '开始跟进', status: 'following' },
-  { label: '标记成交', status: 'won' },
-  { label: '标记未成交', status: 'lost' },
-  { label: '关闭项目', status: 'closed' },
-];
-const availableQuickActions = computed(() => {
-  const transitions = project.value?.statusTransitions;
-  return transitions && !terminal.value
-    ? quickActions.filter((action) => transitions.includes(action.status))
-    : [];
-});
+/**
+ * 头部快捷操作，按当前可选状态显示：「开始跟进」只在待跟进时出现并预选跟进中；「结束项目」在弹窗内选成交 / 未成交 / 关闭，
+ * 只有一种结束方式时按该动作命名（待跟进为「关闭项目」）。已报价退回跟进中、终态重开都走「追加跟进」。
+ */
+const canStartFollowing = computed(
+  () =>
+    project.value?.status === 'pending' &&
+    project.value.statusTransitions.includes('following'),
+);
+const endLabel = computed(() =>
+  project.value && endStatuses(project.value).length > 0
+    ? endActionLabel(endStatuses(project.value))
+    : undefined,
+);
 const assetGroups = computed(() => {
   const theme = project.value?.schemeSnapshot?.selectedTheme;
   return [
@@ -146,6 +149,7 @@ const eventColors: Record<string, string> = {
   accepted: 'green',
   assignment: 'orange',
   quotation: 'blue',
+  'quotation-email': 'blue',
   scheme: 'blue',
 };
 const requirementItems = computed(() =>
@@ -289,16 +293,22 @@ onMounted(load);
             </Button>
             <template v-if="!unassigned">
               <Button
-                v-for="action in availableQuickActions"
-                :key="action.status"
+                v-if="canStartFollowing"
                 v-access:code="['projects.follow-up']"
                 @click="
                   operation?.open(project, 'follow-up', {
-                    targetStatus: action.status,
+                    targetStatus: 'following',
                   })
                 "
               >
-                {{ action.label }}
+                开始跟进
+              </Button>
+              <Button
+                v-if="endLabel"
+                v-access:code="['projects.follow-up']"
+                @click="operation?.open(project, 'follow-up', { ending: true })"
+              >
+                {{ endLabel }}
               </Button>
             </template>
             <Tooltip :title="unassigned ? unassignedHint : undefined">
@@ -566,7 +576,12 @@ onMounted(load);
               <TimelineItem
                 v-for="item in timeline"
                 :key="item.id"
-                :color="eventColors[item.kind] ?? 'gray'"
+                :color="
+                  item.kind === 'quotation-email' &&
+                  item.payload.status === 'failed'
+                    ? 'red'
+                    : (eventColors[item.kind] ?? 'gray')
+                "
               >
                 <div class="flex flex-wrap items-baseline gap-x-3">
                   <span class="font-medium">{{ item.title }}</span>

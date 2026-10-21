@@ -27,6 +27,7 @@ import { GenerationInterruptedError } from './modules/generation/execution.js';
 import { reconcileJobCredits } from './modules/generation/credit-reconciliation.js';
 import { recoverGenerationJobs } from './workers/generation-recovery.js';
 import { deliverProjectNotifications } from './workers/project-notifications.js';
+import { deliverQuotationEmails } from './workers/quotation-emails.js';
 import { deliverReceiptEmails } from './workers/receipt-emails.js';
 import { createSmtpSender } from './infra/mailer.js';
 import { createScheduler, type ScheduledTask } from './workers/scheduler.js';
@@ -256,6 +257,13 @@ async function main() {
       run: () => deliverReceiptEmails(database, send, clientPublicUrl, log),
     });
     tasks.push({
+      name: 'quotation-emails',
+      intervalMs: 5000,
+      staleAfterMs: 180_000,
+      lane: BACKGROUND_LANE,
+      run: () => deliverQuotationEmails(database, send, log),
+    });
+    tasks.push({
       name: 'cs-emails',
       intervalMs: 5000,
       staleAfterMs: 180_000,
@@ -263,7 +271,9 @@ async function main() {
       run: () => deliverCsEmails(database, producerRedis, send, clientPublicUrl, log),
     });
   } else {
-    log.warn('SMTP not configured; receipt and customer service emails stay pending in project_receipt_emails / cs_email_outbox');
+    log.warn(
+      'SMTP not configured; receipt, quotation and customer service emails stay pending in project_receipt_emails / project_quotation_emails / cs_email_outbox',
+    );
   }
   // Thumbnails and previews for uploads, backfill and failed inline generation; pages fall back to originals meanwhile.
   tasks.push({

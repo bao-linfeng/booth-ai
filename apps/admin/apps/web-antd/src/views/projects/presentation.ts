@@ -2,6 +2,7 @@ import type {
   Asset,
   ContactMethod,
   MatchingSummary,
+  ProjectDetail,
   ProjectEvent,
   ProjectStatus,
 } from '#/api/core/projects';
@@ -21,6 +22,28 @@ export interface SummaryItem {
 }
 
 export const terminalStatuses: ProjectStatus[] = ['won', 'lost', 'closed'];
+
+const endActionLabels: Partial<Record<ProjectStatus, string>> = {
+  won: '标记成交',
+  lost: '标记未成交',
+  closed: '关闭项目',
+};
+
+/** 项目可结束到的终态；已结束的项目没有（重开不算结束） */
+export function endStatuses(
+  project: Pick<ProjectDetail, 'status' | 'statusTransitions'>,
+): ProjectStatus[] {
+  if (terminalStatuses.includes(project.status)) return [];
+  return project.statusTransitions.filter((status) =>
+    terminalStatuses.includes(status),
+  );
+}
+
+/** 「结束项目」入口文案：只有一种结束方式时直接用该动作命名，如待跟进只能「关闭项目」 */
+export function endActionLabel(statuses: ProjectStatus[]) {
+  const [only] = statuses;
+  return (statuses.length === 1 && only && endActionLabels[only]) || '结束项目';
+}
 
 /** 状态标签颜色（Ant Design Tag color） */
 export const statusColors: Record<ProjectStatus, string> = {
@@ -284,6 +307,21 @@ export function eventSummary(event: ProjectEvent): {
         lines: compact([['修改原因', text(payload.changeReason)]]),
       };
     }
+    case 'quotation-email': {
+      const delivered = payload.status === 'delivered';
+      return {
+        title: `报价邮件 r${String(payload.quotationRevision)} ${delivered ? '已发出' : '发送失败'}`,
+        lines: compact([
+          ['收件邮箱', text(payload.recipient)],
+          [
+            '失败原因',
+            delivered
+              ? undefined
+              : `${String(payload.errorCode ?? '未知')}，请核对客户邮箱后重新发送`,
+          ],
+        ]),
+      };
+    }
     case 'scheme': {
       return {
         title: text(payload.fromSchemeCode)
@@ -305,7 +343,10 @@ type FailureResponse = null | {
   response?: { data?: { error?: { details?: unknown; reason?: string } } };
 };
 
-/** 报价待补项（服务端 validationIssues）的中文说明 */
+/**
+ * 报价待补项（服务端 validationIssues）的中文说明。范围与税费说明已改为选填，
+ * 后三项只出现在此前保存、不可变的历史修订里。
+ */
 export const validationIssueLabels: Record<string, string> = {
   EMPTY_ITEMS: '没有报价行',
   INCLUSIONS_REQUIRED: '未填写包含范围',

@@ -405,19 +405,60 @@ it('offers quick status actions for open projects and direct reassignment for te
   await flush();
 
   expect(() => button(container, '开始跟进')).toThrow('Button not found');
-  button(container, '标记成交').click();
+  expect(() => button(container, '标记成交')).toThrow('Button not found');
+  button(container, '结束项目').click();
   expect(modals.operation).toHaveBeenLastCalledWith(
     expect.objectContaining({ projectId: 'project-1' }),
     'follow-up',
-    { targetStatus: 'won' },
+    { ending: true },
   );
-  expect(button(container, '标记未成交')).toBeTruthy();
+  app.unmount();
+
+  // 已报价可退回跟进中，但不作为头部快捷操作，走「追加跟进」
+  api.getProjectApi.mockResolvedValue({
+    ...project([]),
+    status: 'quoted',
+    statusTransitions: ['following', 'won', 'lost', 'closed'],
+  });
+  app = createApp({ render: () => h(ProjectWorkspace) });
+  app.directive('access', {});
+  app.mount(container);
+  await flush();
+  expect(() => button(container, '开始跟进')).toThrow('Button not found');
+  expect(button(container, '结束项目')).toBeTruthy();
+  expect(button(container, '追加跟进').disabled).toBe(false);
+  app.unmount();
+
+  api.getProjectApi.mockResolvedValue({
+    ...project([]),
+    status: 'pending',
+    statusTransitions: ['following', 'quoted', 'closed'],
+  });
+  app = createApp({ render: () => h(ProjectWorkspace) });
+  app.directive('access', {});
+  app.mount(container);
+  await flush();
+  button(container, '开始跟进').click();
+  expect(modals.operation).toHaveBeenLastCalledWith(
+    expect.objectContaining({ status: 'pending' }),
+    'follow-up',
+    { targetStatus: 'following' },
+  );
+  // 待跟进只能关闭，入口直接叫「关闭项目」
+  expect(() => button(container, '结束项目')).toThrow('Button not found');
   button(container, '关闭项目').click();
   expect(modals.operation).toHaveBeenLastCalledWith(
-    expect.anything(),
+    expect.objectContaining({ status: 'pending' }),
     'follow-up',
-    { targetStatus: 'closed' },
+    { ending: true },
   );
+  app.unmount();
+
+  api.getProjectApi.mockResolvedValue(open);
+  app = createApp({ render: () => h(ProjectWorkspace) });
+  app.directive('access', {});
+  app.mount(container);
+  await flush();
   await openTab('概览');
   button(container, '更新客户说明').click();
   expect(modals.publicResult).toHaveBeenCalledWith(
@@ -435,7 +476,7 @@ it('offers quick status actions for open projects and direct reassignment for te
   app.mount(container);
   await flush();
   expect(button(container, '改派').disabled).toBe(false);
-  expect(() => button(container, '标记成交')).toThrow('Button not found');
+  expect(() => button(container, '结束项目')).toThrow('Button not found');
   expect(button(container, '追加跟进').disabled).toBe(false);
   button(container, '改派').click();
   expect(modals.assign).toHaveBeenCalledWith(

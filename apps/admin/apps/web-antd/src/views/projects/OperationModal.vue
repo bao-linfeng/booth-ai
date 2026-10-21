@@ -28,6 +28,8 @@ import { getSchemeListApi } from '#/api/core/schemes';
 import { buildFollowUp } from './follow-up';
 import {
   contactMethodLabels,
+  endActionLabel,
+  endStatuses,
   failureReason,
   operationFailureMessage,
   outcomeLabels,
@@ -38,6 +40,8 @@ import {
 const emit = defineEmits<{ reload: [changedStatus?: ProjectStatus] }>();
 const project = ref<ProjectDetail>();
 const mode = ref<'follow-up' | 'scheme'>('follow-up');
+/** 「结束项目」入口：状态只能在成交 / 未成交 / 关闭中选一个 */
+const ending = ref(false);
 const failure = ref('');
 const conflict = ref(false);
 const refreshing = ref(false);
@@ -110,14 +114,16 @@ const [Modal, modalApi] = useVbenModal({
   },
 });
 
-function statusOptions(record: ProjectDetail) {
+function statusOptions(record: ProjectDetail, endOnly: boolean) {
   const reopening = terminalStatuses.includes(record.status);
-  return record.statusTransitions.map((status) => ({
-    value: status,
-    label: reopening
-      ? `重开为「${statusLabels[status]}」`
-      : statusLabels[status],
-  }));
+  return record.statusTransitions
+    .filter((status) => !endOnly || terminalStatuses.includes(status))
+    .map((status) => ({
+      value: status,
+      label: reopening
+        ? `重开为「${statusLabels[status]}」`
+        : statusLabels[status],
+    }));
 }
 
 function quotationHelp(record: ProjectDetail) {
@@ -144,6 +150,8 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
     values.targetStatus as ProjectStatus | undefined;
   const quoted = (values: Record<string, unknown>) =>
     target(values) === 'quoted';
+  const reopening = terminalStatuses.includes(record.status);
+  const endOnly = ending.value && !reopening;
   return [
     {
       component: 'Select',
@@ -172,19 +180,30 @@ function followUpSchema(record: ProjectDetail): VbenFormSchema[] {
       label: '下次跟进',
       componentProps: { showTime: true, valueFormat: 'YYYY-MM-DDTHH:mm:ssZ' },
     },
-    {
-      component: 'Select',
-      fieldName: 'targetStatus',
-      label: terminalStatuses.includes(record.status) ? '重开项目' : '变更状态',
-      help: terminalStatuses.includes(record.status)
-        ? '项目已结束：不选择即仅追加说明；需要继续跟进时重开并填写原因。'
-        : undefined,
-      componentProps: {
-        allowClear: true,
-        placeholder: `保持「${statusLabels[record.status]}」`,
-        options: statusOptions(record),
-      },
-    },
+    endOnly
+      ? {
+          component: 'RadioGroup',
+          fieldName: 'targetStatus',
+          label: '结束方式',
+          rules: 'selectRequired',
+          componentProps: {
+            optionType: 'button',
+            options: statusOptions(record, true),
+          },
+        }
+      : {
+          component: 'Select',
+          fieldName: 'targetStatus',
+          label: reopening ? '重开项目' : '变更状态',
+          help: reopening
+            ? '项目已结束：不选择即仅追加说明；需要继续跟进时重开并填写原因。'
+            : undefined,
+          componentProps: {
+            allowClear: true,
+            placeholder: `保持「${statusLabels[record.status]}」`,
+            options: statusOptions(record, false),
+          },
+        },
     {
       component: 'Textarea',
       fieldName: 'outcome',
@@ -315,10 +334,6 @@ async function loadRevisions(record: ProjectDetail) {
   }
 }
 
-/**
- * 打开操作弹窗；targetStatus 用于头部快捷按钮（开始跟进 / 标记成交等）预选目标状态，
- * 不在当前可选状态内时忽略。
- */
 const metres = (mm: null | number) => (mm ? `${mm / 1000}` : '?');
 /** 搜索已发布方案（编号或名称），结果填入下拉选项；连续输入只保留最后一次结果 */
 async function searchSchemes(keyword: string) {
@@ -402,20 +417,37 @@ function schemeField(): VbenFormSchema {
       };
 }
 
+/** 结束入口只有一种结束方式时直接选中；其余按头部预选，不在可选状态内时退回默认 */
+function initialTarget(record: ProjectDetail, preset?: ProjectStatus) {
+  if (ending.value) {
+    const ends = endStatuses(record);
+    return ends.length === 1 ? ends[0] : undefined;
+  }
+  if (preset && record.statusTransitions.includes(preset)) return preset;
+  return defaultTarget(record);
+}
+
+/**
+ * 打开操作弹窗；targetStatus 用于头部「开始跟进」预选目标状态，不在当前可选状态内时忽略；
+ * ending 用于头部「结束项目」，状态限定为终态且必选；只有一种结束方式时直接选中并以该动作为标题。
+ */
 async function open(
   record: ProjectDetail,
   operation: typeof mode.value,
-  preset: { targetStatus?: ProjectStatus } = {},
+  preset: { ending?: boolean; targetStatus?: ProjectStatus } = {},
 ) {
   project.value = record;
   mode.value = operation;
+  ending.value = operation === 'follow-up' && !!preset.ending;
   key = '';
   fingerprint = '';
   failure.value = '';
   conflict.value = false;
   modalApi.setState({
     title: {
-      'follow-up': '追加跟进与状态记录',
+      'follow-up': ending.value
+        ? endActionLabel(endStatuses(record))
+        : '追加跟进与状态记录',
       scheme: record.schemeCode ? '重新关联方案' : '确认关联方案',
     }[operation],
   });
@@ -440,11 +472,7 @@ async function open(
   } else {
     await loadRevisions(record);
     formApi.setState({ schema: followUpSchema(record) });
-    const target =
-      preset.targetStatus &&
-      record.statusTransitions.includes(preset.targetStatus)
-        ? preset.targetStatus
-        : defaultTarget(record);
+    const target = initialTarget(record, preset.targetStatus);
     await formApi.setValues({
       contactMethod: 'phone',
       contactedAt: new Date().toISOString(),
@@ -470,6 +498,12 @@ async function loadLatest() {
     failure.value = '';
     conflict.value = false;
     if (mode.value === 'follow-up') {
+      if (ending.value && terminalStatuses.includes(latest.status)) {
+        ending.value = false;
+        modalApi.setState({ title: '追加跟进与状态记录' });
+      } else if (ending.value) {
+        modalApi.setState({ title: endActionLabel(endStatuses(latest)) });
+      }
       const values = await formApi.getValues();
       await loadRevisions(latest);
       formApi.setState({ schema: followUpSchema(latest) });
