@@ -62,7 +62,17 @@ export async function reconcileJobCredits(database: pg.Pool): Promise<{ checked:
     const jobs = (
       await database.query<{ id: string }>(
         `SELECT id FROM ${kind}_jobs
-       WHERE credit_checked_at IS NULL OR credit_checked_at < now() - interval '1 minute'
+       WHERE (
+         -- Non-terminal jobs always need monitoring
+         status NOT IN ('succeeded', 'partially_succeeded', 'failed')
+         OR
+         -- Terminal jobs with an open issue still need repair attempts
+         credit_issue IS NOT NULL
+         OR
+         -- Terminal jobs that have never been checked
+         credit_checked_at IS NULL
+       )
+       AND (credit_checked_at IS NULL OR credit_checked_at < now() - interval '1 minute')
        ORDER BY credit_checked_at NULLS FIRST, id LIMIT 100`,
       )
     ).rows;
