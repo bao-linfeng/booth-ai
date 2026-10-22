@@ -1,4 +1,7 @@
 import type pg from 'pg';
+import { leasedOutbox } from '../../infra/leased-outbox.js';
+import { escapeHtml, fill } from '../../infra/mail-template.js';
+import { MAIL_RETRY_BACKOFF } from '../../infra/mailer.js';
 import type { MessageLocale } from '../selection/messages/index.js';
 import { receiptEmailMessages } from './receipt-email-messages.js';
 
@@ -7,6 +10,12 @@ export const RECEIPT_EMAIL_MAX_ATTEMPTS = 6;
 // 同一收件人 24 小时内最多入队的回执数，超出后静默跳过，防止匿名提交被用来批量骚扰任意邮箱
 export const RECEIPT_EMAIL_DAILY_LIMIT_PER_RECIPIENT = 5;
 export const RECEIPT_EMAIL_LEASE_SECONDS = 120;
+
+const outbox = leasedOutbox({
+  table: 'project_receipt_emails',
+  maxAttempts: RECEIPT_EMAIL_MAX_ATTEMPTS,
+  backoff: MAIL_RETRY_BACKOFF,
+});
 
 export interface ReceiptEmailInput {
   projectId: string;
@@ -41,15 +50,11 @@ export interface ReceiptEmail {
   schemeCode: string | null;
 }
 
-// 租约在单条语句内取得，调用 SMTP 时不持有行锁
 export async function claimReceiptEmails(database: Pick<pg.Pool, 'query'>, limit = 10): Promise<ReceiptEmail[]> {
   return (
     await database.query<ReceiptEmail>(
-      `UPDATE project_receipt_emails r SET attempts = r.attempts + 1, locked_until = now() + make_interval(secs => $2)
-     FROM (SELECT id FROM project_receipt_emails
-           WHERE delivered_at IS NULL AND failed_at IS NULL AND next_attempt_at <= now() AND (locked_until IS NULL OR locked_until < now())
-           ORDER BY next_attempt_at, created_at LIMIT $1 FOR UPDATE SKIP LOCKED) c, projects p
-     WHERE r.id = c.id AND p.id = r.project_id
+      `${outbox.claim('r')}, projects p
+     WHERE r.id = claimed.id AND p.id = r.project_id
      RETURNING r.id, r.project_id AS "projectId", r.recipient, r.locale, r.account_bound AS "accountBound", r.attempts,
        p.project_no AS "projectNo", p.request_no AS "requestNo", p.source_type AS "sourceType",
        p.request_snapshot->'contact'->>'name' AS "contactName", p.request_snapshot->'exhibition' AS exhibition,
@@ -59,48 +64,14 @@ export async function claimReceiptEmails(database: Pick<pg.Pool, 'query'>, limit
   ).rows;
 }
 
-export async function completeReceiptEmail(database: Pick<pg.Pool, 'query'>, id: string): Promise<void> {
-  await database.query(
-    `UPDATE project_receipt_emails SET delivered_at = now(), locked_until = NULL, last_error_code = NULL
-    WHERE id = $1 AND delivered_at IS NULL`,
-    [id],
-  );
-}
-
-// 本批来不及处理的已领取邮件：释放租约并退回本次计入的尝试次数
-export async function releaseReceiptEmails(database: Pick<pg.Pool, 'query'>, ids: string[]): Promise<void> {
-  await database.query(
-    `UPDATE project_receipt_emails SET locked_until = NULL, attempts = GREATEST(attempts - 1, 0)
-    WHERE id = ANY($1::uuid[]) AND delivered_at IS NULL AND failed_at IS NULL`,
-    [ids],
-  );
-}
-
-export function receiptEmailBackoffSeconds(attempts: number): number {
-  return Math.min(60 * 2 ** Math.max(0, attempts - 1), 3600);
-}
-
-// permanent：收件地址被拒等重试无意义的错误，直接进入终态。返回 true 表示已终态失败。
-export async function failReceiptEmail(
+export const completeReceiptEmail = (database: Pick<pg.Pool, 'query'>, id: string) => outbox.complete(database, id);
+export const releaseReceiptEmails = (database: Pick<pg.Pool, 'query'>, ids: string[]) => outbox.release(database, ids);
+export const failReceiptEmail = (
   database: Pick<pg.Pool, 'query'>,
   email: Pick<ReceiptEmail, 'id' | 'attempts'>,
   code: string,
   permanent: boolean,
-): Promise<boolean> {
-  const exhausted = permanent || email.attempts >= RECEIPT_EMAIL_MAX_ATTEMPTS;
-  await database.query(
-    `UPDATE project_receipt_emails SET locked_until = NULL, last_error_code = $2,
-    next_attempt_at = now() + make_interval(secs => $3), failed_at = CASE WHEN $4::boolean THEN now() END
-    WHERE id = $1 AND delivered_at IS NULL`,
-    [email.id, code.slice(0, 64), receiptEmailBackoffSeconds(email.attempts), exhausted],
-  );
-  return exhausted;
-}
-
-export const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
-export const fill = (template: string, params: Record<string, string>) =>
-  Object.entries(params).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), template);
+) => outbox.fail(database, email, code, permanent);
 
 export function renderReceiptEmail(email: ReceiptEmail, clientPublicUrl: string) {
   const m = receiptEmailMessages[email.locale] ?? receiptEmailMessages.zh;

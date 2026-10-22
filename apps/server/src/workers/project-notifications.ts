@@ -8,41 +8,38 @@ import {
   PROJECT_NOTIFICATION_LEASE_SECONDS,
   releaseProjectNotifications,
 } from '../modules/projects/notifications.js';
-import { processLeased } from './leased-batch.js';
+import { deliverLeased } from './leased-batch.js';
 
 export type ProjectNotificationSender = (message: WebhookMessage) => Promise<void>;
 
 // An unreachable channel stops the batch and releases the rest instead of timing out on every event.
-export async function deliverProjectNotifications(
+export function deliverProjectNotifications(
   database: Pick<pg.Pool, 'query'>,
   send: ProjectNotificationSender,
   log: Logger,
   now: () => number = Date.now,
 ) {
-  const startedAt = now();
-  const claimed = await claimProjectNotifications(database);
-  let delivered = 0;
-  let failed = 0;
-  const released = await processLeased(
-    claimed,
-    { startedAt, now, budget: { leaseMs: PROJECT_NOTIFICATION_LEASE_SECONDS * 1000, itemMs: WEBHOOK_MAX_SEND_MS } },
-    async notification => {
-      const context = { eventId: notification.eventId, projectId: notification.projectId, attempt: notification.attempts };
-      try {
+  return deliverLeased(
+    {
+      name: 'Project notification',
+      leaseSeconds: PROJECT_NOTIFICATION_LEASE_SECONDS,
+      itemMs: WEBHOOK_MAX_SEND_MS,
+      claim: () => claimProjectNotifications(database),
+      release: ids => releaseProjectNotifications(database, ids),
+      context: notification => ({ eventId: notification.eventId, projectId: notification.projectId, attempt: notification.attempts }),
+      send: notification => {
         const { id: _id, attempts: _attempts, ...body } = notification;
-        await send({ id: notification.eventId, body });
-      } catch (error) {
-        failed++;
-        const exhausted = await failProjectNotification(database, notification, errorCode(error));
-        log[exhausted ? 'error' : 'warn']({ ...context, code: errorCode(error), exhausted }, 'Project notification delivery failed');
-        return error instanceof WebhookDeliveryError && error.code === 'NOTIFICATION_UNAVAILABLE' ? 'halt' : 'next';
-      }
-      await completeProjectNotification(database, notification.id);
-      delivered++;
-      log.info(context, 'Project notification delivered');
-      return 'next';
+        return send({ id: notification.eventId, body });
+      },
+      classify: error => ({
+        code: errorCode(error),
+        permanent: false,
+        halt: error instanceof WebhookDeliveryError && error.code === 'NOTIFICATION_UNAVAILABLE',
+      }),
+      fail: (notification, { code }) => failProjectNotification(database, notification, code),
+      complete: notification => completeProjectNotification(database, notification.id),
     },
-    ids => releaseProjectNotifications(database, ids),
+    log,
+    now,
   );
-  return { delivered, failed, released };
 }
