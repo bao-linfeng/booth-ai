@@ -10,7 +10,7 @@ import { appLocale } from '@/plugins/i18n'
 import SchemeGallery from './SchemeGallery.vue'
 import type { MatchItem, Option } from './types'
 
-const props = defineProps<{ item: MatchItem; index: number; preview?: boolean; searchId?: string; productSystems?: Option[] }>()
+const props = defineProps<{ item: MatchItem; index: number; searchId?: string; productSystems?: Option[] }>()
 const { t } = useI18n()
 const active = defineModel<number>('active', { default: 0 })
 const reasonsExpanded = ref(false)
@@ -47,8 +47,8 @@ const matchBadge = cva('gap-1.5 px-2.5 py-1 text-xs font-medium hover:bg-transpa
 const detailLocation = computed(() => {
   const image = props.item.images[active.value]
   return {
-    path: `${props.preview ? '/ai-selection/preview/schemes' : '/schemes'}/${encodeURIComponent(props.item.code)}`,
-    query: { ...(!props.preview && props.searchId ? { searchId: props.searchId } : {}), ...(image ? { image: image.assetId } : {}) },
+    path: `/schemes/${encodeURIComponent(props.item.code)}`,
+    query: { ...(props.searchId ? { searchId: props.searchId } : {}), ...(image ? { image: image.assetId } : {}) },
   }
 })
 watch(() => props.item, () => { reasonsExpanded.value = false })
@@ -58,7 +58,7 @@ watch(() => props.item, () => { reasonsExpanded.value = false })
   <article class="border-t py-7 md:py-9" :aria-labelledby="`${reasonsId}-title`">
     <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] lg:gap-9">
       <div class="min-w-0 lg:sticky lg:top-24">
-        <SchemeGallery v-model:active="active" :images="item.images" :code="item.code" :preview="preview" :variant="index" :priority="index === 0" />
+        <SchemeGallery v-model:active="active" :images="item.images" :code="item.code" :variant="index" :priority="index === 0" />
       </div>
       <div class="flex min-w-0 flex-col gap-5">
         <div class="flex items-center justify-between gap-3">

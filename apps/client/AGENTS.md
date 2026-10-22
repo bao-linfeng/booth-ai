@@ -66,7 +66,6 @@ node --test tests/<file>.test.mjs  # 单文件
 
 - 所有页面组件均为**懒加载**（动态 import），新增路由必须沿用此模式。
 - 使用 HTML5 history 模式（`createWebHistory()`），部署时需服务器配置 fallback 到 `index.html`。
-- `/buildy/:pathMatch(.*)*` 重定向到 `/buildy/index.html`（独立子应用入口），不要删除。
 
 ---
 
@@ -74,7 +73,6 @@ node --test tests/<file>.test.mjs  # 单文件
 
 - **有 Pinia**（`pinia-plugin-persistedstate` 持久化），Store 定义在 `src/stores/`。
 - 轻量的跨组件状态优先用 composables（`src/composables/`）和 `@vueuse/core` 管理；需要持久化或全局共享的状态放 Store。
-- 全局初始化顺序（`main.ts`）：`initializeTheme()` → `useCollecty()` → 创建 app → 挂载 router → mount。不要改变此顺序。
 
 ### 页面接入在线客服
 

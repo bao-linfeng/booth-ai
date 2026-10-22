@@ -23,7 +23,6 @@ import ImagePreviewDialog from "@/components/ImagePreviewDialog.vue";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import MainLayout from '@/layouts/MainLayout.vue'
 import SchemeGallery from "@/features/selection/SchemeGallery.vue";
-import { previewItems } from "@/features/selection/preview";
 import type { SchemeDetail } from "@/features/selection/types";
 import { apiFetch } from "@/lib/api-client";
 import { useSignedUrlRenewal } from "@/composables/useSignedUrlRenewal";
@@ -36,7 +35,6 @@ import { downloadSchemeArchive, getSchemeDeliverables, getSchemeDownload, type S
 
 const { t } = useI18n();
 const route = useRoute();
-const preview = computed(() => route.path.startsWith("/ai-selection/preview/"));
 const liveData = ref<SchemeDetail | null>(null);
 const errorState = ref(false);
 const bomData = ref<ClientBomResponse | null>(null);
@@ -88,7 +86,7 @@ async function toggleResource(type: SchemeAssetType) {
 }
 
 async function fetchResource(type: SchemeAssetType) {
-  if (!item.value?.code || preview.value) return;
+  if (!item.value?.code) return;
   const code = item.value.code;
   const request = ++resourceRequest;
   resourceLoading.value = true;
@@ -107,7 +105,7 @@ async function fetchResource(type: SchemeAssetType) {
 }
 
 async function downloadAllResources(type: SchemeAssetType) {
-  if (!item.value?.code || preview.value || downloadBusy.value || resourceLoading.value ||
+  if (!item.value?.code || downloadBusy.value || resourceLoading.value ||
     activeResource.value !== type || !resourceItems.value.length || !resourceRevision.value) return;
   const code = item.value.code;
   downloadingArchive.value = type;
@@ -160,7 +158,7 @@ async function downloadAllResources(type: SchemeAssetType) {
 }
 
 async function downloadResource(type: SchemeAssetType | 'model', assetId?: string) {
-  if (!item.value?.code || downloadBusy.value || preview.value) return;
+  if (!item.value?.code || downloadBusy.value) return;
   downloadingAsset.value = assetId ?? 'model';
   downloadError.value = '';
   try {
@@ -251,43 +249,12 @@ async function handleBomDownload() {
 }
 
 watch(activeTab, () => {
-  if (preview.value) return;
   if (showBom.value && !bomData.value && !bomLoading.value) {
     void fetchBom();
   }
 });
 
-const item = computed(() => {
-  if (preview.value) {
-    const matched = previewItems.find(
-      (item) => item.code === route.params.code,
-    );
-    if (!matched) return undefined;
-    return {
-      code: matched.code,
-      images: matched.images,
-      specifications: matched.specifications,
-      description: t('schemeDetail.previewDescription'),
-      resources: {
-        model: true,
-        bom: true,
-        renderings: true,
-        masks: true,
-        drawings: true,
-        artworks: true,
-      },
-      actions: {
-        theme: "available",
-        bom: "unavailable",
-        drawings: "unavailable",
-        artworks: "unavailable",
-        quote: "unavailable",
-        modelDownload: "unavailable",
-      } as const,
-    };
-  }
-  return liveData.value;
-});
+const item = computed(() => liveData.value);
 
 // 默认选中从智选卡片带来的视角（query.image），续期换链接后仍按 assetId 保持选中
 const selectedImageId = ref(typeof route.query.image === 'string' ? route.query.image : '');
@@ -319,7 +286,7 @@ const specifications = computed(() => {
 });
 // 客服输入框的“发送当前方案”：只登记已加载的正式方案，预览示例方案服务端不存在
 const { consult: consultCustomerService } = useSchemeCustomerService(() =>
-  !preview.value && liveData.value?.code ? { schemeCode: liveData.value.code } : null);
+  liveData.value?.code ? { schemeCode: liveData.value.code } : null);
 const quoteLocation = computed(() => ({
   path: `/schemes/${encodeURIComponent(item.value?.code ?? '')}/quote`,
   query: {
@@ -329,9 +296,9 @@ const quoteLocation = computed(() => ({
   },
 }));
 const themeLocation = computed(() => ({
-  path: `${preview.value ? '/ai-selection/preview' : ''}/schemes/${encodeURIComponent(item.value?.code ?? '')}/theme`,
+  path: `/schemes/${encodeURIComponent(item.value?.code ?? '')}/theme`,
   query: {
-    ...(!preview.value && typeof route.query.searchId === 'string' ? { searchId: route.query.searchId } : {}),
+    ...(typeof route.query.searchId === 'string' ? { searchId: route.query.searchId } : {}),
     ...(item.value?.images[activeImageIndex.value] ? { image: item.value.images[activeImageIndex.value].assetId } : {}),
   },
 }));
@@ -354,7 +321,7 @@ async function loadDetail(renewal = false) {
   }
 }
 onMounted(() => {
-  if (!preview.value) void loadDetail();
+  void loadDetail();
 });
 </script>
 
@@ -363,12 +330,11 @@ onMounted(() => {
     <main id="main-content" :style="{ '--scheme-actions-height': `${shortcutHeight}px` }" class="studio-page pb-[calc(var(--scheme-actions-height)+1.5rem)] md:pb-[calc(var(--scheme-actions-height)+1.5rem)] lg:pb-12">
       <header class="studio-header">
         <Button as-child variant="ghost" class="-ml-3">
-          <RouterLink :to="preview ? '/ai-selection/preview' : '/ai-selection'"><ArrowLeft class="mr-2 size-4" aria-hidden="true" />{{ t('schemeDetail.backToSelection') }}</RouterLink>
+          <RouterLink to="/ai-selection"><ArrowLeft class="mr-2 size-4" aria-hidden="true" />{{ t('schemeDetail.backToSelection') }}</RouterLink>
         </Button>
         <div v-if="item" class="space-y-3">
           <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
             <span class="break-all font-mono">{{ t('schemeDetail.schemeCode') }} {{ item.code }}</span>
-            <Badge v-if="preview" variant="secondary">{{ t('schemeDetail.previewLabel') }}</Badge>
           </div>
           <h1 class="studio-title break-words">{{ schemeTitle }}</h1>
           <p class="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
@@ -382,8 +348,8 @@ onMounted(() => {
       <template v-if="item">
         <div class="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] xl:gap-12">
           <section :aria-label="t('schemeDetail.galleryAriaLabel')" class="min-w-0">
-            <SchemeGallery v-model:active="activeImageIndex" :images="item.images" :code="item.code" :preview="preview" :variant="Math.max(0, previewItems.findIndex(i => i.code === item?.code))" priority @image-error="imageLinks.onImageError" />
-            <p class="mt-3 text-sm leading-relaxed text-muted-foreground">{{ preview ? t('schemeDetail.galleryPreviewNote') : t('schemeDetail.galleryNote') }}</p>
+            <SchemeGallery v-model:active="activeImageIndex" :images="item.images" :code="item.code" priority @image-error="imageLinks.onImageError" />
+            <p class="mt-3 text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.galleryNote') }}</p>
           </section>
 
           <aside aria-labelledby="scheme-summary" class="min-w-0 border-t pt-6 lg:border-t-0 lg:pt-0">
@@ -397,10 +363,9 @@ onMounted(() => {
             <div class="space-y-3 py-6">
               <h3 class="font-medium">{{ t('schemeDetail.quoteCallout') }}</h3>
               <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.quoteNote') }}</p>
-              <Button v-if="!preview" as-child class="w-full"><RouterLink :to="quoteLocation">{{ t('schemeDetail.requestQuote') }}<ArrowUpRight class="ml-2 size-4" aria-hidden="true" /></RouterLink></Button>
-              <Button v-else disabled class="w-full">{{ t('schemeDetail.previewNoQuote') }}</Button>
+              <Button as-child class="w-full"><RouterLink :to="quoteLocation">{{ t('schemeDetail.requestQuote') }}<ArrowUpRight class="ml-2 size-4" aria-hidden="true" /></RouterLink></Button>
               <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.quoteDisclaimer') }}</p>
-              <Button v-if="!preview" variant="outline" class="w-full" @click="consultCustomerService"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
+              <Button variant="outline" class="w-full" @click="consultCustomerService"><MessageCircle class="mr-2 size-4" aria-hidden="true" />{{ t('customerService.consult') }}</Button>
             </div>
             <div class="space-y-3 border-t pt-5">
               <div class="flex items-center justify-between gap-3"><h3 class="text-sm font-medium">{{ t('schemeDetail.themeCallout') }}</h3><span class="shrink-0 text-xs text-muted-foreground">{{ t('schemeDetail.themeOptional') }}</span></div>
@@ -425,8 +390,6 @@ onMounted(() => {
 
           <TabsContent value="bom" class="mt-6 min-w-0 space-y-5">
             <div class="space-y-1"><h2 class="text-lg font-semibold">{{ t('schemeDetail.bomTitle') }}</h2><p class="text-sm text-muted-foreground">{{ t('schemeDetail.bomHint') }}</p></div>
-            <p v-if="preview" class="rounded-lg bg-muted/50 p-6 text-sm text-muted-foreground">{{ t('schemeDetail.bomPreviewNote') }}</p>
-            <template v-else>
               <p v-if="bomLoading" role="status" class="py-8 text-sm text-muted-foreground">{{ t('schemeDetail.bomLoading') }}</p>
               <div v-else-if="bomRevisionChanged" class="space-y-3">
                 <p role="status" class="text-sm">{{ t('schemeDetail.bomStale') }}</p>
@@ -473,20 +436,18 @@ onMounted(() => {
                 </div>
                 <p v-if="bomData.items.length > 50" class="text-sm text-muted-foreground">{{ t('schemeDetail.bomTruncated') }}</p>
               </div>
-            </template>
           </TabsContent>
 
           <TabsContent value="resources" class="mt-6 min-w-0 space-y-6">
             <div class="space-y-1"><h2 class="text-lg font-semibold">{{ t('schemeDetail.assetsTitle') }}</h2><p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeDetail.assetsHint') }}</p></div>
             <div class="flex flex-wrap gap-3" role="group" :aria-label="t('schemeDetail.assetsTabsAriaLabel')">
-              <Button v-for="resource in resources" :key="resource.type" :variant="activeResource === resource.type ? 'default' : 'outline'" :disabled="preview || !item.resources[resource.available]" :aria-expanded="activeResource === resource.type" aria-controls="scheme-resource-list" @click="toggleResource(resource.type)">
+              <Button v-for="resource in resources" :key="resource.type" :variant="activeResource === resource.type ? 'default' : 'outline'" :disabled="!item.resources[resource.available]" :aria-expanded="activeResource === resource.type" aria-controls="scheme-resource-list" @click="toggleResource(resource.type)">
                 <component :is="resource.icon" class="mr-2 size-4" aria-hidden="true" />{{ resource.label }}<span v-if="!item.resources[resource.available]" class="ml-2 text-sm">{{ t('schemeDetail.assetsEmpty') }}</span>
               </Button>
-              <Button variant="outline" :disabled="preview || !item.resources.model || downloadBusy" :aria-busy="downloadingAsset === 'model'" @click="downloadResource('model')"><Box class="mr-2 size-4" aria-hidden="true" />{{ downloadingAsset === 'model' ? t('schemeDetail.assetDownloadingSkp') : t('schemeDetail.assetDownloadSkp') }}</Button>
+              <Button variant="outline" :disabled="!item.resources.model || downloadBusy" :aria-busy="downloadingAsset === 'model'" @click="downloadResource('model')"><Box class="mr-2 size-4" aria-hidden="true" />{{ downloadingAsset === 'model' ? t('schemeDetail.assetDownloadingSkp') : t('schemeDetail.assetDownloadSkp') }}</Button>
             </div>
-            <p v-if="preview" class="rounded-lg bg-muted/50 p-6 text-sm text-muted-foreground">{{ t('schemeDetail.assetsPreviewNote') }}</p>
             <div id="scheme-resource-list" class="min-w-0 space-y-5">
-              <p v-if="!preview && !activeResource" class="py-6 text-sm text-muted-foreground">{{ t('schemeDetail.assetsSelectCategory') }}</p>
+              <p v-if="!activeResource" class="py-6 text-sm text-muted-foreground">{{ t('schemeDetail.assetsSelectCategory') }}</p>
               <template v-if="activeResource">
                 <p v-if="resourceLoading" role="status" class="py-8 text-sm text-muted-foreground">{{ t('schemeDetail.assetsLoading') }}</p>
                 <template v-else>
@@ -544,17 +505,16 @@ onMounted(() => {
         <div ref="shortcutBar" :aria-label="t('schemeDetail.fabAriaLabel')" class="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur lg:hidden">
           <div class="mx-auto flex max-w-2xl flex-wrap items-stretch gap-3">
             <Button v-if="item.actions?.theme !== 'unavailable'" as-child variant="outline" class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3"><RouterLink :to="themeLocation">{{ t('schemeDetail.fabTheme') }}</RouterLink></Button>
-            <Button v-if="!preview" as-child class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3"><RouterLink :to="quoteLocation">{{ t('schemeDetail.fabQuote') }}<ArrowUpRight class="size-4" aria-hidden="true" /></RouterLink></Button>
-            <Button v-else disabled class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3">{{ t('schemeDetail.fabPreviewNoQuote') }}</Button>
+            <Button as-child class="h-auto min-h-11 min-w-0 max-w-full flex-1 basis-28 whitespace-normal px-3"><RouterLink :to="quoteLocation">{{ t('schemeDetail.fabQuote') }}<ArrowUpRight class="size-4" aria-hidden="true" /></RouterLink></Button>
           </div>
         </div>
       </template>
 
       <section v-else class="flex min-h-80 flex-col items-center justify-center gap-4 p-6 text-center" aria-live="polite">
         <Box class="size-8 text-muted-foreground" aria-hidden="true" />
-        <h1 class="text-xl font-medium">{{ preview ? t('schemeDetail.loadErrorNotFound') : errorState ? t('schemeDetail.loadErrorFailed') : t('schemeDetail.loadErrorLoading') }}</h1>
-        <p class="text-sm text-muted-foreground">{{ preview ? t('schemeDetail.loadErrorNotFoundHint') : errorState ? t('schemeDetail.loadErrorFailedHint') : t('schemeDetail.loadErrorLoadingHint') }}</p>
-        <Button v-if="errorState || preview" as-child><RouterLink to="/ai-selection">{{ t('schemeDetail.backToSelection2') }}</RouterLink></Button>
+        <h1 class="text-xl font-medium">{{ errorState ? t('schemeDetail.loadErrorFailed') : t('schemeDetail.loadErrorLoading') }}</h1>
+        <p class="text-sm text-muted-foreground">{{ errorState ? t('schemeDetail.loadErrorFailedHint') : t('schemeDetail.loadErrorLoadingHint') }}</p>
+        <Button v-if="errorState" as-child><RouterLink to="/ai-selection">{{ t('schemeDetail.backToSelection2') }}</RouterLink></Button>
       </section>
     </main>
   </MainLayout>

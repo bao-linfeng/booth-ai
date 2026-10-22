@@ -11,8 +11,7 @@
 ```
 apps/admin/
 ├── apps/
-│   ├── web-antd/          # 实际业务应用（Ant Design Vue 4）← 主要工作区
-│   └── backend-mock/      # Nitro mock 服务（本地开发可选）
+│   └── web-antd/          # 实际业务应用（Ant Design Vue 4）← 主要工作区
 ├── packages/
 │   ├── @core/             # 框架核心（ui-kit、composables、preferences）— 不要随意改
 │   ├── effects/           # 业务效果层：access、request、hooks、layouts、plugins
@@ -68,7 +67,7 @@ apps/web-antd/src/
 ├── adapter/      # 适配 vben 框架的 form、vxe-table 配置
 ├── router/       # 路由：routes/modules/ 下按业务拆分，access.ts 控制权限路由
 ├── store/        # 应用级 Pinia store（auth.ts 管登录态）
-├── views/        # 页面组件（_core/ 为框架核心页，dashboard/、demos/ 为业务页）
+├── views/        # 页面组件（_core/ 为框架核心页，dashboard/ 等为业务页）
 ├── layouts/      # 布局覆写
 ├── locales/      # 应用级 i18n
 └── preferences.ts # 应用偏好覆写（覆盖 @vben/preferences 默认值）
@@ -203,7 +202,6 @@ views/<module>/list/
 - `.env`：`VITE_APP_TITLE`、`VITE_APP_NAMESPACE`、`VITE_APP_STORE_SECURE_KEY`（**必须替换默认值**）
 - `.env.development`：`VITE_PORT=5666`、`VITE_GLOB_API_URL=/api`（代理到后端）
 - `.env.production`：`VITE_GLOB_API_URL` 改为真实 API 地址，`VITE_ROUTER_HISTORY=hash`
-- Nitro mock（`VITE_NITRO_MOCK=true`）：开发时启用 backend-mock 作为接口服务
 
 ### 权限系统
 

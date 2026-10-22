@@ -17,8 +17,7 @@ import MainLayout from '@/layouts/MainLayout.vue'
 import RequirementForm from '@/features/selection/RequirementForm.vue'
 import RequirementField from '@/features/selection/RequirementField.vue'
 import SchemeCard from '@/features/selection/SchemeCard.vue'
-import { emptyRequirement, type SelectionState, type Catalog, type Requirement } from '@/features/selection/types'
-import { previewCatalog, previewItems, previewStates } from '@/features/selection/preview'
+import { emptyRequirement, type Catalog, type Requirement } from '@/features/selection/types'
 import { clarificationFields, isDimensionClarification, useSelectionFlow } from '@/features/selection/useSelectionFlow'
 import { useSelectionSession } from '@/features/selection/useSelectionSession'
 import { writeManualHandoff } from '@/features/selection/handoff'
@@ -29,15 +28,13 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
-const isPreview = computed(() => route.path.startsWith('/ai-selection/preview'))
-const flow = useSelectionFlow({ enabled: () => !isPreview.value })
+const flow = useSelectionFlow({ enabled: () => true })
 const {
   requirement, text, state, parseResult, parsedRequirement, matchData, searchId, interruptedRequest, activeImageByCode,
   busy, stale, clarifications, textChangedSinceParse, unresolvedClarifications, clearText,
 } = flow
-const previewMode = ref('idle')
-const editing = ref(false)
 const outcomeVisible = computed(() => state.value === 'results' || state.value === 'empty')
+const editing = ref(false)
 const manualOpen = ref(false)
 const manualName = ref('')
 const manualContact = ref('')
@@ -53,9 +50,9 @@ const requirementError = computed(() => {
   return ''
 })
 const catalogState = ref<'loading' | 'ready' | 'error'>('loading')
-const canSearch = computed(() => !busy.value && !requirementError.value && (isPreview.value || catalogState.value === 'ready'))
+const canSearch = computed(() => !busy.value && !requirementError.value && catalogState.value === 'ready')
 const canConfirm = computed(() => canSearch.value && flow.readyToConfirm.value)
-const inspirationResults = computed(() => state.value === 'results' && (isPreview.value ? previewMode.value === 'random' : matchData.value?.mode === 'random'))
+const inspirationResults = computed(() => state.value === 'results' && matchData.value?.mode === 'random')
 const editorVisible = computed(() => editing.value || state.value === 'idle' || state.value === 'error' || inspirationResults.value || (outcomeVisible.value && stale.value))
 
 function clearSelectionMemory() {
@@ -64,7 +61,7 @@ function clearSelectionMemory() {
 }
 
 const { reset } = useSelectionSession({
-  live: computed(() => !isPreview.value),
+  live: ref(true),
   snapshot: flow.toSession,
   restore: flow.restore,
   clear: clearSelectionMemory,
@@ -87,7 +84,7 @@ let catalogSequence = 0
 watch(appLocale, () => { void loadCatalog() })
 
 const emptyCatalog: Catalog = { boothSpaces: [], openingCounts: [], productSystems: [], styles: [], industries: [], budgetTiers: [], zones: [], features: [] }
-const catalog = computed(() => isPreview.value ? previewCatalog : (liveCatalog.value ?? emptyCatalog))
+const catalog = computed(() => liveCatalog.value ?? emptyCatalog)
 const sourceRows = computed(() => parseResult.value ? Object.entries(parseResult.value.fieldSources)
   .filter(([field, source]) => source.source !== 'form' || displayValue(field, requirement.value[field as keyof Requirement]) !== t('selection.fieldNotFilled') ||
     (parsedRequirement.value && JSON.stringify(requirement.value[field as keyof Requirement]) !== JSON.stringify(parsedRequirement.value[field as keyof Requirement])))
@@ -98,10 +95,7 @@ const sourceRows = computed(() => parseResult.value ? Object.entries(parseResult
     value: displayValue(field, requirement.value[field as keyof Requirement]),
     evidence: source.evidence
   })) : [])
-const items = computed(() => isPreview.value
-  ? previewItems.map(item => previewMode.value === 'random' ? { ...item, matchType: 'random' as const, reasons: [], differences: [], pendingConfirmations: [{ type: 'missing_field' as const, message: t('selection.missingFieldsNotice') }] } : item)
-  : flow.items.value
-)
+const items = computed(() => flow.items.value)
 const manualQuestions = computed(() => [...new Set([
   ...unresolvedClarifications.value.map(item => item.question),
   ...(parseResult.value?.unhandledText.map(item => t('selection.unrecognizedItem', { item })) ?? []),
@@ -109,7 +103,7 @@ const manualQuestions = computed(() => [...new Set([
 ])].slice(0, 30))
 const manualOriginalText = computed(() => [text.value.trim(), manualDescription.value.trim()].filter(Boolean).join('\n'))
 const contactValid = computed(() => /^(?:1[3-9]\d{9}|\+[1-9]\d{7,14}|[^\s@]+@[^\s@]+\.[^\s@]+)$/.test(manualContact.value.trim()))
-const canSubmitManual = computed(() => !isPreview.value && !!manualOriginalText.value.trim() && !!manualName.value.trim() && contactValid.value && manualOriginalText.value.length <= 1000)
+const canSubmitManual = computed(() => !!manualOriginalText.value.trim() && !!manualName.value.trim() && contactValid.value && manualOriginalText.value.length <= 1000)
 
 function clearManualForm() {
   manualName.value = ''
@@ -190,19 +184,7 @@ async function reparseText() {
   await flow.reparse()
 }
 
-function choosePreview(value: string) {
-  editing.value = false
-  previewMode.value = value
-  if (value === 'results' || value === 'needs_clarification') {
-    requirement.value = { ...emptyRequirement(), lengthMm: 6000, widthMm: 3000, areaM2: 18, maxHeightMm: 4500, openingCount: 2, styleIds: ['modern-minimal'], productSystemId: 'fs62' }
-    text.value = t('selection.conditionPlaceholder')
-  } else if (value === 'random' || value === 'idle') clearSelectionMemory()
-  state.value = value === 'random' ? 'results' : value as SelectionState
-  flow.takeSnapshot()
-}
-
 async function loadCatalog() {
-  if (isPreview.value) return
   const sequence = ++catalogSequence
   catalogState.value = 'loading'
   try {
@@ -222,31 +204,14 @@ async function loadCatalog() {
 async function submit() {
   if (!canSearch.value) return
   editing.value = false
-  if (isPreview.value) {
-    previewMode.value = conditionRows.value.length || text.value.trim() ? 'results' : 'random'
-    state.value = 'results'
-    flow.takeSnapshot()
-    return
-  }
   await flow.submit()
 }
 
 function confirm() {
-  if (isPreview.value) {
-    editing.value = false
-    state.value = 'results'
-    flow.takeSnapshot()
-  } else {
-    if (busy.value || !canConfirm.value) return
-    editing.value = false
-    void flow.confirm()
-  }
+  if (busy.value || !canConfirm.value) return
+  editing.value = false
+  void flow.confirm()
 }
-
-watch(isPreview, preview => {
-  catalogSequence++
-  if (!preview) void loadCatalog()
-})
 
 watch(state, async value => {
   if (value !== 'results' && value !== 'needs_clarification' && value !== 'empty' && value !== 'error') return
@@ -259,7 +224,7 @@ watch(state, async value => {
 onUnmounted(() => { catalogSequence++ })
 
 onMounted(() => {
-  if (!isPreview.value) loadCatalog()
+  loadCatalog()
 })
 </script>
 
@@ -274,9 +239,8 @@ onMounted(() => {
         </div>
         <p class="flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck class="size-4 shrink-0 text-success" />{{ t('selection.badge') }}</p>
       </section>
-      <Card v-if="!isPreview && catalogState !== 'ready'" :role="catalogState === 'error' ? 'alert' : 'status'"><CardContent class="flex items-center justify-between gap-4 p-5 text-sm"><span>{{ catalogState === 'loading' ? t('selection.catalogLoading') : t('selection.catalogError') }}</span><Button v-if="catalogState === 'error'" variant="outline" @click="loadCatalog">{{ t('selection.catalogReload') }}</Button></CardContent></Card>
-      <Card v-if="interruptedRequest && !isPreview" role="status"><CardContent class="p-5 text-sm">{{ t('selection.interruptedNotice') }}</CardContent></Card>
-      <Card v-if="isPreview" class="border-dashed"><CardHeader class="pb-3"><CardTitle class="text-sm">{{ t('selection.previewMode') }}</CardTitle><CardDescription>{{ t('selection.previewNotice') }}</CardDescription></CardHeader><CardContent class="flex flex-wrap gap-2"><Button v-for="option in previewStates" :key="option.id" size="sm" :variant="previewMode === option.id ? 'default' : 'outline'" :aria-pressed="previewMode === option.id" @click="choosePreview(option.id)">{{ t(option.labelKey) }}</Button></CardContent></Card>
+      <Card v-if="catalogState !== 'ready'" :role="catalogState === 'error' ? 'alert' : 'status'"><CardContent class="flex items-center justify-between gap-4 p-5 text-sm"><span>{{ catalogState === 'loading' ? t('selection.catalogLoading') : t('selection.catalogError') }}</span><Button v-if="catalogState === 'error'" variant="outline" @click="loadCatalog">{{ t('selection.catalogReload') }}</Button></CardContent></Card>
+      <Card v-if="interruptedRequest" role="status"><CardContent class="p-5 text-sm">{{ t('selection.interruptedNotice') }}</CardContent></Card>
       <div id="selection-stage" tabindex="-1" class="min-w-0 scroll-mt-24 space-y-6 focus:outline-none">
           <section v-if="!editorVisible" class="space-y-3 border-b pb-6" :aria-label="t('selection.currentRequirementAriaLabel')">
             <div class="flex flex-wrap items-center justify-between gap-3">
@@ -302,7 +266,7 @@ onMounted(() => {
               <p v-if="textChangedSinceParse" class="text-sm text-warning" role="status">{{ t('selection.textChangedNotice') }}</p>
               <p v-if="requirementError" class="text-sm text-destructive" role="alert">{{ requirementError }}</p>
             </div>
-            <div class="border-t pt-4"><RequirementForm v-model="requirement" :catalog="catalog" :disabled="busy || (!isPreview && catalogState !== 'ready')" /></div>
+            <div class="border-t pt-4"><RequirementForm v-model="requirement" :catalog="catalog" :disabled="busy || catalogState !== 'ready'" /></div>
             <div class="sticky bottom-0 z-10 -mx-5 !-mb-5 flex flex-wrap items-center justify-between gap-3 rounded-b-lg border-t bg-card/95 px-5 py-4 backdrop-blur supports-[backdrop-filter]:bg-card/80 md:-mx-6 md:!-mb-6 md:px-6">
               <div class="flex items-center gap-2">
                  <Button v-if="!text.trim() && !conditionRows.length" variant="ghost" :disabled="!canSearch" @click="submit">{{ t('selection.inspirationFirst') }}<ArrowUpRight class="ms-1 size-4 rtl:-scale-x-100" /></Button>
@@ -315,11 +279,8 @@ onMounted(() => {
             </div>
           </section>
           
-          <Card v-if="state === 'needs_clarification'" class="border-warning/25 bg-warning/5"><CardHeader><CardTitle class="flex items-center gap-2 text-lg"><CircleAlert class="size-5 text-warning" />{{ t('selection.clarifyTitle') }}</CardTitle><CardDescription>{{ isPreview ? t('selection.clarifySubtitleExample') : t('selection.clarifySubtitleLive') }}</CardDescription></CardHeader><CardContent class="space-y-4">
-            <template v-if="isPreview">
-              <div class="flex flex-wrap gap-2"><Button variant="outline" @click="requirement = { ...requirement, lengthMm: 6000, widthMm: 3000, areaM2: 18 }">{{ t('selection.dimLength', { value: 6 }) }} × {{ t('selection.dimWidth', { value: 3 }) }}</Button><Button variant="outline" @click="requirement = { ...requirement, lengthMm: 3000, widthMm: 6000, areaM2: 18 }">{{ t('selection.dimLength', { value: 3 }) }} × {{ t('selection.dimWidth', { value: 6 }) }}</Button></div>
-            </template>
-            <template v-else>
+          <Card v-if="state === 'needs_clarification'" class="border-warning/25 bg-warning/5"><CardHeader><CardTitle class="flex items-center gap-2 text-lg"><CircleAlert class="size-5 text-warning" />{{ t('selection.clarifyTitle') }}</CardTitle><CardDescription>{{ t('selection.clarifySubtitleLive') }}</CardDescription></CardHeader><CardContent class="space-y-4">
+            <template>
               <div class="space-y-3">
                 <div v-for="(clarification, i) in clarifications" :key="i" class="space-y-4 rounded-lg border bg-muted/20 p-4 text-sm text-foreground">
                   <p :class="unresolvedClarifications.includes(clarification) ? 'font-medium text-warning' : 'text-muted-foreground'">{{ clarification.question }} <span v-if="!unresolvedClarifications.includes(clarification)">{{ t('selection.confirmed') }}</span></p>
@@ -335,9 +296,9 @@ onMounted(() => {
             </template>
              <p v-if="requirementError" class="text-sm text-destructive" role="alert">{{ requirementError }}</p>
              <p v-if="textChangedSinceParse" class="text-sm text-warning">{{ t('selection.textChangedParsePending') }}</p>
-              <p class="text-sm leading-relaxed text-muted-foreground">{{ t('selection.clarifyGuide') }}</p><div class="flex flex-wrap gap-2"><Button :disabled="isPreview ? !canSearch : !canConfirm" @click="confirm">{{ t('selection.confirmAndMatch') }}<ArrowRight class="ms-2 size-4 rtl:-scale-x-100" /></Button><Button v-if="textChangedSinceParse" variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">{{ t('selection.reparse') }}</Button><Button variant="outline" @click="manualOpen = true">{{ t('selection.transferManual') }}</Button></div></CardContent></Card>
+              <p class="text-sm leading-relaxed text-muted-foreground">{{ t('selection.clarifyGuide') }}</p><div class="flex flex-wrap gap-2"><Button :disabled="!canConfirm" @click="confirm">{{ t('selection.confirmAndMatch') }}<ArrowRight class="ms-2 size-4 rtl:-scale-x-100" /></Button><Button v-if="textChangedSinceParse" variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">{{ t('selection.reparse') }}</Button><Button variant="outline" @click="manualOpen = true">{{ t('selection.transferManual') }}</Button></div></CardContent></Card>
 
-          <details v-if="!isPreview && parseResult && !busy" class="rounded-lg border px-4 py-3 text-sm">
+          <details v-if="parseResult && !busy" class="rounded-lg border px-4 py-3 text-sm">
             <summary class="cursor-pointer text-muted-foreground focus-visible:outline focus-visible:outline-ring">{{ t('selection.sourceTitle') }}</summary>
             <div class="space-y-4 pt-4"><p class="text-xs text-muted-foreground">{{ t('selection.sourceGuideForm') }}</p><p v-if="parseResult.degraded" class="text-xs text-muted-foreground">{{ t('selection.sourceGuideRules') }}</p><dl class="grid gap-3 sm:grid-cols-2"><div v-for="row in sourceRows" :key="row.field" class="min-w-0 border-t pt-3"><dt class="flex items-center justify-between gap-2 font-medium"><span>{{ row.label }}</span><Badge variant="outline">{{ row.source }}</Badge></dt><dd class="mt-1 break-words">{{ row.value }}</dd><p v-if="row.evidence" class="mt-1 break-words text-xs text-muted-foreground">{{ t('selection.sourceBasis') }}{{ row.evidence }}</p></div></dl><div v-if="parseResult.overrides.length" class="space-y-2"><strong class="text-xs">{{ t('selection.sourceOverride') }}</strong><p v-for="override in parseResult.overrides" :key="override.field" class="break-words text-xs">{{ fieldLabel(override.field) }}：{{ displayValue(override.field, override.previousValue) }} → {{ displayValue(override.field, override.value) }} · {{ t('selection.sourceBasis') }}{{ override.evidence }}</p></div><p v-if="parseResult.unhandledText.length" class="break-words text-xs text-warning">{{ t('selection.unrecognized') }}{{ parseResult.unhandledText.join('、') }}</p><Button size="sm" variant="outline" :disabled="!canSearch || !text.trim()" @click="reparseText">{{ t('selection.reparse') }}</Button></div>
           </details>
@@ -346,8 +307,8 @@ onMounted(() => {
              <Button :disabled="!canSearch" @click="submit">{{ t('selection.rematchNow') }}<ArrowRight class="ms-2 size-4 rtl:-scale-x-100" /></Button>
           </div>
           
-          <Card v-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? t('selection.loadingParsing') : t('selection.loadingMatching') }}</h2><p class="text-sm text-muted-foreground">{{ isPreview ? t('selection.loadingParsingHint') : t('selection.loadingMatchingHint') }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>
-              <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? t('selection.resultsHeadingInspiration') : t('selection.resultsHeadingMatched') }}</h2><Badge variant="secondary">{{ inspirationResults ? t('selection.resultsTagInspiration') : (isPreview ? t('selection.resultsDirect1') : t('selection.resultsDirectN', { direct: matchData?.counts.direct ?? 0, reference: matchData?.counts.reference ?? 0 })) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :preview="isPreview" :product-systems="isPreview ? undefined : catalog.productSystems" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" /><p class="text-sm leading-relaxed text-muted-foreground">{{ t('selection.resultsDirectNote') }}</p></section>
+          <Card v-if="busy" aria-live="polite" aria-busy="true"><CardContent class="flex min-h-80 flex-col items-center justify-center gap-4 p-8 text-center"><LoaderCircle class="size-8 animate-spin text-primary" /><h2 class="text-lg font-medium">{{ state === 'parsing' ? t('selection.loadingParsing') : t('selection.loadingMatching') }}</h2><p class="text-sm text-muted-foreground">{{ t('selection.loadingMatchingHint') }}</p><div class="w-full max-w-xs space-y-3"><Skeleton class="h-3 w-full" /><Skeleton class="h-3 w-4/5" /><Skeleton class="h-3 w-3/5" /></div></CardContent></Card>
+              <section v-else-if="state === 'results'" class="space-y-4" aria-live="polite"><div class="flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-semibold">{{ inspirationResults ? t('selection.resultsHeadingInspiration') : t('selection.resultsHeadingMatched') }}</h2><Badge variant="secondary">{{ inspirationResults ? t('selection.resultsTagInspiration') : t('selection.resultsDirectN', { direct: matchData?.counts.direct ?? 0, reference: matchData?.counts.reference ?? 0 }) }}</Badge></div><SchemeCard v-for="(item, index) in items" :key="item.code" :item="item" :index="index" :product-systems="catalog.productSystems" :search-id="searchId" :active="activeImageByCode[item.code] ?? 0" @update:active="activeImageByCode[item.code] = $event" /><p class="text-sm leading-relaxed text-muted-foreground">{{ t('selection.resultsDirectNote') }}</p></section>
           <Card v-else-if="state === 'empty' || state === 'error'" :role="state === 'error' ? 'alert' : 'status'"><CardContent class="flex min-h-64 flex-col items-center justify-center gap-4 p-6 text-center"><Search v-if="state === 'empty'" class="size-8 text-muted-foreground" /><CircleAlert v-else class="size-8 text-muted-foreground" /><h2 class="text-lg font-medium">{{ state === 'empty' ? t('selection.emptyTitle') : t('selection.emptyTitleError') }}</h2><div v-if="state === 'empty'" class="max-w-md space-y-1 text-sm leading-relaxed text-muted-foreground"><p v-for="reason in matchData?.reasons ?? [t('selection.emptyHint')]" :key="reason">{{ reason }}</p></div><p v-else class="max-w-md text-sm leading-relaxed text-muted-foreground">{{ t('selection.emptyErrorHint') }}</p><div class="flex flex-wrap justify-center gap-2"><Button v-if="state === 'empty'" @click="editRequirement">{{ t('selection.editConditions') }}</Button><Button v-else :disabled="!canSearch" @click="submit">{{ t('common.retry') }}</Button><Button variant="outline" @click="manualOpen = true">{{ t('selection.transferToAdvisor') }}</Button></div></CardContent></Card>
           <div class="flex flex-wrap items-center justify-between gap-4 border-t pt-5"><div class="flex items-center gap-3"><MessageCircle class="size-5 shrink-0 text-muted-foreground" /><p class="text-sm text-muted-foreground">{{ t('selection.advisorCta') }}</p></div><Button variant="ghost" @click="manualOpen = true">{{ t('selection.advisorCtaLink') }}<ArrowUpRight class="ms-2 size-4 rtl:-scale-x-100" /></Button></div>
       </div>
@@ -357,7 +318,6 @@ onMounted(() => {
         <div class="space-y-2"><Label for="manual-description">{{ t('selection.manualExtraDesc', { requirement: text.trim() ? t('common.optional') : t('common.required') }) }}</Label><Textarea id="manual-description" v-model="manualDescription" maxlength="1000" :placeholder="t('selection.manualExtraPlaceholder')" /><p v-if="manualOriginalText.length > 1000" class="text-xs text-destructive">{{ t('selection.manualDescLimit') }}</p></div>
         <div class="space-y-2"><Label for="manual-name">{{ t('selection.manualName') }}</Label><Input id="manual-name" v-model="manualName" maxlength="100" :placeholder="t('selection.manualNamePlaceholder')" autocomplete="name" required /></div>
         <div class="space-y-2"><Label for="manual-contact">{{ t('selection.manualContact') }}</Label><Input id="manual-contact" v-model="manualContact" :dir="manualContact ? 'ltr' : undefined" maxlength="254" :placeholder="t('selection.manualContactPlaceholder')" autocomplete="on" required /><p v-if="manualContact && !contactValid" class="text-xs text-destructive">{{ t('selection.manualContactError') }}</p></div>
-        <p v-if="isPreview" class="text-xs text-muted-foreground">{{ t('selection.manualPreviewNote') }}</p>
         <Button type="submit" class="w-full" :disabled="!canSubmitManual">{{ t('selection.manualContinue') }}</Button>
       </form></DialogContent></Dialog>
   </MainLayout>

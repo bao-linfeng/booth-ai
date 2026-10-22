@@ -55,8 +55,7 @@ export async function collectWorkerMetrics(database: Pick<pg.Pool, 'query'>, que
     ),
   );
   const outbox = await database.query<{ name: string; pending: number; oldestSeconds: number | null }>(
-    `SELECT 'foundation' AS name, count(*)::int AS pending, EXTRACT(EPOCH FROM now() - min(created_at))::float8 AS "oldestSeconds" FROM foundation_outbox WHERE published_at IS NULL
-     UNION ALL SELECT 'theme', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8 FROM theme_job_outbox WHERE picked_at IS NULL
+    `SELECT 'theme' AS name, count(*)::int AS pending, EXTRACT(EPOCH FROM now() - min(created_at))::float8 AS "oldestSeconds" FROM theme_job_outbox WHERE picked_at IS NULL
      UNION ALL SELECT 'artwork', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8 FROM artwork_job_outbox WHERE picked_at IS NULL
      UNION ALL SELECT 'project_notification', count(*)::int, EXTRACT(EPOCH FROM now() - min(created_at))::float8
        FROM project_notification_outbox WHERE delivered_at IS NULL AND failed_at IS NULL

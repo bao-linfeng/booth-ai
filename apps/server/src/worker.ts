@@ -9,8 +9,6 @@ import { configureLogger, errorCode, logger } from './infra/logger.js';
 import { createWebhookSender } from './infra/webhook.js';
 import {
   createQueue,
-  QUEUE_NAME,
-  TASK_NAME,
   THEME_QUEUE_NAME,
   THEME_TASK_NAME,
   ARTWORK_QUEUE_NAME,
@@ -18,8 +16,6 @@ import {
   CS_QUEUE_NAME,
   CS_TRANSLATE_TASK_NAME,
 } from './infra/queue.js';
-import { processEchoTask } from './modules/tasks/service.js';
-import { dispatchOutbox } from './workers/outbox.js';
 import { settleThemeJob, processThemeJob } from './modules/generation/theme/execution.js';
 import { processArtworkJob, settleArtworkJob } from './modules/generation/artwork/execution.js';
 import { dispatchGenerationOutbox } from './workers/generation-outbox.js';
@@ -63,7 +59,6 @@ async function main() {
   const storage = createStorage(config);
   await Promise.all([waitForRedis(consumerRedis), waitForRedis(producerRedis)]);
 
-  const queue = createQueue(producerRedis);
   const themeQueue = createQueue(producerRedis, THEME_QUEUE_NAME, 2000);
   const artworkQueue = createQueue(producerRedis, ARTWORK_QUEUE_NAME, 2000);
   const csQueue = createQueue(producerRedis, CS_QUEUE_NAME, 2000);
@@ -95,26 +90,6 @@ async function main() {
         throw error;
       }
     };
-
-  const worker = new Worker(
-    QUEUE_NAME,
-    observed(QUEUE_NAME, async job => {
-      if (job.name !== TASK_NAME || typeof job.data.taskId !== 'string' || job.data.taskId !== job.id)
-        throw new Error('Invalid foundation job');
-      return processEchoTask(database, job.data.taskId);
-    }),
-    { connection: consumerRedis, concurrency: 4 },
-  );
-  worker.on('error', () => log.error({ queue: QUEUE_NAME }, 'Worker connection error'));
-  worker.on('failed', job => {
-    if (!job || job.attemptsMade < (job.opts.attempts ?? 1)) return;
-    void database
-      .query(
-        `UPDATE foundation_tasks SET status = 'failed', error_code = 'PROCESSING_FAILED', updated_at = now() WHERE id = $1 AND status <> 'succeeded'`,
-        [job.id],
-      )
-      .catch(error => log.error({ queue: QUEUE_NAME, jobId: job.id, code: errorCode(error) }, 'Unable to persist failed task status'));
-  });
 
   const publishThemeEvent = async (jobId: string, event: unknown) => {
     await producerRedis.publish(`theme-job:${jobId}`, JSON.stringify(event));
@@ -181,14 +156,12 @@ async function main() {
     );
   });
 
-  await worker.waitUntilReady();
   await themeWorker.waitUntilReady();
   await artworkWorker.waitUntilReady();
   await csWorker.waitUntilReady();
 
   const generationQueues = { theme: themeQueue, artwork: artworkQueue };
   const tasks: ScheduledTask[] = [
-    { name: 'foundation-outbox', intervalMs: 1000, staleAfterMs: 30_000, run: () => dispatchOutbox(database, queue) },
     {
       name: 'theme-outbox',
       intervalMs: 1000,
@@ -297,7 +270,7 @@ async function main() {
     lane: BACKGROUND_LANE,
     run: async () => {
       metrics = {
-        ...(await collectWorkerMetrics(database, { foundation: queue, ...generationQueues, cs: csQueue })),
+        ...(await collectWorkerMetrics(database, { ...generationQueues, cs: csQueue })),
         jobs: jobStats.drain(),
       };
       log.info({ metrics }, 'Worker metrics');
@@ -318,7 +291,6 @@ async function main() {
       const report = scheduler.health({
         consumerRedis: consumerRedis.status === 'ready',
         producerRedis: producerRedis.status === 'ready',
-        foundationWorker: worker.isRunning(),
         themeWorker: themeWorker.isRunning(),
         artworkWorker: artworkWorker.isRunning(),
         csWorker: csWorker.isRunning(),
@@ -349,12 +321,11 @@ async function main() {
     log.info('Worker draining; waiting for in-flight jobs to reach a checkpoint');
     const deadline = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS).unref();
     // Close every consumer at once so none keeps taking new jobs while another is still draining.
-    const closing = Promise.all([worker.close(), themeWorker.close(), artworkWorker.close(), csWorker.close()]);
+    const closing = Promise.all([themeWorker.close(), artworkWorker.close(), csWorker.close()]);
     await healthLoop;
     await rm(heartbeatPath, { force: true });
     await lanes;
     await closing;
-    await queue.close();
     await themeQueue.close();
     await artworkQueue.close();
     await csQueue.close();

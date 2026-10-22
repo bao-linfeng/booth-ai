@@ -89,8 +89,8 @@ test('scheduler health covers every consumer, staleness and non-critical tasks',
   );
   assert.equal(scheduler.health({}).healthy, false, 'unhealthy before the first successful run');
   await scheduler.tick();
-  assert.equal(scheduler.health({ foundation: true, theme: true, artwork: true }).healthy, true);
-  assert.deepEqual(scheduler.health({ foundation: true, theme: false, artwork: true }).problems, ['consumer:theme']);
+  assert.equal(scheduler.health({ theme: true, artwork: true }).healthy, true);
+  assert.deepEqual(scheduler.health({ theme: false, artwork: true }).problems, ['consumer:theme']);
   fail = true;
   clock += 31_000;
   await scheduler.tick();

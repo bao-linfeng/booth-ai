@@ -2,23 +2,18 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { loadConfig } from '../config.js';
-import { createDatabase, transaction } from '../infra/database.js';
+import { createDatabase } from '../infra/database.js';
 import { createRedis, waitForRedis } from '../infra/redis.js';
 import { createStorage } from '../infra/storage.js';
-import { createQueue, TASK_NAME } from '../infra/queue.js';
-import { submitEchoTask, processEchoTask, type Task } from '../modules/tasks/service.js';
 import { createSession } from '../infra/session.js';
 
 const config = loadConfig();
 const database = createDatabase(config);
 const redis = createRedis(config);
 const storage = createStorage(config);
-const queue = createQueue(redis);
 const probe = randomUUID();
 const objectKey = `smoke/${probe}.txt`;
 const redisKey = `booth:smoke:${probe}`;
-let taskId: string | undefined;
-let completed = false;
 // 客服链路创建的临时坐席、访客与会话，结束时清理
 const cs = {
   roleId: null as number | null,
@@ -36,23 +31,7 @@ try {
   console.info('PASS API liveness, readiness and OpenAPI');
   const version = await database.query('SHOW server_version');
   assert.ok(String(version.rows[0]?.server_version).startsWith('17.'), 'PostgreSQL major version');
-  const rollbackId = randomUUID();
-  await assert.rejects(
-    transaction(database, async client => {
-      await client.query('INSERT INTO foundation_tasks(id, request_key, kind, payload) VALUES ($1, $2, $3, $4)', [
-        rollbackId,
-        `rollback-${probe}`,
-        TASK_NAME,
-        { message: probe },
-      ]);
-      await client.query('INSERT INTO foundation_outbox(id, task_id) VALUES ($1, $2)', [randomUUID(), rollbackId]);
-      throw new Error('intentional rollback');
-    }),
-    /intentional rollback/,
-  );
-  assert.equal((await database.query('SELECT id FROM foundation_tasks WHERE id = $1', [rollbackId])).rowCount, 0);
-  assert.equal((await database.query('SELECT id FROM foundation_outbox WHERE task_id = $1', [rollbackId])).rowCount, 0);
-  console.info('PASS PostgreSQL migration and atomic task/outbox rollback');
+  console.info('PASS PostgreSQL version');
 
   await waitForRedis(redis);
   await redis.set(redisKey, probe, 'EX', 60);
@@ -71,35 +50,9 @@ try {
   await assert.rejects(storage.get(objectKey));
   console.info('PASS Silo upload/read/delete and public endpoint signing');
 
-  const submissions = await Promise.all(Array.from({ length: 3 }, () => submitEchoTask(database, `smoke-${probe}`, probe)));
-  taskId = submissions[0]!.id;
-  assert.ok(
-    submissions.every(task => task.id === taskId),
-    'Concurrent idempotent submission',
-  );
-  await assert.rejects(submitEchoTask(database, `smoke-${probe}`, 'different'), /different payload/);
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const task = (await database.query<Task>('SELECT * FROM foundation_tasks WHERE id = $1', [taskId])).rows[0]!;
-    if (task.status === 'succeeded' && (await queue.getJob(taskId)) && (await (await queue.getJob(taskId))!.isCompleted())) {
-      completed = true;
-      break;
-    }
-    assert.notEqual(task.status, 'failed', 'Worker failed foundation task');
-    await delay(500);
-  }
-  assert.ok(completed, 'Worker did not finish task within 30 seconds');
-  const task = (await database.query<Task>('SELECT * FROM foundation_tasks WHERE id = $1', [taskId])).rows[0]!;
-  assert.deepEqual(task.result, { message: probe });
-  const outbox = await database.query('SELECT published_at FROM foundation_outbox WHERE task_id = $1', [taskId]);
-  assert.ok(outbox.rows[0]?.published_at, 'Outbox delivery not committed');
-  const before = await database.query('SELECT updated_at FROM foundation_tasks WHERE id = $1', [taskId]);
-  await Promise.all([processEchoTask(database, taskId), processEchoTask(database, taskId)]);
-  const after = await database.query('SELECT updated_at FROM foundation_tasks WHERE id = $1', [taskId]);
-  assert.deepEqual(after.rows[0], before.rows[0], 'Completed task was executed again');
-  console.info('PASS DB → Outbox → BullMQ → Worker → DB, concurrent idempotency and duplicate processing');
   await customerServiceSmoke(api);
   console.info('PASS customer service: visitor → conversation → claim → reply over SSE → close');
-  console.info('All foundation smoke checks passed');
+  console.info('All smoke checks passed');
 } catch (error) {
   // Assertion messages contain only probe diagnostics; never emit raw SDK errors/URLs.
   console.error(
@@ -111,12 +64,7 @@ try {
 } finally {
   await storage.delete(objectKey).catch(() => {});
   await redis.del(redisKey).catch(() => {});
-  if (taskId && completed) {
-    await (await queue.getJob(taskId))?.remove();
-    await database.query('DELETE FROM foundation_tasks WHERE id = $1', [taskId]);
-  }
   await cleanupCustomerService().catch(() => console.error('Customer service smoke cleanup failed'));
-  await queue.close();
   redis.disconnect();
   storage.close();
   await database.end();

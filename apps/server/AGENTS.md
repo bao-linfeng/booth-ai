@@ -107,8 +107,7 @@ src/
 │   └── ai/              # 协议注册表 protocols.ts、运行时配置与凭据 config.ts、Base URL 校验 endpoint.ts、providers/ 各协议适配器
 ├── http/
 │   ├── admin/           # 管理端路由、校验、身份提取与响应映射
-│   ├── client/          # 参展商路由、校验、身份提取与响应映射
-│   └── su/              # SU 门户规划占位（未实现、未注册路由）
+│   └── client/          # 参展商路由、校验、身份提取与响应映射
 ├── modules/             # identity / dictionaries / schemes / assets / selection（含 analytics 搜索记录）
 │                        # generation / prompts / credits / projects / customer-service / dashboard / tasks 业务模块
 │                        # client-sign-in、prompt-preview 是跨模块用例的编排模块

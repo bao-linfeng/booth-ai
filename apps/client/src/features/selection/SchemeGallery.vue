@@ -3,12 +3,10 @@ import { computed, ref, watch } from 'vue'
 import { Expand, ExternalLink, ImageOff } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
-import BoothIllustration from './BoothIllustration.vue'
 import type { SchemeImage } from './types'
 import { useI18n } from 'vue-i18n'
 // priority：首屏主图（第一张方案卡片、详情页）立即以高优先级加载，其余主图懒加载
-const props = withDefaults(defineProps<{ images: SchemeImage[]; code: string; preview?: boolean; variant?: number; disabled?: boolean; priority?: boolean }>(), { preview: false, variant: 0, disabled: false, priority: false })
+const props = withDefaults(defineProps<{ images: SchemeImage[]; code: string; variant?: number; disabled?: boolean; priority?: boolean }>(), { variant: 0, disabled: false, priority: false })
 const { t } = useI18n()
 // 图片加载失败（常见于预签名链接过期）时通知页面，由页面决定是否换新链接
 const emit = defineEmits<{ 'image-error': [] }>()
@@ -42,30 +40,27 @@ watch(() => [props.code, currentImage.value?.previewUrl], () => {
 <template>
   <div class="min-w-0 space-y-3">
     <Button variant="ghost" class="relative block aspect-video h-auto w-full overflow-hidden rounded-md bg-image-surface p-0 hover:bg-image-surface" :disabled="!images.length" :aria-label="images.length ? t('gallery.enlargeImage', { code, index: active + 1 }) : t('gallery.noImages', { code })" @click="openPreview">
-      <div v-if="preview" class="h-full w-full [&>svg.booth-illustration]:h-full [&>svg.booth-illustration]:w-full"><BoothIllustration :variant="variant" :view="active" class="h-full w-full" /></div>
-      <span v-else-if="!currentImage || failed" class="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.imageUnavailable') : t('gallery.noEffectImage') }}</span>
+      <span v-if="!currentImage || failed" class="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.imageUnavailable') : t('gallery.noEffectImage') }}</span>
       <img v-else :key="currentImage.previewUrl" :src="currentImage.previewUrl" :alt="t('gallery.effectAlt', { code, index: active + 1 })" class="h-full w-full object-contain" :loading="priority ? 'eager' : 'lazy'" :fetchpriority="priority ? 'high' : 'auto'" @error="failed = true; emit('image-error')" />
       <span v-if="images.length" class="absolute bottom-3 start-3 rounded bg-background/90 px-2 py-1 font-mono text-xs"><bdi dir="ltr">{{ active + 1 }} / {{ images.length }}</bdi></span>
       <span v-if="images.length" class="absolute bottom-3 end-3 flex items-center gap-1.5 rounded bg-background/90 px-2 py-1 text-xs"><Expand class="size-3.5" aria-hidden="true" />{{ t('gallery.enlarge') }}</span>
     </Button>
     <div v-if="images.length" class="grid max-w-md grid-cols-3 gap-3" role="group" :aria-label="t('gallery.switchImages', { code })">
-      <Button v-for="(image, index) in images" :key="image.assetId" variant="ghost" :class="cn('h-auto min-w-0 flex-col gap-0 overflow-hidden rounded-sm border-b-2 bg-image-surface p-0', active === index ? 'border-primary' : 'border-transparent')" :aria-label="t('gallery.viewImage', { index: index + 1 })" :aria-pressed="active === index" :disabled="disabled" @click="active = index">
-        <div v-if="preview" class="aspect-video w-full [&>svg.booth-illustration]:h-full [&>svg.booth-illustration]:w-full"><BoothIllustration :variant="variant" :view="index" class="h-full w-full" /></div>
-        <img v-else :src="image.thumbnailUrl" alt="" loading="lazy" class="aspect-video w-full object-contain" @error="emit('image-error')" />
+      <Button v-for="(image, index) in images" :key="image.assetId" variant="ghost" :class="['h-auto min-w-0 flex-col gap-0 overflow-hidden rounded-sm border-b-2 bg-image-surface p-0', active === index ? 'border-primary' : 'border-transparent']" :aria-label="t('gallery.viewImage', { index: index + 1 })" :aria-pressed="active === index" :disabled="disabled" @click="active = index">
+        <img :src="image.thumbnailUrl" alt="" loading="lazy" class="aspect-video w-full object-contain" @error="emit('image-error')" />
         <span class="w-full bg-background py-2 text-xs">{{ t('gallery.angle', { index: index + 1 }) }}<span v-if="active === index" class="block font-medium">{{ t('gallery.currentAngle') }}</span></span>
       </Button>
     </div>
     <Dialog v-model:open="expanded">
       <DialogContent class="max-h-[90dvh] w-[calc(100%-2rem)] max-w-5xl overflow-y-auto rounded-lg p-4 sm:p-6" @close-auto-focus="restorePreviewFocus">
         <DialogTitle class="break-all pe-6 text-start text-base"><bdi dir="ltr">{{ code }} · {{ images.length ? active + 1 : 0 }} / {{ images.length }}</bdi></DialogTitle>
-        <DialogDescription>{{ preview ? t('gallery.previewSpace') : t('gallery.schemeImageNote') }}</DialogDescription>
-        <BoothIllustration v-if="preview" :variant="variant" :view="active" class="w-full" />
-        <div v-else-if="!currentImage || enlargedFailed" class="flex min-h-48 flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.imageUnavailable') : t('gallery.noEffectImage') }}</div>
+        <DialogDescription>{{ t('gallery.schemeImageNote') }}</DialogDescription>
+        <div v-if="!currentImage || enlargedFailed" class="flex min-h-48 flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><ImageOff aria-hidden="true" />{{ images.length ? t('gallery.imageUnavailable') : t('gallery.noEffectImage') }}</div>
         <img v-else :key="currentImage.previewUrl" :src="currentImage.previewUrl" :alt="t('gallery.effectAlt', { code, index: active + 1 })" class="max-h-[65dvh] w-full object-contain" @error="enlargedFailed = true; emit('image-error')" />
         <div class="flex flex-wrap justify-center gap-2" role="group" :aria-label="t('gallery.switchEnlargedAngle')">
           <Button v-for="(_, index) in images" :key="index" :variant="active === index ? 'default' : 'outline'" :aria-pressed="active === index" :disabled="disabled" @click="active = index">{{ t('gallery.angle', { index: index + 1 }) }}</Button>
         </div>
-        <div v-if="!preview && currentImage" class="flex justify-center">
+        <div v-if="currentImage" class="flex justify-center">
           <Button as-child variant="link" size="sm"><a :href="currentImage.originalUrl" target="_blank" rel="noopener noreferrer"><ExternalLink class="mr-1 size-3.5" aria-hidden="true" />{{ t('gallery.viewOriginal') }}</a></Button>
         </div>
       </DialogContent>

@@ -22,18 +22,6 @@ export const routes: RouteRecordRaw[] = [
     meta: { titleKey: 'titles.aiSelection' },
   },
   {
-    path: '/ai-selection/preview',
-    name: 'AISelectionPreview',
-    component: () => import('@/pages/AISelection.vue'),
-    meta: { titleKey: 'titles.aiSelectionPreview' },
-  },
-  {
-    path: '/ai-selection/preview/schemes/:code',
-    name: 'SchemePreview',
-    component: () => import('@/pages/SchemeDetail.vue'),
-    meta: { titleKey: 'titles.schemePreview' },
-  },
-  {
     path: '/schemes/:code',
     name: 'SchemeDetail',
     component: () => import('@/pages/SchemeDetail.vue'),
@@ -44,12 +32,6 @@ export const routes: RouteRecordRaw[] = [
     name: 'SchemeTheme',
     component: () => import('@/pages/SchemeTheme.vue'),
     meta: { titleKey: 'titles.schemeTheme' },
-  },
-  {
-    path: '/ai-selection/preview/schemes/:code/theme',
-    name: 'SchemeThemePreview',
-    component: () => import('@/pages/SchemeTheme.vue'),
-    meta: { titleKey: 'titles.schemeThemePreview' },
   },
   {
     path: '/theme-jobs/:jobId',
@@ -65,11 +47,6 @@ export const routes: RouteRecordRaw[] = [
       titleKey: 'titles.aiSelection',
       icon: 'Home'
     }
-  },
-  {
-    path: '/buildy/:pathMatch(.*)*',
-    name: 'Buildy',
-    component: () => import('@/pages/BuildyRedirect.vue'),
   },
   {
     path: '/profile',

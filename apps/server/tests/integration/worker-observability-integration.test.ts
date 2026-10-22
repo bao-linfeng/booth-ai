@@ -138,7 +138,6 @@ test(
     const metrics = await collectWorkerMetrics(pool, { theme: { getJobCounts: async () => counts } });
     assert.deepEqual(metrics.queues, { theme: counts });
     assert.equal(metrics.outbox.theme?.pending, 1);
-    assert.equal(metrics.outbox.foundation?.pending, 0);
     assert.equal(metrics.outbox.project_notification?.pending, 0);
     assert.equal(metrics.projectNotificationsFailed, 1);
     assert.equal(metrics.overdueCreditReservations, 1);

@@ -101,7 +101,6 @@ const moduleRules: Record<string, { dependsOn: string[]; exposes: string[] }> = 
     dependsOn: ['assets', 'dictionaries', 'media', 'prompts'],
     exposes: ['domain.ts', 'match.ts', 'prompt.ts', 'repository.ts', 'messages/index.ts', 'analytics/recording.ts'],
   },
-  tasks: { dependsOn: [], exposes: [] },
 };
 
 test('business modules depend on each other only through declared, acyclic edges and exposed files', async () => {

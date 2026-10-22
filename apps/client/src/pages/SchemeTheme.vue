@@ -13,7 +13,6 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import MainLayout from '@/layouts/MainLayout.vue'
 import SchemeGallery from '@/features/selection/SchemeGallery.vue'
-import { previewItems } from '@/features/selection/preview'
 import { apiFetch } from '@/lib/api-client'
 import { useSignedUrlRenewal } from '@/composables/useSignedUrlRenewal'
 import { getThemeOffer, createThemeJob, type ThemeOffer, type ThemeJobSubmission } from '@/services/api/theme-jobs'
@@ -33,8 +32,7 @@ const { balance, loading: loadingCredits, fetchBalance } = useCredits()
 const isLoggedIn = computed(() => authStore.isLoggedIn)
 const schemeCode = route.params.code as string
 const searchId = typeof route.query.searchId === 'string' ? route.query.searchId : undefined
-const isPreview = computed(() => route.path.startsWith('/ai-selection/preview/'))
-const detailPath = computed(() => `${isPreview.value ? '/ai-selection/preview' : ''}/schemes/${encodeURIComponent(schemeCode)}`)
+const detailPath = computed(() => `/schemes/${encodeURIComponent(schemeCode)}`)
 
 const schemeData = ref<SchemeDetail | null>(null)
 const loadingScheme = ref(true)
@@ -43,8 +41,7 @@ const images = computed(() => schemeData.value?.images || [])
 // 默认选中从方案详情带来的视角（query.image）
 const requestedImageId = typeof route.query.image === 'string' ? route.query.image : ''
 const selectedAssetId = ref('')
-const previewVariant = Math.max(0, previewItems.findIndex(item => item.code === schemeCode))
-const galleryImages = computed(() => isPreview.value ? previewItems[previewVariant]?.images ?? [] : images.value)
+const galleryImages = computed(() => images.value)
 const activeImageIndex = computed({
   get: () => Math.max(0, galleryImages.value.findIndex(image => image.assetId === selectedAssetId.value)),
   set: (index: number) => { selectedAssetId.value = galleryImages.value[index]?.assetId ?? '' },
@@ -73,7 +70,7 @@ const preparingConfirmation = ref(false)
 const creatingJob = ref(false)
 const confirmationTrigger = ref<HTMLElement | null>(null)
 const confirmation = ref<{ payload: ThemeJobSubmission; quote: NonNullable<ThemeOffer['offer']>; attempted: boolean } | null>(null)
-const formLocked = computed(() => isPreview.value || creatingJob.value || confirmDialogOpen.value)
+const formLocked = computed(() => creatingJob.value || confirmDialogOpen.value)
 const invalidColors = computed(() => brandColors.value.some(color => !/^#[0-9a-f]{6}$/i.test(color)))
 const keywordError = computed(() => brandKeywords.value.length > limits.value.maxKeywordCharacters ? t('schemeTheme.keywordsLimitError') : '')
 const parameters = computed(() => ({
@@ -82,7 +79,7 @@ const parameters = computed(() => ({
   requestedCount: requestedCount.value, cacheMode: 'reuse' as const,
 }))
 const parameterKey = computed(() => JSON.stringify(parameters.value))
-const canFetchOffer = computed(() => !isPreview.value && isLoggedIn.value && !!selectedAssetId.value && !!industryId.value && !!styleId.value && !invalidColors.value && !keywordError.value)
+const canFetchOffer = computed(() => isLoggedIn.value && !!selectedAssetId.value && !!industryId.value && !!styleId.value && !invalidColors.value && !keywordError.value)
 const blockedReasonText = computed(() => {
   if (!themeOffer.value || themeOffer.value.available) return ''
   return getBlockedReasonText(themeOffer.value.blockedReasons, t)
@@ -170,7 +167,6 @@ async function loadModels() {
 }
 
 onMounted(() => {
-  if (isPreview.value) { selectedAssetId.value = requestedImageId; loadingScheme.value = false; return }
   restorePendingRequest()
   void loadScheme()
   void loadCatalog()
@@ -245,7 +241,7 @@ function removeColor(index: number) {
   })
 }
 
-watch(appLocale, () => { if (!isPreview.value) void loadCatalog() })
+watch(appLocale, () => { void loadCatalog() })
 
 function handleLogin() {
   void router.push({ path: '/auth/sign-in', query: { redirect: route.fullPath } })
@@ -322,8 +318,7 @@ function setDialogOpen(open: boolean) {
             <h1 class="studio-title">{{ t('schemeTheme.heading') }}</h1>
             <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeTheme.subheading') }}</p>
           </div>
-          <Badge v-if="isPreview" variant="secondary">{{ t('schemeTheme.previewLabel') }}</Badge>
-          <Button v-else as-child variant="outline" class="shrink-0">
+          <Button as-child variant="outline" class="shrink-0">
             <RouterLink :to="{ path: `/schemes/${encodeURIComponent(schemeCode)}/quote`, query: { entryPoint: 'scheme_detail', ...(searchId ? { searchId } : {}) } }">{{ t('schemeTheme.quoteBtn') }}<ArrowUpRight class="ml-2 size-4" /></RouterLink>
           </Button>
         </div>
@@ -339,7 +334,7 @@ function setDialogOpen(open: boolean) {
       <div v-else class="grid items-start gap-8 xl:gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section :aria-label="t('schemeTheme.canvasAriaLabel')" class="min-w-0 space-y-5 lg:sticky lg:top-24">
           <h2 class="text-sm font-medium">{{ t('schemeTheme.originalImageTitle') }}</h2>
-          <SchemeGallery v-model:active="activeImageIndex" :images="galleryImages" :code="schemeCode" :preview="isPreview" :variant="previewVariant" :disabled="creatingJob || confirmDialogOpen" priority @image-error="imageLinks.onImageError" />
+          <SchemeGallery v-model:active="activeImageIndex" :images="galleryImages" :code="schemeCode" :disabled="creatingJob || confirmDialogOpen" priority @image-error="imageLinks.onImageError" />
           <div class="flex items-start gap-3 border-t pt-5">
             <Sparkles class="mt-0.5 size-4 shrink-0 text-primary" />
             <div class="space-y-2 text-sm leading-relaxed text-muted-foreground">
@@ -355,7 +350,7 @@ function setDialogOpen(open: boolean) {
             <h2 class="flex items-center gap-2 text-lg font-semibold"><Palette class="size-5 text-primary" />{{ t('schemeTheme.preferenceTitle') }}</h2>
             <p class="text-sm text-muted-foreground">{{ t('schemeTheme.preferenceDesc') }}</p>
           </div>
-          <div v-if="!isLoggedIn && !isPreview" class="space-y-4 p-6">
+          <div v-if="!isLoggedIn" class="space-y-4 p-6">
             <p class="text-sm leading-relaxed text-muted-foreground">{{ t('schemeTheme.loginPrompt') }}</p>
             <Button class="w-full" @click="handleLogin">{{ t('schemeTheme.loginBtn') }}</Button>
           </div>
@@ -413,10 +408,9 @@ function setDialogOpen(open: boolean) {
 
             <div class="space-y-4 border-t bg-muted/30 p-5 sm:p-6">
               <div class="flex items-center justify-between text-sm text-muted-foreground"><span>{{ t('schemeTheme.balanceLabel') }}</span><span>{{ loadingCredits ? t('common.creditsLoading') : balance === null ? t('common.creditsUnknown') : `${balance} ${t('common.credits')}` }}</span></div>
-              <Button v-if="!isPreview && !loadingCredits && balance === null" variant="outline" size="sm" @click="fetchBalance">{{ t('schemeTheme.retryBalance') }}</Button>
+              <Button v-if="!loadingCredits && balance === null" variant="outline" size="sm" @click="fetchBalance">{{ t('schemeTheme.retryBalance') }}</Button>
               <div aria-live="polite" aria-atomic="true" :aria-busy="loadingOffer" class="space-y-3">
-                <p v-if="isPreview" class="text-sm text-muted-foreground">{{ t('schemeTheme.previewNoCredits') }}</p>
-                <p v-else-if="loadingOffer" role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 class="size-4 animate-spin" />{{ t('schemeTheme.updatingCost') }}</p>
+                <p v-if="loadingOffer" role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 class="size-4 animate-spin" />{{ t('schemeTheme.updatingCost') }}</p>
                 <div v-else-if="offerError || blockedReasonText" role="alert" class="space-y-3 text-sm text-destructive">
                   <p>{{ offerError || blockedReasonText }}</p><Button variant="outline" size="sm" :disabled="!canFetchOffer" @click="fetchOffer">{{ t('schemeTheme.retryCost') }}</Button>
                 </div>
@@ -430,7 +424,7 @@ function setDialogOpen(open: boolean) {
               <div ref="confirmationTrigger">
               <Button class="w-full" :disabled="!canFetchOffer || loadingOffer || preparingConfirmation || creatingJob" @click="prepareConfirmation">
                 <Loader2 v-if="preparingConfirmation" class="mr-2 size-4 animate-spin" />
-                {{ isPreview ? t('schemeTheme.submitPreview') : confirmation?.attempted && !needsNewOffer ? t('schemeTheme.submitContinue') : t('schemeTheme.submitConfirm') }}
+                {{ confirmation?.attempted && !needsNewOffer ? t('schemeTheme.submitContinue') : t('schemeTheme.submitConfirm') }}
               </Button>
               </div>
               <p v-if="jobError && !confirmDialogOpen" role="alert" class="text-sm text-destructive">{{ jobError }}</p>
