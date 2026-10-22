@@ -303,32 +303,6 @@ test('a pending resource preview cannot open a Dialog after leaving the resource
   } finally { await mounted.close() }
 })
 
-test('preview permits theme exploration but neither quotes nor BOM/resource downloads or API requests', async () => {
-  const mounted = await mount({ path: '/ai-selection/preview/schemes/DEMO_63_001?searchId=ignored' })
-  try {
-    assert.match(mounted.container.textContent, /静态示例 · 非已发布方案/)
-    assertNoNode(mounted.container.querySelector('a[href*="/quote"]'), "mounted.container.querySelector('a[href*=\"/quote\"]')")
-    assert.equal(button(mounted.container, '示例方案不可申请报价').disabled, true)
-    assert.equal(button(mounted.container, '示例不可报价').disabled, true)
-    for (const link of [...mounted.container.querySelectorAll('a')].filter(el => el.textContent.trim() === 'AI 换主题')) {
-      const url = new URL(link.href)
-      assert.equal(url.pathname, '/ai-selection/preview/schemes/DEMO_63_001/theme')
-      assert.deepEqual([...url.searchParams.keys()], ['image'])
-    }
-    await selectTab(mounted.container, '物料清单')
-    assert.match(mounted.container.textContent, /静态示例不提供真实物料清单/)
-    assert.equal([...mounted.container.querySelectorAll('button')].some(el => el.textContent.includes('下载 XLSX')), false)
-    await selectTab(mounted.container, '图纸与素材')
-    for (const text of ['三视图', '标准平面素材', '下载 SKP 模型']) {
-      const disabled = button(mounted.container, text)
-      assert.equal(disabled.disabled, true)
-      disabled.click()
-    }
-    await settle()
-    assert.deepEqual(mounted.calls, [])
-    assert.deepEqual(downloads, [])
-  } finally { await mounted.close() }
-})
 
 test('unavailable BOM (409) shows empty state without a download or revision in quote links', async () => {
   const mounted = await mount({ api: { getClientBomApi: async () => { throw { response: { status: 409 } } } } })

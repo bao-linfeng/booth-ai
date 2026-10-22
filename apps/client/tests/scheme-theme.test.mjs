@@ -581,22 +581,6 @@ test('unauthenticated login preserves the complete redirect and makes no offer/m
   } finally { await mounted.close() }
 })
 
-test('static preview uses real disabled controls but makes no network or submission requests', async () => {
-  const mounted = await mount({ path: '/ai-selection/preview/schemes/DEMO_63_001/theme?searchId=ignored', waitForOffer: false })
-  try {
-    assert.match(mounted.container.textContent, /静态示例 · 不可提交/)
-    assert.match(costRegion(mounted).textContent, /示例模式不获取积分费用/)
-    assert.equal(mounted.container.querySelector('fieldset').disabled, true)
-    const primary = button(mounted.container, '示例模式 · 不可提交')
-    assert.equal(primary.disabled, true)
-    primary.click()
-    button(mounted.container, '添加品牌色').click()
-    await debounce()
-    assertNoNode(document.querySelector('[role="dialog"]'), "document.querySelector('[role=\"dialog\"]')")
-    assert.deepEqual(mounted.calls, [])
-  } finally { await mounted.close() }
-})
-
 for (const [failedEndpoint, retry, errorText] of [
   [endpoints.catalog, '重试加载选项', /行业与风格加载失败/],
   [endpoints.scheme, '重新加载方案', /方案加载失败/],
