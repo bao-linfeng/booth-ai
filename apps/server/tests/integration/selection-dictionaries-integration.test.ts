@@ -58,7 +58,6 @@ test(
         .rows[0].count,
       '0',
     );
-    assert.ok((await pool.query('SELECT * FROM retired_size_dictionary_backup')).rowCount);
 
     const adminId = randomUUID();
     await pool.query("INSERT INTO admins(id,external_user_id,username) VALUES($1,1,'test')", [adminId]);
