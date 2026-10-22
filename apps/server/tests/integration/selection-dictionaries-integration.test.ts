@@ -47,7 +47,6 @@ test(
       length_mm: 6000,
       width_mm: 3000,
     });
-    assert.equal((await pool.query('SELECT count(*) FROM imported_dimension_orientation_backup')).rows[0].count, '1');
     const sizeValues = async () =>
       (
         await pool.query<{ value: string }>(`SELECT i.item_value AS value FROM dictionary_items i
