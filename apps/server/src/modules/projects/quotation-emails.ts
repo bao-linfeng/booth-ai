@@ -1,13 +1,21 @@
 import type pg from 'pg';
+import { leasedOutbox } from '../../infra/leased-outbox.js';
+import { escapeHtml, fill } from '../../infra/mail-template.js';
+import { MAIL_RETRY_BACKOFF } from '../../infra/mailer.js';
 import { DEFAULT_MESSAGE_LOCALE, type MessageLocale } from '../selection/messages/index.js';
 import { quotationEmailMessages } from './quotation-email-messages.js';
 import type { SavedQuotation } from './quotation.js';
 import { quotationWorkbookMessages } from './quotation-workbook-messages.js';
-import { escapeHtml, fill, receiptEmailBackoffSeconds } from './receipt-emails.js';
 
 // 报价邮件是保存报价时的发送动作：入队即视为已报价，投递结果写入项目时间线；Worker 崩溃于发送后、完成前时可能重复发送。
 export const QUOTATION_EMAIL_MAX_ATTEMPTS = 6;
 export const QUOTATION_EMAIL_LEASE_SECONDS = 120;
+
+const outbox = leasedOutbox({
+  table: 'project_quotation_emails',
+  maxAttempts: QUOTATION_EMAIL_MAX_ATTEMPTS,
+  backoff: MAIL_RETRY_BACKOFF,
+});
 
 /** 语言沿用受理回执（提交时的界面语言），没有回执的项目用默认语言 */
 export async function enqueueQuotationEmail(
@@ -34,15 +42,11 @@ export interface QuotationEmail {
   quotation: SavedQuotation;
 }
 
-// 租约在单条语句内取得，调用 SMTP 时不持有行锁
 export async function claimQuotationEmails(database: Pick<pg.Pool, 'query'>, limit = 10): Promise<QuotationEmail[]> {
   return (
     await database.query<QuotationEmail>(
-      `UPDATE project_quotation_emails e SET attempts = e.attempts + 1, locked_until = now() + make_interval(secs => $2)
-     FROM (SELECT id FROM project_quotation_emails
-           WHERE delivered_at IS NULL AND failed_at IS NULL AND next_attempt_at <= now() AND (locked_until IS NULL OR locked_until < now())
-           ORDER BY next_attempt_at, created_at LIMIT $1 FOR UPDATE SKIP LOCKED) c, projects p, project_quotation_revisions q
-     WHERE e.id = c.id AND p.id = e.project_id AND q.project_id = e.project_id AND q.revision = e.quotation_revision
+      `${outbox.claim('e')}, projects p, project_quotation_revisions q
+     WHERE e.id = claimed.id AND p.id = e.project_id AND q.project_id = e.project_id AND q.revision = e.quotation_revision
      RETURNING e.id, e.project_id AS "projectId", e.recipient, e.locale, e.attempts,
        p.project_no AS "projectNo", p.scheme_code AS "schemeCode",
        p.request_snapshot->'contact' AS contact, p.request_snapshot->>'company' AS company, q.snapshot AS quotation`,
@@ -57,41 +61,30 @@ const recordEvent = (status: 'delivered' | 'failed') => `INSERT INTO project_eve
       jsonb_build_object('status','${status}','quotationRevision',quotation_revision,'recipient',recipient,'errorCode',last_error_code),
       clock_timestamp() FROM done`;
 
-export async function completeQuotationEmail(database: Pick<pg.Pool, 'query'>, id: string): Promise<void> {
-  await database.query(
-    `WITH done AS (UPDATE project_quotation_emails SET delivered_at = now(), locked_until = NULL, last_error_code = NULL
-      WHERE id = $1 AND delivered_at IS NULL RETURNING project_id, quotation_revision, recipient, last_error_code)
+export const completeQuotationEmail = (database: Pick<pg.Pool, 'query'>, id: string) =>
+  outbox.complete(
+    database,
+    id,
+    update => `WITH done AS (${update} RETURNING project_id, quotation_revision, recipient, last_error_code)
     ${recordEvent('delivered')}`,
-    [id],
   );
-}
 
-// 本批来不及处理的已领取邮件：释放租约并退回本次计入的尝试次数
-export async function releaseQuotationEmails(database: Pick<pg.Pool, 'query'>, ids: string[]): Promise<void> {
-  await database.query(
-    `UPDATE project_quotation_emails SET locked_until = NULL, attempts = GREATEST(attempts - 1, 0)
-    WHERE id = ANY($1::uuid[]) AND delivered_at IS NULL AND failed_at IS NULL`,
-    [ids],
-  );
-}
+export const releaseQuotationEmails = (database: Pick<pg.Pool, 'query'>, ids: string[]) => outbox.release(database, ids);
 
-// permanent：收件地址被拒等重试无意义的错误，直接进入终态。返回 true 表示已终态失败。
-export async function failQuotationEmail(
+export const failQuotationEmail = (
   database: Pick<pg.Pool, 'query'>,
   email: Pick<QuotationEmail, 'id' | 'attempts'>,
   code: string,
   permanent: boolean,
-): Promise<boolean> {
-  const exhausted = permanent || email.attempts >= QUOTATION_EMAIL_MAX_ATTEMPTS;
-  await database.query(
-    `WITH done AS (UPDATE project_quotation_emails SET locked_until = NULL, last_error_code = $2,
-      next_attempt_at = now() + make_interval(secs => $3), failed_at = CASE WHEN $4::boolean THEN now() END
-      WHERE id = $1 AND delivered_at IS NULL RETURNING project_id, quotation_revision, recipient, last_error_code, failed_at)
+) =>
+  outbox.fail(
+    database,
+    email,
+    code,
+    permanent,
+    update => `WITH done AS (${update} RETURNING project_id, quotation_revision, recipient, last_error_code, failed_at)
     ${recordEvent('failed')} WHERE failed_at IS NOT NULL`,
-    [email.id, code.slice(0, 64), receiptEmailBackoffSeconds(email.attempts), exhausted],
   );
-  return exhausted;
-}
 
 export function renderQuotationEmail(email: QuotationEmail) {
   const m = quotationEmailMessages[email.locale] ?? quotationEmailMessages[DEFAULT_MESSAGE_LOCALE];

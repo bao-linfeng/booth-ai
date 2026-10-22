@@ -23,6 +23,9 @@ export class MailDeliveryError extends Error {
 // 单封最坏耗时：连接 10 秒 + 问候 10 秒 + socket 空闲 20 秒，另留余量；投递批次据此判断租约内还能否再发一封
 export const SMTP_MAX_SEND_MS = 45_000;
 
+// 各邮件 outbox 共用的失败退避：1 分钟起翻倍，最长 1 小时
+export const MAIL_RETRY_BACKOFF = { baseSeconds: 60, maxSeconds: 3600 };
+
 export function createSmtpSender(smtp: SmtpConfig): MailSender {
   const transport = createTransport({
     host: smtp.host,

@@ -1,12 +1,23 @@
 import type pg from 'pg';
+import { leasedOutbox } from '../../infra/leased-outbox.js';
+import { escapeHtml, fill } from '../../infra/mail-template.js';
+import { MAIL_RETRY_BACKOFF } from '../../infra/mailer.js';
 import type { CsLocale } from './domain.js';
 import { csEmailMessages } from './email-messages.js';
 
-// 客服邮件 outbox（设计 §8.3、计划 §6.6）：沿用回执邮件的租约、退避与永久失败机制。
+// 客服邮件 outbox（设计 §8.3、计划 §6.6）：租约、退避与永久失败沿用 infra/leased-outbox，取消与顺延是本表特有的终态与动作。
 // 每个（会话，类型，收件人）至多一封待发邮件，期间的新消息合并进去；发送时记录覆盖到的 seq，下一封从这里继续。
 export const CS_EMAIL_MAX_ATTEMPTS = 6;
 export const CS_EMAIL_LEASE_SECONDS = 120;
 const pending = 'sent_at IS NULL AND cancelled_at IS NULL AND failed_at IS NULL';
+const outbox = leasedOutbox({
+  table: 'cs_email_outbox',
+  dueColumn: 'due_at',
+  doneColumn: 'sent_at',
+  pending,
+  maxAttempts: CS_EMAIL_MAX_ATTEMPTS,
+  backoff: MAIL_RETRY_BACKOFF,
+});
 
 type Db = Pick<pg.Pool, 'query'>;
 
@@ -77,14 +88,11 @@ export interface CsEmail {
   deferrable: boolean;
 }
 
-// 租约在单条语句内取得，调用 SMTP 时不持有行锁
 export async function claimCsEmails(db: Db, limit = 10): Promise<CsEmail[]> {
   return (
     await db.query<CsEmail>(
-      `UPDATE cs_email_outbox o SET attempts=o.attempts+1, locked_until=now() + make_interval(secs => $2)
-    FROM (SELECT id FROM cs_email_outbox WHERE ${pending} AND due_at <= now() AND (locked_until IS NULL OR locked_until < now())
-          ORDER BY due_at LIMIT $1 FOR UPDATE SKIP LOCKED) picked, cs_conversations c
-    WHERE o.id=picked.id AND c.id=o.conversation_id
+      `${outbox.claim('o')}, cs_conversations c
+    WHERE o.id=claimed.id AND c.id=o.conversation_id
     RETURNING o.id, o.conversation_id AS "conversationId", o.kind, o.recipient, o.locale, o.after_seq AS "afterSeq", o.attempts,
       c.conversation_no AS "conversationNo", c.deleted_at IS NOT NULL AS deleted,
       o.created_at > now() - make_interval(mins => $3) AS deferrable`,
@@ -142,10 +150,6 @@ export async function loadEmailContent(db: Db, email: CsEmail): Promise<EmailCon
   };
 }
 
-const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
-const fill = (template: string, params: Record<string, string | number>) =>
-  Object.entries(params).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), template);
 const clip = (value: string, length: number) => (value.length > length ? `${value.slice(0, length)}…` : value);
 
 /** 纯文本 + HTML；正文一律转义，链接不带任何凭据 */
@@ -255,29 +259,13 @@ export async function deferCsEmail(db: Db, id: string): Promise<void> {
   );
 }
 
-/** 本批来不及处理的已领取邮件：释放租约并退回本次计入的尝试次数 */
-export async function releaseCsEmails(db: Db, ids: string[]): Promise<void> {
-  await db.query(
-    `UPDATE cs_email_outbox SET locked_until=NULL, attempts=GREATEST(attempts-1,0) WHERE id = ANY($1::uuid[]) AND ${pending}`,
-    [ids],
-  );
-}
+export const releaseCsEmails = (db: Db, ids: string[]) => outbox.release(db, ids);
 
 export async function cancelCsEmail(db: Db, id: string): Promise<void> {
   await db.query('UPDATE cs_email_outbox SET cancelled_at=now(), locked_until=NULL WHERE id=$1 AND sent_at IS NULL', [id]);
 }
 
-export function csEmailBackoffSeconds(attempts: number): number {
-  return Math.min(60 * 2 ** Math.max(0, attempts - 1), 3600);
-}
+export const csEmailBackoffSeconds = outbox.backoffSeconds;
 
-/** permanent：收件地址被拒等重试无意义的错误，直接进入终态。返回 true 表示已终态失败。 */
-export async function failCsEmail(db: Db, email: Pick<CsEmail, 'id' | 'attempts'>, code: string, permanent: boolean): Promise<boolean> {
-  const exhausted = permanent || email.attempts >= CS_EMAIL_MAX_ATTEMPTS;
-  await db.query(
-    `UPDATE cs_email_outbox SET locked_until=NULL, last_error_code=$2, due_at=now() + make_interval(secs => $3),
-    failed_at=CASE WHEN $4::boolean THEN now() END WHERE id=$1 AND sent_at IS NULL`,
-    [email.id, code.slice(0, 64), csEmailBackoffSeconds(email.attempts), exhausted],
-  );
-  return exhausted;
-}
+export const failCsEmail = (db: Db, email: Pick<CsEmail, 'id' | 'attempts'>, code: string, permanent: boolean) =>
+  outbox.fail(db, email, code, permanent);
