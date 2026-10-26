@@ -190,6 +190,7 @@ API 进程用 `'request'`，Worker 进程用 `'worker'`，**不要混用**。
 
 - `TRUST_PROXY`：反向代理信任范围，填代理跳数（如 `1`）或逗号分隔的 IP/CIDR/关键字（`loopback`/`linklocal`/`uniquelocal`）。默认不信任，`request.ip` 为直连地址；部署在代理后必须配置，否则按 IP 的限流（登录、智选、匿名询价）会共用代理地址。
 - 回执邮件（询价/人工需求受理）、报价邮件（后台「保存并发送报价」，附报价单，outbox 为 `project_quotation_emails`，送达或终态失败写入项目时间线 `quotation-email` 事件）与在线客服邮件（离线留言通知、回复提醒，outbox 为 `cs_email_outbox`）共用以下配置：`SMTP_HOST` / `SMTP_PORT`（默认 465，非 465 默认 STARTTLS）/ `SMTP_SECURE` / `SMTP_USER` + `SMTP_PASSWORD` / `SMTP_FROM`，以及邮件链接用的 `CLIENT_PUBLIC_URL`（生产须 https）。未配置 `SMTP_HOST` 时邮件停留在各自的 outbox；回执邮件同一收件人 24 小时最多入队 5 封。
+- 生产打包：根目录 `./scripts/package-server.ps1 -Version <版本>` 将根 `.env` 的 6 个 SMTP 参数经 BuildKit secret 筛选后写入镜像 `/app/smtp-defaults.json`，不写入其他本地配置；`CLIENT_PUBLIC_URL` 仍由线上提供。`config.ts` 合并内置默认值与运行时环境变量（运行时优先，`SMTP_HOST=''` 可禁用）。生产构建的 `packaged` 阶段要求提供 secret，脚本强制刷新该阶段，避免 secret 变更被构建缓存忽略；生产发布统一使用此脚本。镜像和 tar 含邮件凭据，禁止公开。操作见根目录 `docs/1Panel服务端部署.md`。
 
 日志：Fastify 已关闭请求日志（`disableRequestLogging: true`），headers 中 `authorization`/`cookie` 已脱敏。
 

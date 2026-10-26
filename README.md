@@ -265,6 +265,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml down
 
 | 工作目录 | 命令 | 用途 |
 | --- | --- | --- |
+| 仓库根目录 | `./scripts/package-server.ps1 -Version <版本>` | 打包生产服务端镜像并导出到 `release/`，内置本地 `.env` 的 SMTP 配置 |
 | `apps/server` | `npm ci` | 安装锁定依赖 |
 | `apps/server` | `npm run dev:api` / `npm run dev:worker` | 分别启动 API / Worker watch 进程 |
 | `apps/server` | `npm run check` / `npm test` / `npm run build` | 类型检查、测试、编译 |
@@ -304,6 +305,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml down
 | 文档 | 内容 |
 | --- | --- |
 | [一期功能拆分索引](docs/一期功能拆分/README.md) | 智选、主题、素材、清单、报价与管理模块设计 |
+| [1Panel 服务端部署](docs/1Panel服务端部署.md) | 服务端打包发布、邮件配置、编排部署与运维 |
 | [服务端领域模型](docs/服务端领域模型/README.md) | 领域模型、术语表、全量表设计与数据库 ER 图 |
 | [在线客服详细设计](docs/一期功能拆分/在线客服模块详细设计.md) / [开发计划](docs/一期功能拆分/在线客服模块开发计划.md) | 自研客服的会话模型、实时推送、翻译、邮件与保留策略 |
 | [积分账本对接契约](docs/一期功能拆分/积分账本对接契约.md) | 预占、结算、释放与对账约束 |

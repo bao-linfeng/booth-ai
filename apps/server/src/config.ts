@@ -1,3 +1,5 @@
+import { withSmtpDefaults } from './infra/smtp-defaults.js';
+
 export interface Config {
   nodeEnv: 'development' | 'test' | 'production';
   host: string;
@@ -47,6 +49,7 @@ function parseTrustProxy(value: string | undefined): Config['trustProxy'] {
 
 // Validate names, never include supplied values (which may contain credentials).
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  env = withSmtpDefaults(env);
   const required = (name: string): string => {
     const value = env[name]?.trim();
     if (!value) throw new Error(`Missing environment variable: ${name}`);

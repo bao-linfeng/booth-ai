@@ -9,6 +9,9 @@ CMD ["npm", "run", "dev:api"]
 FROM dev AS build
 RUN npm run build && npm prune --omit=dev
 
+FROM build AS packaged
+RUN --mount=type=secret,id=smtp_env,required=true node dist/scripts/package-smtp.js /run/secrets/smtp_env /app/smtp-defaults.json
+
 FROM node:24.15.0-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
@@ -16,6 +19,7 @@ COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/migrations ./migrations
+COPY --from=packaged --chown=node:node /app/smtp-defaults.json ./smtp-defaults.json
 USER node
 EXPOSE 3000
 CMD ["node", "dist/api.js"]

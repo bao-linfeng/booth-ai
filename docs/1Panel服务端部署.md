@@ -108,11 +108,13 @@ mkdir -p /opt/booth-ai/silo
 ```powershell
 cd D:\baolf\lingtong\booth-ai
 $v = "20261020-01"   # 版本号，每次发布换一个
-docker build --target runtime -t booth-ai-server:$v apps/server
-# 服务器是 aarch64 时改用：docker buildx build --platform linux/arm64 --target runtime -t booth-ai-server:$v --load apps/server
-New-Item -ItemType Directory -Force release | Out-Null
-docker save -o release/booth-server-$v.tar booth-ai-server:$v   # 约 100 MB
+./scripts/package-server.ps1 -Version $v
+# 服务器是 aarch64 时：./scripts/package-server.ps1 -Version $v -Platform linux/arm64
 ```
+
+脚本自动读取根目录 `.env`，把 `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASSWORD`、`SMTP_FROM` 保存到生产镜像，导出为 `release/booth-server-<版本>.tar`。本地邮件能发送且 `.env` 配置完整时，线上 Worker 无需再填写 SMTP 参数。每次打包都会重新读取邮件配置，修改 SMTP 后需重新打包发布。
+
+只有这 6 项会写入镜像，不包含本地数据库、Redis、S3、会话密钥及 `CLIENT_PUBLIC_URL`；邮件链接使用下面编排里的线上地址。镜像和 tar 含邮件凭据，按含密码文件保管。生产打包统一使用脚本，它负责传入邮件配置并刷新配置缓存，避免继续用原来的裸 `docker build` 命令漏带配置。
 
 1Panel 的「导入镜像」只能选服务器上的文件，所以分两步：
 
@@ -153,7 +155,8 @@ x-server: &server
     EXTERNAL_API_URL: https://api.lingtong.net.cn
     CORS_ORIGINS: https://boothai.baolinfeng.cn,https://boothadmin.baolinfeng.cn
     CLIENT_PUBLIC_URL: https://boothai.baolinfeng.cn
-    # 选填，需要时取消注释（465 端口 SMTP_SECURE 为 'true'，587 为 'false'）
+    # 打包脚本已内置本地 SMTP；以下仅用于覆盖镜像中的配置
+    # 465 端口 SMTP_SECURE 为 'true'，587 为 'false'
     # SMTP_HOST: smtp.example.com
     # SMTP_PORT: '465'
     # SMTP_SECURE: 'true'
@@ -206,6 +209,7 @@ networks:
 > - `SESSION_SECRET` 改了所有用户需要重新登录。
 > - `S3_PUBLIC_ENDPOINT` 不要带 `/booth-assets`；`CORS_ORIGINS` 不带末尾 `/`、不能用通配符。
 > - 生产环境不注册 Swagger `/docs`，属正常。
+> - 编排中显式设置的 SMTP 参数优先于镜像内置值；没有配置时自动使用打包值。需要禁用邮件时，在共享 `environment` 中设置 `SMTP_HOST: ''`。API 和 Worker 必须使用同一份邮件配置。
 
 ---
 
@@ -332,7 +336,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://boothai.baolinfeng.cn/my-searc
 - [ ] 清单/素材下载正常
 - [ ] 提交一次换主题/画稿任务：进度实时更新（SSE 没被缓冲），积分结算正确
 - [ ] 在线客服：刷新页面后会话还在
-- [ ] 启用 SMTP 时能收到询价回执邮件
+- [ ] 能收到询价回执邮件；后台「保存并发送报价」后收到带 Excel 附件的报价邮件，时间线出现投递成功
 
 首次业务配置：用灵通账号登录管理端（账号需在灵通拥有已授权角色，`ROLE_ADMIN` 默认有全部权限；系统没有默认管理员账号），全新库时再配置 AI 供应商/模型/用途、导入方案与素材。
 
@@ -428,3 +432,4 @@ rm -rf booth.dump silo-export.tar.gz silo-export
 | 所有人共用一个限流额度（429） | 前面加了 CDN 后要重新设置 `TRUST_PROXY` |
 | worker 日志提示 eviction policy | Redis 的 `maxmemory-policy` 不是 `noeviction` |
 | AI 任务一直排队 | worker 是否 healthy；管理端是否已给对应用途分配模型 |
+| 本地发邮件、上线不发 | 是否使用第 3 节脚本打包；worker 日志出现 `SMTP not configured` 说明镜像未带入配置或 `SMTP_HOST` 被显式置空；出现 `Quotation email delivery failed` 按错误码排查 SMTP 认证和服务器出站网络。普通「追加跟进」不会发邮件，需要「保存并发送报价」 |
