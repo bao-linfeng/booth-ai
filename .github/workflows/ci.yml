@@ -19,6 +19,8 @@ jobs:
   server:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      COMPOSE_PROJECT_NAME: booth-ai-ci
     steps:
       - uses: actions/checkout@v5
 
@@ -33,17 +35,21 @@ jobs:
           } > .env
 
       - name: Check
-        run: docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --rm check
+        run: docker compose --env-file .env -f infra/compose.dev.yaml -f infra/compose.ci.yaml --profile tools run --build --rm check
 
       - name: Start dev stack
-        run: docker compose --env-file .env -f infra/compose.dev.yaml up -d --build --wait --wait-timeout 180
+        run: docker compose --env-file .env -f infra/compose.dev.yaml -f infra/compose.ci.yaml up -d --build --wait --wait-timeout 180
 
       - name: Smoke
-        run: docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --rm smoke
+        run: docker compose --env-file .env -f infra/compose.dev.yaml -f infra/compose.ci.yaml --profile tools run --rm smoke
 
       - name: Service logs
         if: failure()
-        run: docker compose --env-file .env -f infra/compose.dev.yaml logs --no-color --tail 200
+        run: docker compose --env-file .env -f infra/compose.dev.yaml -f infra/compose.ci.yaml --profile tools logs --no-color --tail 200
+
+      - name: Clean up
+        if: always()
+        run: docker compose --env-file .env -f infra/compose.dev.yaml -f infra/compose.ci.yaml --profile tools down --volumes --remove-orphans
 
   client:
     runs-on: ubuntu-latest

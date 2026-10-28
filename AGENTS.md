@@ -18,7 +18,7 @@ AI 驱动的展台方案选型与成交平台，核心链路：描述需求 → 
 
 `apps/shadcn-vue-admin-main` 是外部模板，不属于业务链路，无需关注。
 
-其他目录：`infra/`（Docker Compose：Postgres 17、Redis 7.4、Silo S3）、`scripts/setup.ps1`（一键初始化）、`docs/`（PRD、架构说明、一期 API 文档）、`lefthook.yml` + `commitlint.config.mjs`（Git hooks：提交前 lint、提交信息校验、推送前按改动范围执行各子项目检查）。
+其他目录：`infra/`（Docker Compose：api/worker/Silo S3；PostgreSQL 18 + pgvector 与 Redis 来自多个项目共用的基础设施 `D:/baolf/infra`）、`scripts/setup.ps1`（一键初始化）、`docs/`（PRD、架构说明、一期 API 文档）、`lefthook.yml` + `commitlint.config.mjs`（Git hooks：提交前 lint、提交信息校验、推送前按改动范围执行各子项目检查）。
 
 每个 `apps/*` 是独立包，**命令必须在对应子目录执行，不要在根目录混用**。
 
@@ -27,7 +27,7 @@ AI 驱动的展台方案选型与成交平台，核心链路：描述需求 → 
 ## 环境与基础设施
 
 ```powershell
-./scripts/setup.ps1             # 生成 .env（含随机密码）、构建镜像、启动 DB/Redis/Silo、跑 migrate、启动 api/worker
+./scripts/setup.ps1             # 生成 .env（含随机密码，Redis 密码取自共用基础设施）、启动共用 PostgreSQL/Redis 并按需创建 booth 账号与库、构建镜像、启动 Silo、跑 migrate、启动 api/worker
 ./scripts/setup.ps1 -SkipStart  # 只生成 .env
 
 docker compose --env-file .env -f infra/compose.dev.yaml up -d --build                 # 重建并启动 dev 栈
@@ -42,12 +42,16 @@ docker compose --env-file .env -f infra/compose.dev.yaml down                   
 
 | 服务 | 地址 |
 |------|------|
-| API | `http://localhost:3000`（Swagger: `/docs`） |
-| client 开发服务器 | `http://localhost:5173` |
-| admin 开发服务器（web-antd） | `http://localhost:5666` |
-| PostgreSQL | `127.0.0.1:55432`（db: `booth`, user: `booth`） |
-| Redis | `127.0.0.1:56379` |
+| API | `http://localhost:3030`（Swagger: `/docs`；容器内仍为 3000） |
+| client 开发服务器 | `http://localhost:5030` |
+| admin 开发服务器（web-antd） | `http://localhost:5031` |
+| PostgreSQL（共用，容器 `infra-postgres`） | `127.0.0.1:5432`（db: `booth`, user: `booth`，非超级用户，带 CREATEDB；测试库 `booth_test`） |
+| Redis（共用，容器 `infra-redis`） | `127.0.0.1:6379`，本项目用 2 号库，测试用 15 号库；不要 `FLUSHALL` |
 | Silo S3 API / Web Console | `http://localhost:19000` / `http://localhost:19001`（bucket: `booth-assets`） |
+
+共用基础设施 `D:/baolf/infra` 是独立的 Compose 项目（agent-template、nyz-rag 等也在用），本项目的 `down` 不会停止它；容器经外部网络 `infra` 访问 `infra-postgres` / `infra-redis`。`.env` 中 `POSTGRES_PASSWORD` 是 booth 账号的密码，`REDIS_PASSWORD` 是共用 Redis 的密码。
+
+GitHub Actions 不连接共用基础设施：在 `compose.dev.yaml` 上叠加 `infra/compose.ci.yaml`，创建项目专用网络、PostgreSQL 18 / Redis 及测试数据卷，复用 `check` / `smoke` 服务，结束时清理。`infra/ci-init-db.sql` 创建非超级用户 `booth` 并授予 `CREATEDB`；本地验证 CI 时必须使用独立项目名与随机凭据，不能使用共用基础设施数据。
 
 ---
 
@@ -56,7 +60,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml down                   
 改动以下任一处时，需同步检查另一端：
 
 - **路由前缀**：参展商接口 `/api/v1/client/*`、管理端接口 `/api/v1/admin/*`。SU 门户 `/api/v1/su/*` 尚未实现，SU 用户目前经 `/api/v1/client/auth/sync`（`type: 'su'`）登录。
-- **开发代理**：client 与 admin 的 Vite 都把 `/api` 代理到 `http://localhost:3000`；后端 dev 栈 `CORS_ORIGINS` 默认放行 `5173`/`5174`。
+- **开发代理**：client 与 admin 的 Vite 都把 `/api` 代理到 `http://localhost:3030`；后端 dev 栈 `CORS_ORIGINS` 默认放行 `5030`/`5031`。两个前端开发端口都固定（`strictPort`），被占用时直接报错，不会顺延到其他本地项目的端口。
 - **响应包装**：业务接口成功返回 `{ code: 0, data }`（admin `requestClient` 依赖此格式拦截）。错误统一为 `{ error: { code, reason?, details?, message, requestId } }`，由 `apps/server/src/http/errors.ts` 统一生成，并以 `ErrorResponse` schema 挂到每条路由的 4xx/5xx 响应上：
   - `code` 只区分大类：`VALIDATION_ERROR`（请求 schema 校验失败）、`REQUEST_ERROR`、`INTERNAL_ERROR`。
   - `reason` 是前端区分具体业务错误的依据（如 `INSUFFICIENT_CREDITS`、`RESOURCE_NOT_FOUND`，未知路由为 `ROUTE_NOT_FOUND`）。

@@ -61,8 +61,10 @@ for name in SESSION_SECRET AI_MODEL_ENCRYPTION_KEY SILO_PASSWORD; do echo "$name
 
 ### 2.1 PostgreSQL
 
-1. 应用商店 → PostgreSQL → 安装，版本选 **17 及以上**（18 也可以；本地开发与测试用的是 17），**不要勾选「端口外部访问」**。
-2. 数据库 → PostgreSQL → 创建数据库：名称 `booth`，用户 `booth`，密码用 1Panel 生成的即可（只含字母数字，免得在 URL 里转义）。
+PostgreSQL 与 Redis 是服务器上多个项目（booth-ai、nyz-rag 等）共用的 1Panel 应用，与本地共用基础设施 `D:/baolf/infra` 约定相同：PostgreSQL 镜像为 `pgvector/pgvector:pg18`（安装方法见 nyz-rag 仓库 `docs/deploy-1panel.md` 第 4.1 节，已安装则跳过第 1 步），各项目用自己的库与非超级用户账号，Redis 按项目分逻辑库（booth-ai 为 2 号）。
+
+1. 应用商店 → PostgreSQL → 安装，版本选 **18**，**不要勾选「端口外部访问」**；高级设置中编辑 compose 文件，把镜像改为 `pgvector/pgvector:pg18`。
+2. 数据库 → PostgreSQL → 创建数据库：名称 `booth`，用户 `booth`（不要设为超级用户），密码用 1Panel 生成的即可（只含字母数字，免得在 URL 里转义）。
 3. 在 容器 列表里记下**容器名**（形如 `1Panel-postgresql-xxxx`）。数据库密码在 数据库 → PostgreSQL 列表的「密码」列，点眼睛图标可见。
 
 ### 2.2 Redis
@@ -72,7 +74,7 @@ for name in SESSION_SECRET AI_MODEL_ENCRYPTION_KEY SILO_PASSWORD; do echo "$name
 3. 在 数据库 → Redis 页面的命令终端执行 `CONFIG GET appendonly`、`CONFIG GET maxmemory-policy`，应分别为 `yes`、`noeviction`（后者是默认值，BullMQ 要求）。
 4. 应用商店 → 已安装 → Redis → 参数，记下密码；容器名在 容器 列表里看（形如 `1Panel-redis-xxxx`）。
 
-> 如果这个 Redis 还给别的应用用，下面的 `REDIS_URL` 末尾加 `/1` 换一个库。
+> 这个 Redis 由多个项目共用，booth-ai 固定用 2 号库（下面 `REDIS_URL` 末尾的 `/2`，与本地一致）；不要执行 `FLUSHALL`。
 
 ### 2.3 Silo
 
@@ -144,7 +146,7 @@ x-server: &server
     LOG_LEVEL: info
     TRUST_PROXY: '1'
     DATABASE_URL: postgres://booth:<数据库密码>@<PostgreSQL 容器名>:5432/booth
-    REDIS_URL: redis://:<Redis 密码>@<Redis 容器名>:6379
+    REDIS_URL: redis://:<Redis 密码>@<Redis 容器名>:6379/2
     S3_ENDPOINT: http://silo:9000
     S3_PUBLIC_ENDPOINT: https://boothapi.baolinfeng.cn
     S3_BUCKET: booth-assets

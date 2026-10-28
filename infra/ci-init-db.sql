@@ -1,0 +1,4 @@
+\getenv booth_password POSTGRES_PASSWORD
+CREATE ROLE booth LOGIN CREATEDB PASSWORD :'booth_password';
+ALTER DATABASE booth OWNER TO booth;
+REVOKE ALL ON DATABASE booth FROM PUBLIC;

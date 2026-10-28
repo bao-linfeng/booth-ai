@@ -62,9 +62,12 @@ export default defineConfig({
   },
   server: {
     host: '127.0.0.1',
+    // Fixed port: falling back to the next port would take another local project's port (agent-template, nyz-rag).
+    port: 5030,
+    strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:3030',
         changeOrigin: true,
       }
     },
