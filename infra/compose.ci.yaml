@@ -1,0 +1,58 @@
+services:
+  infra-postgres:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?CI credentials required}
+      POSTGRES_DB: booth
+    volumes:
+      - ci-postgres-data:/var/lib/postgresql
+      - ./ci-init-db.sql:/docker-entrypoint-initdb.d/booth.sql:ro
+    networks: [infra]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d booth']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  infra-redis:
+    image: redis:7.4
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?CI credentials required}
+    command: [/bin/sh, -ec, 'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --maxmemory-policy noeviction']
+    networks: [infra]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -qx PONG']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    depends_on:
+      infra-postgres:
+        condition: service_healthy
+
+  api:
+    depends_on:
+      infra-redis:
+        condition: service_healthy
+
+  worker:
+    depends_on:
+      infra-redis:
+        condition: service_healthy
+
+  check:
+    depends_on:
+      infra-postgres:
+        condition: service_healthy
+      infra-redis:
+        condition: service_healthy
+
+networks:
+  infra:
+    external: false
+    name: ${COMPOSE_PROJECT_NAME:-booth-ai-ci}-infra
+
+volumes:
+  ci-postgres-data:

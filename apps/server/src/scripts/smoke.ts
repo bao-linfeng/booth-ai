@@ -23,14 +23,14 @@ const cs = {
 };
 
 try {
-  const api = process.env.API_BASE_URL ?? 'http://localhost:3000';
+  const api = process.env.API_BASE_URL ?? 'http://localhost:3030';
   for (const path of ['/health/live', '/health/ready', '/openapi.json', '/docs/']) {
     const response = await fetch(`${api}${path}`, { signal: AbortSignal.timeout(5000) });
     assert.equal(response.status, 200, `HTTP ${path}`);
   }
   console.info('PASS API liveness, readiness and OpenAPI');
   const version = await database.query('SHOW server_version');
-  assert.ok(String(version.rows[0]?.server_version).startsWith('17.'), 'PostgreSQL major version');
+  assert.ok(String(version.rows[0]?.server_version).startsWith('18.'), 'PostgreSQL major version');
   console.info('PASS PostgreSQL version');
 
   await waitForRedis(redis);

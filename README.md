@@ -12,7 +12,7 @@ AI 驱动的展台方案选型与询价交接平台，面向参展商提供公�
 | --- | --- |
 | 项目类型 | B2B 全栈 SaaS：AI 展台方案选型 + AIGC 品牌素材生成 + 询价成交与客服 |
 | 门户 | 参展商公众端（12 种语言、RTL）+ 合作伙伴 / 运营管理后台，共用一套 API 与异步 Worker |
-| 后端规模 | Fastify 5 + TypeScript，约 2.9 万行源码；80 个顺序 SQL 迁移；约 450 个测试用例（单元 / HTTP / 集成 / 架构约束） |
+| 后端组织 | Fastify 5 + TypeScript，按领域拆分业务模块；顺序 SQL 迁移与校验和校验；单元 / HTTP / 集成 / 架构约束测试 |
 | AI 能力 | 自然语言需求解析（LLM + 规则降级）、品牌主题图生成、四面素材生成、客服消息翻译；接入 OpenAI 兼容、Gemini、通义 Qwen-Image / 万相、火山方舟 Seedream 等多家协议，按用途配置主备模型 |
 | 工程化 | Docker Compose 一键开发栈、Lefthook + commitlint、oxlint / oxfmt、GitHub Actions 三端 CI（类型检查、测试、构建、端到端冒烟） |
 
@@ -34,7 +34,7 @@ AI 驱动的展台方案选型与询价交接平台，面向参展商提供公�
 | 功能 | 当前能力 | 页面入口 |
 | --- | --- | --- |
 | AI 智选 | 自然语言解析需求、确认结构化条件、匹配已审核公开方案；模型解析失败时规则降级 | `/`、`/ai-selection` |
-| 方案详情 | 查看规格、效果图、资料状态及适用条件 | `/schemes/:code` |
+| 方案详情 | 查看规格、效果图及资料状态 | `/schemes/:code` |
 | 品牌主题调整 | 选择模型、确认积分费用、提交生成任务、查看进度与结果、选定主题结果 | `/schemes/:code/theme`、`/theme-jobs/:jobId` |
 | 四面素材生成 | 基于选定主题生成四个方向的素材，查看任务与交付状态、单图及 ZIP 下载 | `/schemes/:code/artwork`、`/artwork-jobs/:jobId` |
 | 方案资料 | 查看已核验简化清单、导出 Excel；查看和下载报馆图、平面素材及模型文件 | 方案详情页 |
@@ -45,24 +45,24 @@ AI 驱动的展台方案选型与询价交接平台，面向参展商提供公�
 | 账号与积分 | 灵通账号登录、外部 token 同步、个人信息、积分余额与每日签到（签到入口在导航栏用户菜单） | `/auth/sign-in`、`/profile` |
 | 在线客服 | 访客或登录用户发起咨询，可附带当前方案 / 项目卡片；实时收发与自动翻译、未读角标、坐席离线时留言（留邮箱）；登录后访客会话自动合并；匿名提交的项目按验证邮箱认领 | 全局悬浮按钮、方案详情、报价回执、我的项目 |
 
-`/ai-selection/preview` 及其方案详情、主题调整子路由提供静态预览。真实生成依赖登录、可用积分、AI 模型配置及方案源素材。
+询价和人工需求支持匿名提交；登录后可按验证邮箱认领匿名项目。真实生成依赖登录、可用积分、AI 模型配置及方案源素材。
 
 ### 合作伙伴 / 管理端
 
 | 模块 | 当前能力 |
 | --- | --- |
 | 工作台 / 分析页 | 个人待办（逾期、今日、待跟进项目）与最近动态；按 7 / 30 / 90 天窗口统计检索、生成、项目漏斗与分布，按模块权限裁剪分区 |
-| 方案管理 | 列表、创建与编辑、批量导入预览及确认、适用条件、审核就绪检查、审核、发布与下架；仅修改内部备注（notes）不触发下架与版本重置 |
+| 方案管理 | 列表、创建与编辑、批量导入预览及确认、审核就绪检查、审核、发布与下架；仅修改内部备注（notes）不触发下架与版本重置 |
 | 资源管理 | 效果图、蒙版、报馆图、平面素材；上传、元数据维护、版本替换、预览与下载 |
-| 清单管理 | Excel 导入、预览与确认、条目维护、版本校验、核验与下载 |
+| 清单管理 | Excel 导入、预览与确认、简化清单列映射、条目维护、版本校验、核验与下载 |
 | AI 智选运营 | 检索记录、访客信息、趋势与统计 |
 | 生成任务 | 主题 / 四面素材任务查询、详情及结果查看 |
-| 项目承接 | 项目检索、承接人改派、跟进、方案关联、事件记录、报价版本编辑与 Excel 导出 |
-| 消息通知 | 项目通知收件箱、详情、单条及全部标记已读；可选 webhook 投递，询价回执邮件 |
+| 项目承接 | 项目检索、待分配池与默认承接人配置、承接人改派、跟进、方案关联、事件记录、报价版本编辑、历史版本查询与 Excel 导出 |
+| 消息通知 | 项目通知收件箱、详情、单条及全部标记已读；可选 webhook 投递、询价回执邮件、保存并发送报价邮件（附报价单，投递结果写入项目时间线） |
 | 在线客服 | 客服工作台：公共队列抢接、释放、转接、结束、内部备注、在线状态、实时消息与译文；客服设置：翻译开关、离线通知邮箱及投递状态、回复提醒邮件 |
 | 用户与积分 | 本地同步用户和管理员查询、积分流水、充值与余额查询 |
 | 角色授权 | 同步灵通角色 ID / 名称，在本系统配置页面与操作权限，控制菜单、路由、按钮及服务端接口 |
-| 系统配置 | 字典（多语言）、适用条件问题、提示词模板与预览、AI 供应商 / 模型 / 用途分配、签到积分与项目分配规则、审计日志 |
+| 系统配置 | 字典（多语言与别名）、提示词模板与预览、AI 供应商 / 模型 / 用途分配、主题与四向图生成参数、签到积分、审计日志 |
 
 ## 技术栈与仓库结构
 
@@ -72,7 +72,7 @@ AI 驱动的展台方案选型与询价交接平台，面向参展商提供公�
 | --- | --- |
 | 后端 API | Fastify 5 + TypeScript ESM，Node.js 24；JSON Schema + `json-schema-to-ts` Type Provider，Swagger / OpenAPI |
 | 异步任务 | BullMQ 6 + Transactional Outbox，独立 Worker 进程 |
-| 数据库 / 缓存队列 | PostgreSQL 17（原生 `pg`，手写 SQL 与带校验和迁移）/ Redis 7.4（队列、限流、Pub/Sub、在线状态） |
+| 数据库 / 缓存队列 | PostgreSQL 18（原生 `pg`，手写 SQL 与带校验和迁移）/ Redis 7.4+（队列、限流、Pub/Sub、在线状态）；本地与线上都使用多个项目共用的实例 |
 | 对象存储 | Silo（S3 兼容），AWS SDK v3 + presigned URL |
 | 文件与邮件 | ExcelJS（导入导出）、JSZip（打包下载）、sharp（图像处理）、Nodemailer（SMTP 邮件） |
 | 参展商前端 | Vue 3.5 + Vite 6 + Tailwind CSS 3 + Shadcn-Vue，vue-i18n 12 语言 + RTL |
@@ -94,8 +94,9 @@ booth-ai/
 │       ├── apps/web-antd/        # 管理端业务应用
 │       ├── apps/backend-mock/    # 可选模板 mock 服务
 │       └── packages/            # Vben 框架与共享包
-├── infra/compose.dev.yaml       # 后端与基础设施开发栈
+├── infra/compose.dev.yaml       # API / Worker / Silo 开发栈，连接共用 PostgreSQL / Redis
 ├── scripts/setup.ps1            # 环境初始化与启动
+├── scripts/package-server.ps1   # 生产镜像打包与导出（内置 SMTP 配置）
 ├── docs/                        # 需求、模块详细设计、领域模型与评审报告
 ├── .github/workflows/ci.yml     # 三端 CI
 └── lefthook.yml                 # Git hooks
@@ -109,21 +110,27 @@ booth-ai/
 
 需要 Docker（含 Compose）和 PowerShell。后端运行在容器内，这一步不需要宿主机安装 Node.js。
 
+**先准备共用基础设施**：PostgreSQL 18（含 pgvector）与 Redis 属于独立的 Compose 项目，默认位于 `D:/baolf/infra`。请先按该项目的 README 完成初始化，确保其 `.env` 已配置 `REDIS_PASSWORD`，Compose 提供外部网络 `infra` 及容器 `infra-postgres`、`infra-redis`。本仓库不再单独创建 PostgreSQL / Redis 容器。
+
 在仓库根目录执行：
 
 ```powershell
-# 创建或补齐根目录 .env，构建镜像，执行迁移和存储初始化，启动 API / Worker
+# 创建或补齐根目录 .env，启动共用基础设施并按需创建 booth 账号与库，
+# 构建镜像，执行迁移和存储初始化，启动 API / Worker
 ./scripts/setup.ps1
 
-# 仅生成或补齐 .env
+# 共用基础设施不在默认目录时显式指定（也可设置 INFRA_DIR 环境变量）
+./scripts/setup.ps1 -InfraDir D:/path/to/infra
+
+# 仅生成或补齐 .env，不启动服务；仍需读取共用基础设施的 .env
 ./scripts/setup.ps1 -SkipStart
 ```
 
-初始化脚本生成随机本地凭据，已有凭据会保留。根目录 `.env` 永远不要提交，也不要复制到前端配置。
+初始化脚本为本项目生成随机凭据，Redis 密码从共用基础设施的 `.env` 读取。`POSTGRES_PASSWORD` 是本项目 `booth` 账号的密码，不是 PostgreSQL 超级用户密码；该账号带 `CREATEDB` 权限，供检查流程重建 `booth_test`。已有凭据不会被覆盖；若脚本提示 Redis 密码不一致，需手动同步，已有 `booth` 账号的密码也不会被脚本重置。根目录 `.env` 永远不要提交，也不要复制到前端配置。
 
 ### 2. 分别启动两个前端
 
-Compose 不包含前端服务。前端开发需安装 Node.js 与 pnpm；统一使用 Node.js 24.12+（24.x）可满足服务端和管理端的版本要求。管理端指定 `pnpm@11.16.0`，最低要求 pnpm 11。
+Compose 不包含前端服务。前端开发需安装 Node.js 与 pnpm；建议使用各子项目 `.node-version` 指定的版本。服务端要求 Node.js 24.x，管理端要求 `^22.18.0 || ^24.12.0`；两个前端均指定 `pnpm@11.16.0`。
 
 在独立终端中，从仓库根目录分别执行：
 
@@ -139,19 +146,21 @@ pnpm install
 pnpm dev:antd
 ```
 
-两个前端开发服务器都将 `/api` 代理到 `http://localhost:3000`。对接本项目业务时使用真实后端；管理端的 Nitro mock 是可选模板开发能力。
+两个前端开发服务器都将 `/api` 代理到 `http://localhost:3030`。对接本项目业务时使用真实后端；管理端的 Nitro mock 是可选模板开发能力。
+
+开发端口固定为 client `5030`、admin `5031`，并启用 `strictPort`；端口被占用时直接报错，不会自动顺延。API 宿主机端口为 `3030`，容器内部仍为 `3000`。
 
 ### 本地地址
 
 | 服务 | 默认地址 |
 | --- | --- |
-| 参展商前端 | [http://localhost:5173](http://localhost:5173) |
-| 管理后台（web-antd） | [http://localhost:5666](http://localhost:5666) |
-| API | [http://localhost:3000](http://localhost:3000) |
-| API 就绪检查 | [http://localhost:3000/health/ready](http://localhost:3000/health/ready) |
-| Swagger UI / OpenAPI | [`/docs`](http://localhost:3000/docs) / [`/openapi.json`](http://localhost:3000/openapi.json)（非生产环境） |
-| PostgreSQL | `127.0.0.1:55432`，database / user：`booth` |
-| Redis | `127.0.0.1:56379` |
+| 参展商前端 | [http://localhost:5030](http://localhost:5030) |
+| 管理后台（web-antd） | [http://localhost:5031](http://localhost:5031) |
+| API | [http://localhost:3030](http://localhost:3030) |
+| API 就绪检查 | [http://localhost:3030/health/ready](http://localhost:3030/health/ready) |
+| Swagger UI / OpenAPI | [`/docs`](http://localhost:3030/docs) / [`/openapi.json`](http://localhost:3030/openapi.json)（非生产环境） |
+| PostgreSQL（共用基础设施 `D:/baolf/infra`） | `127.0.0.1:5432`，database / user：`booth` |
+| Redis（共用基础设施） | `127.0.0.1:6379`，2 号库（测试 15 号库） |
 | Silo S3 API | [http://localhost:19000](http://localhost:19000)，bucket：`booth-assets` |
 | Silo Web Console | [http://localhost:19001](http://localhost:19001) |
 
@@ -160,6 +169,8 @@ pnpm dev:antd
 登录依赖灵通外部用户系统，后端地址通过 `EXTERNAL_API_URL` 配置。管理员的页面和操作权限来自本地角色授权，多角色权限取并集，包含 `ROLE_ADMIN` 在内的角色均按保存的权限执行。
 
 真实 AI 调用需在后台「AI 模型配置」中配置供应商凭据、启用模型并分配用途：`selection_parse`（需求解析）、`theme`（主题调整）、`artwork`（四面素材）、`cs_translation`（客服消息翻译）。支持 OpenAI 及兼容协议、Gemini 图像协议、阿里云百炼 Qwen-Image / 万相 2.7 图像协议、火山方舟 Seedream 图像协议；各协议支持的用途以 `GET /api/v1/admin/ai-protocols` 为准。用途配置包含主备顺序与生成积分费用，提示词模板在后台单独管理。
+
+同一配置模块还提供主题生成的蒙版、合成与背景设置，以及四向图生成的报馆图参考方向、灰度与方向并发数设置；具体生效时机以接口说明为准。邮件功能另需配置 SMTP 与邮件链接使用的 `CLIENT_PUBLIC_URL`，未配置 `SMTP_HOST` 时邮件保留在 Outbox，等待配置后投递。
 
 公开选型需要已审核发布的方案；清单下载需要已核验清单，生成需要对应源素材和模型配置。初始化开发栈不等于业务数据与供应商配置已就绪。
 
@@ -177,7 +188,7 @@ pnpm dev:antd
 
 ### 参展商接口
 
-下表路径统一加前缀 **`/api/v1/client`**。公共选型允许访客；个人信息、生成、询价和项目操作等需客户端会话，具体以接口鉴权规则为准。
+下表路径统一加前缀 **`/api/v1/client`**。公共选型、方案资料、询价和人工需求支持访客；个人信息、生成及个人项目操作需客户端会话，具体以接口鉴权规则为准。
 
 | 模块 | 方法与路径（相对前缀） | 用途 |
 | --- | --- | --- |
@@ -208,7 +219,7 @@ pnpm dev:antd
 | 工作台 | `GET /dashboard/workspace`、`GET /dashboard/analytics` | 个人待办与动态、按权限裁剪的统计分析 |
 | 角色 | `GET /roles`、`GET /roles/:id`；`PUT /roles/:id/permissions` | 角色同步、授权查询及版本化保存 |
 | 用户 / 管理员 | `GET /users`、`GET /users/:id`、`GET /admins`、`GET /admins/:id` | 同步账户查询 |
-| 积分 | `GET /credits`、`GET /credits/users/:userId/balance`；`POST /credits/recharge` | 流水、余额与幂等充值 |
+| 积分 | `GET /credits`、`GET /credits/users/:userId/balance`；`POST /credits/recharge`；`GET /credits/sign-in-config`、`PUT /credits/sign-in-config` | 流水、余额、幂等充值与签到积分配置 |
 | 方案 | `GET /schemes/options`；`GET /schemes`、`POST /schemes`；`GET /schemes/:code`、`PUT /schemes/:code`、`DELETE /schemes/:code` | 方案选项、列表与维护 |
 | 方案导入 | `POST /scheme-imports`、`POST /scheme-imports/:importId/commit` | Excel 导入预览与确认 |
 | 审核发布 | `GET /schemes/:code/readiness`；`POST /schemes/:code/reviews`、`POST /schemes/:code/publish`、`POST /schemes/:code/unpublish` | 就绪检查、审核、发布与下架 |
@@ -217,12 +228,14 @@ pnpm dev:antd
 | 检索运营 | `GET /scheme-searches`、`GET /scheme-searches/:id`、`GET /scheme-searches/visitors`、`GET /scheme-searches/statistics` | 检索查询、访客与统计 |
 | 生成任务 | `GET /generation-jobs`、`GET /generation-jobs/:jobId` | 主题 / 四面素材任务及结果 |
 | 项目 | `GET /project-assignees`、`GET /projects`、`GET /projects/:projectId`、`GET /projects/:projectId/events`；`PUT /projects/:projectId/assignee`、`POST /projects/:projectId/follow-ups`、`PUT /projects/:projectId/scheme` | 承接、改派、跟进与方案关联 |
-| 报价 / 项目附件 | `GET /projects/:projectId/quotation`、`PUT /projects/:projectId/quotation`、`GET /projects/:projectId/quotation/download`、`GET /projects/:projectId/assets/:versionId/download` | 报价版本、Excel 导出与项目资料下载链接 |
+| 项目分配 | `GET /project-assignment-config`、`PUT /project-assignment-config` | 默认承接人配置；未配置或失效时新需求进入待分配池 |
+| 报价 / 项目附件 | `GET /projects/:projectId/quotation`、`GET /projects/:projectId/quotation/revisions`、`PUT /projects/:projectId/quotation`、`GET /projects/:projectId/quotation/download`、`GET /projects/:projectId/assets/:versionId/download` | 报价版本与历史、保存及可选邮件发送、Excel 导出与项目资料下载链接 |
 | 通知 | `GET /project-notifications`、`GET /project-notifications/:id`；`POST /project-notifications/:id/read`、`POST /project-notifications/read-all` | 收件箱、详情与已读管理 |
 | 在线客服 | `/customer-service` 下：`GET /conversations`、`GET /conversations/:conversationId`（含 `/messages`）；`POST /conversations/:conversationId/claim`、`/release`、`/transfer`、`/close`、`/messages`、`/read`；`GET /agents`、`PUT /presence`；`POST /events-ticket`、`GET /events`；`GET /settings`、`PUT /settings` | 工作台会话流转、坐席在线状态、SSE 与客服设置（按 `customer-service.*` 权限） |
 | AI 配置 | `GET /ai-protocols`；供应商 `/ai-providers`、模型 `/ai-models` 的维护接口；`GET /ai-model-assignments`、`PUT /ai-model-assignments/:purpose` | 协议能力、供应商与模型、用途主备及积分配置 |
+| 生成设置 | `GET /theme-generation-settings`、`PUT /theme-generation-settings`；`GET /artwork-generation-settings`、`PUT /artwork-generation-settings` | 主题蒙版 / 合成 / 背景与四向图参考 / 并发设置 |
 | 提示词 | `GET /prompt-templates/definitions`、`POST /prompt-templates/preview`；`GET /prompt-templates`、`POST /prompt-templates`、`GET /prompt-templates/:id`、`PATCH /prompt-templates/:id` | 变量定义、预览、模板维护与启停 |
-| 系统数据 | `/dictionaries` 及条目维护接口、`/applicability-questions` 维护接口；`GET /audit-logs` | 字典、适用条件问题与审计查询 |
+| 系统数据 | `/dictionaries` 及条目维护接口；`GET /audit-logs` | 多语言字典、别名与审计查询 |
 
 当前 `src/app.ts` 注册 client 和 admin 门户；`src/http/su/` 目录尚未注册为可用 API。
 
@@ -240,10 +253,10 @@ pnpm dev:antd
 ### 容器命令（仓库根目录）
 
 ```powershell
-# 重建并启动后端开发栈
+# 重建并启动后端开发栈（共用基础设施与外部网络 infra 须已就绪）
 docker compose --env-file .env -f infra/compose.dev.yaml up -d --build
 
-# 服务端类型检查 + 测试 + 构建（不包含两个前端）
+# 服务端类型检查 + lint / 格式检查 + 重建测试库 + 全量测试 + 构建（不包含两个前端）
 docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --rm check
 
 # 基础设施冒烟：健康检查、Redis、S3、DB → Outbox → BullMQ → Worker → DB 与幂等
@@ -253,7 +266,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml --profile tools run --r
 docker compose --env-file .env -f infra/compose.dev.yaml run --rm migrate
 docker compose --env-file .env -f infra/compose.dev.yaml run --rm storage-init
 
-# 停止服务，保留 volume 数据
+# 停止本项目服务，保留 volume 数据；不会停止共用 PostgreSQL / Redis
 docker compose --env-file .env -f infra/compose.dev.yaml down
 ```
 
@@ -271,19 +284,24 @@ docker compose --env-file .env -f infra/compose.dev.yaml down
 | `apps/server` | `npm run check` / `npm test` / `npm run build` | 类型检查、测试、编译 |
 | `apps/server` | `npm run lint` / `npm run format:check` | oxlint 与 oxfmt 格式检查 |
 | `apps/client` | `pnpm build` / `pnpm test` / `pnpm preview` | vue-tsc 类型检查与生产构建 / Node 原生测试 / 产物预览 |
-| `apps/admin` | `pnpm check:type` / `pnpm test:unit` / `pnpm build:antd` | 类型检查、单元测试、业务应用构建 |
+| `apps/admin` | `pnpm -F @vben/web-antd run typecheck` / `pnpm test:antd` / `pnpm build:antd` | 业务应用类型检查、业务测试、生产构建 |
+| `apps/admin` | `pnpm check:type` / `pnpm test:unit` | 全部包的类型检查 / 单元测试（含框架层） |
 | `apps/admin` | `pnpm check` | 循环依赖、依赖、类型与拼写检查 |
 
-服务端测试包含无需外部服务的测试及需专用数据库环境变量的集成测试；后者在配置缺失时可能跳过，不能将测试进程成功等同于所有集成用例已执行。容器内的 `check` 服务会重建 `booth_test` 库并执行全部测试（含集成测试）。
+服务端测试包含无需外部服务的测试及需专用数据库环境变量的集成测试；后者在配置缺失时可能跳过，不能将测试进程成功等同于所有集成用例已执行。容器内的 `check` 服务会删除并重建 `booth_test` 库、清空 Redis 15 号测试库并执行全部测试（含集成测试），通过 `REQUIRE_INTEGRATION_TESTS=1` 强制校验集成环境完整性；源码显式跳过的用例仍会计入 skipped，需单独核对原因。测试库不可存放需保留的数据；禁止对共用 Redis 执行 `FLUSHALL`。client 和 admin 的标准检查均按“类型检查 / 构建 → 测试”顺序串行执行，避免内存峰值叠加。
+
+生产打包统一使用 `scripts/package-server.ps1`，通过 BuildKit secret 读取根 `.env` 中的 SMTP 配置并写入镜像默认配置；运行时环境变量可覆盖，`CLIENT_PUBLIC_URL` 仍须在线上提供。**生成的镜像与 `release/*.tar` 含 SMTP 凭据，不得公开或提交到仓库。** 具体发布流程见 [1Panel 服务端部署](docs/1Panel服务端部署.md)。
 
 ### Git hooks 与 CI
 
 - `lefthook.yml`：提交前对 server 暂存文件跑 oxlint / oxfmt、对 admin 暂存文件跑 lint 与类型检查；commit-msg 按 `commitlint.config.mjs` 校验 Conventional Commits；推送前按改动范围执行各子项目检查。
 - `.github/workflows/ci.yml`：PR 与推送 `main` 时，server 执行容器 `check` + 启动开发栈 + `smoke`，client 执行 `pnpm build` + `pnpm test`，admin 执行 `typecheck` + `pnpm test:antd`。
 
+server CI 叠加 `infra/compose.ci.yaml`，在 runner 内启动隔离的 PostgreSQL 18（含 pgvector）和 Redis，等待健康后执行原有检查与冒烟；数据库使用非超级用户 `booth`（带 `CREATEDB`）。CI 网络和数据卷与本地共用基础设施隔离，结束时自动清理，失败时输出服务日志。
+
 ## 架构与配置要点
 
-- **API / Worker 分进程**：`src/api.ts` 提供 HTTP；`src/worker.ts` 处理 Foundation、主题与四面素材队列、Outbox 分发与恢复、项目通知与询价回执邮件投递，以及客服翻译、离线 / 回复邮件、消息保留和坐席巡检。HTTP 层只负责校验、鉴权与映射，不直接访问数据库；业务放在 `src/modules/`，模块依赖方向与表写入归属由架构测试约束。
+- **API / Worker 分进程**：`src/api.ts` 提供 HTTP；`src/worker.ts` 处理 Foundation、主题与四面素材队列、Outbox 分发与恢复、项目通知、询价回执与报价邮件投递，以及客服翻译、离线 / 回复邮件、消息保留和坐席巡检。调度分为 `dispatch` 与 `background` 两条执行链，外部投递不阻塞任务分发；HTTP 层只负责校验、鉴权与映射，不直接访问数据库。业务放在 `src/modules/`，模块依赖方向与表写入归属由架构测试约束。
 - **契约守卫**：每条路由声明请求与响应 schema（Type Provider 推导 TS 类型），`src/http/response-guard.ts` 在 test 环境对 schema 未声明字段或类型强转直接报错，development 记录日志，production 记录并回退为原始 JSON。
 - **实时推送**：主题 / 素材进度与客服消息均通过 SSE 下发，连接前先换取与会话绑定的一次性 ticket；客服事件经 Redis Pub/Sub 广播，心跳时复核登录会话与最新权限。
 - **事务性 Outbox**：任务与 Outbox 在同一数据库事务写入，使用确定性 jobId 与数据库状态控制重复执行；调用 AI / 外部 API 时不持有数据库锁。
@@ -295,10 +313,11 @@ docker compose --env-file .env -f infra/compose.dev.yaml down
 | --- | --- |
 | 根目录 `.env` / Compose | 本地 DB、Redis、S3 凭据、`SESSION_SECRET`、`AI_MODEL_ENCRYPTION_KEY`、`EXTERNAL_API_URL` |
 | 服务端 `src/config.ts` | `DATABASE_URL`、`REDIS_URL`、S3 配置、`CORS_ORIGINS`、会话及可选通知 webhook 配置 |
+| 邮件配置 / 生产镜像默认值 | `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASSWORD`、`SMTP_FROM`；邮件链接使用 `CLIENT_PUBLIC_URL` |
 | client Vite 环境 | `VITE_API_BASE_URL`（默认同源）、`VITE_LINGTONG_API_URL`、`VITE_APP_TITLE` |
 | admin `apps/web-antd` Vite 环境 | `VITE_GLOB_API_URL`、`VITE_PORT`、`VITE_APP_STORE_SECURE_KEY` 等 |
 
-密钥只保留在服务端配置或加密存储中。生产环境需替换管理端默认的 `VITE_APP_STORE_SECURE_KEY`；客户端使用 HTML5 history，部署时配置路由 fallback 到 `index.html`。前后端跨域直连时需按实际来源配置 `CORS_ORIGINS`，当前 Compose 默认放行 `5173` / `5174`，开发端通常通过 Vite 同源代理访问。
+密钥只保留在服务端配置或加密存储中。生产环境需替换管理端默认的 `VITE_APP_STORE_SECURE_KEY`；客户端使用 HTML5 history，部署时配置路由 fallback 到 `index.html`。前后端跨域直连时需按实际来源配置 `CORS_ORIGINS`，当前 Compose 默认放行 `5030` / `5031`（client / admin 开发服务器），开发端通常通过 Vite 同源代理访问。
 
 ## 文档导航
 

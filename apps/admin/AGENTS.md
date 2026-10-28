@@ -30,7 +30,7 @@ apps/admin/
 
 ```powershell
 # 开发
-pnpm dev:antd              # 只启动 web-antd（端口 5666）
+pnpm dev:antd              # 只启动 web-antd（端口 5031）
 pnpm dev                   # 所有子包（turbo-run 并行）
 
 # 构建
@@ -200,7 +200,7 @@ views/<module>/list/
 ### 环境变量（web-antd）
 
 - `.env`：`VITE_APP_TITLE`、`VITE_APP_NAMESPACE`、`VITE_APP_STORE_SECURE_KEY`（**必须替换默认值**）
-- `.env.development`：`VITE_PORT=5666`、`VITE_GLOB_API_URL=/api`（代理到后端）
+- `.env.development`：`VITE_PORT=5031`（端口同时固定在 `vite.config.ts`，以其为准）、`VITE_GLOB_API_URL=/api`（代理到后端）
 - `.env.production`：`VITE_GLOB_API_URL` 改为真实 API 地址，`VITE_ROUTER_HISTORY=hash`
 
 ### 权限系统
