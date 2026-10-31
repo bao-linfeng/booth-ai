@@ -1,6 +1,6 @@
 services:
   infra-postgres:
-    image: pgvector/pgvector:pg18
+    image: pgvector/pgvector:0.8.7-pg18
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?CI credentials required}
@@ -16,7 +16,7 @@ services:
       retries: 30
 
   infra-redis:
-    image: redis:7.4
+    image: redis:8.10.3
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?CI credentials required}
     command: [/bin/sh, -ec, 'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --maxmemory-policy noeviction']
