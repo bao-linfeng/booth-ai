@@ -406,15 +406,50 @@ rm -rf booth.dump silo-export.tar.gz silo-export
 
 ### 8.2 备份
 
-1Panel → 计划任务，建三个任务（建议每天凌晨，保留 14 份，备份到云存储账号，只存在本机的不算备份）：
+需要备份的有三样：
 
-| 类型 | 内容 |
-|------|------|
-| 备份数据库 | PostgreSQL → `booth` |
-| 备份目录 | `/opt/booth-ai/silo` |
-| 备份目录 | 编排 `booth-ai` 所在目录（编排页面可看到路径），里面有 `AI_MODEL_ENCRYPTION_KEY` |
+| 内容 | 位置 | 说明 |
+|------|------|------|
+| 数据库 | PostgreSQL → `booth` | 业务数据 |
+| 对象存储 | `/opt/booth-ai/silo` | 用户上传的图片和素材 |
+| 编排目录 | 编排 `booth-ai` 所在目录（编排页面点「目录」可见，一般是 `/opt/1panel/docker/compose/booth-ai`） | `docker-compose.yml` 里有全部密钥，包括 `AI_MODEL_ENCRYPTION_KEY` |
 
 > 丢了 `AI_MODEL_ENCRYPTION_KEY`，数据库里已加密的 AI 凭据就无法恢复。恢复数据库前先在编排里停止 `booth-ai`，在 数据库 → PostgreSQL → 备份列表 中恢复后再启动。
+
+Redis 不需要备份：队列可以从数据库 outbox 恢复，会话丢失只需重新登录。
+
+#### 8.2.1 手动备份（目前的做法）
+
+发布新版本、改数据服务之前都要做一次。命令在 1Panel 终端执行。
+
+1. **数据库**：数据库 → PostgreSQL → `booth` 行的「备份列表」→「备份」，状态为「成功」即可。
+2. **核对加密密钥**：本地 `.local/1panel/docker-compose.yml` 里有一份带密钥的编排。在服务器和本地分别执行下面这行，比对哈希前 12 位，相同说明本地那份密钥有效（只输出哈希，不显示密钥）：
+
+   ```bash
+   COMPOSE_DIR=$(docker inspect booth-ai-api-1 --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}'); echo "$COMPOSE_DIR"
+   grep -E '^\s*AI_MODEL_ENCRYPTION_KEY:' "$COMPOSE_DIR/docker-compose.yml" | tr -d ' \r' | sha256sum | cut -c1-12
+   ```
+
+   本地（Git Bash，仓库根目录）：`grep -E '^\s*AI_MODEL_ENCRYPTION_KEY:' .local/1panel/docker-compose.yml | tr -d ' \r' | sha256sum | cut -c1-12`
+
+3. **打包对象存储和编排目录**（接着上一步，`COMPOSE_DIR` 已设置；终端重新连接过的话要重新设置）：
+
+   ```bash
+   du -sh /opt/booth-ai/silo
+   TS=$(date +%F-%H%M); mkdir -p /opt/booth-ai/backup && cd /opt/booth-ai/backup
+   tar -czf silo-$TS.tar.gz -C /opt/booth-ai silo
+   tar -czf booth-ai-compose-$TS.tar.gz -C "$COMPOSE_DIR" .
+   ls -lh
+   ```
+
+   silo 不需要停止，选没人上传的时候打包即可。
+
+4. **下载到本地**：数据库备份在「备份列表」里点「下载」；两个 tar 包在 系统 → 文件 → `/opt/booth-ai/backup` 中勾选下载。服务器上行只有 3 Mbps（约 0.35 MB/s），silo 越大下载越久。编排包和数据库备份含密钥与业务数据，放在不同步到公开网盘的位置。
+5. 确认本地文件能打开后，删除服务器上 `/opt/booth-ai/backup` 里的旧文件，避免占满磁盘。
+
+#### 8.2.2 自动备份（建议后续开启）
+
+1Panel → 计划任务，按上表建三个任务：「备份数据库」选 PostgreSQL → `booth`，另外两个用「备份目录」。建议每天凌晨执行、保留 14 份，备份账号选云存储（先在 系统 → 备份账号 添加 OSS 等），只存在本机的不算备份。建好后各手动执行一次，在执行记录里确认成功。
 
 ### 8.3 诊断
 
