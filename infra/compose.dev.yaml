@@ -2,7 +2,7 @@ name: booth-ai
 
 # PostgreSQL 与 Redis 来自多个项目共用的基础设施 D:/baolf/infra（独立的 Compose 项目，外部网络 infra，
 # 容器 infra-postgres / infra-redis）。本项目使用 booth 库与同名非超级用户账号（带 CREATEDB，供测试重建 booth_test）、
-# Redis 2 号库（测试用 15 号库）。POSTGRES_PASSWORD 是 booth 账号的密码，REDIS_PASSWORD 是共用 Redis 的密码；
+# Redis 0 号库（测试用 15 号库）。POSTGRES_PASSWORD 是 booth 账号的密码，REDIS_PASSWORD 是共用 Redis 的密码；
 # scripts/setup.ps1 会启动共用基础设施并创建账号与库。
 
 x-server: &server
@@ -18,7 +18,7 @@ x-server: &server
     PORT: 3000
     LOG_LEVEL: info
     DATABASE_URL: postgres://booth:${POSTGRES_PASSWORD:?Run scripts/setup.ps1 first}@infra-postgres:5432/booth
-    REDIS_URL: redis://:${REDIS_PASSWORD:?Run scripts/setup.ps1 first}@infra-redis:6379/2
+    REDIS_URL: redis://:${REDIS_PASSWORD:?Run scripts/setup.ps1 first}@infra-redis:6379/0
     S3_ENDPOINT: http://silo:9000
     S3_PUBLIC_ENDPOINT: http://localhost:19000
     S3_REGION: us-east-1

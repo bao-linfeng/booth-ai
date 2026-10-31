@@ -46,7 +46,7 @@ docker compose --env-file .env -f infra/compose.dev.yaml down                   
 | client 开发服务器 | `http://localhost:5030` |
 | admin 开发服务器（web-antd） | `http://localhost:5031` |
 | PostgreSQL（共用，容器 `infra-postgres`） | `127.0.0.1:5432`（db: `booth`, user: `booth`，非超级用户，带 CREATEDB；测试库 `booth_test`） |
-| Redis（共用，容器 `infra-redis`） | `127.0.0.1:6379`，本项目用 2 号库，测试用 15 号库；不要 `FLUSHALL` |
+| Redis（共用，容器 `infra-redis`） | `127.0.0.1:6379`，本项目用 0 号库，测试用 15 号库；不要 `FLUSHALL` |
 | Silo S3 API / Web Console | `http://localhost:19000` / `http://localhost:19001`（bucket: `booth-assets`） |
 
 共用基础设施 `D:/baolf/infra` 是独立的 Compose 项目（agent-template、nyz-rag 等也在用），本项目的 `down` 不会停止它；容器经外部网络 `infra` 访问 `infra-postgres` / `infra-redis`。`.env` 中 `POSTGRES_PASSWORD` 是 booth 账号的密码，`REDIS_PASSWORD` 是共用 Redis 的密码。
