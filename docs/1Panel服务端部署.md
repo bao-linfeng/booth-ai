@@ -61,15 +61,25 @@ for name in SESSION_SECRET AI_MODEL_ENCRYPTION_KEY SILO_PASSWORD; do echo "$name
 
 ### 2.1 PostgreSQL
 
-PostgreSQL 与 Redis 是服务器上多个项目（booth-ai、nyz-rag 等）共用的 1Panel 应用，与本地共用基础设施 `D:/baolf/infra` 约定相同：PostgreSQL 镜像为 `pgvector/pgvector:pg18`（安装方法见 nyz-rag 仓库 `docs/deploy-1panel.md` 第 4.1 节，已安装则跳过第 1 步），各项目用自己的库与非超级用户账号，Redis 按项目分逻辑库（booth-ai 为 0 号）。
+PostgreSQL 与 Redis 是服务器上多个项目（booth-ai、nyz-rag 等）共用的 1Panel 应用，版本与本地共用基础设施 `D:/baolf/infra`、CI 保持一致：PostgreSQL 镜像为 `pgvector/pgvector:0.8.7-pg18`（PostgreSQL 18 + pgvector 0.8.7），Redis 为 `8.10.3`。各项目用自己的库与非超级用户账号，Redis 按项目分逻辑库（booth-ai 为 0 号）。已安装则跳过对应步骤；从旧版本（`postgres:*-alpine`、Redis 7）升级见 [`1Panel数据服务升级.md`](1Panel数据服务升级.md)。
 
-1. 应用商店 → PostgreSQL → 安装，版本选 **18**，**不要勾选「端口外部访问」**；高级设置中编辑 compose 文件，把镜像改为 `pgvector/pgvector:pg18`。
-2. 数据库 → PostgreSQL → 创建数据库：名称 `booth`，用户 `booth`（不要设为超级用户），密码用 1Panel 生成的即可（只含字母数字，免得在 URL 里转义）。
-3. 在 容器 列表里记下**容器名**（形如 `1Panel-postgresql-xxxx`）。数据库密码在 数据库 → PostgreSQL 列表的「密码」列，点眼睛图标可见。
+1. 应用商店 → PostgreSQL → 安装，版本选 **18**，**不要勾选「端口外部访问」**；高级设置中编辑 compose 文件，把镜像 `postgres:18.x-alpine` 改为 `pgvector/pgvector:0.8.7-pg18`。不要用应用商店里单独的 pgvector 应用（另占一份内存，且不在 1Panel 数据库页面里管理）。
+2. 数据库 → PostgreSQL → 创建数据库：名称 `booth`，用户 `booth`，密码用 1Panel 生成的即可（只含字母数字，免得在 URL 里转义）。
+3. 1Panel 创建的账号可能带 `SUPERUSER`，在终端去掉并确认（容器名在 容器 列表里看，形如 `1Panel-postgresql-xxxx`）：
+
+   ```bash
+   PG=1Panel-postgresql-xxxx; ROOT=$(docker exec $PG printenv POSTGRES_USER)
+   docker exec $PG psql -U $ROOT -d postgres -c "ALTER ROLE booth NOSUPERUSER NOCREATEROLE NOCREATEDB;"
+   docker exec $PG psql -U $ROOT -d postgres -tAc "select rolname, rolsuper from pg_roles where rolname='booth';"   # 应为 booth|f
+   ```
+
+4. 记下**容器名**；数据库密码在 数据库 → PostgreSQL 列表的「密码」列，点眼睛图标可见。
+
+> **不要点这个 PostgreSQL 应用的「升级」按钮**：它会按应用商店定义把镜像改回 alpine，数据目录不兼容。升级小版本时在「编辑 compose 文件」里改镜像标签，并同步本地 `D:/baolf/infra/compose.yml` 与 `infra/compose.ci.yaml`。
 
 ### 2.2 Redis
 
-1. 应用商店 → Redis → 安装，版本选 **7.x**，设置密码，**不要勾选「端口外部访问」**。
+1. 应用商店 → Redis → 安装，版本选 **8.10.3**，设置密码（`openssl rand -hex 24`），**不要勾选「端口外部访问」**；宿主机端口不能与已有 Redis 冲突（已占用 6379 时改为 6380，容器间仍通过容器名的 6379 访问）。
 2. 数据库 → Redis → 顶部「设置」→ 持久化：打开 **appendonly**，`appendfsync` 选 `everysec`，保存。队列数据靠它在重启后保留。
 3. 在 数据库 → Redis 页面的命令终端执行 `CONFIG GET appendonly`、`CONFIG GET maxmemory-policy`，应分别为 `yes`、`noeviction`（后者是默认值，BullMQ 要求）。
 4. 应用商店 → 已安装 → Redis → 参数，记下密码；容器名在 容器 列表里看（形如 `1Panel-redis-xxxx`）。
