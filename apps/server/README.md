@@ -1,6 +1,6 @@
 # Booth AI 服务端
 
-Fastify 5 + BullMQ 6 + Redis 7.4 + PostgreSQL 17 + Silo，Node.js 24 / TypeScript。
+Fastify 5 + BullMQ 6 + Redis 8 + PostgreSQL 18 + Silo，Node.js 24 / TypeScript。
 
 从仓库根运行 `./scripts/setup.ps1`，不需要在宿主机安装 Node.js 或 npm。完整 Docker 命令、端口和运行约定见 [本地开发文档](../../docs/服务端本地开发.md)。
 
