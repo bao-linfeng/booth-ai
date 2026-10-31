@@ -74,12 +74,13 @@ export const projectColumns = `p.id AS "projectId",p.project_no AS "projectNo",p
   p.status,p.revision,p.scheme_code AS "schemeCode",p.request_snapshot AS request,p.scheme_snapshot AS "schemeSnapshot",
   p.materials_snapshot AS materials,p.public_result AS "publicResult",${nextFollowUpSql('p')} AS "nextFollowUpAt",p.created_at AS "createdAt",p.updated_at AS "updatedAt"`;
 export async function getProject(db: pg.Pool | pg.PoolClient, id: string, userId?: string, lock = false): Promise<ProjectRecord> {
+  const where = `WHERE p.id=$1 ${userId ? 'AND p.customer_user_id=$2' : ''}`;
+  const args = userId ? [id, userId] : [id];
+  // 先单独锁行再读：带 JOIN 的 FOR UPDATE 等锁后只重读被锁的 projects 行，
+  // admins 仍是等锁前的快照，承接人刚被并发写入时姓名、状态会读成空
+  if (lock) await db.query(`SELECT 1 FROM projects p ${where} FOR UPDATE`, args);
   const row = (
-    await db.query<ProjectRecord>(
-      `SELECT ${projectColumns} FROM projects p LEFT JOIN admins a ON a.id=p.assignee_admin_id
-    WHERE p.id=$1 ${userId ? 'AND p.customer_user_id=$2' : ''} ${lock ? 'FOR UPDATE OF p' : ''}`,
-      userId ? [id, userId] : [id],
-    )
+    await db.query<ProjectRecord>(`SELECT ${projectColumns} FROM projects p LEFT JOIN admins a ON a.id=p.assignee_admin_id ${where}`, args)
   ).rows[0];
   if (!row) throw projectError('RESOURCE_NOT_FOUND', 404);
   return row;

@@ -340,3 +340,62 @@ test(
     assert.ok(!publicProject.body.includes('assignee'));
   },
 );
+
+test(
+  'claim conflict reports the assignee committed while the claim was waiting for the row lock',
+  {
+    skip: !process.env.PROJECT_TEST_DATABASE_URL,
+  },
+  async t => {
+    const pool = await projectTestPool(t);
+    const [winner, loser, user] = [randomUUID(), randomUUID(), randomUUID()];
+    for (const [index, id] of [winner, loser].entries()) {
+      await pool.query(
+        `INSERT INTO admins(id,external_user_id,username,nickname,roles) VALUES($1,$2,$1::uuid::text,$3,ARRAY['ROLE_ADMIN'])`,
+        [id, index + 1, `admin-${index + 1}`],
+      );
+    }
+    await pool.query('INSERT INTO users(id,external_user_id,username) VALUES($1,1,$1::uuid::text)', [user]);
+    const created = await createManualProject(pool, user, {
+      requestKey: randomUUID(),
+      entryPoint: 'matching_results',
+      originalDescription: '需人工确认',
+      confirmedRequirements: emptyRequirement(),
+      exhibition: { name: '测试展会', countryCode: 'CN', city: '上海', startDate: '2026-11-20', endDate: '2026-11-22' },
+      scopeCodes: ['materials'],
+      materialBudget: { currency: 'CNY', amount: '30000' },
+      customerType: 'individual',
+      contact: { name: '客户', email: 'test@example.com' },
+    });
+    const id = String(created.receipt.projectId);
+    assert.equal((await getProject(pool, id)).assigneeAdminId, null);
+
+    // 另一个事务先锁住项目并写入承接人，领取请求在行锁上等待，提交后才继续。
+    // 连接必须在测试体内归还：pool.end() 会等待所有借出的连接
+    const holder = await pool.connect();
+    let claim!: Promise<unknown>;
+    try {
+      await holder.query('BEGIN');
+      await holder.query('UPDATE projects SET assignee_admin_id=$2,revision=revision+1 WHERE id=$1', [id, winner]);
+      const holderPid = (await holder.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid;
+      claim = claimProject(pool, id, loser, { requestKey: randomUUID() });
+      claim.catch(() => undefined);
+      for (let waited = 0; ; waited += 10) {
+        const blocked = await pool.query('SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))', [holderPid]);
+        if (blocked.rowCount) break;
+        assert.ok(waited < 5000, 'claim never waited for the row lock');
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      await holder.query('COMMIT');
+    } finally {
+      await holder.query('ROLLBACK').catch(() => undefined);
+      holder.release();
+    }
+
+    await assert.rejects(claim, (error: { reason?: string; details?: unknown }) => {
+      assert.equal(error.reason, 'PROJECT_ALREADY_ASSIGNED');
+      assert.deepEqual(error.details, { assigneeAdminId: winner, assigneeName: 'admin-1' });
+      return true;
+    });
+  },
+);
