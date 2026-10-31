@@ -72,7 +72,7 @@ AI 驱动的展台方案选型与询价交接平台，面向参展商提供公�
 | --- | --- |
 | 后端 API | Fastify 5 + TypeScript ESM，Node.js 24；JSON Schema + `json-schema-to-ts` Type Provider，Swagger / OpenAPI |
 | 异步任务 | BullMQ 6 + Transactional Outbox，独立 Worker 进程 |
-| 数据库 / 缓存队列 | PostgreSQL 18（原生 `pg`，手写 SQL 与带校验和迁移）/ Redis 7.4+（队列、限流、Pub/Sub、在线状态）；本地与线上都使用多个项目共用的实例 |
+| 数据库 / 缓存队列 | PostgreSQL 18（原生 `pg`，手写 SQL 与带校验和迁移）/ Redis 8（队列、限流、Pub/Sub、在线状态）；本地与线上都使用多个项目共用的实例 |
 | 对象存储 | Silo（S3 兼容），AWS SDK v3 + presigned URL |
 | 文件与邮件 | ExcelJS（导入导出）、JSZip（打包下载）、sharp（图像处理）、Nodemailer（SMTP 邮件） |
 | 参展商前端 | Vue 3.5 + Vite 6 + Tailwind CSS 3 + Shadcn-Vue，vue-i18n 12 语言 + RTL |

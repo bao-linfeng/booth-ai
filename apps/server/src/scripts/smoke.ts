@@ -36,7 +36,7 @@ try {
   await waitForRedis(redis);
   await redis.set(redisKey, probe, 'EX', 60);
   assert.equal(await redis.get(redisKey), probe);
-  assert.ok((await redis.info('server')).includes('redis_version:7.4.'), 'Redis minor version');
+  assert.ok((await redis.info('server')).includes('redis_version:8.'), 'Redis major version');
   assert.equal(((await redis.config('GET', 'maxmemory-policy')) as string[])[1], 'noeviction');
   console.info('PASS Redis read/write, version and noeviction');
 
