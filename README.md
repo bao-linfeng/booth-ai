@@ -160,7 +160,7 @@ pnpm dev:antd
 | API 就绪检查 | [http://localhost:3030/health/ready](http://localhost:3030/health/ready) |
 | Swagger UI / OpenAPI | [`/docs`](http://localhost:3030/docs) / [`/openapi.json`](http://localhost:3030/openapi.json)（非生产环境） |
 | PostgreSQL（共用基础设施 `D:/baolf/infra`） | `127.0.0.1:5432`，database / user：`booth` |
-| Redis（共用基础设施） | `127.0.0.1:6379`，2 号库（测试 15 号库） |
+| Redis（共用基础设施） | `127.0.0.1:6379`，0 号库（测试 15 号库） |
 | Silo S3 API | [http://localhost:19000](http://localhost:19000)，bucket：`booth-assets` |
 | Silo Web Console | [http://localhost:19001](http://localhost:19001) |
 
